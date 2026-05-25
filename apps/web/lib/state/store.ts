@@ -9,16 +9,6 @@ import type {
   Turn,
   TaskSession,
 } from "@/lib/types/http";
-import type {
-  GitHubStatus,
-  GitHubRateLimitUpdate,
-  TaskPR,
-  PRWatch,
-  ReviewWatch as GitHubReviewWatch,
-  IssueWatch as GitHubIssueWatch,
-  GitHubActionPresets,
-  PRFeedback,
-} from "@/lib/types/github";
 import type { SystemHealthResponse } from "@/lib/types/health";
 import type { UISliceActions as UIA } from "./slices/ui/types";
 import type * as UISliceTypes from "./slices/ui/types";
@@ -77,6 +67,8 @@ import {
   type ConnectionState,
   type SystemSliceActions,
   type AutomationsSliceActions,
+  type FeaturesSliceActions,
+  type GitHubSliceActions,
 } from "./slices";
 import type {
   AvailableCommand,
@@ -90,8 +82,7 @@ import type {
   UserShellInfo,
 } from "./slices/session-runtime/types";
 
-// Re-export all types from slices for backwards compatibility (split out
-// to keep this file under the max-lines limit).
+// Re-export all types from slices for backwards compatibility.
 export type * from "./store-reexports";
 import type { TaskMR } from "@/lib/types/gitlab";
 import type { JiraIssueWatch } from "@/lib/types/jira";
@@ -186,6 +177,7 @@ export type AppState = {
   // GitHub slice
   githubStatus: (typeof defaultGitHubState)["githubStatus"];
   taskPRs: (typeof defaultGitHubState)["taskPRs"];
+  pendingPrUrlByTaskId: (typeof defaultGitHubState)["pendingPrUrlByTaskId"];
   prWatches: (typeof defaultGitHubState)["prWatches"];
   reviewWatches: (typeof defaultGitHubState)["reviewWatches"];
   issueWatches: (typeof defaultGitHubState)["issueWatches"];
@@ -206,7 +198,6 @@ export type AppState = {
 
   // Feature flags slice
   features: (typeof defaultFeaturesState)["features"];
-  setFeatures: (features: (typeof defaultFeaturesState)["features"]) => void;
 
   // Automations slice
   automations: (typeof defaultAutomationsState)["automations"];
@@ -234,30 +225,6 @@ export type AppState = {
   kanbanPreviewedTaskId: (typeof defaultUIState)["kanbanPreviewedTaskId"];
   sidebarTaskPrefs: (typeof defaultUIState)["sidebarTaskPrefs"];
 
-  // GitHub actions
-  setGitHubStatus: (status: GitHubStatus | null) => void;
-  setGitHubStatusLoading: (loading: boolean) => void;
-  setTaskPRs: (prs: Record<string, TaskPR[]>) => void;
-  setTaskPR: (taskId: string, pr: TaskPR) => void;
-  setPRWatches: (watches: PRWatch[]) => void;
-  setPRWatchesLoading: (loading: boolean) => void;
-  removePRWatch: (id: string) => void;
-  setReviewWatches: (watches: GitHubReviewWatch[]) => void;
-  setReviewWatchesLoading: (loading: boolean) => void;
-  addReviewWatch: (watch: GitHubReviewWatch) => void;
-  updateReviewWatch: (watch: GitHubReviewWatch) => void;
-  removeReviewWatch: (id: string) => void;
-  setIssueWatches: (watches: GitHubIssueWatch[]) => void;
-  setIssueWatchesLoading: (loading: boolean) => void;
-  addIssueWatch: (watch: GitHubIssueWatch) => void;
-  updateIssueWatch: (watch: GitHubIssueWatch) => void;
-  removeIssueWatch: (id: string) => void;
-  setActionPresets: (workspaceId: string, presets: GitHubActionPresets) => void;
-  setActionPresetsLoading: (workspaceId: string, loading: boolean) => void;
-  applyGitHubRateLimitUpdate: (update: GitHubRateLimitUpdate) => void;
-  setPRFeedbackCacheEntry: (key: string, feedback: PRFeedback) => void;
-  removePRFeedbackCacheEntry: (key: string) => void;
-
   // GitLab actions
   setTaskMRs: (mrs: Record<string, TaskMR[]>) => void;
   setTaskMR: (taskId: string, mr: TaskMR) => void;
@@ -278,8 +245,6 @@ export type AppState = {
   updateLinearIssueWatch: (watch: LinearIssueWatch) => void;
   removeLinearIssueWatch: (id: string) => void;
   resetLinearIssueWatches: () => void;
-
-  // Automations actions merged via AutomationsSliceActions intersection below.
 
   // Actions from all slices
   hydrate: (state: Partial<AppState>, options?: HydrationOptions) => void;
@@ -554,7 +519,9 @@ export type AppState = {
   setRunAttempts: (runId: string, attempts: RouteAttempt[]) => void;
   appendRunAttempt: (runId: string, attempt: RouteAttempt) => void;
   setAgentRouting: (agentId: string, data: AgentRouteData | undefined) => void;
-} & SystemSliceActions &
+} & GitHubSliceActions &
+  SystemSliceActions &
+  FeaturesSliceActions &
   AutomationsSliceActions;
 
 export function createAppStore(initialState?: Partial<AppState>) {
@@ -638,6 +605,7 @@ export function createAppStore(initialState?: Partial<AppState>) {
       sessionPollMode: merged.sessionPollMode,
       githubStatus: merged.githubStatus,
       taskPRs: merged.taskPRs,
+      pendingPrUrlByTaskId: merged.pendingPrUrlByTaskId,
       prWatches: merged.prWatches,
       reviewWatches: merged.reviewWatches,
       issueWatches: merged.issueWatches,
