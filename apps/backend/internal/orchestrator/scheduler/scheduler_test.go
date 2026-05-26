@@ -18,6 +18,7 @@ import (
 	"github.com/kandev/kandev/internal/orchestrator/executor"
 	"github.com/kandev/kandev/internal/orchestrator/queue"
 	"github.com/kandev/kandev/internal/task/repository"
+	taskrepo "github.com/kandev/kandev/internal/task/repository/sqlite"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 )
 
@@ -184,7 +185,10 @@ func (r *testTaskRepository) GetTask(ctx context.Context, taskID string) (*v1.Ta
 	defer r.mu.RUnlock()
 	task, exists := r.tasks[taskID]
 	if !exists {
-		return nil, ErrTaskNotFound
+		// Mirror the production sqlite repository's wrapping so processTasks'
+		// errors.Is(err, taskrepo.ErrTaskNotFound) check exercises the same
+		// path it would in prod.
+		return nil, fmt.Errorf("%w: %s", taskrepo.ErrTaskNotFound, taskID)
 	}
 	copy := *task
 	return &copy, nil
@@ -195,7 +199,7 @@ func (r *testTaskRepository) UpdateTaskState(ctx context.Context, taskID string,
 	defer r.mu.Unlock()
 	task, exists := r.tasks[taskID]
 	if !exists {
-		return ErrTaskNotFound
+		return fmt.Errorf("%w: %s", taskrepo.ErrTaskNotFound, taskID)
 	}
 	task.State = state
 	return nil
