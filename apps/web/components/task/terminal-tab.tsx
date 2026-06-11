@@ -97,12 +97,15 @@ function useTerminalTabClose({
 }) {
   const removeUserShellStore = useAppStore((s) => s.removeUserShell);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
 
   const destroyAndClosePanel = useCallback(async () => {
+    if (isClosing) return;
     if (!stampedEnv) {
       closePanel();
       return;
     }
+    setIsClosing(true);
     try {
       await destroyUserShell(stampedEnv, terminalId, taskID ?? undefined);
       removeUserShellStore(stampedEnv, terminalId);
@@ -110,11 +113,13 @@ function useTerminalTabClose({
       setConfirmClose(false);
       closePanel();
     } catch (error) {
+      setIsClosing(false);
       console.error("close terminal:", error);
     }
-  }, [stampedEnv, terminalId, taskID, removeUserShellStore, panelId, closePanel]);
+  }, [isClosing, stampedEnv, terminalId, taskID, removeUserShellStore, panelId, closePanel]);
 
   const handleCloseTab = useCallback(() => {
+    if (isClosing) return;
     if (!closable) return;
     if (
       shouldConfirmTerminalClose(terminalId, {
@@ -125,9 +130,9 @@ function useTerminalTabClose({
       return;
     }
     void destroyAndClosePanel();
-  }, [closable, terminalId, shell, destroyAndClosePanel]);
+  }, [isClosing, closable, terminalId, shell, destroyAndClosePanel]);
 
-  return { confirmClose, setConfirmClose, handleCloseTab, destroyAndClosePanel };
+  return { confirmClose, setConfirmClose, isClosing, handleCloseTab, destroyAndClosePanel };
 }
 
 export function TerminalTab(props: IDockviewPanelHeaderProps) {
@@ -148,7 +153,7 @@ export function TerminalTab(props: IDockviewPanelHeaderProps) {
   }, [props.api, displayName]);
 
   const [isRenaming, setIsRenaming] = useState(false);
-  const { confirmClose, setConfirmClose, handleCloseTab, destroyAndClosePanel } =
+  const { confirmClose, setConfirmClose, isClosing, handleCloseTab, destroyAndClosePanel } =
     useTerminalTabClose({
       terminalId,
       taskID,
@@ -192,6 +197,7 @@ export function TerminalTab(props: IDockviewPanelHeaderProps) {
               seq={seq}
               displayName={displayName}
               closable={closable}
+              isClosing={isClosing}
               terminalId={terminalId}
               onCloseTab={handleCloseTab}
             />
@@ -202,6 +208,7 @@ export function TerminalTab(props: IDockviewPanelHeaderProps) {
           taskID={taskID}
           environmentId={stampedEnv ?? null}
           canMutate={isOrdinary}
+          isClosing={isClosing}
           onStartRename={() => setIsRenaming(true)}
           onClosePanel={() => props.api.close()}
           onTerminatePanel={() => {
@@ -259,6 +266,7 @@ function TerminalTabBody({
   showBadge,
   seq,
   closable,
+  isClosing,
   terminalId,
   onCloseTab,
   // `displayName` is computed in the parent but consumed via the
@@ -271,6 +279,7 @@ function TerminalTabBody({
   seq: number | undefined;
   displayName: string;
   closable: boolean;
+  isClosing: boolean;
   onCloseTab: () => void;
   terminalId: string;
 }) {
@@ -278,12 +287,12 @@ function TerminalTabBody({
   const tabContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!closable) return;
+    if (!closable || isClosing) return;
     const closeAction = tabContentRef.current?.querySelector(".dv-default-tab-action");
     if (!closeAction) return;
     closeAction.setAttribute("data-testid", `terminal-tab-close-${terminalId}`);
     return () => closeAction.removeAttribute("data-testid");
-  }, [closable, terminalId, props.api.id]);
+  }, [closable, isClosing, terminalId, props.api.id]);
 
   return (
     <div ref={tabContentRef} className="flex h-full items-center">
@@ -297,10 +306,23 @@ function TerminalTabBody({
       )}
       <DockviewDefaultTab
         {...props}
-        hideClose={!closable}
-        closeActionOverride={closable ? onCloseTab : undefined}
+        hideClose={!closable || isClosing}
+        closeActionOverride={closable && !isClosing ? onCloseTab : undefined}
       />
+      {closable && isClosing && <TerminalTabClosingSpinner terminalId={terminalId} />}
     </div>
+  );
+}
+
+function TerminalTabClosingSpinner({ terminalId }: { terminalId: string }) {
+  return (
+    <span
+      aria-label="Closing terminal"
+      data-testid={`terminal-tab-closing-${terminalId}`}
+      className="dv-default-tab-action inline-flex h-4 w-4 shrink-0 items-center justify-center"
+    >
+      <span className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+    </span>
   );
 }
 
@@ -363,6 +385,7 @@ function TerminalTabMenu({
   taskID,
   environmentId,
   canMutate,
+  isClosing,
   onStartRename,
   onClosePanel,
   onTerminatePanel,
@@ -371,6 +394,7 @@ function TerminalTabMenu({
   taskID: string | null;
   environmentId: string | null;
   canMutate: boolean;
+  isClosing: boolean;
   onStartRename: () => void;
   onClosePanel: () => void;
   onTerminatePanel: () => void;
@@ -378,6 +402,7 @@ function TerminalTabMenu({
   const removeUserShellStore = useAppStore((s) => s.removeUserShell);
 
   const handleTerminate = useCallback(async () => {
+    if (isClosing) return;
     if (!environmentId) return;
     if (!canMutate) {
       onClosePanel();
@@ -392,6 +417,7 @@ function TerminalTabMenu({
     }
   }, [
     canMutate,
+    isClosing,
     environmentId,
     terminalId,
     taskID,
@@ -410,6 +436,7 @@ function TerminalTabMenu({
       )}
       <ContextMenuItem
         onClick={handleTerminate}
+        disabled={isClosing}
         className="text-destructive focus:text-destructive"
       >
         Terminate
