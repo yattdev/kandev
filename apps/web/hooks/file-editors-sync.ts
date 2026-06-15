@@ -52,9 +52,14 @@ export async function syncOpenFileFromWorkspace({
 }: SyncOpenFileArgs): Promise<void> {
   if (!client) return;
   try {
-    const response = await requestFileContent(client, sessionId, path);
+    const repo = useDockviewStore.getState().openFiles.get(path)?.repo;
+    const response = await requestFileContent(client, sessionId, path, repo);
     const latest = useDockviewStore.getState().openFiles.get(path);
     if (!latest) return;
+    // The tab may have been swapped to a different repo's file at the same path
+    // key while the fetch was in flight; the response is then for the old repo.
+    // Drop it rather than writing stale content into the new buffer.
+    if (latest.repo !== repo) return;
     const remoteHash = await calculateHash(response.content);
 
     if (latest.isDirty) {

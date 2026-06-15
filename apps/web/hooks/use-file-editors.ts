@@ -44,15 +44,22 @@ function getOpenFiles() {
   return useDockviewStore.getState().openFiles;
 }
 
-/** Build a FileEditorState from a file content response. */
-async function buildFileEditorState(
+/**
+ * Build a FileEditorState from a file content response. `repo` is the
+ * multi-repo subpath (repository_name) the file belongs to; it is recorded on
+ * the state so subsequent save/sync/delete requests stay scoped to the right
+ * repository instead of resolving against the bare task root.
+ */
+export async function buildFileEditorState(
   filePath: string,
   response: FileContentResponse,
+  repo?: string,
 ): Promise<FileEditorState> {
   const fileName = filePath.split("/").pop() || filePath;
   const hash = await calculateHash(response.content);
   return {
     path: filePath,
+    repo,
     name: fileName,
     content: response.content,
     originalContent: response.content,
@@ -61,6 +68,47 @@ async function buildFileEditorState(
     isBinary: response.is_binary,
     resolvedPath: response.resolved_path,
   };
+}
+
+/**
+ * Fetch a file's content and build its editor state, returning null if the
+ * active session changed while the request was in flight — a late response must
+ * not write content for a file the user has navigated away from.
+ */
+export async function fetchFileEditorState(
+  client: NonNullable<ReturnType<typeof getWebSocketClient>>,
+  sessionId: string,
+  filePath: string,
+  repo: string | undefined,
+  activeSessionIdRef: React.MutableRefObject<string | null>,
+): Promise<FileEditorState | null> {
+  const response = await requestFileContent(client, sessionId, filePath, repo);
+  if (activeSessionIdRef.current !== sessionId) return null;
+  return buildFileEditorState(filePath, response, repo);
+}
+
+/**
+ * Apply an editor buffer change, auto-promoting a preview tab to pinned on the
+ * first edit so the user's unsaved changes aren't discarded when another file
+ * is opened. Promote BEFORE updating state so the openFiles subscription sees
+ * the promoted flag when it fires from updateFileState.
+ */
+function applyFileChange(
+  path: string,
+  newContent: string,
+  updateFileState: (path: string, updates: Partial<FileEditorState>) => void,
+  promotePreviewToPinned: (type: "file-editor") => void,
+) {
+  const file = getOpenFiles().get(path);
+  if (!file) return;
+  const nextIsDirty = newContent !== file.originalContent;
+  if (nextIsDirty && !file.isDirty) {
+    const preview = useDockviewStore.getState().api?.getPanel(PREVIEW_FILE_EDITOR_ID);
+    if ((preview?.params as Record<string, unknown> | undefined)?.previewItemId === path) {
+      promotePreviewToPinned("file-editor");
+    }
+  }
+  updateFileState(path, { content: newContent, isDirty: nextIsDirty });
 }
 
 /** Build the sessionStorage tab records from live openFiles + dockview state. */
@@ -72,27 +120,39 @@ function buildPersistedTabs(
   const previewParams = preview?.params as Record<string, unknown> | undefined;
   const previewPath = (previewParams?.previewItemId ?? null) as string | null;
   const isPromoted = previewParams?.promoted === true;
-  return Array.from(openFiles.values()).flatMap(({ path, name, markdownPreview }) => {
+  return Array.from(openFiles.values()).flatMap(({ path, name, repo, markdownPreview }) => {
     const isPinned = !!api?.getPanel(`file:${path}`);
     const isPreview = !isPinned && path === previewPath;
     if (!isPinned && !isPreview) return [];
     // Promoted previews persist as pinned so edits survive refresh
     const persistAsPinned = isPinned || (isPreview && isPromoted);
     return [
-      { path, name, ...(markdownPreview ? { markdownPreview } : {}), pinned: persistAsPinned },
+      {
+        path,
+        name,
+        ...(repo ? { repo } : {}),
+        ...(markdownPreview ? { markdownPreview } : {}),
+        pinned: persistAsPinned,
+      },
     ];
   });
 }
 
 type RestoreTabsParams = {
   activeSessionId: string;
-  savedTabs: Array<{ path: string; name: string; markdownPreview?: boolean; pinned?: boolean }>;
+  savedTabs: Array<{
+    path: string;
+    name: string;
+    repo?: string;
+    markdownPreview?: boolean;
+    pinned?: boolean;
+  }>;
   savedActiveTab: string;
   setFileState: (path: string, state: FileEditorState) => void;
   addFileEditorPanel: (
     path: string,
     name: string,
-    opts?: { quiet?: boolean; pin?: boolean },
+    opts?: { quiet?: boolean; pin?: boolean; repo?: string },
   ) => void;
 };
 
@@ -139,6 +199,7 @@ async function loadAndRestoreTabs(params: RestoreTabsParams, retryCount = 0): Pr
     addFileEditorPanel(savedTab.path, savedTab.name, {
       quiet: true,
       pin: savedTab.pinned,
+      repo: savedTab.repo,
     });
     // Seed a placeholder file state synchronously, carrying the restored
     // `markdownPreview` flag. This makes `openFiles.has(path)` true the moment
@@ -149,6 +210,7 @@ async function loadAndRestoreTabs(params: RestoreTabsParams, retryCount = 0): Pr
     // restored preview flag is clobbered and the tab reopens in code view.
     setFileState(savedTab.path, {
       path: savedTab.path,
+      repo: savedTab.repo,
       name: savedTab.name,
       content: "",
       originalContent: "",
@@ -159,10 +221,16 @@ async function loadAndRestoreTabs(params: RestoreTabsParams, retryCount = 0): Pr
   }
   for (const savedTab of savedTabs) {
     try {
-      const response = await requestFileContent(client, activeSessionId, savedTab.path);
+      const response = await requestFileContent(
+        client,
+        activeSessionId,
+        savedTab.path,
+        savedTab.repo,
+      );
       const hash = await calculateHash(response.content);
       setFileState(savedTab.path, {
         path: savedTab.path,
+        repo: savedTab.repo,
         name: savedTab.name,
         content: response.content,
         originalContent: response.content,
@@ -187,7 +255,7 @@ type FileEditorEffectsParams = {
   addFileEditorPanel: (
     path: string,
     name: string,
-    opts?: { quiet?: boolean; pin?: boolean },
+    opts?: { quiet?: boolean; pin?: boolean; repo?: string },
   ) => void;
   clearFileStates: () => void;
   removeFileState: (path: string) => void;
@@ -275,7 +343,7 @@ type FileEditorActionsParams = {
   addFileEditorPanel: (
     path: string,
     name: string,
-    opts?: { quiet?: boolean; pin?: boolean },
+    opts?: { quiet?: boolean; pin?: boolean; repo?: string },
   ) => void;
   promotePreviewToPinned: (type: "file-editor") => void;
   setSavingFiles: React.Dispatch<React.SetStateAction<Set<string>>>;
@@ -292,26 +360,29 @@ function useFileEditorActions({
   toast,
 }: FileEditorActionsParams) {
   const openFile = useCallback(
-    async (filePath: string) => {
+    async (filePath: string, repo?: string) => {
       const client = getWebSocketClient();
       const currentSessionId = activeSessionIdRef.current;
       if (!client || !currentSessionId) return;
       const files = getOpenFiles();
       if (files.has(filePath)) {
-        addFileEditorPanel(filePath, filePath.split("/").pop() || filePath);
+        const tabName = filePath.split("/").pop() || filePath;
+        addFileEditorPanel(filePath, tabName, { repo: files.get(filePath)?.repo });
         return;
       }
       try {
-        const response: FileContentResponse = await requestFileContent(
+        const state = await fetchFileEditorState(
           client,
           currentSessionId,
           filePath,
+          repo,
+          activeSessionIdRef,
         );
-        const state = await buildFileEditorState(filePath, response);
+        if (!state) return;
         // Create the panel BEFORE setting file state. The openFiles subscription
         // triggers tab persistence — it needs the dockview panel to already exist
         // so buildPersistedTabs can detect whether the file is preview or pinned.
-        addFileEditorPanel(filePath, state.name);
+        addFileEditorPanel(filePath, state.name, { repo });
         setFileState(filePath, state);
       } catch (error) {
         toast({
@@ -325,22 +396,8 @@ function useFileEditorActions({
   );
 
   const handleFileChange = useCallback(
-    (path: string, newContent: string) => {
-      const file = getOpenFiles().get(path);
-      if (!file) return;
-      const nextIsDirty = newContent !== file.originalContent;
-      // VSCode-style: editing a preview file auto-promotes its tab so the
-      // user's unsaved changes aren't silently discarded when they open
-      // another file. Promote BEFORE updating file state so the openFiles
-      // subscription sees the promoted flag when it fires from updateFileState.
-      if (nextIsDirty && !file.isDirty) {
-        const preview = useDockviewStore.getState().api?.getPanel(PREVIEW_FILE_EDITOR_ID);
-        if ((preview?.params as Record<string, unknown> | undefined)?.previewItemId === path) {
-          promotePreviewToPinned("file-editor");
-        }
-      }
-      updateFileState(path, { content: newContent, isDirty: nextIsDirty });
-    },
+    (path: string, newContent: string) =>
+      applyFileChange(path, newContent, updateFileState, promotePreviewToPinned),
     [updateFileState, promotePreviewToPinned],
   );
 
@@ -352,24 +409,27 @@ function useFileEditorActions({
   });
 
   const openFileInMarkdownPreview = useCallback(
-    async (filePath: string) => {
+    async (filePath: string, repo?: string) => {
       const client = getWebSocketClient();
       const currentSessionId = activeSessionIdRef.current;
       if (!client || !currentSessionId) return;
       const files = getOpenFiles();
       if (files.has(filePath)) {
         updateFileState(filePath, { markdownPreview: true });
-        addFileEditorPanel(filePath, filePath.split("/").pop() || filePath);
+        const name = filePath.split("/").pop() || filePath;
+        addFileEditorPanel(filePath, name, { repo: files.get(filePath)?.repo });
         return;
       }
       try {
-        const response: FileContentResponse = await requestFileContent(
+        const state = await fetchFileEditorState(
           client,
           currentSessionId,
           filePath,
+          repo,
+          activeSessionIdRef,
         );
-        const state = await buildFileEditorState(filePath, response);
-        addFileEditorPanel(filePath, state.name);
+        if (!state) return;
+        addFileEditorPanel(filePath, state.name, { repo });
         setFileState(filePath, { ...state, markdownPreview: true });
       } catch (error) {
         toast({
