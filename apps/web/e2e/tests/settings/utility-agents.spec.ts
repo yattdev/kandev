@@ -10,6 +10,114 @@ import { test, expect } from "../../fixtures/test-base";
  * interactions (open the page, inspect sections, open the create dialog).
  */
 test.describe("Utility Agents settings page", () => {
+  test("action model dropdown keeps wheel scrolling inside the menu", async ({ testPage }) => {
+    const models = Array.from({ length: 36 }, (_, index) => ({
+      id: `claude-model-${String(index + 1).padStart(2, "0")}`,
+      name: `Claude Model ${String(index + 1).padStart(2, "0")}`,
+      description: "",
+      is_default: index === 0,
+    }));
+
+    await testPage.route("**/api/v1/utility/inference-agents", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          agents: [
+            {
+              id: "claude",
+              name: "claude",
+              display_name: "Claude",
+              status: "ok",
+              models,
+            },
+          ],
+        }),
+      }),
+    );
+    await testPage.route("**/api/v1/utility/agents", (route) => {
+      if (route.request().method() !== "GET") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ success: true }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          agents: [
+            {
+              id: "builtin-commit-message",
+              name: "commit-message",
+              description: "Generate a commit message.",
+              builtin: true,
+              enabled: true,
+              agent_id: "",
+              model: "",
+            },
+          ],
+        }),
+      });
+    });
+
+    await testPage.goto("/settings/utility-agents");
+    await expect(
+      testPage.getByRole("heading", { name: "Utility Agents", exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    await testPage.evaluate(() => {
+      const testWindow = window as Window & { __utilitySelectWheelEvents?: number };
+      testWindow.__utilitySelectWheelEvents = 0;
+      document.addEventListener("wheel", (event) => {
+        const target = event.target;
+        if (target instanceof Element && target.closest('[data-slot="select-content"]')) {
+          testWindow.__utilitySelectWheelEvents = (testWindow.__utilitySelectWheelEvents ?? 0) + 1;
+        }
+      });
+    });
+
+    const actionRow = testPage.getByTestId("utility-action-row-builtin-commit-message");
+    const actionSelect = actionRow.getByRole("combobox");
+    await actionSelect.click();
+    const selectContent = testPage.locator('[data-slot="select-content"]').first();
+    await expect(selectContent).toBeVisible();
+    await selectContent.evaluate((element) => {
+      const testWindow = window as Window & { __utilitySelectRawWheelEvents?: number };
+      testWindow.__utilitySelectRawWheelEvents = 0;
+      element.addEventListener("wheel", () => {
+        testWindow.__utilitySelectRawWheelEvents =
+          (testWindow.__utilitySelectRawWheelEvents ?? 0) + 1;
+      });
+    });
+
+    await selectContent.dispatchEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 900,
+    });
+
+    await expect
+      .poll(() =>
+        testPage.evaluate(
+          () =>
+            (window as Window & { __utilitySelectWheelEvents?: number })
+              .__utilitySelectWheelEvents ?? 0,
+        ),
+      )
+      .toBe(0);
+    await expect
+      .poll(() =>
+        testPage.evaluate(
+          () =>
+            (window as Window & { __utilitySelectRawWheelEvents?: number })
+              .__utilitySelectRawWheelEvents ?? 0,
+        ),
+      )
+      .toBe(1);
+  });
+
   test("does not crash when backend returns models: null", async ({ testPage }) => {
     // Simulate the exact shape the backend used to emit. Guards against a
     // regression where frontend null-deref would take the whole page down.
