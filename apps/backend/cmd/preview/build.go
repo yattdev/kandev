@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 )
 
 // appsDir is the apps/ workspace root relative to the working directory (apps/backend/).
@@ -185,6 +186,9 @@ func packageBundle(binDir, tarPath string) error {
 	// Add Vite SPA assets. `kandev start` resolves these from /app/apps/web/dist
 	// and passes KANDEV_WEB_DIST_DIR to the backend.
 	webDistDir := filepath.Join(appsDir, "web", "dist")
+	if err := validateViteWebDist(webDistDir); err != nil {
+		return err
+	}
 	if err := addDirToTar(tw, webDistDir, filepath.Join("app", "apps", "web", "dist")); err != nil {
 		return fmt.Errorf("add web dist: %w", err)
 	}
@@ -199,6 +203,33 @@ func packageBundle(binDir, tarPath string) error {
 		return fmt.Errorf("close tar: %w", err)
 	}
 	return gz.Close()
+}
+
+func validateViteWebDist(webDistDir string) error {
+	indexPath := filepath.Join(webDistDir, "index.html")
+	indexHTML, err := os.ReadFile(indexPath)
+	if err != nil {
+		return fmt.Errorf("read web dist index: %w", err)
+	}
+	if !viteIndexHasEntrypoint(string(indexHTML)) {
+		return fmt.Errorf("web dist index %s is missing Vite module entrypoint", indexPath)
+	}
+	return nil
+}
+
+var (
+	scriptTagPattern      = regexp.MustCompile(`(?is)<script\b[^>]*>`)
+	moduleTypeAttrPattern = regexp.MustCompile(`(?is)\btype\s*=\s*["']module["']`)
+	assetSrcAttrPattern   = regexp.MustCompile(`(?is)\bsrc\s*=\s*["']/assets/`)
+)
+
+func viteIndexHasEntrypoint(indexHTML string) bool {
+	for _, tag := range scriptTagPattern.FindAllString(indexHTML, -1) {
+		if moduleTypeAttrPattern.MatchString(tag) && assetSrcAttrPattern.MatchString(tag) {
+			return true
+		}
+	}
+	return false
 }
 
 func addFileToTar(tw *tar.Writer, src, dst string, mode fs.FileMode) error {
