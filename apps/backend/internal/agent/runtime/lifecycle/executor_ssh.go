@@ -578,14 +578,24 @@ func (r *SSHExecutor) preflightAgentBinary(ctx context.Context, client *ssh.Clie
 	if req.AgentConfig == nil {
 		return nil
 	}
+	stepName := "Verifying agent binary"
+	shell := sshShellFromMetadata(req.Metadata)
+
+	// Prefer the agent's standalone CLI when present on the remote: running it
+	// directly skips the per-launch `npx` registry round-trip. A hit is recorded
+	// in metadata so the command builder emits the native binary; a miss (or a
+	// transport hiccup during this optional probe) falls through to verifying
+	// the default (npx) command below.
+	if r.probeNativeBinary(ctx, client, shell, req, stepName) {
+		return nil
+	}
+
 	cmd := req.AgentConfig.BuildCommand(agents.CommandOptions{Runtime: agentruntime.RuntimeSSH})
 	args := cmd.Args()
 	if len(args) == 0 {
 		return nil
 	}
 	binary := args[0]
-	stepName := "Verifying agent binary"
-	shell := sshShellFromMetadata(req.Metadata)
 	out, err := ProbeRemoteBinary(ctx, client, shell, binary)
 	if err != nil {
 		r.report(req.OnProgress, stepName, PrepareStepFailed, err.Error())
@@ -598,6 +608,45 @@ func (r *SSHExecutor) preflightAgentBinary(ctx context.Context, client *ssh.Clie
 	}
 	r.report(req.OnProgress, stepName, PrepareStepCompleted, out)
 	return nil
+}
+
+// probeNativeBinary probes the remote for the agent's standalone CLI (if it
+// declares one via NativeBinaryAgent). On a hit it records the binary name in
+// req.Metadata under MetadataKeyNativeBinary and returns true. It returns false
+// when the agent has no native binary, the binary is absent, or the probe hits
+// a transport error — the native binary is an optimisation, so a glitch here
+// must not abort the launch or surface a misleading "agent binary" failure.
+// The caller falls through to the required default-command probe, which reports
+// transport failures with proper context.
+func (r *SSHExecutor) probeNativeBinary(ctx context.Context, client *ssh.Client, shell string, req *ExecutorCreateRequest, stepName string) bool {
+	nb, ok := req.AgentConfig.(agents.NativeBinaryAgent)
+	if !ok {
+		return false
+	}
+	name := nb.NativeBinaryName()
+	if name == "" {
+		return false
+	}
+	// Clear any stale/caller-provided value up front so only a positive probe
+	// below sets it; a miss or transport error must not leave the command
+	// builder preferring the native binary on an npx-only host. delete on a nil
+	// map is a no-op.
+	delete(req.Metadata, MetadataKeyNativeBinary)
+	out, err := ProbeRemoteBinary(ctx, client, shell, name)
+	if err != nil {
+		r.logger.Warn("native binary probe failed on remote, falling back to default command",
+			zap.String("binary", name), zap.Error(err))
+		return false
+	}
+	if out == "" {
+		return false
+	}
+	if req.Metadata == nil {
+		req.Metadata = make(map[string]interface{})
+	}
+	req.Metadata[MetadataKeyNativeBinary] = name
+	r.report(req.OnProgress, stepName, PrepareStepCompleted, out)
+	return true
 }
 
 // sshShellFromMetadata reads the user-selected login shell from the
