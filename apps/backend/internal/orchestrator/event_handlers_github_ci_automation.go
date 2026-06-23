@@ -24,7 +24,10 @@ const (
 	ciAutomationCheckSkipped     = "skipped"
 	ciAutomationCheckCompleted   = "completed"
 	ciAutomationChangesRequested = "changes_requested"
+	ciAutomationPRFeedbackToken  = "{{pr.feedback}}"
 )
+
+var ciAutomationSnapshotFieldReplacer = strings.NewReplacer("\r", " ", "\n", " ", "<", "", ">", "")
 
 type ciAutomationCheckpoint struct {
 	FailedChecks []ciAutomationCheckSnapshot   `json:"failed_checks"`
@@ -154,7 +157,7 @@ func (s *Service) dispatchCIAutomationPrompt(ctx context.Context, session *model
 		if !s.recordCIAutomationUserMessage(ctx, session.TaskID, session.ID, chatPrompt) {
 			return fmt.Errorf("failed to record CI automation user message")
 		}
-		if _, err := s.PromptTask(ctx, session.TaskID, session.ID, chatPrompt, "", false, nil, false); err != nil {
+		if _, err := s.PromptTask(ctx, session.TaskID, session.ID, chatPrompt, "", false, nil, true); err != nil {
 			return err
 		}
 		return nil
@@ -272,12 +275,25 @@ func ciAutomationCurrentCheckpoint(feedback *github.PRFeedback) ciAutomationChec
 }
 
 func ciAutomationRenderPrompt(base string, pr *github.TaskPR, delta ciAutomationCheckpoint) string {
-	var parts []string
 	if base = strings.TrimSpace(base); base != "" {
-		parts = append(parts, sysprompt.Wrap(base))
+		return ciAutomationRenderPromptTemplate(base, ciAutomationRenderSnapshot(pr, delta))
 	}
-	if snapshot := ciAutomationRenderSnapshot(pr, delta); snapshot != "" {
-		parts = append(parts, snapshot)
+	return ""
+}
+
+func ciAutomationRenderPromptTemplate(base, snapshot string) string {
+	if !strings.Contains(base, ciAutomationPRFeedbackToken) {
+		return sysprompt.Wrap(base)
+	}
+	segments := strings.Split(base, ciAutomationPRFeedbackToken)
+	parts := make([]string, 0, len(segments)*2)
+	for i, segment := range segments {
+		if segment = strings.TrimSpace(segment); segment != "" {
+			parts = append(parts, sysprompt.Wrap(segment))
+		}
+		if i < len(segments)-1 && strings.TrimSpace(snapshot) != "" {
+			parts = append(parts, snapshot)
+		}
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -288,14 +304,14 @@ func ciAutomationRenderSnapshot(pr *github.TaskPR, delta ciAutomationCheckpoint)
 	}
 	var b strings.Builder
 	b.WriteString("PR: ")
-	b.WriteString(fmt.Sprintf("%s/%s#%d", pr.Owner, pr.Repo, pr.PRNumber))
+	b.WriteString(fmt.Sprintf("%s/%s#%d", ciAutomationSanitizeSnapshotField(pr.Owner), ciAutomationSanitizeSnapshotField(pr.Repo), pr.PRNumber))
 	if len(delta.FailedChecks) > 0 {
 		b.WriteString("\n\nNew or changed failing checks:")
 		for _, check := range delta.FailedChecks {
-			b.WriteString(fmt.Sprintf("\n- %s: %s", check.Name, check.Conclusion))
+			b.WriteString(fmt.Sprintf("\n- %s: %s", ciAutomationSanitizeSnapshotField(check.Name), ciAutomationSanitizeSnapshotField(check.Conclusion)))
 			if check.HTMLURL != "" {
 				b.WriteString(" (")
-				b.WriteString(check.HTMLURL)
+				b.WriteString(ciAutomationSanitizeSnapshotField(check.HTMLURL))
 				b.WriteString(")")
 			}
 		}
@@ -303,10 +319,14 @@ func ciAutomationRenderSnapshot(pr *github.TaskPR, delta ciAutomationCheckpoint)
 	if len(delta.Comments) > 0 {
 		b.WriteString("\n\nNew or changed review comments:")
 		for _, comment := range delta.Comments {
-			b.WriteString(fmt.Sprintf("\n- %s:%d %s", comment.Path, comment.Line, strings.TrimSpace(comment.Body)))
+			b.WriteString(fmt.Sprintf("\n- %s:%d %s", ciAutomationSanitizeSnapshotField(comment.Path), comment.Line, ciAutomationSanitizeSnapshotField(strings.TrimSpace(comment.Body))))
 		}
 	}
 	return b.String()
+}
+
+func ciAutomationSanitizeSnapshotField(value string) string {
+	return strings.TrimSpace(ciAutomationSnapshotFieldReplacer.Replace(value))
 }
 
 func decodeCIAutomationCheckpoint(state *github.TaskCIPRAutomationState) ciAutomationCheckpoint {

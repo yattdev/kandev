@@ -71,10 +71,17 @@ test.describe("mobile PR CI automation options", () => {
       .toMatchObject({ auto_fix_enabled: true });
 
     await drawer.getByLabel("Edit auto-fix prompt for this task").tap();
-    await expect(testPage.getByRole("dialog", { name: "Auto-fix prompt" })).toBeVisible();
+    const promptDialog = testPage.getByRole("dialog", { name: "Auto-fix prompt" });
+    await expect(promptDialog).toBeVisible();
     await expect(testPage.getByRole("link", { name: "Edit default prompt" })).toHaveAttribute(
       "href",
       "/settings/prompts",
+    );
+    await expect(promptDialog.getByTestId("ci-auto-fix-pr-feedback-placeholder")).toHaveText(
+      "{{pr.feedback}}",
+    );
+    await expect(promptDialog.getByTestId("ci-auto-fix-pr-feedback-help")).toContainText(
+      "new or changed review comments",
     );
   });
 });
