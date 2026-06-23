@@ -3,7 +3,9 @@ package repository
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kandev/kandev/internal/db"
@@ -176,6 +178,83 @@ func TestSQLiteRepository_UpdateTaskStateIfCurrentIn(t *testing.T) {
 	}
 	if updated {
 		t.Fatal("expected no update for missing task")
+	}
+}
+
+func TestSQLiteRepository_ListChildCompletionRows_ActiveChildren(t *testing.T) {
+	repo, cleanup := createTestSQLiteRepo(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	_ = repo.CreateWorkspace(ctx, &models.Workspace{ID: "ws-1", Name: "Workspace"})
+	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "Workflow"})
+
+	now := time.Now().UTC()
+	parent := &models.Task{
+		ID:             "parent-1",
+		WorkspaceID:    "ws-1",
+		WorkflowID:     "wf-1",
+		WorkflowStepID: "step-1",
+		Title:          "Parent",
+		State:          v1.TaskStateInProgress,
+		Priority:       "medium",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := repo.CreateTask(ctx, parent); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+
+	createChild := func(id string, state v1.TaskState, archived, ephemeral bool) {
+		t.Helper()
+		child := &models.Task{
+			ID:             id,
+			WorkspaceID:    "ws-1",
+			WorkflowID:     "wf-1",
+			WorkflowStepID: "step-1",
+			Title:          id,
+			State:          state,
+			Priority:       "medium",
+			ParentID:       parent.ID,
+			IsEphemeral:    ephemeral,
+			CreatedAt:      now.Add(time.Duration(len(id)) * time.Second),
+			UpdatedAt:      now.Add(time.Duration(len(id)) * time.Minute),
+		}
+		if err := repo.CreateTask(ctx, child); err != nil {
+			t.Fatalf("create child %s: %v", id, err)
+		}
+		if archived {
+			if err := repo.ArchiveTask(ctx, id); err != nil {
+				t.Fatalf("archive child %s: %v", id, err)
+			}
+		}
+	}
+
+	createChild("child-completed", v1.TaskStateCompleted, false, false)
+	createChild("child-failed", v1.TaskStateFailed, false, false)
+	createChild("child-cancelled", v1.TaskStateCancelled, false, false)
+	createChild("child-open", v1.TaskStateInProgress, false, false)
+	createChild("child-archived", v1.TaskStateTODO, true, false)
+	createChild("child-ephemeral", v1.TaskStateTODO, false, true)
+
+	rows, err := repo.ListChildCompletionRows(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("ListChildCompletionRows: %v", err)
+	}
+	gotIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		gotIDs = append(gotIDs, row.ID)
+		if row.Title == "" {
+			t.Errorf("row %s missing title", row.ID)
+		}
+		if row.UpdatedAt.IsZero() {
+			t.Errorf("row %s missing updated_at", row.ID)
+		}
+	}
+	wantIDs := []string{"child-cancelled", "child-completed", "child-failed", "child-open"}
+	slices.Sort(gotIDs)
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("active child rows = %v, want %v", gotIDs, wantIDs)
 	}
 }
 
