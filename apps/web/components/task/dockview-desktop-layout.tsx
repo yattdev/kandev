@@ -42,6 +42,7 @@ import { PassthroughToolbar } from "./passthrough-toolbar";
 import { PanelRoot, PanelBody } from "./panel-primitives";
 import { ContextMenuTab } from "./tab-context-menu";
 import { ChangesTab } from "./changes-tab";
+import { useChangesPanelAutoFocus } from "./changes-panel-focus";
 import { PlanTab } from "./plan-tab";
 import { PreviewFileTab, PreviewDiffTab, PreviewCommitTab, PinnedDefaultTab } from "./preview-tab";
 import { SessionTab } from "./session-tab";
@@ -553,6 +554,7 @@ export const DockviewDesktopLayout = memo(function DockviewDesktopLayout({
   const effectiveEnvId = useAppStore((state) =>
     effectiveSessionId ? (state.environmentIdBySessionId[effectiveSessionId] ?? null) : null,
   );
+  const changesFocusKey = effectiveEnvId ?? effectiveSessionId;
   const envIdRef = useRef<string | null>(effectiveEnvId);
   const hasDevScript = Boolean(repository?.dev_script?.trim());
 
@@ -603,6 +605,7 @@ export const DockviewDesktopLayout = memo(function DockviewDesktopLayout({
 
   // Auto-create a session tab when a session becomes active
   useAutoSessionTab(effectiveSessionId);
+  useChangesPanelAutoFocus(changesFocusKey);
 
   // Auto-show PR detail panel when the task has an associated PR
   useAutoPRPanel();
