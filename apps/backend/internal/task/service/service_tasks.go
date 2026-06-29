@@ -39,6 +39,10 @@ var ErrTaskAlreadyArchived = errors.New("task is already archived")
 type taskStopTarget struct {
 	sessionID   string
 	executionID string
+	// terminal indicates the session is already in a terminal state (CANCELLED,
+	// COMPLETED, FAILED, IDLE). Stop failures for terminal sessions are expected
+	// and must not block environment cleanup — the agent is already gone.
+	terminal bool
 }
 
 type taskEnvironmentCleanup struct {
@@ -1031,9 +1035,33 @@ func (s *Service) runAsyncTaskCleanup(
 	}()
 }
 
+// isCleanableSessionState reports whether a session has no running agent process
+// and stop failures are therefore expected. Unlike the orchestrator's
+// isTerminalSessionState (which excludes IDLE), this helper is used only during
+// task cleanup to decide whether a stop failure should block environment teardown.
+// IDLE is included because an idle session has already released its execution slot
+// and will return ErrExecutionNotFound just like CANCELLED/COMPLETED/FAILED.
+func isCleanableSessionState(state models.TaskSessionState) bool {
+	switch state {
+	case models.TaskSessionStateCancelled,
+		models.TaskSessionStateCompleted,
+		models.TaskSessionStateFailed,
+		models.TaskSessionStateIdle:
+		return true
+	}
+	return false
+}
+
 func (s *Service) buildStopTargets(ctx context.Context, taskID string, activeSessions []*models.TaskSession) ([]taskStopTarget, error) {
 	targets := make([]taskStopTarget, 0, len(activeSessions))
 	seen := make(map[string]struct{})
+	// Index session states so executor_running rows can be marked terminal.
+	sessionStates := make(map[string]models.TaskSessionState, len(activeSessions))
+	for _, sess := range activeSessions {
+		if sess != nil {
+			sessionStates[sess.ID] = sess.State
+		}
+	}
 	if s.executors != nil {
 		runningRows, err := s.executors.ListExecutorsRunningByTaskID(ctx, taskID)
 		if err != nil {
@@ -1046,6 +1074,7 @@ func (s *Service) buildStopTargets(ctx context.Context, taskID string, activeSes
 			target := taskStopTarget{
 				sessionID:   running.SessionID,
 				executionID: strings.TrimSpace(running.AgentExecutionID),
+				terminal:    isCleanableSessionState(sessionStates[running.SessionID]),
 			}
 			targets = append(targets, target)
 			seen[target.sessionID] = struct{}{}
@@ -1056,6 +1085,11 @@ func (s *Service) buildStopTargets(ctx context.Context, taskID string, activeSes
 			continue
 		}
 		if _, ok := seen[sess.ID]; ok {
+			continue
+		}
+		// Sessions without an executor_running row that are already in a terminal
+		// state have no running process; skip creating a stop target.
+		if isCleanableSessionState(sess.State) {
 			continue
 		}
 		target := taskStopTarget{
@@ -1084,6 +1118,13 @@ func (s *Service) stopTaskRuntimeTargets(ctx context.Context, taskID string, sto
 	for _, target := range stopTargets {
 		if target.executionID != "" {
 			if err := s.executionStopper.StopExecution(ctx, target.executionID, stopReason, true); err != nil {
+				if target.terminal {
+					s.logger.Debug("stop failed for terminal session execution (expected), proceeding with cleanup",
+						zap.String("task_id", taskID),
+						zap.String("session_id", target.sessionID),
+						zap.Error(err))
+					continue
+				}
 				failedStops[target.sessionID] = struct{}{}
 				s.logger.Warn(stopFailMsg,
 					zap.String("task_id", taskID),
@@ -1094,6 +1135,13 @@ func (s *Service) stopTaskRuntimeTargets(ctx context.Context, taskID string, sto
 			continue
 		}
 		if err := s.executionStopper.StopSession(ctx, target.sessionID, stopReason, true); err != nil {
+			if target.terminal {
+				s.logger.Debug("stop failed for terminal session (expected), proceeding with cleanup",
+					zap.String("task_id", taskID),
+					zap.String("session_id", target.sessionID),
+					zap.Error(err))
+				continue
+			}
 			failedStops[target.sessionID] = struct{}{}
 			s.logger.Warn(stopFailMsg,
 				zap.String("task_id", taskID),
