@@ -153,8 +153,11 @@ jobs:
           retention-days: 30
 
   postgres-boot:
-    name: Backend Postgres boot
+    name: Backend Postgres
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 10
     container: ghcr.io/kdlbs/kandev-ci:build-latest
     services:
@@ -173,15 +176,40 @@ jobs:
       run:
         shell: bash
         working-directory: apps/backend
+    env:
+      KANDEV_TEST_POSTGRES_DSN: host=postgres port=5432 user=kandev password=kandev dbname=kandev_admin sslmode=disable
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-      - name: Run Postgres boot smoke test
-        env:
-          KANDEV_TEST_POSTGRES_DSN: host=postgres port=5432 user=kandev password=kandev dbname=kandev_admin sslmode=disable
-        run: go test -v -race -run TestPostgresBootInitializesRepositories ./cmd/kandev
+      - name: Run env-gated Postgres tests
+        run: |
+          set -euo pipefail
+
+          mapfile -t postgres_packages < <(
+            grep -RIl 'PostgresDSNFromEnv' . --include='*_test.go' \
+              | xargs -r dirname \
+              | sort -u
+          )
+
+          if [[ "${#postgres_packages[@]}" -eq 0 ]]; then
+            echo "::error::No Postgres test packages found"
+            exit 1
+          fi
+
+          printf 'Running Postgres tests in:\n'
+          printf '  %s\n' "${postgres_packages[@]}"
+
+          output_file="$(mktemp)"
+          go test -v -race "${postgres_packages[@]}" 2>&1 | tee "${output_file}"
+
+          if ! grep -q '^=== RUN   TestPostgresBootInitializesRepositories$' "${output_file}"; then
+            echo "::error::Postgres boot smoke test matched no tests"
+            exit 1
+          fi
 
   test-windows:
     name: Backend (windows)
