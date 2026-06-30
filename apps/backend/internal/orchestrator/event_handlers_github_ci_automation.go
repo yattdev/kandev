@@ -5,12 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/kandev/kandev/internal/events"
+	"github.com/kandev/kandev/internal/events/bus"
 	"github.com/kandev/kandev/internal/github"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/sysprompt"
@@ -25,9 +28,14 @@ const (
 	ciAutomationChangesRequested = "changes_requested"
 	ciAutomationPRFeedbackToken  = "{{pr.feedback}}"
 	ciAutomationFixBlockWindow   = time.Hour
+	ciAutomationMaxFixRounds     = github.TaskCIAutoFixMaxRounds
+	ciAutomationKindAutoFix      = "ci_auto_fix"
+	ciAutomationStateEventSource = "ci_automation_state"
 )
 
 var ciAutomationSnapshotFieldReplacer = strings.NewReplacer("\r", " ", "\n", " ", "<", "", ">", "")
+
+var errCIAutoFixRoundCapReached = errors.New("CI auto-fix round cap reached")
 
 type ciAutomationCheckpoint struct {
 	FailedChecks []ciAutomationCheckSnapshot   `json:"failed_checks"`
@@ -46,6 +54,22 @@ type ciAutomationCommentSnapshot struct {
 	Body string `json:"body,omitempty"`
 	Path string `json:"path,omitempty"`
 	Line int    `json:"line,omitempty"`
+}
+
+type ciAutomationDispatchKind string
+
+const (
+	ciAutomationDispatchDirect        ciAutomationDispatchKind = "direct"
+	ciAutomationDispatchQueuedInsert  ciAutomationDispatchKind = "queued_insert"
+	ciAutomationDispatchQueuedReplace ciAutomationDispatchKind = "queued_replace"
+)
+
+type ciAutomationDispatchResult struct {
+	kind ciAutomationDispatchKind
+}
+
+func (r ciAutomationDispatchResult) consumesRound() bool {
+	return r.kind == ciAutomationDispatchDirect || r.kind == ciAutomationDispatchQueuedInsert
 }
 
 func (s *Service) handleTaskPRCIAutomation(ctx context.Context, pr *github.TaskPR) error {
@@ -132,6 +156,14 @@ func ciAutomationHasFreshPRStatusAt(pr *github.TaskPR, now time.Time) bool {
 }
 
 func (s *Service) handleTaskPRCIAutoFix(ctx context.Context, pr *github.TaskPR, options *github.TaskCIOptionsResponse) bool {
+	state, err := s.githubService.GetTaskCIPRState(ctx, pr.TaskID, pr.RepositoryID, pr.PRNumber)
+	if err != nil {
+		s.recordCIAutomationError(ctx, pr, fmt.Sprintf("load CI automation state: %v", err))
+		return true
+	}
+	if state != nil && state.AutoFixExhaustedAt != nil {
+		return !ciAutomationReadyToMerge(pr)
+	}
 	feedback, err := s.githubService.GetPRFeedback(ctx, pr.Owner, pr.Repo, pr.PRNumber)
 	if err != nil {
 		s.recordCIAutomationError(ctx, pr, fmt.Sprintf("fetch PR feedback: %v", err))
@@ -141,11 +173,6 @@ func (s *Service) handleTaskPRCIAutoFix(ctx context.Context, pr *github.TaskPR, 
 		return false
 	}
 	feedback = ciAutomationFilterFeedbackForPR(pr, feedback)
-	state, err := s.githubService.GetTaskCIPRState(ctx, pr.TaskID, pr.RepositoryID, pr.PRNumber)
-	if err != nil {
-		s.recordCIAutomationError(ctx, pr, fmt.Sprintf("load CI automation state: %v", err))
-		return true
-	}
 	previous := decodeCIAutomationCheckpoint(state)
 	delta := ciAutomationBuildDelta(feedback, previous)
 	checkpoint := ciAutomationCurrentCheckpoint(feedback)
@@ -156,13 +183,23 @@ func (s *Service) handleTaskPRCIAutoFix(ctx context.Context, pr *github.TaskPR, 
 	if state != nil && state.LastFixSignature == signature {
 		return ciAutomationDuplicateFixAttemptBlocksMerge(state)
 	}
+	allowNewRound := !ciAutomationFixRoundsExhausted(state)
 	prompt := ciAutomationRenderPrompt(options.EffectiveAutoFixPrompt, pr, delta)
 	session, err := s.repo.GetActiveTaskSessionByTaskID(ctx, pr.TaskID)
 	if err != nil || session == nil {
+		if !allowNewRound {
+			s.markCIAutoFixExhausted(ctx, pr)
+			return true
+		}
 		s.recordCIAutomationError(ctx, pr, "no promptable task session for CI auto-fix")
 		return true
 	}
-	if err := s.dispatchCIAutomationPrompt(ctx, session, prompt); err != nil {
+	result, err := s.dispatchCIAutomationPromptForPR(ctx, session, pr, prompt, signature, allowNewRound)
+	if errors.Is(err, errCIAutoFixRoundCapReached) {
+		s.markCIAutoFixExhausted(ctx, pr)
+		return true
+	}
+	if err != nil {
 		s.recordCIAutomationError(ctx, pr, err.Error())
 		return true
 	}
@@ -174,8 +211,11 @@ func (s *Service) handleTaskPRCIAutoFix(ctx context.Context, pr *github.TaskPR, 
 		CheckpointJSON: checkpointJSON,
 		SessionID:      session.ID,
 		EnqueuedAt:     time.Now().UTC(),
+		IncrementRound: result.consumesRound(),
 	}); err != nil {
 		s.logger.Debug("record CI auto-fix attempt failed", zap.String("task_id", pr.TaskID), zap.Error(err))
+	} else {
+		s.publishTaskCIOptionsState(ctx, pr.TaskID)
 	}
 	return true
 }
@@ -215,31 +255,68 @@ func (s *Service) handleTaskPRCIAutoMerge(ctx context.Context, pr *github.TaskPR
 	_ = s.githubService.ClearTaskCIError(context.WithoutCancel(ctx), pr.TaskID, pr.RepositoryID, pr.PRNumber)
 }
 
-func (s *Service) dispatchCIAutomationPrompt(ctx context.Context, session *models.TaskSession, prompt string) error {
+func (s *Service) dispatchCIAutomationPromptForPR(ctx context.Context, session *models.TaskSession, pr *github.TaskPR, prompt, signature string, allowNewRound bool) (ciAutomationDispatchResult, error) {
 	chatPrompt := ciAutomationChatPrompt(prompt)
 	switch session.State {
 	case models.TaskSessionStateRunning, models.TaskSessionStateStarting:
-		if s.messageQueue == nil {
-			return fmt.Errorf("message queue is not configured")
-		}
-		metadata := ciAutomationMessageMetadata()
-		_, err := s.messageQueue.QueueMessageWithMetadata(ctx, session.ID, session.TaskID, chatPrompt, "", messagequeue.QueuedByWorkflow, false, nil, metadata)
-		if err != nil {
-			return err
-		}
-		s.publishQueueStatusEvent(ctx, session.ID)
-		return nil
+		return s.queueOrReplaceCIAutomationPromptForPR(ctx, session, pr, chatPrompt, signature, allowNewRound)
 	case models.TaskSessionStateWaitingForInput, models.TaskSessionStateIdle:
+		result, replaced, err := s.replacePendingCIAutomationPromptForPR(ctx, session, pr, chatPrompt, signature)
+		if err != nil {
+			return ciAutomationDispatchResult{}, err
+		}
+		if replaced {
+			if !s.drainQueuedMessageForPromptableSession(ctx, session.ID) {
+				return ciAutomationDispatchResult{}, fmt.Errorf("failed to dispatch replaced CI automation prompt")
+			}
+			return result, nil
+		}
+		if !allowNewRound {
+			return ciAutomationDispatchResult{}, errCIAutoFixRoundCapReached
+		}
 		if !s.recordCIAutomationUserMessage(ctx, session.TaskID, session.ID, chatPrompt) {
-			return fmt.Errorf("failed to record CI automation user message")
+			return ciAutomationDispatchResult{}, fmt.Errorf("failed to record CI automation user message")
 		}
 		if _, err := s.PromptTask(ctx, session.TaskID, session.ID, chatPrompt, "", false, nil, true); err != nil {
-			return err
+			return ciAutomationDispatchResult{}, err
 		}
-		return nil
+		return ciAutomationDispatchResult{kind: ciAutomationDispatchDirect}, nil
 	default:
-		return fmt.Errorf("session is not promptable: %s", session.State)
+		return ciAutomationDispatchResult{}, fmt.Errorf("session is not promptable: %s", session.State)
 	}
+}
+
+func (s *Service) replacePendingCIAutomationPromptForPR(ctx context.Context, session *models.TaskSession, pr *github.TaskPR, chatPrompt, signature string) (ciAutomationDispatchResult, bool, error) {
+	if s.messageQueue == nil {
+		return ciAutomationDispatchResult{}, false, nil
+	}
+	result, err := s.queueOrReplaceCIAutomationPromptForPR(ctx, session, pr, chatPrompt, signature, false)
+	if err == nil {
+		return result, true, nil
+	}
+	if errors.Is(err, errCIAutoFixRoundCapReached) {
+		return ciAutomationDispatchResult{}, false, nil
+	}
+	return ciAutomationDispatchResult{}, false, err
+}
+
+func (s *Service) queueOrReplaceCIAutomationPromptForPR(ctx context.Context, session *models.TaskSession, pr *github.TaskPR, chatPrompt, signature string, allowInsert bool) (ciAutomationDispatchResult, error) {
+	if s.messageQueue == nil {
+		return ciAutomationDispatchResult{}, fmt.Errorf("message queue is not configured")
+	}
+	metadata := ciAutomationMessageMetadataForPR(pr, signature)
+	_, replaced, err := s.messageQueue.QueueMessageWithCoalesceKey(ctx, session.ID, session.TaskID, chatPrompt, "", messagequeue.QueuedByWorkflow, false, nil, metadata, ciAutomationCoalesceKey(pr), allowInsert)
+	if err != nil {
+		if errors.Is(err, messagequeue.ErrEntryNotFound) && !allowInsert {
+			return ciAutomationDispatchResult{}, errCIAutoFixRoundCapReached
+		}
+		return ciAutomationDispatchResult{}, err
+	}
+	s.publishQueueStatusEvent(ctx, session.ID)
+	if replaced {
+		return ciAutomationDispatchResult{kind: ciAutomationDispatchQueuedReplace}, nil
+	}
+	return ciAutomationDispatchResult{kind: ciAutomationDispatchQueuedInsert}, nil
 }
 
 func (s *Service) recordCIAutomationUserMessage(ctx context.Context, taskID, sessionID, prompt string) bool {
@@ -269,6 +346,27 @@ func ciAutomationMessageMetadata() map[string]interface{} {
 	}
 	meta["origin"] = ciAutomationOrigin
 	return meta
+}
+
+func ciAutomationMessageMetadataForPR(pr *github.TaskPR, signature string) map[string]interface{} {
+	meta := ciAutomationMessageMetadata()
+	meta["automation_kind"] = ciAutomationKindAutoFix
+	meta["ci_auto_fix_key"] = ciAutomationCoalesceKey(pr)
+	meta["feedback_signature"] = signature
+	if pr != nil {
+		meta["repository_id"] = pr.RepositoryID
+		meta["owner"] = pr.Owner
+		meta["repo"] = pr.Repo
+		meta["pr_number"] = pr.PRNumber
+	}
+	return meta
+}
+
+func ciAutomationCoalesceKey(pr *github.TaskPR) string {
+	if pr == nil {
+		return "ci-auto-fix||0"
+	}
+	return fmt.Sprintf("ci-auto-fix|%s|%s|%d", pr.TaskID, pr.RepositoryID, pr.PRNumber)
 }
 
 func ciAutomationChatPrompt(prompt string) string {
@@ -376,6 +474,45 @@ func ciAutomationCheckConclusionNeedsFix(conclusion string) bool {
 
 func ciAutomationDuplicateFixAttemptBlocksMerge(state *github.TaskCIPRAutomationState) bool {
 	return ciAutomationDuplicateFixAttemptBlocksMergeAt(state, time.Now())
+}
+
+func ciAutomationFixRoundsExhausted(state *github.TaskCIPRAutomationState) bool {
+	if state == nil {
+		return false
+	}
+	return state.AutoFixExhaustedAt != nil || state.AutoFixRoundCount >= ciAutomationMaxFixRounds
+}
+
+func (s *Service) markCIAutoFixExhausted(ctx context.Context, pr *github.TaskPR) {
+	if pr == nil {
+		return
+	}
+	message := fmt.Sprintf("CI auto-fix paused after %d rounds for this PR", ciAutomationMaxFixRounds)
+	s.logger.Warn("CI automation auto-fix round cap reached",
+		zap.String("task_id", pr.TaskID),
+		zap.String("repository_id", pr.RepositoryID),
+		zap.Int("pr_number", pr.PRNumber),
+		zap.Int("max_rounds", ciAutomationMaxFixRounds))
+	if err := s.githubService.MarkTaskCIAutoFixExhausted(context.WithoutCancel(ctx), pr.TaskID, pr.RepositoryID, pr.PRNumber, message); err != nil {
+		s.logger.Debug("record CI auto-fix exhaustion failed", zap.String("task_id", pr.TaskID), zap.Error(err))
+		return
+	}
+	s.publishTaskCIOptionsState(ctx, pr.TaskID)
+}
+
+func (s *Service) publishTaskCIOptionsState(ctx context.Context, taskID string) {
+	if s.githubService == nil || s.eventBus == nil || taskID == "" {
+		return
+	}
+	resp, err := s.githubService.GetTaskCIOptionsResponse(context.WithoutCancel(ctx), taskID)
+	if err != nil {
+		s.logger.Debug("load task CI options for state publish failed", zap.String("task_id", taskID), zap.Error(err))
+		return
+	}
+	event := bus.NewEvent(events.GitHubTaskCIOptionsUpdated, ciAutomationStateEventSource, resp)
+	if err := s.eventBus.Publish(context.WithoutCancel(ctx), events.GitHubTaskCIOptionsUpdated, event); err != nil {
+		s.logger.Debug("publish task CI options state failed", zap.String("task_id", taskID), zap.Error(err))
+	}
 }
 
 func ciAutomationDuplicateFixAttemptBlocksMergeAt(state *github.TaskCIPRAutomationState, now time.Time) bool {
