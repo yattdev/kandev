@@ -2614,6 +2614,20 @@ func (s *Service) CancelAgent(ctx context.Context, sessionID string) error {
 	// concurrent agent.complete event having already closed the turn.
 	s.completeTurnForSession(ctx, sessionID)
 
+	// Deliver any message the operator queued while the turn was running
+	// (#1597 pause→resume recovery). On a normal cancel the agent emits
+	// complete(cancelled) → handleAgentReady → on_turn_complete, which drains
+	// the queue. But an escalated cancel (agent hung) or a dead-process cancel
+	// fires no agent.ready event, so nothing would drain it — leaving the
+	// operator's queued message stranded until a second manual send. Draining
+	// here after the turn is completed covers those paths. It is idempotent with
+	// the event-driven drain: drainQueuedMessageForPromptableSession pops via
+	// TakeQueued atomically, so a normal cancel that also fires handleAgentReady
+	// cannot double-deliver.
+	if session != nil {
+		s.drainQueuedMessageForPromptableSession(ctx, sessionID)
+	}
+
 	s.logger.Debug("agent turn cancelled", zap.String("session_id", sessionID))
 	return nil
 }

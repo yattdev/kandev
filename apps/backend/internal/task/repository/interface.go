@@ -251,6 +251,12 @@ type ExecutorRepository interface {
 	// launch) so the row doesn't sit on the misleading default "starting" forever.
 	// Returns models.ErrExecutorRunningNotFound if no row exists for the session.
 	UpdateExecutorRunningStatus(ctx context.Context, sessionID, status string) error
+	// RepairExecutorRunningDead repairs a row in place to reflect a dead backing
+	// process (status=stopped, local_pid cleared, last_seen re-stamped) while
+	// preserving resume_token/worktree/endpoint. Used by cleanup paths to honor
+	// the resume-safety invariant instead of deleting a resumable row.
+	// Returns models.ErrExecutorRunningNotFound if no row exists for the session.
+	RepairExecutorRunningDead(ctx context.Context, sessionID string) error
 }
 
 // EnvironmentRepository handles environment CRUD.
