@@ -36,13 +36,13 @@ test.describe("GitHub workspace settings", () => {
     ]);
 
     await testPage.goto(`/settings/workspace/${seedData.workspaceId}/integrations/github`);
-    await expect(testPage.getByTestId("integration-workspace-switcher")).toHaveCount(0);
+    await expect(testPage.getByTestId("github-integration-heading")).toBeVisible();
 
     await testPage.getByTestId("github-scope-mode").click();
     await testPage.getByRole("option", { name: "Selected repositories" }).click();
     await testPage.getByTestId("github-scope-repos-input").fill("kdlbs/kandev");
     await testPage.getByTestId("github-scope-save").click();
-    await expect(testPage.getByText("GitHub workspace settings saved")).toBeVisible({
+    await expect(testPage.getByText("GitHub workspace settings saved").last()).toBeVisible({
       timeout: 10_000,
     });
 
@@ -79,7 +79,7 @@ test.describe("GitHub workspace settings", () => {
     await apiClient.mockGitHubSetUser("test-user");
 
     await testPage.goto("/settings/integrations/github");
-    await expect(testPage.getByTestId("integration-workspace-switcher")).toBeVisible();
+    await expect(testPage.getByTestId("github-integration-heading")).toBeVisible();
 
     await testPage.getByTestId("github-scope-mode").click();
     await testPage.getByRole("option", { name: "Selected repositories" }).click();
@@ -88,7 +88,7 @@ test.describe("GitHub workspace settings", () => {
     await testPage.getByRole("option", { name: "Organizations" }).click();
     await testPage.getByTestId("github-scope-orgs-input").fill("kdlbs");
     await testPage.getByTestId("github-scope-save").click();
-    await expect(testPage.getByText("GitHub workspace settings saved")).toBeVisible({
+    await expect(testPage.getByText("GitHub workspace settings saved").last()).toBeVisible({
       timeout: 10_000,
     });
 
@@ -112,7 +112,7 @@ test.describe("GitHub workspace settings", () => {
     await testPage.getByTestId("github-scope-mode").click();
     await testPage.getByRole("option", { name: "Organizations" }).click();
     await testPage.getByTestId("github-scope-save").click();
-    await expect(testPage.getByText("GitHub workspace settings saved")).toBeVisible({
+    await expect(testPage.getByText("GitHub workspace settings saved").last()).toBeVisible({
       timeout: 10_000,
     });
 

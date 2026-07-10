@@ -369,6 +369,8 @@ func (s *Server) registerTools() {
 		}
 		s.registerPlanTools()
 		count += 4
+		s.registerWalkthroughTools()
+		count += 3
 		s.registerRelatedTasksTool()
 		count++
 		// Task-mode only: requires a live session to attach the new
@@ -864,6 +866,80 @@ func (s *Server) registerPlanTools() {
 		),
 		s.wrapHandler("delete_task_plan_kandev", s.deleteTaskPlanHandler()),
 	)
+}
+
+// registerWalkthroughTools registers the agent-authored code-walkthrough tools.
+// show_walkthrough is the JetBrains-style "walk a person through the code" tool:
+// the agent supplies ordered, file+line-anchored steps that the user cycles
+// through as popovers over the review diff with Previous/Next.
+func (s *Server) registerWalkthroughTools() {
+	s.mcpServer.AddTool(
+		mcp.NewTool("show_walkthrough_kandev",
+			mcp.WithDescription(
+				"Show and store a guided code walkthrough for this task. Accepts an ordered list of "+
+					"steps; each step anchors a short markdown explanation to a specific file line or "+
+					"line range, and renders as a popover over the review diff/editor. The user cycles "+
+					"through steps with Previous and Next. The walkthrough is saved to the task and "+
+					"replaces any prior one. Only reference files that exist in the task's local worktree "+
+					"or current review diff; for PR-only files, do not assume the PR head is checked out "+
+					"locally. Use line_end when a logical explanation spans multiple lines. "+
+					"Use this after producing a change to narrate the diff (what each hunk does and why), "+
+					"or to explain how a part of the codebase works. Order steps to follow the reader's "+
+					"natural path through the code (entry point first, then the call chain). Keep text "+
+					"concise and do not add a 'Justification:' preamble."),
+			mcp.WithString("task_id", mcp.Required(), mcp.Description("The task ID to attach the walkthrough to")),
+			mcp.WithString("title", mcp.Description("Optional title for the walkthrough (default: 'Walkthrough')")),
+			mcp.WithArray("steps", mcp.Required(),
+				mcp.Description("Ordered list of walkthrough steps, each anchored to a file line or range."),
+				mcp.Items(buildWalkthroughStepSchemaItem()),
+			),
+		),
+		s.wrapHandler("show_walkthrough_kandev", s.showWalkthroughHandler()),
+	)
+	s.mcpServer.AddTool(
+		mcp.NewTool("get_walkthrough_kandev",
+			mcp.WithDescription("Get the current code walkthrough for a task, including any steps."),
+			mcp.WithString("task_id", mcp.Required(), mcp.Description("The task ID to get the walkthrough for")),
+		),
+		s.wrapHandler("get_walkthrough_kandev", s.getWalkthroughHandler()),
+	)
+	s.mcpServer.AddTool(
+		mcp.NewTool("delete_walkthrough_kandev",
+			mcp.WithDescription("Delete the code walkthrough for a task."),
+			mcp.WithString("task_id", mcp.Required(), mcp.Description("The task ID to delete the walkthrough for")),
+		),
+		s.wrapHandler("delete_walkthrough_kandev", s.deleteWalkthroughHandler()),
+	)
+}
+
+// buildWalkthroughStepSchemaItem describes one step object in the
+// show_walkthrough_kandev tool schema.
+func buildWalkthroughStepSchemaItem() map[string]any {
+	const typeKey = "type"
+	str := func(desc string) map[string]any {
+		return map[string]any{typeKey: "string", descriptionArg: desc}
+	}
+	num := func(desc string) map[string]any {
+		return map[string]any{typeKey: "integer", descriptionArg: desc}
+	}
+	return map[string]any{
+		typeKey: "object",
+		"properties": map[string]any{
+			titleArg: str("Optional short heading for this step."),
+			"repo":   str("Optional repository name; disambiguates in multi-repo reviews."),
+			"file": str(
+				"Path to a file present in the task worktree or current review diff, relative to the repo root.",
+			),
+			"line": num("1-based start line to anchor the popover to."),
+			"line_end": num(
+				"Optional 1-based end line. Use this for multi-line ranges instead of adjacent single-line steps.",
+			),
+			"text": str(
+				"Concise markdown explanation shown in the step popover. Do not start with 'Justification:'.",
+			),
+		},
+		"required": []string{"file", "line", "text"},
+	}
 }
 
 // buildQuestionSchemaItem describes the shape of a single question object in
