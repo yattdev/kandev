@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,10 @@ type workspaceDeleteTaskCleanup struct {
 	worktrees   []*worktree.Worktree
 	stopTargets []taskStopTarget
 	taskEnv     *models.TaskEnvironment
+}
+
+type repositorySessionPruner interface {
+	DeleteRepositoryIfNoActiveTaskSessions(ctx context.Context, id string) (bool, error)
 }
 
 // Workspace operations
@@ -744,7 +749,52 @@ func (s *Service) DeleteRepository(ctx context.Context, id string) error {
 }
 
 func (s *Service) ListRepositories(ctx context.Context, workspaceID string) ([]*models.Repository, error) {
-	return s.repoEntities.ListRepositories(ctx, workspaceID)
+	repositories, err := s.repoEntities.ListRepositories(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	live := make([]*models.Repository, 0, len(repositories))
+	pruner, canPrune := s.repoEntities.(repositorySessionPruner)
+	for _, repository := range repositories {
+		if repository == nil || repository.SourceType != sourceTypeLocal || !s.isKandevTaskWorktreeRepository(repository) {
+			live = append(live, repository)
+			continue
+		}
+		if _, statErr := os.Stat(repository.LocalPath); !errors.Is(statErr, os.ErrNotExist) {
+			live = append(live, repository)
+			continue
+		}
+		if !canPrune {
+			live = append(live, repository)
+			continue
+		}
+		deleted, err := pruner.DeleteRepositoryIfNoActiveTaskSessions(ctx, repository.ID)
+		if err != nil {
+			s.logger.Warn("failed to prune missing task worktree repository",
+				zap.String("repository_id", repository.ID),
+				zap.String("local_path", repository.LocalPath),
+				zap.Error(err))
+			live = append(live, repository)
+			continue
+		}
+		if deleted {
+			s.publishRepositoryEvent(ctx, events.RepositoryDeleted, repository)
+			continue
+		}
+		current, getErr := s.repoEntities.GetRepository(ctx, repository.ID)
+		if getErr == nil {
+			live = append(live, current)
+			continue
+		}
+		if !errors.Is(getErr, taskrepo.ErrRepositoryNotFound) {
+			s.logger.Warn("failed to re-read retained task worktree repository, using cached value",
+				zap.String("repository_id", repository.ID),
+				zap.Error(getErr))
+			live = append(live, repository)
+		}
+	}
+	return live, nil
 }
 
 // CountActiveSessionsByRepository returns the number of agent sessions in an

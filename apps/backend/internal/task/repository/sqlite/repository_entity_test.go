@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 )
 
 func newRepoForEntityTests(t *testing.T) *Repository {
@@ -70,6 +72,14 @@ func TestRepositoryCopyFiles_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestGetRepositoryReturnsNotFoundError(t *testing.T) {
+	repo := newRepoForEntityTests(t)
+	_, err := repo.GetRepository(context.Background(), "missing")
+	if !errors.Is(err, repoerrors.ErrRepositoryNotFound) {
+		t.Fatalf("GetRepository error = %v, want ErrRepositoryNotFound", err)
+	}
+}
+
 // TestRepositoryCopyFiles_Update creates a repo with an empty CopyFiles
 // value, mutates the model in-memory, calls UpdateRepository, and verifies
 // the new value is persisted.
@@ -126,6 +136,39 @@ func TestRepositoryCopyFiles_DefaultEmpty(t *testing.T) {
 	}
 	if got.CopyFiles != "" {
 		t.Errorf("default CopyFiles = %q, want empty string", got.CopyFiles)
+	}
+}
+
+func TestDeleteRepositoryIfNoActiveTaskSessions(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name    string
+		state   string
+		deleted bool
+	}{
+		{name: "completed session", state: "COMPLETED", deleted: true},
+		{name: "idle session", state: "IDLE", deleted: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newRepoForEntityTests(t)
+			seedRepoLink(t, repo, "ws-1", "repo-1", "task-1", "session-1", tc.state)
+
+			deleted, err := repo.DeleteRepositoryIfNoActiveTaskSessions(ctx, "repo-1")
+			if err != nil {
+				t.Fatalf("DeleteRepositoryIfNoActiveTaskSessions: %v", err)
+			}
+			if deleted != tc.deleted {
+				t.Fatalf("deleted = %v, want %v", deleted, tc.deleted)
+			}
+			_, err = repo.GetRepository(ctx, "repo-1")
+			if tc.deleted && err == nil {
+				t.Fatal("deleted repository remains live")
+			}
+			if !tc.deleted && err != nil {
+				t.Fatalf("retained repository was deleted: %v", err)
+			}
+		})
 	}
 }
 
