@@ -820,6 +820,33 @@ func TaskPlanRevisionMetaFromModel(rev *models.TaskPlanRevision) *TaskPlanRevisi
 	return meta
 }
 
+// TaskNotesDTO represents task notes (a freeform document keyed "notes") for API responses.
+type TaskNotesDTO struct {
+	ID         string    `json:"id"`
+	TaskID     string    `json:"task_id"`
+	Content    string    `json:"content"`
+	AuthorKind string    `json:"author_kind"`
+	AuthorName string    `json:"author_name"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// TaskNotesFromModel converts a TaskDocument model (key="notes") to a TaskNotesDTO.
+func TaskNotesFromModel(doc *models.TaskDocument) *TaskNotesDTO {
+	if doc == nil {
+		return nil
+	}
+	return &TaskNotesDTO{
+		ID:         doc.ID,
+		TaskID:     doc.TaskID,
+		Content:    doc.Content,
+		AuthorKind: doc.AuthorKind,
+		AuthorName: doc.AuthorName,
+		CreatedAt:  doc.CreatedAt,
+		UpdatedAt:  doc.UpdatedAt,
+	}
+}
+
 // FromTurn converts a Turn model to a TurnDTO.
 func FromTurn(turn *models.Turn) TurnDTO {
 	var completedAt *string

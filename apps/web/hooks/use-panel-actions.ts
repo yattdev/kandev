@@ -7,17 +7,28 @@ import { useLayoutStore } from "@/lib/state/layout-store";
 import { useAppStore } from "@/components/state-provider";
 import { useFileEditors } from "@/hooks/use-file-editors";
 
+function useMobileTabletDocumentActions() {
+  const activeSessionId = useAppStore((state) => state.tasks.activeSessionId);
+  const openDocument = useLayoutStore((s) => s.openDocument);
+  const setActiveDocument = useAppStore((s) => s.setActiveDocument);
+  const setMobileSessionPanel = useAppStore((s) => s.setMobileSessionPanel);
+  const activeTaskId = useAppStore((s) => s.tasks.activeTaskId);
+  const setPlanMode = useAppStore((s) => s.setPlanMode);
+  return { activeSessionId, openDocument, setActiveDocument, setMobileSessionPanel, activeTaskId, setPlanMode };
+}
+
 /**
  * Unified hook returning add-only panel action functions.
  * On desktop: delegates to dockview store.
  * On mobile/tablet: delegates to layout store (kept for backward compat).
  */
 export function usePanelActions() {
-  const { usesDesktopWorkbench } = useResponsiveBreakpoint();
+  const { usesDesktopWorkbench, isMobile } = useResponsiveBreakpoint();
 
   // Desktop: dockview store
   const dockAddBrowser = useDockviewStore((s) => s.addBrowserPanel);
   const dockAddPlan = useDockviewStore((s) => s.addPlanPanel);
+  const dockAddNotes = useDockviewStore((s) => s.addNotesPanel);
   const dockAddChat = useDockviewStore((s) => s.addChatPanel);
   const dockAddChanges = useDockviewStore((s) => s.addChangesPanel);
   const dockAddTerminal = useDockviewStore((s) => s.addTerminalPanel);
@@ -27,19 +38,14 @@ export function usePanelActions() {
   const { openFile: dockOpenFile, openFileInMarkdownPreview: dockOpenFileInPreview } =
     useFileEditors();
 
-  // Mobile/Tablet: layout store
-  const activeSessionId = useAppStore((state) => state.tasks.activeSessionId);
-  const openDocument = useLayoutStore((s) => s.openDocument);
-  const setActiveDocument = useAppStore((s) => s.setActiveDocument);
-  const activeTaskId = useAppStore((s) => s.tasks.activeTaskId);
-  const setPlanMode = useAppStore((s) => s.setPlanMode);
+  const { activeSessionId, openDocument, setActiveDocument, setMobileSessionPanel, activeTaskId, setPlanMode } =
+    useMobileTabletDocumentActions();
 
   const addBrowser = useCallback(
     (url?: string) => {
       if (usesDesktopWorkbench) {
         dockAddBrowser(url);
       } else if (activeSessionId) {
-        // Mobile/tablet: use layout store to open preview
         useLayoutStore.getState().openPreview(activeSessionId);
       }
     },
@@ -50,74 +56,55 @@ export function usePanelActions() {
     if (usesDesktopWorkbench) {
       dockAddPlan();
     } else if (activeSessionId && activeTaskId) {
-      // Mobile/tablet: open document panel with plan
       setActiveDocument(activeSessionId, { type: "plan", taskId: activeTaskId });
       openDocument(activeSessionId);
       setPlanMode(activeSessionId, true);
     }
-  }, [
-    usesDesktopWorkbench,
-    dockAddPlan,
-    activeSessionId,
-    activeTaskId,
-    setActiveDocument,
-    openDocument,
-    setPlanMode,
-  ]);
+  }, [usesDesktopWorkbench, dockAddPlan, activeSessionId, activeTaskId, setActiveDocument, openDocument, setPlanMode]);
+
+  const addNotes = useCallback(() => {
+    if (usesDesktopWorkbench) {
+      dockAddNotes();
+    } else if (isMobile && activeSessionId) {
+      setMobileSessionPanel(activeSessionId, "notes");
+    } else if (activeSessionId && activeTaskId) {
+      setActiveDocument(activeSessionId, { type: "notes", taskId: activeTaskId });
+      openDocument(activeSessionId);
+    }
+  }, [usesDesktopWorkbench, isMobile, dockAddNotes, activeSessionId, activeTaskId, setMobileSessionPanel, setActiveDocument, openDocument]);
 
   const addChat = useCallback(() => {
-    if (usesDesktopWorkbench) {
-      dockAddChat();
-    }
+    if (usesDesktopWorkbench) dockAddChat();
   }, [usesDesktopWorkbench, dockAddChat]);
 
   const addChanges = useCallback(() => {
-    if (usesDesktopWorkbench) {
-      dockAddChanges();
-    }
+    if (usesDesktopWorkbench) dockAddChanges();
   }, [usesDesktopWorkbench, dockAddChanges]);
 
   const addTerminal = useCallback(
     (terminalId?: string) => {
-      if (usesDesktopWorkbench) {
-        dockAddTerminal(terminalId);
-      }
+      if (usesDesktopWorkbench) dockAddTerminal(terminalId);
     },
     [usesDesktopWorkbench, dockAddTerminal],
   );
 
   const addVscode = useCallback(() => {
-    if (usesDesktopWorkbench) {
-      dockAddVscode();
-    }
+    if (usesDesktopWorkbench) dockAddVscode();
   }, [usesDesktopWorkbench, dockAddVscode]);
 
   const openFile = useCallback(
     (filePath: string, repo?: string) => {
-      if (usesDesktopWorkbench) {
-        dockOpenFile(filePath, repo);
-      }
+      if (usesDesktopWorkbench) dockOpenFile(filePath, repo);
     },
     [usesDesktopWorkbench, dockOpenFile],
   );
 
   const openFileInMarkdownPreview = useCallback(
     (filePath: string, repo?: string) => {
-      if (usesDesktopWorkbench) {
-        dockOpenFileInPreview(filePath, repo);
-      }
+      if (usesDesktopWorkbench) dockOpenFileInPreview(filePath, repo);
     },
     [usesDesktopWorkbench, dockOpenFileInPreview],
   );
 
-  return {
-    addBrowser,
-    addPlan,
-    addChat,
-    addChanges,
-    addTerminal,
-    addVscode,
-    openFile,
-    openFileInMarkdownPreview,
-  };
+  return { addBrowser, addPlan, addNotes, addChat, addChanges, addTerminal, addVscode, openFile, openFileInMarkdownPreview };
 }

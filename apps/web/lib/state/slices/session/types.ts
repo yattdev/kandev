@@ -4,6 +4,7 @@ import type {
   Turn,
   TaskPlan,
   TaskPlanRevision,
+  TaskNotes,
   TaskWalkthrough,
 } from "@/lib/types/http";
 
@@ -99,6 +100,13 @@ export type WalkthroughsState = {
   lastSeenUpdatedAtByTaskId: Record<string, string>;
 };
 
+export type TaskNotesState = {
+  byTaskId: Record<string, TaskNotes | null>;
+  loadingByTaskId: Record<string, boolean>;
+  loadedByTaskId: Record<string, boolean>;
+  savingByTaskId: Record<string, boolean>;
+};
+
 export type QueuedMessageMetadata = Record<string, unknown> & {
   workflow_message?: boolean;
   workflow_auto_start?: boolean;
@@ -161,6 +169,7 @@ export type SessionSliceState = {
   pendingModel: PendingModelState;
   activeModel: ActiveModelState;
   taskPlans: TaskPlansState;
+  taskNotes: TaskNotesState;
   walkthroughs: WalkthroughsState;
   queue: QueueState;
 };
@@ -233,6 +242,10 @@ export type SessionSliceActions = {
   setWalkthrough: (taskId: string, walkthrough: TaskWalkthrough | null) => void;
   setWalkthroughActiveStep: (taskId: string, stepIndex: number) => void;
   markWalkthroughSeen: (taskId: string) => void;
+  // Task notes actions
+  setTaskNotes: (taskId: string, notes: TaskNotes | null) => void;
+  setTaskNotesLoading: (taskId: string, loading: boolean) => void;
+  setTaskNotesSaving: (taskId: string, saving: boolean) => void;
   // Queue actions
   setQueueEntries: (sessionId: string, entries: QueuedMessage[], meta: QueueMeta) => void;
   removeQueueEntry: (sessionId: string, entryId: string) => void;
