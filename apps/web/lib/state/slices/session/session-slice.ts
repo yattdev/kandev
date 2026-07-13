@@ -146,6 +146,12 @@ export const defaultSessionState: SessionSliceState = {
     activeStepByTaskId: {},
     lastSeenUpdatedAtByTaskId: {},
   },
+  taskNotes: {
+    byTaskId: {},
+    loadingByTaskId: {},
+    loadedByTaskId: {},
+    savingByTaskId: {},
+  },
   queue: { bySessionId: {}, metaBySessionId: {}, isLoading: {} },
 };
 
@@ -563,6 +569,20 @@ export const createSessionSlice: StateCreator<
     }),
   ...buildTaskPlanActions(set, get),
   ...buildWalkthroughActions(set, get),
+  setTaskNotes: (taskId, notes) =>
+    set((draft) => {
+      draft.taskNotes.byTaskId[taskId] = notes;
+      draft.taskNotes.loadingByTaskId[taskId] = false;
+      draft.taskNotes.loadedByTaskId[taskId] = true;
+    }),
+  setTaskNotesLoading: (taskId, loading) =>
+    set((draft) => {
+      draft.taskNotes.loadingByTaskId[taskId] = loading;
+    }),
+  setTaskNotesSaving: (taskId, saving) =>
+    set((draft) => {
+      draft.taskNotes.savingByTaskId[taskId] = saving;
+    }),
   setQueueEntries: (sessionId, entries, meta) =>
     set((draft) => {
       draft.queue.bySessionId[sessionId] = entries;

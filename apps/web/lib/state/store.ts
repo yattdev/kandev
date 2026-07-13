@@ -156,6 +156,7 @@ export type AppState = {
   pendingModel: (typeof defaultSessionState)["pendingModel"];
   activeModel: (typeof defaultSessionState)["activeModel"];
   taskPlans: (typeof defaultSessionState)["taskPlans"];
+  taskNotes: (typeof defaultSessionState)["taskNotes"];
   walkthroughs: (typeof defaultSessionState)["walkthroughs"];
   queue: (typeof defaultSessionState)["queue"];
 
@@ -457,6 +458,10 @@ export type AppState = {
   setTaskPlanSaving: (taskId: string, saving: boolean) => void;
   clearTaskPlan: (taskId: string) => void;
   markTaskPlanSeen: (taskId: string) => void;
+  // Task notes actions
+  setTaskNotes: (taskId: string, notes: import("@/lib/types/http-agents").TaskNotes | null) => void;
+  setTaskNotesLoading: (taskId: string, loading: boolean) => void;
+  setTaskNotesSaving: (taskId: string, saving: boolean) => void;
   // Plan revision actions
   setPlanRevisions: (
     taskId: string,

@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import {
   IconMessage,
   IconListCheck,
+  IconNote,
   IconGitBranch,
   IconFolder,
   IconTerminal2,
@@ -46,6 +47,11 @@ export function SessionMobileBottomNav({
         badge: planBadge ? (
           <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500" />
         ) : undefined,
+      },
+      {
+        id: "notes",
+        label: "Notes",
+        icon: <IconNote className="h-5 w-5" />,
       },
       {
         id: "changes",

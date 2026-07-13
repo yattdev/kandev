@@ -69,6 +69,12 @@ const (
 	TaskPlanReverted        = "task_plan.reverted"
 )
 
+// Event types for task notes
+const (
+	TaskNotesUpdated = "task_notes.updated"
+	TaskNotesDeleted = "task_notes.deleted"
+)
+
 // Event types for task walkthroughs (agent-authored guided code tours)
 const (
 	TaskWalkthroughCreated = "task_walkthrough.created"

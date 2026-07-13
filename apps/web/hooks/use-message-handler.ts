@@ -41,6 +41,10 @@ function buildDocumentContext(
     return context;
   }
 
+  if (activeDocument.type === "notes") {
+    return `\n\n<kandev-system>\nACTIVE DOCUMENT: The user is viewing task notes side-by-side with this chat.\nThese are personal notes for the task — reminders, context, or any relevant information.\n</kandev-system>`;
+  }
+
   return `\n\n<kandev-system>\nACTIVE DOCUMENT: The user is editing "${activeDocument.name}" (${activeDocument.path}) side-by-side with this chat.\nRead this file to understand the context before responding.\n</kandev-system>`;
 }
 

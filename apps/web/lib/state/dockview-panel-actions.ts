@@ -465,6 +465,19 @@ export function buildExtraPanelActions(get: StoreGet) {
         opts?.quiet ?? false,
       );
     },
+    addNotesPanel: (opts?: { groupId?: string; quiet?: boolean; inCenter?: boolean }) => {
+      const { api, centerGroupId } = get();
+      if (!api) return;
+      const groupId = opts?.groupId ?? (opts?.inCenter ? centerGroupId : undefined);
+      const position = groupId
+        ? { referenceGroup: groupId }
+        : { referencePanel: "chat" as const, direction: "right" as const };
+      focusOrAddPanel(
+        api,
+        { id: "notes", component: "notes", title: "Notes", tabComponent: "notesTab", position },
+        opts?.quiet ?? false,
+      );
+    },
     /**
      * Opens the PR detail panel for a given key, or focuses the tab already
      * showing that exact PR.

@@ -7,6 +7,7 @@ import { SessionTaskSwitcherSheet } from "./session-task-switcher-sheet";
 import { MobileFileViewerPanel } from "./mobile-file-viewer-panel";
 import { TaskChatPanel } from "../task-chat-panel";
 import { TaskPlanPanel } from "../task-plan-panel";
+import { TaskNotesPanel } from "../task-notes-panel";
 import { MobileChangesPanel } from "./mobile-changes-panel";
 import { ReviewDialog } from "@/components/review/review-dialog";
 import { WalkthroughOverlay } from "@/components/review/walkthrough-overlay";
@@ -144,6 +145,11 @@ function MobilePanelArea({
       {currentMobilePanel === "plan" && (
         <div className="flex-1 min-h-0 flex flex-col p-2">
           <TaskPlanPanel taskId={activeTaskId} visible={true} />
+        </div>
+      )}
+      {currentMobilePanel === "notes" && (
+        <div className="flex-1 min-h-0 flex flex-col p-2">
+          <TaskNotesPanel taskId={activeTaskId} visible={true} />
         </div>
       )}
       {currentMobilePanel === "changes" && (

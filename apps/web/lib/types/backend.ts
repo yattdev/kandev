@@ -1,4 +1,5 @@
 import type { TaskPlanEventPayload, TaskPlanRevisionEventPayload } from "./task-plan-events";
+import type { TaskNotesEventPayload, TaskNotesDeletedPayload } from "./task-notes-events";
 
 export type BackendMessageType = keyof BackendMessageMap;
 
@@ -423,6 +424,7 @@ export {
 } from "./session-runtime-payloads";
 
 export type { TaskPlanEventPayload, TaskPlanRevisionEventPayload } from "./task-plan-events";
+export type { TaskNotesEventPayload, TaskNotesDeletedPayload } from "./task-notes-events";
 
 export type QueuedMessagePayload = {
   content: string;
@@ -455,6 +457,8 @@ export type BackendMessageMap = OfficeBackendMessageMap &
       TaskPlanRevisionEventPayload
     >;
     "task.plan.reverted": BackendMessage<"task.plan.reverted", TaskPlanRevisionEventPayload>;
+    "task.notes.updated": BackendMessage<"task.notes.updated", TaskNotesEventPayload>;
+    "task.notes.deleted": BackendMessage<"task.notes.deleted", TaskNotesDeletedPayload>;
     "agent.updated": BackendMessage<"agent.updated", AgentUpdatePayload>;
     "agent.available.updated": BackendMessage<
       "agent.available.updated",

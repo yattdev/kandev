@@ -41,7 +41,7 @@ export type MobileKanbanState = {
   isSearchOpen: boolean;
 };
 
-export type MobileSessionPanel = "chat" | "plan" | "changes" | "files" | "terminal";
+export type MobileSessionPanel = "chat" | "plan" | "notes" | "changes" | "files" | "terminal";
 
 export type MobileSessionState = {
   activePanelBySessionId: Record<string, MobileSessionPanel>;
@@ -54,6 +54,7 @@ export type ChatInputState = {
 
 export type ActiveDocument =
   | { type: "plan"; taskId: string }
+  | { type: "notes"; taskId: string }
   | { type: "file"; path: string; name: string };
 
 export type DocumentPanelState = {
