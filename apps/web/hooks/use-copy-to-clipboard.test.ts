@@ -34,7 +34,9 @@ describe("useCopyToClipboard", () => {
       Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
 
       const { result } = renderHook(() => useCopyToClipboard());
-      await act(async () => { await result.current.copy(SAMPLE_TEXT); });
+      await act(async () => {
+        await result.current.copy(SAMPLE_TEXT);
+      });
 
       expect(writeText).toHaveBeenCalledWith(SAMPLE_TEXT);
       expect(result.current.copied).toBe(true);
@@ -51,7 +53,9 @@ describe("useCopyToClipboard", () => {
       const appendSpy = vi.spyOn(document.body, "appendChild");
 
       const { result } = renderHook(() => useCopyToClipboard());
-      await act(async () => { await result.current.copy(SAMPLE_TEXT); });
+      await act(async () => {
+        await result.current.copy(SAMPLE_TEXT);
+      });
 
       expect(appendSpy.mock.calls.some(([el]) => el instanceof HTMLTextAreaElement)).toBe(true);
       expect(result.current.copied).toBe(true);
@@ -65,7 +69,9 @@ describe("useCopyToClipboard", () => {
       const bodyAppendSpy = vi.spyOn(document.body, "appendChild");
 
       const { result } = renderHook(() => useCopyToClipboard());
-      await act(async () => { await result.current.copy(SAMPLE_TEXT); });
+      await act(async () => {
+        await result.current.copy(SAMPLE_TEXT);
+      });
 
       expect(dialogAppendSpy).toHaveBeenCalledWith(expect.any(HTMLTextAreaElement));
       expect(bodyAppendSpy.mock.calls.every(([el]) => !(el instanceof HTMLTextAreaElement))).toBe(
@@ -83,7 +89,9 @@ describe("useCopyToClipboard", () => {
       const bodyAppendSpy = vi.spyOn(document.body, "appendChild");
 
       const { result } = renderHook(() => useCopyToClipboard());
-      await act(async () => { await result.current.copy(SAMPLE_TEXT); });
+      await act(async () => {
+        await result.current.copy(SAMPLE_TEXT);
+      });
 
       expect(dialogAppendSpy).toHaveBeenCalledWith(expect.any(HTMLTextAreaElement));
       expect(bodyAppendSpy.mock.calls.every(([el]) => !(el instanceof HTMLTextAreaElement))).toBe(
@@ -96,11 +104,12 @@ describe("useCopyToClipboard", () => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const { result } = renderHook(() => useCopyToClipboard());
-      await act(async () => { await result.current.copy(SAMPLE_TEXT); });
+      await act(async () => {
+        await result.current.copy(SAMPLE_TEXT);
+      });
 
       expect(result.current.copied).toBe(false);
       expect(errorSpy).toHaveBeenCalledWith("Failed to copy to clipboard");
     });
   });
 });
-
