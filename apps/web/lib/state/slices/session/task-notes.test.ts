@@ -13,12 +13,15 @@ const TASK_ID = "task-1";
 
 function makeNotes(overrides: Partial<TaskNotes> = {}): TaskNotes {
   return {
+    id: "notes-1",
     task_id: TASK_ID,
     content: "# Notes",
+    author_kind: "user",
+    author_name: "Test User",
     created_at: "2026-04-20T00:00:00Z",
     updated_at: "2026-04-20T00:00:00Z",
     ...overrides,
-  };
+  } as TaskNotes;
 }
 
 describe("task notes slice", () => {
