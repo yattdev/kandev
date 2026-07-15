@@ -29,11 +29,13 @@ vi.mock("./task-create-dialog-remote-repo-chip", () => ({
 }));
 
 import { RepoChipsRow } from "./task-create-dialog-repo-chips";
+import { WorkspaceRepoChips } from "./task-create-dialog-workspace-repo-chips";
 
 afterEach(cleanup);
 
 const REPO_FRONT_ID = "repo-front";
 const REPO_BACK_ID = "repo-back";
+const REPO_CHIP_TRIGGER = "repo-chip-trigger";
 
 function makeRepo(id: string, name: string): Repository {
   return {
@@ -300,7 +302,7 @@ describe("RepoChipsRow", () => {
         onRowBranchChange={NOOP}
       />,
     );
-    fireEvent.click(screen.getByTestId("repo-chip-trigger"));
+    fireEvent.click(screen.getByTestId(REPO_CHIP_TRIGGER));
     expect(screen.getByText("frontend")).toBeTruthy();
     expect(screen.getByText("~/projects/local-project")).toBeTruthy();
     expect(screen.queryByText("frontend-dup")).toBeNull();
@@ -327,7 +329,7 @@ describe("RepoChipsRow", () => {
         onRowBranchChange={NOOP}
       />,
     );
-    fireEvent.click(screen.getByTestId("repo-chip-trigger"));
+    fireEvent.click(screen.getByTestId(REPO_CHIP_TRIGGER));
     fireEvent.click(screen.getByText("~/projects/local-project"));
     expect(onRowRepositoryChange).toHaveBeenCalledWith("r0", "/home/me/projects/local-project");
   });
@@ -400,5 +402,47 @@ describe("RepoChipsRow", () => {
     expect(screen.getByText("origin/main")).toBeTruthy();
     // Reset for sibling tests.
     mockBranches.value = { branches: [], isLoading: false };
+  });
+});
+
+describe("WorkspaceRepoChips", () => {
+  const repositories = [makeRepo(REPO_FRONT_ID, "frontend"), makeRepo(REPO_BACK_ID, "backend")];
+  const rows = [
+    row({ key: "r0", repositoryId: REPO_FRONT_ID, branch: "main" }),
+    row({ key: "r1", branch: "develop" }),
+  ];
+
+  function renderWorkspaceChips(allowDuplicateRepositories: boolean) {
+    return renderInProvider(
+      <WorkspaceRepoChips
+        rows={rows}
+        repositories={repositories}
+        workspaceId="ws-1"
+        canAddMore
+        allowDuplicateRepositories={allowDuplicateRepositories}
+        onAdd={vi.fn()}
+        onRemove={vi.fn()}
+        onRowRepositoryChange={NOOP}
+        onRowBranchChange={NOOP}
+      />,
+    );
+  }
+
+  it("excludes repositories already selected by another quick-chat row", () => {
+    renderWorkspaceChips(false);
+
+    fireEvent.click(screen.getAllByTestId(REPO_CHIP_TRIGGER)[1]);
+
+    expect(screen.queryByRole("option", { name: /^frontend/ })).toBeNull();
+    expect(screen.getByRole("option", { name: /^backend/ })).toBeTruthy();
+  });
+
+  it("keeps task creation's same-repository different-branch option", () => {
+    renderWorkspaceChips(true);
+
+    fireEvent.click(screen.getAllByTestId(REPO_CHIP_TRIGGER)[1]);
+
+    expect(screen.getByRole("option", { name: /^frontend/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /^backend/ })).toBeTruthy();
   });
 });

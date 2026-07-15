@@ -1,16 +1,18 @@
 "use client";
 
-import { memo } from "react";
+import { memo, type CSSProperties } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Dialog, DialogContent, DialogTitle } from "@kandev/ui/dialog";
 import { Button } from "@kandev/ui/button";
-import { IconLoader2, IconMessageCircle, IconPlus } from "@tabler/icons-react";
+import { IconPlus } from "@tabler/icons-react";
 import { useAppStore } from "@/components/state-provider";
 import { PassthroughTerminal } from "@/components/task/passthrough-terminal";
 import { QuickChatContent } from "./quick-chat-content";
 import { QuickChatDeleteDialog } from "./quick-chat-delete-dialog";
 import { QuickChatTabItem } from "./quick-chat-tab-item";
+import { QuickChatSetup } from "./quick-chat-setup";
 import { useQuickChatModal } from "./use-quick-chat-modal";
+import { useQuickChatWidth } from "@/hooks/use-quick-chat-width";
 
 type QuickChatModalProps = {
   workspaceId: string;
@@ -51,17 +53,44 @@ function QuickChatTabs({
             />
           );
         })}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 w-6 p-0 cursor-pointer shrink-0"
+          onClick={onNewChat}
+          aria-label="Start new chat"
+        >
+          <IconPlus className="h-3.5 w-3.5" />
+        </Button>
       </div>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-6 w-6 p-0 cursor-pointer shrink-0"
-        onClick={onNewChat}
-        aria-label="Start new chat"
-      >
-        <IconPlus className="h-3.5 w-3.5" />
-      </Button>
     </div>
+  );
+}
+
+function QuickChatResizeHandle({
+  edge,
+  onMouseDown,
+}: {
+  edge: "left" | "right";
+  onMouseDown: (event: React.MouseEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-label={`Resize quick chat from ${edge}`}
+      data-testid={`quick-chat-resize-${edge}`}
+      onMouseDown={onMouseDown}
+      className={`group absolute inset-y-0 z-20 hidden w-2 cursor-ew-resize items-center justify-center sm:flex ${
+        edge === "left" ? "left-0" : "right-0"
+      }`}
+    >
+      <span
+        className={`absolute inset-y-0 w-px bg-transparent transition-colors group-hover:bg-primary/60 ${
+          edge === "left" ? "-left-px" : "-right-px"
+        }`}
+      />
+    </button>
   );
 }
 
@@ -91,65 +120,13 @@ function QuickChatSessionView({ sessionId }: { sessionId: string }) {
   return <QuickChatContent sessionId={sessionId} />;
 }
 
-function AgentPickerView({
-  onSelectAgent,
-  pendingAgentId,
-}: {
-  onSelectAgent: (agentId: string) => void;
-  pendingAgentId: string | null;
-}) {
-  const agentProfiles = useAppStore((s) => s.agentProfiles.items) ?? [];
-  const isLoading = pendingAgentId !== null;
-
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8">
-      <div className="max-w-2xl w-full space-y-6">
-        <div className="text-center space-y-2">
-          <h3 className="text-lg font-medium">Choose an agent to start chatting</h3>
-          <p className="text-sm text-muted-foreground">
-            Select an AI agent to begin your conversation
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {agentProfiles.map((profile) => {
-            const isPending = pendingAgentId === profile.id;
-            return (
-              <button
-                key={profile.id}
-                onClick={() => onSelectAgent(profile.id)}
-                disabled={isLoading}
-                className="group relative flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-all hover:border-primary hover:bg-accent cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-transparent"
-              >
-                <div className="flex items-center gap-2 w-full">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-background">
-                    {isPending ? (
-                      <IconLoader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <IconMessageCircle className="h-4 w-4" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{profile.label}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {isPending ? "Starting agent..." : profile.agent_name}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export const QuickChatModal = memo(function QuickChatModal({ workspaceId }: QuickChatModalProps) {
   const {
     isOpen,
     sessions,
     activeSessionId,
     sessionToClose,
+    setupKey,
     activeSessionNeedsAgent,
     pendingAgentId,
     setActiveQuickChatSession,
@@ -161,16 +138,21 @@ export const QuickChatModal = memo(function QuickChatModal({ workspaceId }: Quic
     handleConfirmClose,
     handleRename,
   } = useQuickChatModal(workspaceId);
+  const { width, leftResizeHandleProps, rightResizeHandleProps } = useQuickChatWidth();
+  const hasCreatedChat = sessions.some((session) => session.sessionId !== "");
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={handleOpenChange}>
         <DialogContent
-          className="!max-w-[80vw] !w-[80vw] max-h-[85vh] h-[85vh] p-0 gap-0 flex flex-col shadow-2xl"
+          className="!left-0 !top-0 !h-dvh !max-h-dvh !w-screen !max-w-none !translate-x-0 !translate-y-0 flex flex-col gap-0 p-0 shadow-2xl sm:!left-1/2 sm:!top-1/2 sm:!h-[85vh] sm:!max-h-[85vh] sm:!w-[var(--quick-chat-width)] sm:!max-w-[calc(100vw-2rem)] sm:!-translate-x-1/2 sm:!-translate-y-1/2"
+          style={{ "--quick-chat-width": `${width}px` } as CSSProperties}
           showCloseButton={false}
           overlayClassName="bg-transparent"
         >
           <DialogTitle className="sr-only">Quick Chat</DialogTitle>
+          <QuickChatResizeHandle edge="left" {...leftResizeHandleProps} />
+          <QuickChatResizeHandle edge="right" {...rightResizeHandleProps} />
           <QuickChatTabs
             sessions={sessions}
             activeSessionId={activeSessionId || ""}
@@ -183,7 +165,14 @@ export const QuickChatModal = memo(function QuickChatModal({ workspaceId }: Quic
             <QuickChatSessionView sessionId={activeSessionId} />
           )}
           {activeSessionNeedsAgent && (
-            <AgentPickerView onSelectAgent={handleSelectAgent} pendingAgentId={pendingAgentId} />
+            <QuickChatSetup
+              key={`${workspaceId}:${setupKey}`}
+              workspaceId={workspaceId}
+              showIntroduction={!hasCreatedChat}
+              pendingAgentId={pendingAgentId}
+              onStart={handleSelectAgent}
+              onCancel={() => handleOpenChange(false)}
+            />
           )}
         </DialogContent>
       </Dialog>
