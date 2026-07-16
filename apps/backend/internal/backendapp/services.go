@@ -92,6 +92,10 @@ func provideServices(cfg *config.Config, log *logger.Logger, repos *Repositories
 	// Wire workflow provider to workflow service for export/import
 	workflowSvc.SetWorkflowProvider(&workflowProviderAdapter{svc: taskSvc})
 
+	// Wire task mover to workflow service so DeleteStep cascades tasks to the
+	// replacement step instead of leaving them as invisible orphans.
+	workflowSvc.SetTaskMover(&taskBulkMoverAdapter{svc: taskSvc})
+
 	// Wire agent profile resolver/matcher for workflow export/import
 	workflowSvc.SetAgentProfileFuncs(
 		buildAgentProfileResolver(repos),
@@ -211,6 +215,18 @@ func (a *startStepResolverAdapter) ResolveFirstStep(ctx context.Context, workflo
 		return "", err
 	}
 	return step.ID, nil
+}
+
+// taskBulkMoverAdapter adapts the task service to the workflow service's
+// TaskMover interface so DeleteStep can cascade-migrate orphaned tasks.
+type taskBulkMoverAdapter struct {
+	svc *taskservice.Service
+}
+
+// BulkMoveTasks implements workflowservice.TaskMover.
+func (a *taskBulkMoverAdapter) BulkMoveTasks(ctx context.Context, srcWorkflowID, srcStepID, dstWorkflowID, dstStepID string) error {
+	_, err := a.svc.BulkMoveTasks(ctx, srcWorkflowID, srcStepID, dstWorkflowID, dstStepID)
+	return err
 }
 
 // githubSecretAdapter adapts secrets.SecretStore to github.SecretProvider and github.SecretManager.
