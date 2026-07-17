@@ -16,7 +16,7 @@ import (
 
 // stubDocumentService is a minimal in-memory stub for DocumentService-level calls.
 type stubDocumentService struct {
-	docs   map[string]*models.TaskDocument
+	docs    map[string]*models.TaskDocument
 	saveErr error
 	getErr  error
 	delErr  error
@@ -87,7 +87,7 @@ func (b *stubBusForNotes) Publish(_ context.Context, subject string, _ *bus.Even
 }
 
 func makeNotesHandlers(docSvc notesDocumentService, bus notesEventPublisher) *TaskHandlers {
-	log := logger.NewLogger(zap.NewNop())
+	log, _ := logger.NewFromZap(zap.NewNop())
 	h := &TaskHandlers{logger: log}
 	h.documentService = docSvc
 	h.notesEventBus = bus
@@ -102,6 +102,20 @@ func makeNotesMsg(action, payload string) *ws.Message {
 	}
 }
 
+func expectNoWSError(t *testing.T, resp *ws.Message) {
+	t.Helper()
+	if resp.Type == ws.MessageTypeError {
+		t.Errorf("expected no error in response, got %s", string(resp.Payload))
+	}
+}
+
+func expectWSError(t *testing.T, resp *ws.Message) {
+	t.Helper()
+	if resp.Type != ws.MessageTypeError {
+		t.Errorf("expected error response, got type %q", resp.Type)
+	}
+}
+
 func TestWsGetTaskNotes_NotFound(t *testing.T) {
 	stub := newStubDocumentService()
 	h := makeNotesHandlers(stub, nil)
@@ -112,9 +126,7 @@ func TestWsGetTaskNotes_NotFound(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Not found should return null payload (nil notes)
-	if resp.Error != nil {
-		t.Errorf("expected no error in response, got %v", resp.Error)
-	}
+	expectNoWSError(t, resp)
 }
 
 func TestWsGetTaskNotes_Found(t *testing.T) {
@@ -132,9 +144,7 @@ func TestWsGetTaskNotes_Found(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Error != nil {
-		t.Errorf("expected no error in response, got %v", resp.Error)
-	}
+	expectNoWSError(t, resp)
 }
 
 func TestWsGetTaskNotes_MissingTaskID(t *testing.T) {
@@ -146,9 +156,7 @@ func TestWsGetTaskNotes_MissingTaskID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Error == nil {
-		t.Error("expected validation error for missing task_id")
-	}
+	expectWSError(t, resp)
 }
 
 func TestWsSaveTaskNotes_Creates(t *testing.T) {
@@ -161,9 +169,7 @@ func TestWsSaveTaskNotes_Creates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Error != nil {
-		t.Errorf("expected no error in response, got %v", resp.Error)
-	}
+	expectNoWSError(t, resp)
 	// Verify event published
 	if len(bus.published) == 0 {
 		t.Error("expected notes.updated event to be published")
@@ -179,9 +185,7 @@ func TestWsSaveTaskNotes_MissingTaskID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Error == nil {
-		t.Error("expected validation error for missing task_id")
-	}
+	expectWSError(t, resp)
 }
 
 func TestWsDeleteTaskNotes_Found(t *testing.T) {
@@ -200,9 +204,7 @@ func TestWsDeleteTaskNotes_Found(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Error != nil {
-		t.Errorf("expected no error in response, got %v", resp.Error)
-	}
+	expectNoWSError(t, resp)
 	if len(bus.published) == 0 {
 		t.Error("expected notes.deleted event to be published")
 	}
@@ -217,7 +219,5 @@ func TestWsDeleteTaskNotes_NotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Error == nil {
-		t.Error("expected not found error in response")
-	}
+	expectWSError(t, resp)
 }

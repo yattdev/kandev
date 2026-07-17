@@ -53,10 +53,13 @@ describe("task.notes.* handlers", () => {
       makeMessage(ACTION_UPDATED, makePayload()) as any,
     );
 
-    expect(store.getState().setTaskNotes).toHaveBeenCalledWith(TASK_ID, expect.objectContaining({
-      task_id: TASK_ID,
-      content: "# Notes",
-    }));
+    expect(store.getState().setTaskNotes).toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({
+        task_id: TASK_ID,
+        content: "# Notes",
+      }),
+    );
   });
 
   it("task.notes.updated: stores notes for any task (not just active)", () => {
@@ -68,9 +71,12 @@ describe("task.notes.* handlers", () => {
       makeMessage(ACTION_UPDATED, makePayload({ task_id: OTHER_TASK_ID })) as any,
     );
 
-    expect(store.getState().setTaskNotes).toHaveBeenCalledWith(OTHER_TASK_ID, expect.objectContaining({
-      task_id: OTHER_TASK_ID,
-    }));
+    expect(store.getState().setTaskNotes).toHaveBeenCalledWith(
+      OTHER_TASK_ID,
+      expect.objectContaining({
+        task_id: OTHER_TASK_ID,
+      }),
+    );
   });
 
   it("task.notes.deleted: clears notes using task_id from payload", () => {

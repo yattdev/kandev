@@ -190,9 +190,12 @@ export const TaskNotesPanel = memo(function TaskNotesPanel({
                 <IconNote className="h-6 w-6 text-muted-foreground" />
               </div>
               <div className="text-center">
-                <h3 className="text-sm font-medium text-foreground mb-1">Keep notes for this task</h3>
+                <h3 className="text-sm font-medium text-foreground mb-1">
+                  Keep notes for this task
+                </h3>
                 <p className="text-xs text-muted-foreground">
-                  A private scratchpad for reminders, context, and any information related to this task
+                  A private scratchpad for reminders, context, and any information related to this
+                  task
                 </p>
               </div>
               <p className="text-xs text-muted-foreground/70">Click anywhere to start writing</p>

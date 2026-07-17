@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useResponsiveBreakpoint } from "@/hooks/use-responsive-breakpoint";
 import { useDockviewStore } from "@/lib/state/dockview-store";
 import { useLayoutStore } from "@/lib/state/layout-store";
@@ -14,7 +14,50 @@ function useMobileTabletDocumentActions() {
   const setMobileSessionPanel = useAppStore((s) => s.setMobileSessionPanel);
   const activeTaskId = useAppStore((s) => s.tasks.activeTaskId);
   const setPlanMode = useAppStore((s) => s.setPlanMode);
-  return { activeSessionId, openDocument, setActiveDocument, setMobileSessionPanel, activeTaskId, setPlanMode };
+  return {
+    activeSessionId,
+    openDocument,
+    setActiveDocument,
+    setMobileSessionPanel,
+    activeTaskId,
+    setPlanMode,
+  };
+}
+
+function useDesktopPanelActions() {
+  const addBrowser = useDockviewStore((s) => s.addBrowserPanel);
+  const addPlan = useDockviewStore((s) => s.addPlanPanel);
+  const addNotes = useDockviewStore((s) => s.addNotesPanel);
+  const addChat = useDockviewStore((s) => s.addChatPanel);
+  const addChanges = useDockviewStore((s) => s.addChangesPanel);
+  const addTerminal = useDockviewStore((s) => s.addTerminalPanel);
+  const addVscode = useDockviewStore((s) => s.addVscodePanel);
+  const { openFile, openFileInMarkdownPreview } = useFileEditors();
+
+  return useMemo(
+    () => ({
+      addBrowser,
+      addPlan,
+      addNotes,
+      addChat,
+      addChanges,
+      addTerminal,
+      addVscode,
+      openFile,
+      openFileInMarkdownPreview,
+    }),
+    [
+      addBrowser,
+      addPlan,
+      addNotes,
+      addChat,
+      addChanges,
+      addTerminal,
+      addVscode,
+      openFile,
+      openFileInMarkdownPreview,
+    ],
+  );
 }
 
 /**
@@ -25,86 +68,107 @@ function useMobileTabletDocumentActions() {
 export function usePanelActions() {
   const { usesDesktopWorkbench, isMobile } = useResponsiveBreakpoint();
 
-  // Desktop: dockview store
-  const dockAddBrowser = useDockviewStore((s) => s.addBrowserPanel);
-  const dockAddPlan = useDockviewStore((s) => s.addPlanPanel);
-  const dockAddNotes = useDockviewStore((s) => s.addNotesPanel);
-  const dockAddChat = useDockviewStore((s) => s.addChatPanel);
-  const dockAddChanges = useDockviewStore((s) => s.addChangesPanel);
-  const dockAddTerminal = useDockviewStore((s) => s.addTerminalPanel);
-  const dockAddVscode = useDockviewStore((s) => s.addVscodePanel);
-
-  // File editors (works on desktop through dockview)
-  const { openFile: dockOpenFile, openFileInMarkdownPreview: dockOpenFileInPreview } =
-    useFileEditors();
-
-  const { activeSessionId, openDocument, setActiveDocument, setMobileSessionPanel, activeTaskId, setPlanMode } =
-    useMobileTabletDocumentActions();
+  const desktopActions = useDesktopPanelActions();
+  const {
+    activeSessionId,
+    openDocument,
+    setActiveDocument,
+    setMobileSessionPanel,
+    activeTaskId,
+    setPlanMode,
+  } = useMobileTabletDocumentActions();
 
   const addBrowser = useCallback(
     (url?: string) => {
       if (usesDesktopWorkbench) {
-        dockAddBrowser(url);
+        desktopActions.addBrowser(url);
       } else if (activeSessionId) {
         useLayoutStore.getState().openPreview(activeSessionId);
       }
     },
-    [usesDesktopWorkbench, dockAddBrowser, activeSessionId],
+    [usesDesktopWorkbench, desktopActions, activeSessionId],
   );
 
   const addPlan = useCallback(() => {
     if (usesDesktopWorkbench) {
-      dockAddPlan();
+      desktopActions.addPlan();
     } else if (activeSessionId && activeTaskId) {
       setActiveDocument(activeSessionId, { type: "plan", taskId: activeTaskId });
       openDocument(activeSessionId);
       setPlanMode(activeSessionId, true);
     }
-  }, [usesDesktopWorkbench, dockAddPlan, activeSessionId, activeTaskId, setActiveDocument, openDocument, setPlanMode]);
+  }, [
+    usesDesktopWorkbench,
+    desktopActions,
+    activeSessionId,
+    activeTaskId,
+    setActiveDocument,
+    openDocument,
+    setPlanMode,
+  ]);
 
   const addNotes = useCallback(() => {
     if (usesDesktopWorkbench) {
-      dockAddNotes();
+      desktopActions.addNotes();
     } else if (isMobile && activeSessionId) {
       setMobileSessionPanel(activeSessionId, "notes");
     } else if (activeSessionId && activeTaskId) {
       setActiveDocument(activeSessionId, { type: "notes", taskId: activeTaskId });
       openDocument(activeSessionId);
     }
-  }, [usesDesktopWorkbench, isMobile, dockAddNotes, activeSessionId, activeTaskId, setMobileSessionPanel, setActiveDocument, openDocument]);
+  }, [
+    usesDesktopWorkbench,
+    isMobile,
+    desktopActions,
+    activeSessionId,
+    activeTaskId,
+    setMobileSessionPanel,
+    setActiveDocument,
+    openDocument,
+  ]);
 
   const addChat = useCallback(() => {
-    if (usesDesktopWorkbench) dockAddChat();
-  }, [usesDesktopWorkbench, dockAddChat]);
+    if (usesDesktopWorkbench) desktopActions.addChat();
+  }, [usesDesktopWorkbench, desktopActions]);
 
   const addChanges = useCallback(() => {
-    if (usesDesktopWorkbench) dockAddChanges();
-  }, [usesDesktopWorkbench, dockAddChanges]);
+    if (usesDesktopWorkbench) desktopActions.addChanges();
+  }, [usesDesktopWorkbench, desktopActions]);
 
   const addTerminal = useCallback(
     (terminalId?: string) => {
-      if (usesDesktopWorkbench) dockAddTerminal(terminalId);
+      if (usesDesktopWorkbench) desktopActions.addTerminal(terminalId);
     },
-    [usesDesktopWorkbench, dockAddTerminal],
+    [usesDesktopWorkbench, desktopActions],
   );
 
   const addVscode = useCallback(() => {
-    if (usesDesktopWorkbench) dockAddVscode();
-  }, [usesDesktopWorkbench, dockAddVscode]);
+    if (usesDesktopWorkbench) desktopActions.addVscode();
+  }, [usesDesktopWorkbench, desktopActions]);
 
   const openFile = useCallback(
     (filePath: string, repo?: string) => {
-      if (usesDesktopWorkbench) dockOpenFile(filePath, repo);
+      if (usesDesktopWorkbench) desktopActions.openFile(filePath, repo);
     },
-    [usesDesktopWorkbench, dockOpenFile],
+    [usesDesktopWorkbench, desktopActions],
   );
 
   const openFileInMarkdownPreview = useCallback(
     (filePath: string, repo?: string) => {
-      if (usesDesktopWorkbench) dockOpenFileInPreview(filePath, repo);
+      if (usesDesktopWorkbench) desktopActions.openFileInMarkdownPreview(filePath, repo);
     },
-    [usesDesktopWorkbench, dockOpenFileInPreview],
+    [usesDesktopWorkbench, desktopActions],
   );
 
-  return { addBrowser, addPlan, addNotes, addChat, addChanges, addTerminal, addVscode, openFile, openFileInMarkdownPreview };
+  return {
+    addBrowser,
+    addPlan,
+    addNotes,
+    addChat,
+    addChanges,
+    addTerminal,
+    addVscode,
+    openFile,
+    openFileInMarkdownPreview,
+  };
 }

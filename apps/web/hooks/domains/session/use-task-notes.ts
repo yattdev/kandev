@@ -13,9 +13,7 @@ export function useTaskNotes(taskId: string | null, options?: { visible?: boolea
   const { visible = true } = options ?? {};
   const prevVisibleRef = useRef(visible);
 
-  const notes = useAppStore((state) =>
-    taskId ? state.taskNotes.byTaskId[taskId] : undefined,
-  );
+  const notes = useAppStore((state) => (taskId ? state.taskNotes.byTaskId[taskId] : undefined));
   const isLoading = useAppStore((state) =>
     taskId ? (state.taskNotes.loadingByTaskId[taskId] ?? false) : false,
   );
