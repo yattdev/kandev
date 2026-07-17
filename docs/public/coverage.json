@@ -279,6 +279,7 @@
       { "route": "/settings/general/chat-input", "reason": "Legacy redirect to Keyboard Shortcuts." },
       { "route": "/settings/general/resource-metrics", "reason": "Legacy redirect to Appearance." },
       { "route": "/settings/general/shell", "reason": "Legacy redirect to Terminal." },
+      { "route": "/settings/plugins", "reason": "Experimental feature intentionally omitted until its public contract stabilizes." },
       { "route": "/settings/system", "reason": "Redirect to System status." }
     ],
     "mcpTools": []
