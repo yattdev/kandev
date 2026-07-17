@@ -88,15 +88,29 @@ const (
 // SSR reload, alongside the in-memory re-apply on context reset. See issue #1183.
 const SessionMetaKeySessionMode = "session_mode"
 
-// SessionMetaKeyRuntimeConfig records user-selected session runtime settings
-// (model, mode, and dynamic config options) separately from the immutable-ish
-// agent profile snapshot that seeded the session.
+// SessionMetaKeyRuntimeConfig records the provider's latest session runtime
+// state (model, mode, and dynamic config options) separately from the profile
+// snapshot that seeded the session.
 const SessionMetaKeyRuntimeConfig = "runtime_config"
 
-// SessionRuntimeConfig is persisted under
-// TaskSession.Metadata[SessionMetaKeyRuntimeConfig]. It captures live ACP
-// settings chosen after session start so process resume can restore the same
-// model/config instead of reverting to profile defaults.
+// SessionMetaKeyRuntimeConfigOverrides records explicit user selections
+// separately from provider snapshots so delayed events cannot clobber resume
+// intent. Overrides are applied after SessionMetaKeyRuntimeConfig.
+const SessionMetaKeyRuntimeConfigOverrides = "runtime_config_overrides"
+
+// SessionMetaKeyACPConfigBaseline records the write-once effective ACP select
+// values with which a task session started. It is comparison metadata only;
+// runtime restoration continues to use SessionMetaKeyRuntimeConfig.
+const SessionMetaKeyACPConfigBaseline = "acp_config_baseline"
+
+// SessionMetaKeyACPModelState records the provider's latest complete model
+// selector state so task-detail boot hydration does not wait for WebSocket
+// reconnection. It is display metadata and is not replayed to the provider.
+const SessionMetaKeyACPModelState = "acp_model_state"
+
+// SessionRuntimeConfig is persisted as provider state or explicit overrides.
+// On resume, explicit values take precedence over the latest provider snapshot
+// so delayed provider events cannot replace user intent.
 type SessionRuntimeConfig struct {
 	Model         string            `json:"model,omitempty"`
 	Mode          string            `json:"mode,omitempty"`
@@ -196,10 +210,19 @@ type PendingStepCompletionSignal struct {
 // LoadSessionRuntimeConfig decodes the runtime-config bag entry from session
 // metadata. It tolerates both typed values and JSON-rehydrated maps.
 func LoadSessionRuntimeConfig(metadata map[string]interface{}) (SessionRuntimeConfig, bool) {
+	return loadSessionRuntimeConfig(metadata, SessionMetaKeyRuntimeConfig)
+}
+
+// LoadSessionRuntimeConfigOverrides decodes explicit user runtime selections.
+func LoadSessionRuntimeConfigOverrides(metadata map[string]interface{}) (SessionRuntimeConfig, bool) {
+	return loadSessionRuntimeConfig(metadata, SessionMetaKeyRuntimeConfigOverrides)
+}
+
+func loadSessionRuntimeConfig(metadata map[string]interface{}, key string) (SessionRuntimeConfig, bool) {
 	if metadata == nil {
 		return SessionRuntimeConfig{}, false
 	}
-	raw, ok := metadata[SessionMetaKeyRuntimeConfig]
+	raw, ok := metadata[key]
 	if !ok || raw == nil {
 		return SessionRuntimeConfig{}, false
 	}
@@ -229,6 +252,36 @@ func LoadSessionRuntimeConfig(metadata map[string]interface{}) (SessionRuntimeCo
 		return out, !out.IsZero()
 	default:
 		return SessionRuntimeConfig{}, false
+	}
+}
+
+// LoadSessionACPConfigBaseline decodes the write-once ACP configuration
+// baseline from session metadata. It tolerates typed and JSON-rehydrated maps.
+func LoadSessionACPConfigBaseline(metadata map[string]interface{}) (map[string]string, bool) {
+	if metadata == nil {
+		return nil, false
+	}
+	values := stringMapFromAnyPreservingEmpty(metadata[SessionMetaKeyACPConfigBaseline])
+	if len(values) == 0 {
+		return nil, false
+	}
+	return values, true
+}
+
+func stringMapFromAnyPreservingEmpty(raw interface{}) map[string]string {
+	switch values := raw.(type) {
+	case map[string]string:
+		return maps.Clone(values)
+	case map[string]interface{}:
+		out := make(map[string]string, len(values))
+		for key, value := range values {
+			if str, ok := value.(string); ok {
+				out[key] = str
+			}
+		}
+		return out
+	default:
+		return nil
 	}
 }
 

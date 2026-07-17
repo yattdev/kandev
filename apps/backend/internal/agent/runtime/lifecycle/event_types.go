@@ -2,6 +2,7 @@
 package lifecycle
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/kandev/kandev/internal/agentctl/types/streams"
@@ -163,6 +164,9 @@ type AgentStreamEventData struct {
 	CurrentModelID string                     `json:"current_model_id,omitempty"`
 	SessionModels  []streams.SessionModelInfo `json:"session_models,omitempty"`
 	ConfigOptions  []streams.ConfigOption     `json:"config_options,omitempty"`
+	// ConfigBaselineCandidate is an authoritative startup response snapshot.
+	// ConfigOptions remains the latest live provider state.
+	ConfigBaselineCandidate []streams.ConfigOption `json:"config_baseline_candidate,omitempty"`
 
 	// Session info (from "session_info" event)
 	SessionTitle     string         `json:"session_title,omitempty"`
@@ -487,7 +491,37 @@ type SessionModelsEventPayload struct {
 	CurrentModelID string                     `json:"current_model_id"`
 	Models         []streams.SessionModelInfo `json:"models"`
 	ConfigOptions  []streams.ConfigOption     `json:"config_options,omitempty"`
-	Timestamp      string                     `json:"timestamp"`
+	// ConfigBaseline is the persisted ID/value projection used by clients to
+	// compare the current ConfigOptions without duplicating provider metadata.
+	ConfigBaseline map[string]string `json:"config_baseline,omitempty"`
+	Timestamp      string            `json:"timestamp"`
+}
+
+// SessionModelsSnapshot is the persisted provider-derived state needed to
+// hydrate the task model selector before live session events reconnect.
+type SessionModelsSnapshot struct {
+	CurrentModelID string                     `json:"current_model_id"`
+	Models         []streams.SessionModelInfo `json:"models"`
+	ConfigOptions  []streams.ConfigOption     `json:"config_options,omitempty"`
+}
+
+// LoadSessionModelsSnapshot decodes typed and JSON-rehydrated metadata values.
+func LoadSessionModelsSnapshot(raw any) (SessionModelsSnapshot, bool) {
+	if raw == nil {
+		return SessionModelsSnapshot{}, false
+	}
+	if snapshot, ok := raw.(SessionModelsSnapshot); ok {
+		return snapshot, snapshot.CurrentModelID != "" || len(snapshot.Models) > 0 || len(snapshot.ConfigOptions) > 0
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return SessionModelsSnapshot{}, false
+	}
+	var snapshot SessionModelsSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return SessionModelsSnapshot{}, false
+	}
+	return snapshot, snapshot.CurrentModelID != "" || len(snapshot.Models) > 0 || len(snapshot.ConfigOptions) > 0
 }
 
 // GetSessionID returns the session ID for this event (used by event routing).

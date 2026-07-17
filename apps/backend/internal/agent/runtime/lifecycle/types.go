@@ -126,8 +126,11 @@ type AgentExecution struct {
 	modeStateMu sync.RWMutex
 
 	// Cached session model state (for re-sending on subscribe after page refresh)
-	modelState   *CachedModelState
-	modelStateMu sync.RWMutex
+	modelState                   *CachedModelState
+	providerDefaultModelState    *CachedModelState
+	authoritativeConfigResponses map[string]*CachedModelState
+	pendingConfigSettlement      *configSettlement
+	modelStateMu                 sync.RWMutex
 
 	// Cached auth methods from agent_capabilities (for error recovery metadata)
 	authMethods   []streams.AuthMethodInfo
@@ -234,6 +237,13 @@ type CachedModelState struct {
 	CurrentModelID string
 	Models         []streams.SessionModelInfo
 	ConfigOptions  []streams.ConfigOption
+	ConfigSource   string
+	ConfigID       string
+}
+
+type configSettlement struct {
+	configID        string
+	providerDefault *CachedModelState
 }
 
 // SetModeState caches the session mode state on this execution.
@@ -255,13 +265,127 @@ func (ae *AgentExecution) SetModelState(state *CachedModelState) {
 	ae.modelStateMu.Lock()
 	defer ae.modelStateMu.Unlock()
 	ae.modelState = state
+	ae.captureProviderDefaultModelState(state)
+	ae.cacheAuthoritativeConfigResponse(state)
+}
+
+// SettleConfigOptions pairs the initial provider defaults with the live state
+// after the final startup RPC. When that response is still in flight, it keeps
+// both values until the stream dispatcher receives the matching update.
+func (ae *AgentExecution) SettleConfigOptions(
+	configID string,
+	providerDefault *CachedModelState,
+) (*CachedModelState, *CachedModelState, bool) {
+	ae.modelStateMu.Lock()
+	defer ae.modelStateMu.Unlock()
+	providerDefault = cloneCachedModelState(providerDefault)
+	if providerDefault == nil {
+		providerDefault = cloneCachedModelState(ae.providerDefaultModelState)
+	}
+	if configID == "" {
+		if ae.modelState == nil {
+			ae.pendingConfigSettlement = &configSettlement{providerDefault: providerDefault}
+			return nil, nil, false
+		}
+		state := cloneCachedModelState(ae.modelState)
+		if providerDefault == nil {
+			providerDefault = state
+		}
+		return providerDefault, state, true
+	}
+	if response := ae.consumeAuthoritativeConfigResponse(configID); response != nil {
+		if providerDefault == nil {
+			providerDefault = response
+		}
+		return providerDefault, cloneCachedModelState(ae.modelState), true
+	}
+	ae.pendingConfigSettlement = &configSettlement{
+		configID: configID, providerDefault: providerDefault,
+	}
+	return nil, nil, false
+}
+
+// SetModelStateApplyingSettlement caches provider state and applies a pending
+// startup settlement exactly once when stream delivery lagged initialization.
+func (ae *AgentExecution) SetModelStateApplyingSettlement(state *CachedModelState) (*CachedModelState, bool) {
+	ae.modelStateMu.Lock()
+	defer ae.modelStateMu.Unlock()
+	ae.modelState = state
+	ae.captureProviderDefaultModelState(state)
+	ae.cacheAuthoritativeConfigResponse(state)
+
+	settlement := ae.pendingConfigSettlement
+	if settlement == nil {
+		return state, false
+	}
+	if settlement.configID == "" {
+		ae.pendingConfigSettlement = nil
+		if settlement.providerDefault != nil {
+			return cloneCachedModelState(settlement.providerDefault), true
+		}
+		return state, true
+	}
+	response := ae.consumeAuthoritativeConfigResponse(settlement.configID)
+	if response == nil {
+		return state, false
+	}
+	ae.pendingConfigSettlement = nil
+	if settlement.providerDefault != nil {
+		return cloneCachedModelState(settlement.providerDefault), true
+	}
+	if ae.providerDefaultModelState != nil {
+		return cloneCachedModelState(ae.providerDefaultModelState), true
+	}
+	return response, true
+}
+
+func (ae *AgentExecution) captureProviderDefaultModelState(state *CachedModelState) {
+	if ae.providerDefaultModelState == nil && state != nil && len(state.ConfigOptions) > 0 {
+		ae.providerDefaultModelState = cloneCachedModelState(state)
+	}
+}
+
+func (ae *AgentExecution) cacheAuthoritativeConfigResponse(state *CachedModelState) {
+	if state == nil || state.ConfigSource != "provider_response" || state.ConfigID == "" {
+		return
+	}
+	if ae.authoritativeConfigResponses == nil {
+		ae.authoritativeConfigResponses = make(map[string]*CachedModelState)
+	}
+	ae.authoritativeConfigResponses[state.ConfigID] = cloneCachedModelState(state)
+}
+
+func (ae *AgentExecution) consumeAuthoritativeConfigResponse(configID string) *CachedModelState {
+	response := ae.authoritativeConfigResponses[configID]
+	delete(ae.authoritativeConfigResponses, configID)
+	return response
+}
+
+func cloneCachedModelState(state *CachedModelState) *CachedModelState {
+	if state == nil {
+		return nil
+	}
+	cloned := &CachedModelState{
+		CurrentModelID: state.CurrentModelID,
+		Models:         append([]streams.SessionModelInfo(nil), state.Models...),
+		ConfigOptions:  append([]streams.ConfigOption(nil), state.ConfigOptions...),
+		ConfigSource:   state.ConfigSource,
+		ConfigID:       state.ConfigID,
+	}
+	for i := range cloned.ConfigOptions {
+		cloned.ConfigOptions[i].Options = append(
+			[]streams.ConfigOptionValue(nil),
+			state.ConfigOptions[i].Options...,
+		)
+	}
+	return cloned
 }
 
 // GetModelState returns the cached session model state.
 func (ae *AgentExecution) GetModelState() *CachedModelState {
 	ae.modelStateMu.RLock()
 	defer ae.modelStateMu.RUnlock()
-	return ae.modelState
+	return cloneCachedModelState(ae.modelState)
 }
 
 // SetAuthMethods caches the auth methods on this execution.
@@ -542,9 +666,9 @@ type WorkspaceInfo struct {
 	// a user toggle. Applied as a mode override at ACP session init so a fresh
 	// launch starts in the declared mode before the first prompt. See issue #1183.
 	SessionMode string
-	// RuntimeModel/RuntimeConfigOptions are user-selected ACP session runtime
-	// settings persisted in task_sessions.metadata.runtime_config. They take
-	// precedence over profile defaults when resuming or recreating a session.
+	// RuntimeModel/RuntimeConfigOptions are restored ACP session settings built
+	// from provider state plus explicit user overrides. They take precedence over
+	// profile defaults when resuming or recreating a session.
 	RuntimeModel            string
 	RuntimeConfigOptions    map[string]string
 	RuntimeConfigOptionsSet bool
