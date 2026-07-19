@@ -117,6 +117,41 @@ func TestPendingMove_OutOfTerminalStepReopensCompletedTask(t *testing.T) {
 	}
 }
 
+func TestPendingMove_DropsForeignWorkflowStepWithoutMovingTask(t *testing.T) {
+	sc := buildPendingMoveScenario(t)
+	sc.stepGetter.steps["foreign-step"] = &wfmodels.WorkflowStep{
+		ID:         "foreign-step",
+		WorkflowID: "wf-other",
+		Name:       "Foreign",
+		Position:   1,
+	}
+
+	session, err := sc.repo.GetTaskSession(sc.ctx, sc.reviewSessionID)
+	if err != nil {
+		t.Fatalf("load review session: %v", err)
+	}
+	sc.svc.applyPendingMove(sc.ctx, "task-1", sc.reviewSessionID, session, &messagequeue.PendingMove{
+		TaskID:         "task-1",
+		WorkflowID:     "wf1",
+		WorkflowStepID: "foreign-step",
+	})
+
+	task, err := sc.repo.GetTask(sc.ctx, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.WorkflowStepID != stepInReviewID {
+		t.Fatalf("workflow_step_id = %q, want unchanged %q", task.WorkflowStepID, stepInReviewID)
+	}
+	session, err = sc.repo.GetTaskSession(sc.ctx, sc.reviewSessionID)
+	if err != nil {
+		t.Fatalf("reload review session: %v", err)
+	}
+	if session.State != models.TaskSessionStateRunning {
+		t.Fatalf("session state = %q, want unchanged RUNNING", session.State)
+	}
+}
+
 // --- Pending-move scenario builder & assertions ---
 
 const (

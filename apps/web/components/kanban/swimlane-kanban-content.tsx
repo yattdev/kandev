@@ -36,9 +36,9 @@ import {
  * matches any rendered column.  Tasks remapped here are visible as a
  * "Needs Reassignment" fallback column so they are never silently hidden.
  */
-const ORPHAN_STEP_ID = "__kandev_orphan__";
+export const ORPHAN_STEP_ID = "__kandev_orphan__";
 
-const ORPHAN_STEP: WorkflowStep = {
+export const ORPHAN_STEP: WorkflowStep = {
   id: ORPHAN_STEP_ID,
   title: "Needs Reassignment",
   color: "#f59e0b",
