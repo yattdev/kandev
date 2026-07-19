@@ -387,7 +387,6 @@ function SessionDropdownList({
           <SessionRow
             key={session.id}
             session={session}
-            number={index + 1}
             isActive={activeSessionId === session.id}
             isPrimary={session.id === primarySessionId}
             currentTime={currentTime}
@@ -418,7 +417,6 @@ function isSessionDeletable(state: TaskSessionState): boolean {
 /** Individual session row in the dropdown */
 function SessionRow({
   session,
-  number,
   isActive,
   isPrimary,
   currentTime,
@@ -429,7 +427,6 @@ function SessionRow({
   onDelete,
 }: {
   session: TaskSession;
-  number: number;
   isActive: boolean;
   isPrimary: boolean;
   currentTime: number;
@@ -448,7 +445,6 @@ function SessionRow({
       onClick={() => onSelect(session.id)}
       className={`w-full flex items-center gap-3 px-2 py-1.5 hover:bg-muted/50 rounded-sm cursor-pointer transition-colors ${isActive ? "bg-muted/50" : ""}`}
     >
-      <span className="text-xs font-medium text-muted-foreground w-8 shrink-0">#{number}</span>
       <span className="text-xs text-foreground flex-1 text-left flex items-center gap-1.5">
         {agentLabel}
         {isPrimary && <IconStar className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />}

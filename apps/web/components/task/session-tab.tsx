@@ -30,7 +30,7 @@ import {
   markSessionTabUserActivationIntent,
   shouldMarkSessionTabUserActivationIntent,
 } from "./session-tab-activation-intent";
-import { isSessionActive, resolveWorkflowStepTitle } from "./session-sort";
+import { isSessionActive, resolveWorkflowStepTitle, splitAgentProfileLabel } from "./session-sort";
 import { resolveSessionTabTitle, resolveSnapshotModel } from "./session-tab-title";
 import { TabRenameInput } from "./tab-rename-input";
 import { useTabMaximizeOnDoubleClick } from "./use-tab-maximize";
@@ -45,9 +45,7 @@ function sessionRank(state: AppState, sessionId: string): number | null {
 function agentTabLabel(state: AppState, agentProfileId: string | undefined): string | null {
   if (!agentProfileId) return null;
   const profile = state.agentProfiles.items.find((p: { id: string }) => p.id === agentProfileId);
-  if (!profile) return null;
-  const parts = profile.label.split(" \u2022 ");
-  return parts[1] || parts[0] || profile.label;
+  return splitAgentProfileLabel(profile);
 }
 
 function useSessionTabState(sessionId: string | undefined) {
@@ -103,15 +101,12 @@ function useSessionTabState(sessionId: string | undefined) {
   });
   const sessionNumber = useAppStore((state) => {
     if (!sessionId) return null;
-    const activeTaskId = state.tasks.activeTaskId;
-    const sessions = activeTaskId ? state.taskSessionsByTask.itemsByTaskId[activeTaskId] : null;
-    if (!sessions) return null;
     // The stored list is kept in workflow-step-flow order (see
     // reorderStoredSessions in the session slice), so the badge is simply the
     // session's 1-based position in that list — guaranteeing the badge number
-    // always matches the visible left-to-right tab order.
-    const idx = sessions.findIndex((s: { id: string }) => s.id === sessionId);
-    return idx >= 0 ? idx + 1 : null;
+    // always matches the visible left-to-right tab order. Shares sessionRank's
+    // lookup so the tab title and the badge can never disagree.
+    return sessionRank(state, sessionId);
   });
   const sessionCount = useAppStore((state) => {
     const activeTaskId = state.tasks.activeTaskId;

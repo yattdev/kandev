@@ -100,18 +100,17 @@ describe("SessionReopenMenuItems step-flow ordering", () => {
     // than the render() container. Items render with
     // data-testid="reopen-session-<id>" in DOM order.
     const items = Array.from(
-      document.body.querySelectorAll(
-        '[data-testid^="reopen-session-"]:not([data-testid^="reopen-session-seq-"])',
-      ),
+      document.body.querySelectorAll('[data-testid^="reopen-session-"]'),
     ) as HTMLElement[];
     expect(items.map((el) => el.getAttribute("data-testid"))).toEqual([
       "reopen-session-s1",
       "reopen-session-s2",
     ]);
 
-    // Labels should include step title + rank (Spec #1, Work #2)
+    // Labels should include step title + rank (Spec #1, Work #2), rendered
+    // exactly once per row — not duplicated by a separate rank chip.
     const texts = items.map((el) => el.textContent ?? "");
-    expect(texts[0]).toContain("Spec #1");
-    expect(texts[1]).toContain("Work #2");
+    expect(texts[0]).toBe("Spec #1");
+    expect(texts[1]).toBe("Work #2");
   });
 });

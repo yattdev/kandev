@@ -124,6 +124,24 @@ export function buildAgentLabelsById(
 }
 
 /**
+ * Splits an agent profile's "provider • model" label and picks the more
+ * specific second segment, falling back to the first segment or the raw
+ * label. Shared by the tab title, mobile pill, and reopen-menu surfaces
+ * (each of which previously reimplemented this split independently) so the
+ * split convention only needs to change in one place. Returns `null` when
+ * there's no profile, letting callers decide their own final fallback
+ * (e.g. the tab title's model-derived fallback, vs. the mobile pill's plain
+ * "Agent" string) rather than baking one in here.
+ */
+export function splitAgentProfileLabel(
+  profile: { label: string } | null | undefined,
+): string | null {
+  if (!profile) return null;
+  const parts = profile.label.split(" \u2022 ");
+  return parts[1] || parts[0] || profile.label;
+}
+
+/**
  * Resolves the display label for a session's agent.
  *
  * Store first so that renaming an agent profile is reflected everywhere that

@@ -36,7 +36,12 @@ import { MobilePickerSheet } from "./mobile-picker-sheet";
 import { formatTaskSessionStateLabel } from "@/lib/ui/state-labels";
 import type { TaskSession, TaskSessionState } from "@/lib/types/http";
 import type { AgentProfileOption } from "@/lib/state/slices";
-import { buildStepPositionById, buildStepTitleById, sortSessionsByStepFlow } from "../session-sort";
+import {
+  buildStepPositionById,
+  buildStepTitleById,
+  sortSessionsByStepFlow,
+  splitAgentProfileLabel,
+} from "../session-sort";
 import { resolveSessionTabTitle, resolveSnapshotModel } from "../session-tab-title";
 
 type SessionRow = {
@@ -50,8 +55,7 @@ type SessionRow = {
 };
 
 function mobileAgentLabel(profile: AgentProfileOption | undefined): string {
-  const labelParts = profile?.label.split(" • ") ?? [];
-  return labelParts[1] || labelParts[0] || profile?.label || "Agent";
+  return splitAgentProfileLabel(profile) ?? "Agent";
 }
 
 function mobileSessionLabel(

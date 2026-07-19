@@ -16,7 +16,12 @@ import { AgentLogo } from "@/components/agent-logo";
 import { markSessionTabUserActivationIntent } from "@/components/task/session-tab-activation-intent";
 import type { TaskSession } from "@/lib/types/http";
 import type { AgentProfileOption } from "@/lib/state/slices";
-import { buildStepPositionById, buildStepTitleById, sortSessionsByStepFlow } from "./session-sort";
+import {
+  buildStepPositionById,
+  buildStepTitleById,
+  sortSessionsByStepFlow,
+  splitAgentProfileLabel,
+} from "./session-sort";
 import { resolveSessionTabTitle, resolveSnapshotModel } from "./session-tab-title";
 
 type AgentInfo = { label: string; agentName: string };
@@ -28,8 +33,7 @@ function resolveAgentInfo(
   const profile = session.agent_profile_id ? profilesById[session.agent_profile_id] : null;
   const agentName = profile?.agent_name ?? "";
   if (!profile) return { label: "Unknown agent", agentName: "" };
-  const parts = profile.label.split(" \u2022 ");
-  return { label: parts[1] || parts[0] || profile.label, agentName };
+  return { label: splitAgentProfileLabel(profile) ?? profile.label, agentName };
 }
 
 function resolveReopenLabel(
@@ -57,7 +61,6 @@ function resolveReopenLabel(
 
 function ReopenSessionMenuItem({
   session,
-  rank,
   label,
   agentName,
   isPrimary,
@@ -65,7 +68,6 @@ function ReopenSessionMenuItem({
   onClick,
 }: {
   session: TaskSession;
-  rank: number;
   label: string;
   agentName: string;
   isPrimary: boolean;
@@ -78,12 +80,6 @@ function ReopenSessionMenuItem({
       className={`cursor-pointer text-xs gap-1.5 ${isOpen ? "opacity-50" : ""}`}
       data-testid={`reopen-session-${session.id}`}
     >
-      <span
-        data-testid={`reopen-session-seq-${rank}`}
-        className="shrink-0 text-[11px] font-medium leading-none text-muted-foreground bg-foreground/10 rounded px-1.5 py-0.5"
-      >
-        #{rank}
-      </span>
       {agentName && <AgentLogo agentName={agentName} size={14} className="shrink-0" />}
       <span className="flex-1 truncate">{label}</span>
       {isPrimary && <IconStar className="h-3 w-3 fill-foreground/50 stroke-0 shrink-0" />}
@@ -183,7 +179,6 @@ export function SessionReopenMenuItems({
           <ReopenSessionMenuItem
             key={session.id}
             session={session}
-            rank={rank}
             label={label}
             agentName={info.agentName}
             isPrimary={isPrimary}
