@@ -881,3 +881,100 @@ func TestImportWorkflows(t *testing.T) {
 		assert.Empty(t, steps[0].AgentProfileID, "no matcher means no profile ID set")
 	})
 }
+
+// --- DeleteStep cascade tests ---
+
+// spyTaskReassigner records calls to ReassignTasksFromStep.
+type spyTaskReassigner struct {
+	calls []struct {
+		deletedStepID string
+		workflowID    string
+		targetStepID  string
+	}
+}
+
+func (s *spyTaskReassigner) ReassignTasksFromStep(_ context.Context, deletedStepID, workflowID, targetStepID string) error {
+	s.calls = append(s.calls, struct {
+		deletedStepID string
+		workflowID    string
+		targetStepID  string
+	}{deletedStepID, workflowID, targetStepID})
+	return nil
+}
+
+func TestDeleteStep_CascadesReassignmentToStartStep(t *testing.T) {
+	svc, db := setupTestService(t)
+	ctx := context.Background()
+	insertWorkflow(t, db, "wf-1", "Test")
+
+	spy := &spyTaskReassigner{}
+	svc.SetTaskReassigner(spy)
+
+	createStep(t, svc, &models.WorkflowStep{ID: "start", WorkflowID: "wf-1", Name: "Start", Position: 0, IsStartStep: true})
+	createStep(t, svc, &models.WorkflowStep{ID: "mid", WorkflowID: "wf-1", Name: "Mid", Position: 1})
+	createStep(t, svc, &models.WorkflowStep{ID: "end", WorkflowID: "wf-1", Name: "End", Position: 2})
+
+	require.NoError(t, svc.DeleteStep(ctx, "mid"))
+
+	require.Len(t, spy.calls, 1, "reassigner must be called once")
+	assert.Equal(t, "mid", spy.calls[0].deletedStepID)
+	assert.Equal(t, "wf-1", spy.calls[0].workflowID)
+	assert.Equal(t, "start", spy.calls[0].targetStepID, "should target the start step")
+
+	// Deleted step must not exist anymore.
+	steps, err := svc.repo.ListStepsByWorkflow(ctx, "wf-1")
+	require.NoError(t, err)
+	for _, s := range steps {
+		assert.NotEqual(t, "mid", s.ID, "deleted step must be removed")
+	}
+}
+
+func TestDeleteStep_FallsBackToFirstStepWhenNoStartStep(t *testing.T) {
+	svc, db := setupTestService(t)
+	ctx := context.Background()
+	insertWorkflow(t, db, "wf-2", "Test")
+
+	spy := &spyTaskReassigner{}
+	svc.SetTaskReassigner(spy)
+
+	// No step has IsStartStep=true.
+	createStep(t, svc, &models.WorkflowStep{ID: "alpha", WorkflowID: "wf-2", Name: "Alpha", Position: 0})
+	createStep(t, svc, &models.WorkflowStep{ID: "beta", WorkflowID: "wf-2", Name: "Beta", Position: 1})
+
+	require.NoError(t, svc.DeleteStep(ctx, "beta"))
+
+	require.Len(t, spy.calls, 1)
+	assert.Equal(t, "alpha", spy.calls[0].targetStepID, "first step by position is the fallback target")
+}
+
+func TestDeleteStep_SkipsReassignmentWhenLastStep(t *testing.T) {
+	svc, db := setupTestService(t)
+	ctx := context.Background()
+	insertWorkflow(t, db, "wf-3", "Test")
+
+	spy := &spyTaskReassigner{}
+	svc.SetTaskReassigner(spy)
+
+	createStep(t, svc, &models.WorkflowStep{ID: "only", WorkflowID: "wf-3", Name: "Only", Position: 0})
+
+	require.NoError(t, svc.DeleteStep(ctx, "only"))
+
+	assert.Empty(t, spy.calls, "no other step to target; reassigner must not be called")
+}
+
+func TestDeleteStep_NoReassignerWired(t *testing.T) {
+	// No SetTaskReassigner call — must still succeed and delete the step.
+	svc, db := setupTestService(t)
+	ctx := context.Background()
+	insertWorkflow(t, db, "wf-4", "Test")
+
+	createStep(t, svc, &models.WorkflowStep{ID: "s1", WorkflowID: "wf-4", Name: "S1", Position: 0})
+	createStep(t, svc, &models.WorkflowStep{ID: "s2", WorkflowID: "wf-4", Name: "S2", Position: 1})
+
+	require.NoError(t, svc.DeleteStep(ctx, "s1"))
+
+	steps, err := svc.repo.ListStepsByWorkflow(ctx, "wf-4")
+	require.NoError(t, err)
+	require.Len(t, steps, 1)
+	assert.Equal(t, "s2", steps[0].ID)
+}

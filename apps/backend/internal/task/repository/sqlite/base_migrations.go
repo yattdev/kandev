@@ -168,6 +168,13 @@ func (r *Repository) runMigrations() error {
 	// repo hasn't run yet.
 	r.ensureRunnerProjectionTables()
 
+	// Heal tasks whose workflow_step_id points at a deleted step. Such tasks
+	// are invisible on the board because no column matches their step. This
+	// is idempotent and safe to run on every boot.
+	if err := r.healOrphanedWorkflowStepTasks(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -979,4 +986,44 @@ func (r *Repository) backfillTaskEnvironmentRepos() error {
 		}
 	}
 	return tx.Commit()
+}
+
+// healOrphanedWorkflowStepTasks reassigns any non-archived task whose
+// workflow_step_id points at a deleted (non-existent) step to the workflow's
+// start step, falling back to the first step by position.  Tasks whose
+// workflow has no remaining steps are left untouched — they will remain
+// invisible until the workflow is re-populated, but will not be silently
+// dropped if the workflow regains steps later.
+//
+// This is a safety net for damage that occurred before the DeleteStep cascade
+// was introduced, as well as a recovery path for any path that still skips the
+// cascade. It is idempotent and safe to run on every boot.
+func (r *Repository) healOrphanedWorkflowStepTasks() error {
+	_, err := r.db.Exec(`
+		UPDATE tasks
+		SET    workflow_step_id = (
+		           SELECT ws.id
+		           FROM   workflow_steps ws
+		           WHERE  ws.workflow_id = tasks.workflow_id
+		           ORDER  BY ws.is_start_step DESC, ws.position ASC
+		           LIMIT  1
+		       ),
+		       updated_at = CURRENT_TIMESTAMP
+		WHERE  tasks.workflow_step_id != ''
+		  AND  tasks.archived_at  IS NULL
+		  AND  tasks.workflow_id  != ''
+		  AND  NOT EXISTS (
+		           SELECT 1 FROM workflow_steps ws WHERE ws.id = tasks.workflow_step_id
+		       )
+		  AND  EXISTS (
+		           SELECT 1 FROM workflows w WHERE w.id = tasks.workflow_id
+		       )
+		  AND  EXISTS (
+		           SELECT 1 FROM workflow_steps ws WHERE ws.workflow_id = tasks.workflow_id
+		       )
+	`)
+	if err != nil {
+		return fmt.Errorf("heal orphaned workflow step tasks: %w", err)
+	}
+	return nil
 }

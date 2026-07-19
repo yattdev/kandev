@@ -1056,6 +1056,15 @@ func (s *Service) applyPendingMove(ctx context.Context, taskID, sessionID string
 		reinsertPendingMove()
 		return
 	}
+	if targetStep.WorkflowID != move.WorkflowID {
+		s.logger.Error("pending move target step belongs to a different workflow; dropping move",
+			zap.String("task_id", taskID),
+			zap.String("target_step_id", move.WorkflowStepID),
+			zap.String("step_workflow_id", targetStep.WorkflowID),
+			zap.String("move_workflow_id", move.WorkflowID))
+		// Do NOT reinsert: the move is invalid and retrying would keep failing.
+		return
+	}
 
 	// Mark the session WAITING_FOR_INPUT before processOnEnter runs. The agent
 	// just finished its turn; the active-turn guard in processOnEnter would

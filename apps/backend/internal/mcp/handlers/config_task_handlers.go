@@ -89,6 +89,32 @@ func (h *Handlers) deferMoveTask(
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError,
 			"move_task requires message queue support while the source session is active", nil)
 	}
+
+	// Validate the target step exists and belongs to the requested workflow
+	// before committing the deferred move. Without this check a stale or
+	// foreign step_id would be stored and silently fail at turn-end, leaving
+	// the task orphaned on the board.
+	if h.workflowCtrl != nil {
+		stepResp, err := h.workflowCtrl.GetStep(ctx, req.WorkflowStepID)
+		if err != nil || stepResp == nil || stepResp.Step == nil {
+			h.logger.Error("move_task: target step not found",
+				zap.String("task_id", req.TaskID),
+				zap.String("workflow_step_id", req.WorkflowStepID),
+				zap.Error(err))
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation,
+				"target workflow_step_id does not exist", nil)
+		}
+		if stepResp.Step.WorkflowID != req.WorkflowID {
+			h.logger.Error("move_task: target step belongs to a different workflow",
+				zap.String("task_id", req.TaskID),
+				zap.String("workflow_step_id", req.WorkflowStepID),
+				zap.String("step_workflow_id", stepResp.Step.WorkflowID),
+				zap.String("requested_workflow_id", req.WorkflowID))
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation,
+				"target workflow_step_id does not belong to the requested workflow_id", nil)
+		}
+	}
+
 	if req.Prompt != "" {
 		wrapped := "You were moved to this step with the following message: " + req.Prompt
 		if err := h.queueMoveTaskPrompt(ctx, req.TaskID, session.ID, wrapped); err != nil {

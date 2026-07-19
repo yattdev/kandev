@@ -647,3 +647,156 @@ func TestBackfillSingleTask_DefaultsExecutorTypeOnMissingRow(t *testing.T) {
 		t.Errorf("executor_type = %q, want default 'local_pc' when executor row absent", executorType)
 	}
 }
+
+// --- healOrphanedWorkflowStepTasks tests ---
+
+func insertWorkflowRow(t *testing.T, db *sqlx.DB, workflowID string) {
+	t.Helper()
+	now := time.Now().UTC()
+	_, err := db.Exec(
+		`INSERT INTO workflows (id, workspace_id, name, created_at, updated_at) VALUES (?, '', ?, ?, ?)`,
+		workflowID, workflowID, now, now,
+	)
+	if err != nil {
+		t.Fatalf("insert workflow %s: %v", workflowID, err)
+	}
+}
+
+func insertWorkflowStep(t *testing.T, db *sqlx.DB, stepID, workflowID string, position int, isStart bool) {
+	t.Helper()
+	now := time.Now().UTC()
+	_, err := db.Exec(
+		`INSERT INTO workflow_steps (id, workflow_id, name, position, is_start_step, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		stepID, workflowID, stepID, position, isStart, now, now,
+	)
+	if err != nil {
+		t.Fatalf("insert step %s: %v", stepID, err)
+	}
+}
+
+func insertTaskWithStep(t *testing.T, db *sqlx.DB, taskID, workflowID, stepID string) {
+	t.Helper()
+	now := time.Now().UTC()
+	_, err := db.Exec(`
+		INSERT INTO tasks (id, workspace_id, workflow_id, workflow_step_id, title, description, state, created_at, updated_at)
+		VALUES (?, 'ws', ?, ?, 'task', '', 'todo', ?, ?)
+	`, taskID, workflowID, stepID, now, now)
+	if err != nil {
+		t.Fatalf("insert task %s: %v", taskID, err)
+	}
+}
+
+func getTaskStepID(t *testing.T, db *sqlx.DB, taskID string) string {
+	t.Helper()
+	var stepID string
+	if err := db.QueryRow(`SELECT workflow_step_id FROM tasks WHERE id = ?`, taskID).Scan(&stepID); err != nil {
+		t.Fatalf("get step for task %s: %v", taskID, err)
+	}
+	return stepID
+}
+
+// TestHealOrphanedWorkflowStepTasks_ReassignsToStartStep verifies that a task
+// pointing at a non-existent step is moved to the workflow's start step.
+func TestHealOrphanedWorkflowStepTasks_ReassignsToStartStep(t *testing.T) {
+	repo := newRepoForHealTests(t)
+	insertWorkflowRow(t, repo.db, "wf-1")
+	insertWorkflowStep(t, repo.db, "start", "wf-1", 0, true)
+	insertWorkflowStep(t, repo.db, "review", "wf-1", 1, false)
+
+	// "dead" step never inserted into workflow_steps — simulates a deleted step.
+	insertTaskWithStep(t, repo.db, "task-orphan", "wf-1", "deleted-step")
+
+	if err := repo.healOrphanedWorkflowStepTasks(); err != nil {
+		t.Fatalf("heal: %v", err)
+	}
+
+	got := getTaskStepID(t, repo.db, "task-orphan")
+	if got != "start" {
+		t.Errorf("workflow_step_id = %q, want 'start'", got)
+	}
+}
+
+// TestHealOrphanedWorkflowStepTasks_FallsBackToFirstStep verifies the first-by-position
+// fallback when no step has is_start_step=1.
+func TestHealOrphanedWorkflowStepTasks_FallsBackToFirstStep(t *testing.T) {
+	repo := newRepoForHealTests(t)
+	insertWorkflowRow(t, repo.db, "wf-2")
+	insertWorkflowStep(t, repo.db, "alpha", "wf-2", 0, false)
+	insertWorkflowStep(t, repo.db, "beta", "wf-2", 1, false)
+
+	insertTaskWithStep(t, repo.db, "task-orphan2", "wf-2", "ghost-step")
+
+	if err := repo.healOrphanedWorkflowStepTasks(); err != nil {
+		t.Fatalf("heal: %v", err)
+	}
+
+	got := getTaskStepID(t, repo.db, "task-orphan2")
+	if got != "alpha" {
+		t.Errorf("workflow_step_id = %q, want 'alpha' (first by position)", got)
+	}
+}
+
+// TestHealOrphanedWorkflowStepTasks_IgnoresValidTasks ensures tasks on live
+// steps are not touched.
+func TestHealOrphanedWorkflowStepTasks_IgnoresValidTasks(t *testing.T) {
+	repo := newRepoForHealTests(t)
+	insertWorkflowRow(t, repo.db, "wf-3")
+	insertWorkflowStep(t, repo.db, "s1", "wf-3", 0, true)
+	insertWorkflowStep(t, repo.db, "s2", "wf-3", 1, false)
+
+	insertTaskWithStep(t, repo.db, "task-valid", "wf-3", "s2")
+
+	if err := repo.healOrphanedWorkflowStepTasks(); err != nil {
+		t.Fatalf("heal: %v", err)
+	}
+
+	got := getTaskStepID(t, repo.db, "task-valid")
+	if got != "s2" {
+		t.Errorf("valid task must not be reassigned; got %q, want 's2'", got)
+	}
+}
+
+// TestHealOrphanedWorkflowStepTasks_IgnoresArchivedTasks ensures archived tasks
+// are not reassigned (they should stay where they are).
+func TestHealOrphanedWorkflowStepTasks_IgnoresArchivedTasks(t *testing.T) {
+	repo := newRepoForHealTests(t)
+	insertWorkflowRow(t, repo.db, "wf-4")
+	insertWorkflowStep(t, repo.db, "s-live", "wf-4", 0, true)
+
+	now := time.Now().UTC()
+	_, err := repo.db.Exec(`
+		INSERT INTO tasks (id, workspace_id, workflow_id, workflow_step_id, title, description, state, archived_at, created_at, updated_at)
+		VALUES ('task-archived', 'ws', 'wf-4', 'dead-step', 'archived', '', 'todo', ?, ?, ?)
+	`, now, now, now)
+	if err != nil {
+		t.Fatalf("insert archived task: %v", err)
+	}
+
+	if err := repo.healOrphanedWorkflowStepTasks(); err != nil {
+		t.Fatalf("heal: %v", err)
+	}
+
+	got := getTaskStepID(t, repo.db, "task-archived")
+	if got != "dead-step" {
+		t.Errorf("archived task must not be reassigned; got %q, want 'dead-step'", got)
+	}
+}
+
+// TestHealOrphanedWorkflowStepTasks_IgnoresWorkflowWithNoSteps ensures tasks
+// in a workflow with zero remaining steps are not touched.
+func TestHealOrphanedWorkflowStepTasks_IgnoresWorkflowWithNoSteps(t *testing.T) {
+	repo := newRepoForHealTests(t)
+	insertWorkflowRow(t, repo.db, "wf-empty")
+	// No steps inserted for wf-empty.
+
+	insertTaskWithStep(t, repo.db, "task-nosteps", "wf-empty", "dead-step")
+
+	if err := repo.healOrphanedWorkflowStepTasks(); err != nil {
+		t.Fatalf("heal: %v", err)
+	}
+
+	got := getTaskStepID(t, repo.db, "task-nosteps")
+	if got != "dead-step" {
+		t.Errorf("task in workflow with no steps must not be touched; got %q, want 'dead-step'", got)
+	}
+}

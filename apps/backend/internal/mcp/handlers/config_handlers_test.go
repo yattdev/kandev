@@ -12,6 +12,7 @@ import (
 	"github.com/kandev/kandev/internal/task/dto"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/service"
+	workflowmodels "github.com/kandev/kandev/internal/workflow/models"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	ws "github.com/kandev/kandev/pkg/websocket"
 	"github.com/stretchr/testify/assert"
@@ -617,6 +618,139 @@ func TestHandleMoveTask_ActiveSessionWithoutPrompt_DefersMove(t *testing.T) {
 	task, err := svc.GetTask(ctx, "task-move")
 	require.NoError(t, err)
 	assert.Equal(t, "step-work", task.WorkflowStepID, "deferred move must not apply immediately")
+}
+
+// seedRunningTask creates a workspace, workflow, task, and a RUNNING session so
+// handleMoveTask takes the deferred path. Returns the task ID.
+func seedRunningTask(t *testing.T, repo interface {
+	CreateWorkspace(context.Context, *models.Workspace) error
+	CreateWorkflow(context.Context, *models.Workflow) error
+	CreateTask(context.Context, *models.Task) error
+	CreateTaskSession(context.Context, *models.TaskSession) error
+}, wsID, wfID, taskID, sessionID, currentStepID string) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: wsID, Name: wsID, CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateWorkflow(ctx, &models.Workflow{ID: wfID, WorkspaceID: wsID, Name: wfID, CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{
+		ID: taskID, WorkspaceID: wsID, WorkflowID: wfID, WorkflowStepID: currentStepID,
+		Title: "task", State: v1.TaskStateInProgress, CreatedAt: now, UpdatedAt: now,
+	}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{
+		ID: sessionID, TaskID: taskID, State: models.TaskSessionStateRunning,
+		IsPrimary: true, StartedAt: now, UpdatedAt: now,
+	}))
+}
+
+// TestDeferMoveTask_RejectsNonExistentStep ensures deferMoveTask returns a
+// validation error when the requested workflow_step_id does not exist in the
+// workflow service, preventing a stale step ID from being stored as a pending move.
+func TestDeferMoveTask_RejectsNonExistentStep(t *testing.T) {
+	svc, repo, wfCtrl, wfRepo := newTestTaskServiceWithWorkflow(t)
+	ctx := context.Background()
+	seedRunningTask(t, repo, "ws-defer1", "wf-defer1", "task-defer1", "sess-defer1", "src-step")
+
+	// Only insert the source step — target "ghost-step" does not exist.
+	now := time.Now().UTC()
+	require.NoError(t, wfRepo.CreateStep(ctx, &workflowmodels.WorkflowStep{
+		ID: "src-step", WorkflowID: "wf-defer1", Name: "Source", Position: 0, CreatedAt: now, UpdatedAt: now,
+	}))
+
+	queue := &pendingMoveRecordingQueuer{}
+	h := &Handlers{
+		taskSvc:      svc,
+		workflowCtrl: wfCtrl,
+		messageQueue: queue,
+		logger:       testLogger(t).WithFields(),
+	}
+
+	msg := makeWSMessage(t, ws.ActionMCPMoveTask, map[string]interface{}{
+		"task_id":          "task-defer1",
+		"workflow_id":      "wf-defer1",
+		"workflow_step_id": "ghost-step", // does not exist
+		"position":         0,
+	})
+
+	resp, err := h.handleMoveTask(ctx, msg)
+	require.NoError(t, err)
+	assertWSError(t, resp, ws.ErrorCodeValidation)
+	assert.Empty(t, queue.pendingMoves, "pending move must not be recorded for a non-existent step")
+}
+
+// TestDeferMoveTask_RejectsStepFromDifferentWorkflow ensures deferMoveTask
+// returns a validation error when the step exists but belongs to another workflow.
+func TestDeferMoveTask_RejectsStepFromDifferentWorkflow(t *testing.T) {
+	svc, repo, wfCtrl, wfRepo := newTestTaskServiceWithWorkflow(t)
+	ctx := context.Background()
+	seedRunningTask(t, repo, "ws-defer2", "wf-defer2", "task-defer2", "sess-defer2", "src-step2")
+
+	now := time.Now().UTC()
+	// source step (belongs to the task's workflow)
+	require.NoError(t, wfRepo.CreateStep(ctx, &workflowmodels.WorkflowStep{
+		ID: "src-step2", WorkflowID: "wf-defer2", Name: "Source", Position: 0, CreatedAt: now, UpdatedAt: now,
+	}))
+	// A step that belongs to a different workflow — not wf-defer2
+	require.NoError(t, wfRepo.CreateStep(ctx, &workflowmodels.WorkflowStep{
+		ID: "other-wf-step", WorkflowID: "wf-other", Name: "Other", Position: 0, CreatedAt: now, UpdatedAt: now,
+	}))
+
+	queue := &pendingMoveRecordingQueuer{}
+	h := &Handlers{
+		taskSvc:      svc,
+		workflowCtrl: wfCtrl,
+		messageQueue: queue,
+		logger:       testLogger(t).WithFields(),
+	}
+
+	msg := makeWSMessage(t, ws.ActionMCPMoveTask, map[string]interface{}{
+		"task_id":          "task-defer2",
+		"workflow_id":      "wf-defer2",
+		"workflow_step_id": "other-wf-step", // exists but in another workflow
+		"position":         0,
+	})
+
+	resp, err := h.handleMoveTask(ctx, msg)
+	require.NoError(t, err)
+	assertWSError(t, resp, ws.ErrorCodeValidation)
+	assert.Empty(t, queue.pendingMoves, "pending move must not be recorded for a step from another workflow")
+}
+
+// TestDeferMoveTask_AcceptsValidStep ensures deferMoveTask succeeds when the
+// target step exists and belongs to the requested workflow.
+func TestDeferMoveTask_AcceptsValidStep(t *testing.T) {
+	svc, repo, wfCtrl, wfRepo := newTestTaskServiceWithWorkflow(t)
+	ctx := context.Background()
+	seedRunningTask(t, repo, "ws-defer3", "wf-defer3", "task-defer3", "sess-defer3", "src-step3")
+
+	now := time.Now().UTC()
+	require.NoError(t, wfRepo.CreateStep(ctx, &workflowmodels.WorkflowStep{
+		ID: "src-step3", WorkflowID: "wf-defer3", Name: "Source", Position: 0, CreatedAt: now, UpdatedAt: now,
+	}))
+	require.NoError(t, wfRepo.CreateStep(ctx, &workflowmodels.WorkflowStep{
+		ID: "dst-step3", WorkflowID: "wf-defer3", Name: "Dest", Position: 1, CreatedAt: now, UpdatedAt: now,
+	}))
+
+	queue := &pendingMoveRecordingQueuer{}
+	h := &Handlers{
+		taskSvc:      svc,
+		workflowCtrl: wfCtrl,
+		messageQueue: queue,
+		logger:       testLogger(t).WithFields(),
+	}
+
+	msg := makeWSMessage(t, ws.ActionMCPMoveTask, map[string]interface{}{
+		"task_id":          "task-defer3",
+		"workflow_id":      "wf-defer3",
+		"workflow_step_id": "dst-step3",
+		"position":         0,
+	})
+
+	resp, err := h.handleMoveTask(ctx, msg)
+	require.NoError(t, err)
+	assert.NotEqual(t, ws.MessageTypeError, resp.Type, "valid deferred move must succeed")
+	require.Len(t, queue.pendingMoves, 1)
+	assert.Equal(t, "dst-step3", queue.pendingMoves[0].WorkflowStepID)
 }
 
 func TestMoveTaskErrorMessage_SanitizesClassifiedErrors(t *testing.T) {

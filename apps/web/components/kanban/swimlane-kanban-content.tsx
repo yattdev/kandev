@@ -31,6 +31,19 @@ import {
   useKanbanExternalLinkAvailability,
 } from "@/components/kanban-external-link-availability";
 
+/**
+ * Sentinel step ID used to collect tasks whose workflow_step_id no longer
+ * matches any rendered column.  Tasks remapped here are visible as a
+ * "Needs Reassignment" fallback column so they are never silently hidden.
+ */
+const ORPHAN_STEP_ID = "__kandev_orphan__";
+
+const ORPHAN_STEP: WorkflowStep = {
+  id: ORPHAN_STEP_ID,
+  title: "Needs Reassignment",
+  color: "#f59e0b",
+};
+
 export type SwimlaneKanbanContentProps = {
   workflowId: string;
   steps: WorkflowStep[];
@@ -174,6 +187,46 @@ function useMobileColumnIndex(workflowId: string, steps: WorkflowStep[], tasks: 
   );
 
   return { activeIndex, setActiveIndex };
+}
+
+/**
+ * remapOrphanTasks re-keys any task whose workflowStepId matches no step in
+ * `stepIds` to `orphanStepId`.  Returns the remapped task list and whether
+ * any orphans were found.  Pure function — safe to call outside React.
+ */
+export function remapOrphanTasks(
+  tasks: Task[],
+  stepIds: Set<string>,
+  orphanStepId: string,
+): { tasks: Task[]; hasOrphans: boolean } {
+  let hasOrphans = false;
+  const remapped = tasks.map((t) => {
+    if (!t.workflowStepId || stepIds.has(t.workflowStepId)) return t;
+    hasOrphans = true;
+    return { ...t, workflowStepId: orphanStepId };
+  });
+  return { tasks: remapped, hasOrphans };
+}
+
+/**
+ * useOrphanDisplay remaps tasks with an unknown workflowStepId to the sentinel
+ * ORPHAN_STEP so they appear in a visible fallback column instead of being
+ * silently dropped from the board.
+ *
+ * Returns:
+ *   displayTasks – all tasks, with orphaned ones keyed to ORPHAN_STEP_ID
+ *   displaySteps – original steps plus ORPHAN_STEP when orphans are present
+ */
+function useOrphanDisplay(
+  tasks: Task[],
+  steps: WorkflowStep[],
+): { displayTasks: Task[]; displaySteps: WorkflowStep[] } {
+  return useMemo(() => {
+    const stepIds = new Set(steps.map((s) => s.id));
+    const { tasks: displayTasks, hasOrphans } = remapOrphanTasks(tasks, stepIds, ORPHAN_STEP_ID);
+    const displaySteps = hasOrphans ? [...steps, ORPHAN_STEP] : steps;
+    return { displayTasks, displaySteps };
+  }, [tasks, steps]);
 }
 
 function useTasksByStep(tasks: Task[]) {
@@ -449,7 +502,12 @@ export function SwimlaneKanbanContent({
   const { isMobile, isTablet, isCompactDesktop } = useResponsiveBreakpoint();
   const activeWorkspaceId = useAppStore((state) => state.workspaces.activeId);
   const externalLinkAvailability = useKanbanExternalLinkAvailability(activeWorkspaceId);
-  const { activeIndex, setActiveIndex } = useMobileColumnIndex(workflowId, steps, tasks);
+
+  // Remap tasks with a dead workflowStepId to the orphan sentinel so they
+  // always appear in a visible column rather than being silently dropped.
+  const { displayTasks, displaySteps } = useOrphanDisplay(tasks, steps);
+
+  const { activeIndex, setActiveIndex } = useMobileColumnIndex(workflowId, displaySteps, displayTasks);
   const { sensors, handleDragStart, handleDragEnd, handleDragCancel, moveTaskToStep, activeTask } =
     useSwimlaneKanbanDnd({ tasks, workflowId, onMoveError });
 
@@ -458,8 +516,8 @@ export function SwimlaneKanbanContent({
   // stable.
   const sharedProps = useMemo(
     () => ({
-      steps,
-      tasks,
+      steps: displaySteps,
+      tasks: displayTasks,
       onPreviewTask,
       onOpenTask,
       onEditTask,
@@ -476,8 +534,8 @@ export function SwimlaneKanbanContent({
       externalLinkAvailability,
     }),
     [
-      steps,
-      tasks,
+      displaySteps,
+      displayTasks,
       onPreviewTask,
       onOpenTask,
       onEditTask,
@@ -495,7 +553,7 @@ export function SwimlaneKanbanContent({
     ],
   );
 
-  if (steps.length === 0 && !isMobile) return null;
+  if (displaySteps.length === 0 && !isMobile) return null;
 
   let layoutContent: React.ReactNode;
   if (isMobile) {

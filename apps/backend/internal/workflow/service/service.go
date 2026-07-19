@@ -23,6 +23,13 @@ type WorkflowProvider interface {
 	UpdateWorkflow(ctx context.Context, workflow *taskmodels.Workflow) error
 }
 
+// TaskStepReassigner reassigns tasks from a deleted workflow step.
+// Implemented by the task service and injected via SetTaskReassigner to avoid
+// a circular import between the workflow and task packages.
+type TaskStepReassigner interface {
+	ReassignTasksFromStep(ctx context.Context, deletedStepID, workflowID, targetStepID string) error
+}
+
 // Service provides workflow business logic
 type Service struct {
 	repo             *repository.Repository
@@ -31,6 +38,7 @@ type Service struct {
 	resolveProfile   models.AgentProfileResolver
 	matchProfile     models.AgentProfileMatcher
 	syncOps          SyncWorkflowOps
+	taskReassigner   TaskStepReassigner
 }
 
 // SetWorkflowProvider wires the workflow provider (set during service init to break circular deps).
@@ -42,6 +50,12 @@ func (s *Service) SetWorkflowProvider(wp WorkflowProvider) {
 func (s *Service) SetAgentProfileFuncs(resolve models.AgentProfileResolver, match models.AgentProfileMatcher) {
 	s.resolveProfile = resolve
 	s.matchProfile = match
+}
+
+// SetTaskReassigner wires the task reassigner used by DeleteStep to move tasks
+// off a step before it is removed (prevents orphaned tasks).
+func (s *Service) SetTaskReassigner(r TaskStepReassigner) {
+	s.taskReassigner = r
 }
 
 // NewService creates a new workflow service
@@ -311,12 +325,29 @@ func (s *Service) UpdateStepWithStartStepUpdates(ctx context.Context, step *mode
 }
 
 // DeleteStep deletes a workflow step and clears any references to it from other steps.
+// Tasks currently on the step are reassigned to the workflow's start step (or the
+// first remaining step by position) so they do not become invisible board orphans.
 func (s *Service) DeleteStep(ctx context.Context, stepID string) error {
 	// First, get the step to find its workflow ID
 	step, err := s.repo.GetStep(ctx, stepID)
 	if err != nil {
 		s.logger.Error("failed to get step for deletion", zap.String("step_id", stepID), zap.Error(err))
 		return err
+	}
+
+	// Reassign tasks off the step before deleting it so they are never orphaned.
+	if s.taskReassigner != nil {
+		if target := s.resolveReassignmentTarget(ctx, step.WorkflowID, stepID); target != nil {
+			if err := s.taskReassigner.ReassignTasksFromStep(ctx, stepID, step.WorkflowID, target.ID); err != nil {
+				// Non-fatal: log the failure and continue. The startup heal migration
+				// will fix any remaining orphans on next boot.
+				s.logger.Error("failed to reassign tasks from deleted step",
+					zap.String("step_id", stepID),
+					zap.String("workflow_id", step.WorkflowID),
+					zap.String("target_step_id", target.ID),
+					zap.Error(err))
+			}
+		}
 	}
 
 	// Clear any move_to_step references to this step
@@ -337,6 +368,31 @@ func (s *Service) DeleteStep(ctx context.Context, stepID string) error {
 	s.logger.Info("deleted workflow step and cleared references",
 		zap.String("step_id", stepID),
 		zap.String("workflow_id", step.WorkflowID))
+	return nil
+}
+
+// resolveReassignmentTarget returns the best step to receive tasks when excludeStepID
+// is being deleted. Prefers the start step; falls back to the first step by position.
+// Returns nil if the workflow has no other steps (tasks cannot be reassigned).
+func (s *Service) resolveReassignmentTarget(ctx context.Context, workflowID, excludeStepID string) *models.WorkflowStep {
+	steps, err := s.repo.ListStepsByWorkflow(ctx, workflowID)
+	if err != nil {
+		s.logger.Error("failed to list steps for reassignment target resolution",
+			zap.String("workflow_id", workflowID), zap.Error(err))
+		return nil
+	}
+	// Prefer the designated start step.
+	for _, step := range steps {
+		if step.IsStartStep && step.ID != excludeStepID {
+			return step
+		}
+	}
+	// Fall back to the first step by position.
+	for _, step := range steps {
+		if step.ID != excludeStepID {
+			return step
+		}
+	}
 	return nil
 }
 
