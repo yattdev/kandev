@@ -37,11 +37,7 @@ describe("remapOrphanTasks", () => {
 
   it("handles a mix of valid and orphaned tasks", () => {
     const stepIds = new Set(["s1", "s2"]);
-    const tasks = [
-      makeTask("t-ok1", "s1"),
-      makeTask("t-orphan", "ghost"),
-      makeTask("t-ok2", "s2"),
-    ];
+    const tasks = [makeTask("t-ok1", "s1"), makeTask("t-orphan", "ghost"), makeTask("t-ok2", "s2")];
     const { tasks: out, hasOrphans } = remapOrphanTasks(tasks, stepIds, ORPHAN_ID);
     expect(hasOrphans).toBe(true);
     expect(out[0].workflowStepId).toBe("s1");

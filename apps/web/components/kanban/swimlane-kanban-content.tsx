@@ -258,26 +258,10 @@ function MobileKanbanLayout({
   isMultiSelectMode,
   externalLinkAvailability,
   mobileWorkflowNavigation,
-}: {
-  steps: WorkflowStep[];
-  tasks: Task[];
+}: SharedKanbanLayoutProps & {
   activeIndex: number;
   onIndexChange: (index: number) => void;
-  onPreviewTask: (task: Task) => void;
-  onOpenTask: (task: Task) => void;
-  onEditTask: (task: Task) => void;
-  onDeleteTask: (task: Task) => void;
-  onArchiveTask?: (task: Task) => void;
-  moveTaskToStep: (task: Task, targetStepId: string) => Promise<void>;
   activeTask: Task | null;
-  showMaximizeButton?: boolean;
-  deletingTaskId?: string | null;
-  archivingTaskId?: string | null;
-  selectedIds?: Set<string>;
-  onToggleSelect?: (taskId: string) => void;
-  onSelectRange?: (taskId: string, orderedIds: string[]) => void;
-  isMultiSelectMode?: boolean;
-  externalLinkAvailability: KanbanExternalLinkAvailability;
   mobileWorkflowNavigation?: MobileWorkflowNavigation;
 }) {
   const taskCounts = useMemo(() => {
@@ -338,6 +322,25 @@ function MobileKanbanLayout({
   );
 }
 
+type SharedKanbanLayoutProps = {
+  steps: WorkflowStep[];
+  tasks: Task[];
+  onPreviewTask: (task: Task) => void;
+  onOpenTask: (task: Task) => void;
+  onEditTask: (task: Task) => void;
+  onDeleteTask: (task: Task) => void;
+  onArchiveTask?: (task: Task) => void;
+  moveTaskToStep: (task: Task, targetStepId: string) => Promise<void>;
+  showMaximizeButton?: boolean;
+  deletingTaskId?: string | null;
+  archivingTaskId?: string | null;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (taskId: string) => void;
+  onSelectRange?: (taskId: string, orderedIds: string[]) => void;
+  isMultiSelectMode?: boolean;
+  externalLinkAvailability: KanbanExternalLinkAvailability;
+};
+
 function TabletKanbanLayout({
   steps,
   tasks,
@@ -355,24 +358,7 @@ function TabletKanbanLayout({
   onSelectRange,
   isMultiSelectMode,
   externalLinkAvailability,
-}: {
-  steps: WorkflowStep[];
-  tasks: Task[];
-  onPreviewTask: (task: Task) => void;
-  onOpenTask: (task: Task) => void;
-  onEditTask: (task: Task) => void;
-  onDeleteTask: (task: Task) => void;
-  onArchiveTask?: (task: Task) => void;
-  moveTaskToStep: (task: Task, targetStepId: string) => Promise<void>;
-  showMaximizeButton?: boolean;
-  deletingTaskId?: string | null;
-  archivingTaskId?: string | null;
-  selectedIds?: Set<string>;
-  onToggleSelect?: (taskId: string) => void;
-  onSelectRange?: (taskId: string, orderedIds: string[]) => void;
-  isMultiSelectMode?: boolean;
-  externalLinkAvailability: KanbanExternalLinkAvailability;
-}) {
+}: SharedKanbanLayoutProps) {
   const getTasksForStep = useTasksByStep(tasks);
 
   return (
@@ -425,24 +411,8 @@ function DesktopKanbanLayout({
   isMultiSelectMode,
   isCompactDesktop,
   externalLinkAvailability,
-}: {
-  steps: WorkflowStep[];
-  tasks: Task[];
-  onPreviewTask: (task: Task) => void;
-  onOpenTask: (task: Task) => void;
-  onEditTask: (task: Task) => void;
-  onDeleteTask: (task: Task) => void;
-  onArchiveTask?: (task: Task) => void;
-  moveTaskToStep: (task: Task, targetStepId: string) => Promise<void>;
-  showMaximizeButton?: boolean;
-  deletingTaskId?: string | null;
-  archivingTaskId?: string | null;
-  selectedIds?: Set<string>;
-  onToggleSelect?: (taskId: string) => void;
-  onSelectRange?: (taskId: string, orderedIds: string[]) => void;
-  isMultiSelectMode?: boolean;
+}: SharedKanbanLayoutProps & {
   isCompactDesktop: boolean;
-  externalLinkAvailability: KanbanExternalLinkAvailability;
 }) {
   const getTasksForStep = useTasksByStep(tasks);
 
@@ -480,6 +450,50 @@ function DesktopKanbanLayout({
   );
 }
 
+/**
+ * Picks the responsive layout to render for the swimlane. Extracted so
+ * `SwimlaneKanbanContent` stays under the max-lines-per-function limit.
+ */
+function renderKanbanLayout({
+  isMobile,
+  isTablet,
+  isCompactDesktop,
+  sharedProps,
+  activeIndex,
+  setActiveIndex,
+  activeTask,
+  mobileWorkflowNavigation,
+}: {
+  isMobile: boolean;
+  isTablet: boolean;
+  isCompactDesktop: boolean;
+  sharedProps: SharedKanbanLayoutProps;
+  activeIndex: number;
+  setActiveIndex: (index: number) => void;
+  activeTask: Task | null;
+  mobileWorkflowNavigation?: MobileWorkflowNavigation;
+}): React.ReactNode {
+  if (isMobile) {
+    return (
+      <MobileKanbanLayout
+        {...sharedProps}
+        activeIndex={activeIndex}
+        onIndexChange={setActiveIndex}
+        activeTask={activeTask}
+        mobileWorkflowNavigation={mobileWorkflowNavigation}
+      />
+    );
+  }
+  if (isTablet) {
+    return <TabletKanbanLayout {...sharedProps} />;
+  }
+  return (
+    <div className="h-full overflow-x-auto">
+      <DesktopKanbanLayout {...sharedProps} isCompactDesktop={isCompactDesktop} />
+    </div>
+  );
+}
+
 export function SwimlaneKanbanContent({
   workflowId,
   steps,
@@ -507,7 +521,11 @@ export function SwimlaneKanbanContent({
   // always appear in a visible column rather than being silently dropped.
   const { displayTasks, displaySteps } = useOrphanDisplay(tasks, steps);
 
-  const { activeIndex, setActiveIndex } = useMobileColumnIndex(workflowId, displaySteps, displayTasks);
+  const { activeIndex, setActiveIndex } = useMobileColumnIndex(
+    workflowId,
+    displaySteps,
+    displayTasks,
+  );
   const { sensors, handleDragStart, handleDragEnd, handleDragCancel, moveTaskToStep, activeTask } =
     useSwimlaneKanbanDnd({ tasks, workflowId, onMoveError });
 
@@ -555,26 +573,16 @@ export function SwimlaneKanbanContent({
 
   if (displaySteps.length === 0 && !isMobile) return null;
 
-  let layoutContent: React.ReactNode;
-  if (isMobile) {
-    layoutContent = (
-      <MobileKanbanLayout
-        {...sharedProps}
-        activeIndex={activeIndex}
-        onIndexChange={setActiveIndex}
-        activeTask={activeTask}
-        mobileWorkflowNavigation={mobileWorkflowNavigation}
-      />
-    );
-  } else if (isTablet) {
-    layoutContent = <TabletKanbanLayout {...sharedProps} />;
-  } else {
-    layoutContent = (
-      <div className="h-full overflow-x-auto">
-        <DesktopKanbanLayout {...sharedProps} isCompactDesktop={isCompactDesktop} />
-      </div>
-    );
-  }
+  const layoutContent = renderKanbanLayout({
+    isMobile,
+    isTablet,
+    isCompactDesktop,
+    sharedProps,
+    activeIndex,
+    setActiveIndex,
+    activeTask,
+    mobileWorkflowNavigation,
+  });
 
   return (
     <DndContext
