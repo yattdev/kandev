@@ -548,6 +548,79 @@ func TestService_MoveTaskPullsNextFeederTaskOnVacate(t *testing.T) {
 	}
 }
 
+// TestService_ReassignTasksFromStepSuppressesFeederPull verifies that
+// reassigning tasks off a step slated for deletion does not free WIP
+// capacity and pull a new feeder task onto that step. Without
+// SuppressPullOnVacate, vacating deletedStepID during the reassignment loop
+// would trigger pullNextTaskOnVacate and orphan the pulled task once the
+// step is actually deleted afterwards.
+func TestService_ReassignTasksFromStepSuppressesFeederPull(t *testing.T) {
+	svc, _, repo := createTestService(t)
+	ctx := context.Background()
+	seedMoveWorkflows(t, ctx, repo)
+	svc.SetWorkflowStepGetter(&fakeWorkflowStepGetter{steps: map[string]*wfmodels.WorkflowStep{
+		"step-deleting": {
+			ID: "step-deleting", WorkflowID: "wf-source", Name: "Deleting", Position: 0,
+			WIPLimit: 1, PullFromStepID: "step-feeder",
+		},
+		"step-feeder": {ID: "step-feeder", WorkflowID: "wf-source", Name: "Feeder", Position: 1},
+		"step-target": {ID: "step-target", WorkflowID: "wf-source", Name: "Target", Position: 2},
+	}})
+	createMoveTask(t, ctx, repo, "task-reassigning", "wf-source", "step-deleting", nil)
+	createMoveTask(t, ctx, repo, "task-feeder", "wf-source", "step-feeder", nil)
+	setMoveTaskOrder(t, ctx, repo, "task-feeder", 0, "critical")
+
+	if err := svc.ReassignTasksFromStep(ctx, "step-deleting", "wf-source", "step-target"); err != nil {
+		t.Fatalf("ReassignTasksFromStep: %v", err)
+	}
+
+	reassigned, err := repo.GetTask(ctx, "task-reassigning")
+	if err != nil {
+		t.Fatalf("GetTask(task-reassigning): %v", err)
+	}
+	if reassigned.WorkflowStepID != "step-target" {
+		t.Fatalf("reassigned task step = %s, want step-target", reassigned.WorkflowStepID)
+	}
+
+	feeder, err := repo.GetTask(ctx, "task-feeder")
+	if err != nil {
+		t.Fatalf("GetTask(task-feeder): %v", err)
+	}
+	if feeder.WorkflowStepID != "step-feeder" {
+		t.Fatalf("feeder task step = %s, want step-feeder (must not be pulled onto the step being deleted)", feeder.WorkflowStepID)
+	}
+}
+
+// TestService_ReassignTasksFromStepAppendsAfterExistingTargetTasks verifies
+// that reassigned tasks are appended after existing tasks on the target
+// step rather than reusing their old position, which could otherwise
+// collide with tasks already occupying that position on the target step.
+func TestService_ReassignTasksFromStepAppendsAfterExistingTargetTasks(t *testing.T) {
+	svc, _, repo := createTestService(t)
+	ctx := context.Background()
+	seedMoveWorkflows(t, ctx, repo)
+	svc.SetWorkflowStepGetter(&fakeWorkflowStepGetter{steps: map[string]*wfmodels.WorkflowStep{
+		"step-deleting": {ID: "step-deleting", WorkflowID: "wf-source", Name: "Deleting", Position: 0},
+		"step-target":   {ID: "step-target", WorkflowID: "wf-source", Name: "Target", Position: 1},
+	}})
+	createMoveTask(t, ctx, repo, "task-existing", "wf-source", "step-target", nil)
+	setMoveTaskOrder(t, ctx, repo, "task-existing", 0, "medium")
+	createMoveTask(t, ctx, repo, "task-reassigning", "wf-source", "step-deleting", nil)
+	setMoveTaskOrder(t, ctx, repo, "task-reassigning", 0, "medium")
+
+	if err := svc.ReassignTasksFromStep(ctx, "step-deleting", "wf-source", "step-target"); err != nil {
+		t.Fatalf("ReassignTasksFromStep: %v", err)
+	}
+
+	reassigned, err := repo.GetTask(ctx, "task-reassigning")
+	if err != nil {
+		t.Fatalf("GetTask(task-reassigning): %v", err)
+	}
+	if reassigned.Position != 1 {
+		t.Fatalf("reassigned task position = %d, want 1 (appended after existing target task at position 0)", reassigned.Position)
+	}
+}
+
 func TestService_MoveTaskPullSkipsBlockedFeederCandidate(t *testing.T) {
 	svc, _, repo := createTestService(t)
 	ctx := context.Background()

@@ -216,7 +216,11 @@ func isStepValidationError(msg string) bool {
 func (h *Handlers) httpDeleteStep(c *gin.Context) {
 	ctx := c.Request.Context()
 	stepID := c.Param("id")
-	stepResp, _ := h.controller.GetStep(ctx, stepID)
+	stepResp, getErr := h.controller.GetStep(ctx, stepID)
+	if getErr != nil {
+		h.logger.Warn("failed to fetch step before delete; workflow_step.deleted event will not be published",
+			zap.String("step_id", stepID), zap.Error(getErr))
+	}
 
 	if err := h.controller.DeleteStep(ctx, stepID); err != nil {
 		h.logger.Error("failed to delete step", zap.Error(err))
@@ -230,7 +234,7 @@ func (h *Handlers) httpDeleteStep(c *gin.Context) {
 }
 
 func (h *Handlers) publishWorkflowStepEvent(ctx context.Context, eventType string, step *models.WorkflowStep) {
-	if h.eventBus == nil || step == nil {
+	if step == nil {
 		return
 	}
 	data := map[string]interface{}{

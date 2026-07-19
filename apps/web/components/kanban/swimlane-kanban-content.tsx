@@ -527,7 +527,7 @@ export function SwimlaneKanbanContent({
     displayTasks,
   );
   const { sensors, handleDragStart, handleDragEnd, handleDragCancel, moveTaskToStep, activeTask } =
-    useSwimlaneKanbanDnd({ tasks, workflowId, onMoveError });
+    useSwimlaneKanbanDnd({ tasks: displayTasks, workflowId, onMoveError });
 
   // Memoized so the layout components don't re-render from a fresh props object
   // on every parent render. Declared before the early return to keep hook order

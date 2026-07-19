@@ -293,6 +293,12 @@ type MoveTaskResult struct {
 // MoveTaskOptions controls non-default move behavior for trusted callers.
 type MoveTaskOptions struct {
 	AllowActivePrimarySession bool
+	// SuppressPullOnVacate disables the WIP-limit feeder pull that normally
+	// runs when a task vacates a step. Callers reassigning every task off a
+	// step that is about to be deleted must set this — otherwise vacating
+	// the step frees WIP capacity and pulls a new feeder task onto the
+	// soon-to-be-deleted step, leaving that task orphaned.
+	SuppressPullOnVacate bool
 }
 
 type workflowMoveLimitsRepository interface {
@@ -363,7 +369,9 @@ func (s *Service) MoveTaskWithOptions(
 	// Publish task.moved event so the orchestrator can process on_exit/on_enter actions
 	if stepChanged {
 		s.publishTaskMovedEvent(ctx, task, oldWorkflowID, oldStepID, workflowStepID, sessionID)
-		s.pullNextTaskOnVacate(ctx, oldStepID, task.ID)
+		if !opts.SuppressPullOnVacate {
+			s.pullNextTaskOnVacate(ctx, oldStepID, task.ID)
+		}
 	}
 
 	s.logger.Info("task moved",

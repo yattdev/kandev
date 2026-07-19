@@ -556,10 +556,18 @@ func (s *Service) ReassignTasksFromStep(ctx context.Context, deletedStepID, work
 	if err != nil {
 		return fmt.Errorf("list tasks for step reassignment: %w", err)
 	}
+	existingTargetTasks, err := s.tasks.ListTasksByWorkflowStep(ctx, targetStepID)
+	if err != nil {
+		return fmt.Errorf("list target step tasks for reassignment: %w", err)
+	}
+	nextPosition := len(existingTargetTasks)
 	moved := 0
 	for _, task := range taskList {
-		if _, err := s.MoveTaskWithOptions(ctx, task.ID, workflowID, targetStepID, task.Position,
-			MoveTaskOptions{AllowActivePrimarySession: true}); err != nil {
+		// SuppressPullOnVacate: without it, vacating deletedStepID here would
+		// free WIP capacity and pull a feeder task onto the step we are
+		// about to delete, orphaning that task after this loop returns.
+		if _, err := s.MoveTaskWithOptions(ctx, task.ID, workflowID, targetStepID, nextPosition,
+			MoveTaskOptions{AllowActivePrimarySession: true, SuppressPullOnVacate: true}); err != nil {
 			s.logger.Error("failed to reassign task from deleted step",
 				zap.String("task_id", task.ID),
 				zap.String("deleted_step_id", deletedStepID),
@@ -567,10 +575,15 @@ func (s *Service) ReassignTasksFromStep(ctx context.Context, deletedStepID, work
 				zap.Error(err))
 			continue
 		}
+		nextPosition++
 		moved++
 	}
 	if moved > 0 || len(taskList) > 0 {
-		s.logger.Info("reassigned tasks from deleted step",
+		logFn := s.logger.Info
+		if moved < len(taskList) {
+			logFn = s.logger.Warn
+		}
+		logFn("reassigned tasks from deleted step",
 			zap.String("deleted_step_id", deletedStepID),
 			zap.String("target_step_id", targetStepID),
 			zap.Int("moved", moved),
