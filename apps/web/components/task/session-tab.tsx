@@ -23,16 +23,32 @@ import {
 import { shareableSessionStateClient } from "@/components/task/share/share-button";
 import type { HandoffPreset } from "@/components/task/new-session-dialog";
 import { usableConfigOptions } from "@/components/model-config-selector";
+import type { AppState } from "@/lib/state/store";
 import { SessionContextMenuItems, SessionTabDialogs } from "./session-tab-menu";
 import type { TaskSessionState } from "@/lib/types/http";
 import {
   markSessionTabUserActivationIntent,
   shouldMarkSessionTabUserActivationIntent,
 } from "./session-tab-activation-intent";
-import { isSessionActive } from "./session-sort";
-import { resolveSessionTabTitle } from "./session-tab-title";
+import { isSessionActive, resolveWorkflowStepTitle } from "./session-sort";
+import { resolveSessionTabTitle, resolveSnapshotModel } from "./session-tab-title";
 import { TabRenameInput } from "./tab-rename-input";
 import { useTabMaximizeOnDoubleClick } from "./use-tab-maximize";
+
+function sessionRank(state: AppState, sessionId: string): number | null {
+  const activeTaskId = state.tasks.activeTaskId;
+  const sessions = activeTaskId ? state.taskSessionsByTask.itemsByTaskId[activeTaskId] : null;
+  const index = sessions?.findIndex((s: { id: string }) => s.id === sessionId) ?? -1;
+  return index >= 0 ? index + 1 : null;
+}
+
+function agentTabLabel(state: AppState, agentProfileId: string | undefined): string | null {
+  if (!agentProfileId) return null;
+  const profile = state.agentProfiles.items.find((p: { id: string }) => p.id === agentProfileId);
+  if (!profile) return null;
+  const parts = profile.label.split(" \u2022 ");
+  return parts[1] || parts[0] || profile.label;
+}
 
 function useSessionTabState(sessionId: string | undefined) {
   const isPrimary = useAppStore((state) => {
@@ -56,25 +72,16 @@ function useSessionTabState(sessionId: string | undefined) {
     const session = state.taskSessions.items[sessionId];
     const sessionModels = state.sessionModels.bySessionId[sessionId];
     const activeModelId = state.activeModel.bySessionId[sessionId] || null;
-    const agentLabel = (() => {
-      if (!session?.agent_profile_id) return null;
-      const profile = state.agentProfiles.items.find(
-        (p: { id: string }) => p.id === session.agent_profile_id,
-      );
-      if (!profile) return null;
-      const parts = profile.label.split(" \u2022 ");
-      return parts[1] || parts[0] || profile.label;
-    })();
-    const snapshotModel =
-      typeof session?.agent_profile_snapshot?.model === "string"
-        ? session.agent_profile_snapshot.model
-        : null;
+    const stepLabel = resolveWorkflowStepTitle(state, session?.workflow_step_id);
+    const agentLabel = agentTabLabel(state, session?.agent_profile_id);
     return resolveSessionTabTitle({
       customName: session?.name ?? null,
+      stepLabel,
       agentLabel,
+      rank: sessionRank(state, sessionId),
       activeModelId,
       currentModelId: sessionModels?.currentModelId || null,
-      snapshotModel,
+      snapshotModel: resolveSnapshotModel(session?.agent_profile_snapshot),
       modelOptions:
         sessionModels?.models.map((model) => ({
           id: model.modelId,
@@ -99,13 +106,11 @@ function useSessionTabState(sessionId: string | undefined) {
     const activeTaskId = state.tasks.activeTaskId;
     const sessions = activeTaskId ? state.taskSessionsByTask.itemsByTaskId[activeTaskId] : null;
     if (!sessions) return null;
-    // Sort chronologically (oldest first) so indexes are stable regardless of
-    // which session is primary or the backend's default DESC ordering.
-    const sorted = [...sessions].sort(
-      (a: { started_at: string }, b: { started_at: string }) =>
-        new Date(a.started_at).getTime() - new Date(b.started_at).getTime(),
-    );
-    const idx = sorted.findIndex((s: { id: string }) => s.id === sessionId);
+    // The stored list is kept in workflow-step-flow order (see
+    // reorderStoredSessions in the session slice), so the badge is simply the
+    // session's 1-based position in that list — guaranteeing the badge number
+    // always matches the visible left-to-right tab order.
+    const idx = sessions.findIndex((s: { id: string }) => s.id === sessionId);
     return idx >= 0 ? idx + 1 : null;
   });
   const sessionCount = useAppStore((state) => {

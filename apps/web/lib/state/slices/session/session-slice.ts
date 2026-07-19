@@ -3,6 +3,7 @@ import { original } from "immer";
 import type { Message, TaskSession } from "@/lib/types/http";
 import type { SessionSlice, SessionSliceState } from "./types";
 import { reconcileMessages } from "./message-signature";
+import { sortSessionsByStepFlow, buildStepPositionById } from "@/components/task/session-sort";
 import {
   migrateEnvKeyedData,
   purgeSessionRuntimeState,
@@ -428,6 +429,24 @@ function nextPair(
   return [current[1], revisionId];
 }
 
+/**
+ * Reorders a task's stored session list by workflow-step flow so the tab strip,
+ * dropdown, mobile switcher, and per-tab number badge all read one consistent
+ * order. Only rewrites the array when the order actually changes, avoiding
+ * needless referential churn (and tab flicker) on frequent session updates.
+ */
+function reorderStoredSessions(draft: SessionSliceState, taskId: string): void {
+  const list = draft.taskSessionsByTask.itemsByTaskId[taskId];
+  if (!list || list.length < 2) return;
+  const stepPositionById = buildStepPositionById(
+    draft as unknown as Parameters<typeof buildStepPositionById>[0],
+  );
+  const sorted = sortSessionsByStepFlow(list, stepPositionById);
+  if (sorted.some((session, index) => session.id !== list[index].id)) {
+    draft.taskSessionsByTask.itemsByTaskId[taskId] = sorted;
+  }
+}
+
 function buildTaskSessionActions(set: ImmerSet) {
   return {
     setTaskSession: (session: Parameters<SessionSlice["setTaskSession"]>[0]) =>
@@ -443,6 +462,7 @@ function buildTaskSessionActions(set: ImmerSet) {
           if (sessionIndex >= 0) sessionsByTask[sessionIndex] = mergedSession;
         }
         syncEnvironmentMapping(draft, session.id, mergedSession.task_environment_id);
+        reorderStoredSessions(draft as unknown as SessionSliceState, session.task_id);
       }),
     removeTaskSession: (taskId: string, sessionId: string) =>
       set((draft) => {
@@ -479,6 +499,7 @@ function buildTaskSessionActions(set: ImmerSet) {
           syncEnvironmentMapping(draft, session.id, session.task_environment_id);
           syncPrepareProgress(draft, session);
         }
+        reorderStoredSessions(draft as unknown as SessionSliceState, taskId);
       }),
     // Upsert a session from a WS event without flipping the per-task `loadedByTaskId`
     // flag — partial event-driven records must not gate the API hydration that
@@ -500,6 +521,7 @@ function buildTaskSessionActions(set: ImmerSet) {
           draft.taskSessionsByTask.itemsByTaskId[taskId] = [merged];
         }
         syncEnvironmentMapping(draft, session.id, merged.task_environment_id);
+        reorderStoredSessions(draft as unknown as SessionSliceState, taskId);
       }),
     setTaskSessionsLoading: (taskId: string, loading: boolean) =>
       set((draft) => {
