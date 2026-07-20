@@ -75,6 +75,10 @@ const (
 	ActionTaskPlanRevert        = "task.plan.revert"
 	ActionTaskPlanImplement     = "task.plan.implementation_started"
 
+	ActionTaskNotesGet    = "task.notes.get"
+	ActionTaskNotesSave   = "task.notes.save"
+	ActionTaskNotesDelete = "task.notes.delete"
+
 	ActionTaskSessionList   = "task.session.list"
 	ActionTaskSessionStatus = "task.session.status"
 
@@ -167,6 +171,8 @@ const (
 	ActionTaskPlanDeleted          = "task.plan.deleted"
 	ActionTaskPlanRevisionCreated  = "task.plan.revision.created"
 	ActionTaskPlanReverted         = "task.plan.reverted"
+	ActionTaskNotesUpdated         = "task.notes.updated"
+	ActionTaskNotesDeleted         = "task.notes.deleted"
 	ActionTaskWalkthroughGet       = "task.walkthrough.get"
 	ActionTaskWalkthroughDelete    = "task.walkthrough.delete"
 	ActionTaskWalkthroughCreated   = "task.walkthrough.created"

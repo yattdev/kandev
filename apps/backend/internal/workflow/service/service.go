@@ -23,6 +23,13 @@ type WorkflowProvider interface {
 	UpdateWorkflow(ctx context.Context, workflow *taskmodels.Workflow) error
 }
 
+// TaskMover moves tasks between workflow steps. Injected into the workflow
+// service so that DeleteStep can migrate orphaned tasks before the step is
+// removed, preventing tasks from silently disappearing from the dashboard.
+type TaskMover interface {
+	BulkMoveTasks(ctx context.Context, srcWorkflowID, srcStepID, dstWorkflowID, dstStepID string) error
+}
+
 // Service provides workflow business logic
 type Service struct {
 	repo             *repository.Repository
@@ -31,11 +38,17 @@ type Service struct {
 	resolveProfile   models.AgentProfileResolver
 	matchProfile     models.AgentProfileMatcher
 	syncOps          SyncWorkflowOps
+	taskMover        TaskMover
 }
 
 // SetWorkflowProvider wires the workflow provider (set during service init to break circular deps).
 func (s *Service) SetWorkflowProvider(wp WorkflowProvider) {
 	s.workflowProvider = wp
+}
+
+// SetTaskMover wires the task mover for cascade-migrating tasks on step deletion.
+func (s *Service) SetTaskMover(mover TaskMover) {
+	s.taskMover = mover
 }
 
 // SetAgentProfileFuncs wires the agent profile resolver and matcher for export/import.
@@ -310,13 +323,25 @@ func (s *Service) UpdateStepWithStartStepUpdates(ctx context.Context, step *mode
 	return demoted, nil
 }
 
-// DeleteStep deletes a workflow step and clears any references to it from other steps.
+// DeleteStep deletes a workflow step, migrates any tasks on it to the nearest
+// remaining step, and clears any config references to it from other steps.
 func (s *Service) DeleteStep(ctx context.Context, stepID string) error {
 	// First, get the step to find its workflow ID
 	step, err := s.repo.GetStep(ctx, stepID)
 	if err != nil {
 		s.logger.Error("failed to get step for deletion", zap.String("step_id", stepID), zap.Error(err))
 		return err
+	}
+
+	// Migrate tasks off the step before deleting it so they don't become
+	// invisible orphans on the dashboard.
+	if err := s.migrateTasksOffStep(ctx, step); err != nil {
+		// Log but don't abort — a failed migration is better than leaving
+		// the step in place; the user can reassign tasks manually.
+		s.logger.Error("failed to migrate tasks off deleted step",
+			zap.String("step_id", stepID),
+			zap.String("workflow_id", step.WorkflowID),
+			zap.Error(err))
 	}
 
 	// Clear any move_to_step references to this step
@@ -336,6 +361,52 @@ func (s *Service) DeleteStep(ctx context.Context, stepID string) error {
 
 	s.logger.Info("deleted workflow step and cleared references",
 		zap.String("step_id", stepID),
+		zap.String("workflow_id", step.WorkflowID))
+	return nil
+}
+
+// migrateTasksOffStep moves all tasks currently on step to the best available
+// replacement step in the same workflow. It is a no-op when no replacement
+// exists (single-step workflow) or when no TaskMover has been wired.
+func (s *Service) migrateTasksOffStep(ctx context.Context, step *models.WorkflowStep) error {
+	if s.taskMover == nil {
+		return nil
+	}
+
+	// Pick the first step (by position) that isn't the one being deleted.
+	steps, err := s.repo.ListStepsByWorkflow(ctx, step.WorkflowID)
+	if err != nil {
+		return fmt.Errorf("failed to list steps for migration: %w", err)
+	}
+
+	var replacement *models.WorkflowStep
+	for _, candidate := range steps {
+		if candidate.ID == step.ID {
+			continue
+		}
+		// Prefer the designated start step; otherwise take the first by position.
+		if candidate.IsStartStep || replacement == nil {
+			replacement = candidate
+		}
+		if candidate.IsStartStep {
+			break
+		}
+	}
+
+	if replacement == nil {
+		s.logger.Warn("no replacement step available; tasks on deleted step will become orphaned",
+			zap.String("step_id", step.ID),
+			zap.String("workflow_id", step.WorkflowID))
+		return nil
+	}
+
+	if err := s.taskMover.BulkMoveTasks(ctx, step.WorkflowID, step.ID, step.WorkflowID, replacement.ID); err != nil {
+		return fmt.Errorf("bulk move from %s to %s: %w", step.ID, replacement.ID, err)
+	}
+
+	s.logger.Info("migrated tasks off deleted step",
+		zap.String("deleted_step_id", step.ID),
+		zap.String("replacement_step_id", replacement.ID),
 		zap.String("workflow_id", step.WorkflowID))
 	return nil
 }

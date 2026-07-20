@@ -35,6 +35,8 @@ type TaskHandlers struct {
 	orchestrator               OrchestratorStarter
 	repo                       handlerRepo
 	planService                *service.PlanService
+	documentService            notesDocumentService
+	notesEventBus              notesEventPublisher
 	handoffSvc                 *service.HandoffService
 	workspaceRestorer          WorkspaceQuarantineRestorer
 	unarchiveRecoveryTimeout   time.Duration
@@ -98,6 +100,12 @@ func NewTaskHandlers(svc *service.Service, orchestrator OrchestratorStarter, rep
 		planService:  planService,
 		logger:       log.WithFields(zap.String("component", "task-task-handlers")),
 	}
+}
+
+// SetDocumentService wires the document service for notes handlers.
+func (h *TaskHandlers) SetDocumentService(docSvc notesDocumentService, bus notesEventPublisher) {
+	h.documentService = docSvc
+	h.notesEventBus = bus
 }
 
 func RegisterTaskRoutes(router *gin.Engine, dispatcher *ws.Dispatcher, svc *service.Service, orchestrator OrchestratorStarter, repo handlerRepo, planService *service.PlanService, log *logger.Logger) *TaskHandlers {
@@ -171,6 +179,10 @@ func (h *TaskHandlers) registerWS(dispatcher *ws.Dispatcher) {
 	dispatcher.RegisterFunc(ws.ActionTaskPlanRevisionGet, h.wsGetTaskPlanRevision)
 	dispatcher.RegisterFunc(ws.ActionTaskPlanRevert, h.wsRevertTaskPlan)
 	dispatcher.RegisterFunc(ws.ActionTaskPlanImplement, h.wsMarkTaskPlanImplementationStarted)
+	// Task notes handlers
+	dispatcher.RegisterFunc(ws.ActionTaskNotesGet, h.wsGetTaskNotes)
+	dispatcher.RegisterFunc(ws.ActionTaskNotesSave, h.wsSaveTaskNotes)
+	dispatcher.RegisterFunc(ws.ActionTaskNotesDelete, h.wsDeleteTaskNotes)
 }
 
 // convertToServiceRepos converts dto.TaskRepositoryInput slice to service.TaskRepositoryInput slice.

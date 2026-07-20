@@ -297,6 +297,17 @@ export type TaskPlanResponse = {
   plan: TaskPlan | null;
 };
 
+// Task Notes types (freeform per-task scratchpad, key="notes" in task_documents)
+export type TaskNotes = {
+  id: string;
+  task_id: string;
+  content: string;
+  author_kind: "agent" | "user";
+  author_name: string;
+  created_at: string;
+  updated_at: string;
+};
+
 /** A single anchored stop in a code walkthrough. */
 export type WalkthroughStep = {
   title?: string;

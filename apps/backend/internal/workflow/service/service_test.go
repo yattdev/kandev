@@ -881,3 +881,120 @@ func TestImportWorkflows(t *testing.T) {
 		assert.Empty(t, steps[0].AgentProfileID, "no matcher means no profile ID set")
 	})
 }
+
+// ============================================================================
+// DeleteStep cascade tests
+// ============================================================================
+
+// mockTaskMover records BulkMoveTasks calls for assertion in tests.
+type mockTaskMover struct {
+	calls []bulkMoveCall
+	err   error
+}
+
+type bulkMoveCall struct {
+	srcWorkflowID, srcStepID, dstWorkflowID, dstStepID string
+}
+
+func (m *mockTaskMover) BulkMoveTasks(_ context.Context, srcWorkflowID, srcStepID, dstWorkflowID, dstStepID string) error {
+	m.calls = append(m.calls, bulkMoveCall{srcWorkflowID, srcStepID, dstWorkflowID, dstStepID})
+	return m.err
+}
+
+func insertStep(t *testing.T, svc *Service, workflowID, stepID, name string, position int, isStart bool) {
+	t.Helper()
+	step := &models.WorkflowStep{
+		ID:          stepID,
+		WorkflowID:  workflowID,
+		Name:        name,
+		Position:    position,
+		IsStartStep: isStart,
+	}
+	require.NoError(t, svc.CreateStep(context.Background(), step))
+}
+
+// TestDeleteStep_MigratesOrphanedTasksToStartStep verifies that when a step is
+// deleted, tasks on it are bulk-moved to the workflow's designated start step.
+func TestDeleteStep_MigratesOrphanedTasksToStartStep(t *testing.T) {
+	svc, db := setupTestService(t)
+	ctx := context.Background()
+	insertWorkflow(t, db, "wf-1", "Test Workflow")
+
+	insertStep(t, svc, "wf-1", "step-start", "Backlog", 0, true)
+	insertStep(t, svc, "wf-1", "step-work", "Work", 1, false)
+	insertStep(t, svc, "wf-1", "step-done", "Done", 2, false)
+
+	mover := &mockTaskMover{}
+	svc.SetTaskMover(mover)
+
+	require.NoError(t, svc.DeleteStep(ctx, "step-work"))
+
+	require.Len(t, mover.calls, 1, "expected exactly one BulkMoveTasks call")
+	call := mover.calls[0]
+	assert.Equal(t, "wf-1", call.srcWorkflowID)
+	assert.Equal(t, "step-work", call.srcStepID)
+	assert.Equal(t, "wf-1", call.dstWorkflowID)
+	assert.Equal(t, "step-start", call.dstStepID, "tasks should migrate to the start step")
+
+	// Step must be gone from the DB.
+	steps, err := svc.repo.ListStepsByWorkflow(ctx, "wf-1")
+	require.NoError(t, err)
+	for _, s := range steps {
+		assert.NotEqual(t, "step-work", s.ID, "deleted step should not appear in step list")
+	}
+}
+
+// TestDeleteStep_MigratesOrphanedTasksToFirstStep verifies the fallback to the
+// first-by-position step when no start step is designated.
+func TestDeleteStep_MigratesOrphanedTasksToFirstStep(t *testing.T) {
+	svc, db := setupTestService(t)
+	ctx := context.Background()
+	insertWorkflow(t, db, "wf-2", "No Start Step Workflow")
+
+	// No step has IsStartStep=true.
+	insertStep(t, svc, "wf-2", "step-a", "A", 0, false)
+	insertStep(t, svc, "wf-2", "step-b", "B", 1, false)
+
+	mover := &mockTaskMover{}
+	svc.SetTaskMover(mover)
+
+	require.NoError(t, svc.DeleteStep(ctx, "step-b"))
+
+	require.Len(t, mover.calls, 1)
+	assert.Equal(t, "step-a", mover.calls[0].dstStepID, "should fall back to first step by position")
+}
+
+// TestDeleteStep_NoTaskMover_SkipsMigration verifies that deletion succeeds
+// even when no TaskMover is wired (backward-compatible path).
+func TestDeleteStep_NoTaskMover_SkipsMigration(t *testing.T) {
+	svc, db := setupTestService(t)
+	ctx := context.Background()
+	insertWorkflow(t, db, "wf-3", "No Mover Workflow")
+
+	insertStep(t, svc, "wf-3", "step-x", "X", 0, true)
+	insertStep(t, svc, "wf-3", "step-y", "Y", 1, false)
+
+	// No SetTaskMover call — taskMover remains nil.
+	require.NoError(t, svc.DeleteStep(ctx, "step-y"))
+
+	steps, err := svc.repo.ListStepsByWorkflow(ctx, "wf-3")
+	require.NoError(t, err)
+	require.Len(t, steps, 1)
+	assert.Equal(t, "step-x", steps[0].ID)
+}
+
+// TestDeleteStep_SingleStep_NoMigration verifies that when the workflow has
+// only one step, deletion still succeeds and no migration is attempted.
+func TestDeleteStep_SingleStep_NoMigration(t *testing.T) {
+	svc, db := setupTestService(t)
+	ctx := context.Background()
+	insertWorkflow(t, db, "wf-4", "Single Step Workflow")
+
+	insertStep(t, svc, "wf-4", "step-only", "Only", 0, true)
+
+	mover := &mockTaskMover{}
+	svc.SetTaskMover(mover)
+
+	require.NoError(t, svc.DeleteStep(ctx, "step-only"))
+	assert.Empty(t, mover.calls, "no migration possible when there is no replacement step")
+}
