@@ -882,33 +882,20 @@ func TestImportWorkflows(t *testing.T) {
 	})
 }
 
-// --- DeleteStep cascade tests ---
+// --- DeleteStep tests ---
+//
+// DeleteStep intentionally does NOT auto-reassign tasks off the deleted step: doing
+// so through the normal move path would trigger on_exit/on_enter side effects
+// (auto-start agents, session hand-offs) as a byproduct of an administrative delete,
+// and any failed move would silently leave the step deleted anyway (a partial,
+// non-atomic cascade). Affected tasks keep their dangling workflow_step_id and are
+// surfaced via the Kanban/Pipeline "Needs Reassignment" fallback for explicit manual
+// reassignment through the normal, fully-validated move path.
 
-// spyTaskReassigner records calls to ReassignTasksFromStep.
-type spyTaskReassigner struct {
-	calls []struct {
-		deletedStepID string
-		workflowID    string
-		targetStepID  string
-	}
-}
-
-func (s *spyTaskReassigner) ReassignTasksFromStep(_ context.Context, deletedStepID, workflowID, targetStepID string) error {
-	s.calls = append(s.calls, struct {
-		deletedStepID string
-		workflowID    string
-		targetStepID  string
-	}{deletedStepID, workflowID, targetStepID})
-	return nil
-}
-
-func TestDeleteStep_CascadesReassignmentToStartStep(t *testing.T) {
+func TestDeleteStep_RemovesStepWithoutReassigningTasks(t *testing.T) {
 	svc, db := setupTestService(t)
 	ctx := context.Background()
 	insertWorkflow(t, db, "wf-1", "Test")
-
-	spy := &spyTaskReassigner{}
-	svc.SetTaskReassigner(spy)
 
 	createStep(t, svc, &models.WorkflowStep{ID: "start", WorkflowID: "wf-1", Name: "Start", Position: 0, IsStartStep: true})
 	createStep(t, svc, &models.WorkflowStep{ID: "mid", WorkflowID: "wf-1", Name: "Mid", Position: 1})
@@ -916,54 +903,66 @@ func TestDeleteStep_CascadesReassignmentToStartStep(t *testing.T) {
 
 	require.NoError(t, svc.DeleteStep(ctx, "mid"))
 
-	require.Len(t, spy.calls, 1, "reassigner must be called once")
-	assert.Equal(t, "mid", spy.calls[0].deletedStepID)
-	assert.Equal(t, "wf-1", spy.calls[0].workflowID)
-	assert.Equal(t, "start", spy.calls[0].targetStepID, "should target the start step")
-
 	// Deleted step must not exist anymore.
 	steps, err := svc.repo.ListStepsByWorkflow(ctx, "wf-1")
 	require.NoError(t, err)
+	require.Len(t, steps, 2)
 	for _, s := range steps {
 		assert.NotEqual(t, "mid", s.ID, "deleted step must be removed")
 	}
 }
 
-func TestDeleteStep_FallsBackToFirstStepWhenNoStartStep(t *testing.T) {
-	svc, db := setupTestService(t)
-	ctx := context.Background()
-	insertWorkflow(t, db, "wf-2", "Test")
-
-	spy := &spyTaskReassigner{}
-	svc.SetTaskReassigner(spy)
-
-	// No step has IsStartStep=true.
-	createStep(t, svc, &models.WorkflowStep{ID: "alpha", WorkflowID: "wf-2", Name: "Alpha", Position: 0})
-	createStep(t, svc, &models.WorkflowStep{ID: "beta", WorkflowID: "wf-2", Name: "Beta", Position: 1})
-
-	require.NoError(t, svc.DeleteStep(ctx, "beta"))
-
-	require.Len(t, spy.calls, 1)
-	assert.Equal(t, "alpha", spy.calls[0].targetStepID, "first step by position is the fallback target")
-}
-
-func TestDeleteStep_SkipsReassignmentWhenLastStep(t *testing.T) {
+func TestDeleteStep_SucceedsWhenDeletingOnlyStep(t *testing.T) {
 	svc, db := setupTestService(t)
 	ctx := context.Background()
 	insertWorkflow(t, db, "wf-3", "Test")
-
-	spy := &spyTaskReassigner{}
-	svc.SetTaskReassigner(spy)
 
 	createStep(t, svc, &models.WorkflowStep{ID: "only", WorkflowID: "wf-3", Name: "Only", Position: 0})
 
 	require.NoError(t, svc.DeleteStep(ctx, "only"))
 
-	assert.Empty(t, spy.calls, "no other step to target; reassigner must not be called")
+	steps, err := svc.repo.ListStepsByWorkflow(ctx, "wf-3")
+	require.NoError(t, err)
+	assert.Empty(t, steps)
 }
 
-func TestDeleteStep_NoReassignerWired(t *testing.T) {
-	// No SetTaskReassigner call — must still succeed and delete the step.
+// TestDeleteStep_WIPLimitedAutoStartTargetIsUnaffected is a regression test
+// requested during maintainer review: deleting a step must not run tasks
+// through the normal move path (which could trip a neighboring step's WIP
+// limit or trigger its auto-start-agent on_enter action as a side effect of
+// an administrative delete). Since DeleteStep no longer reassigns tasks at
+// all, this asserts the delete succeeds cleanly and is fully independent of
+// what limits/automations are configured on the surviving steps.
+func TestDeleteStep_WIPLimitedAutoStartTargetIsUnaffected(t *testing.T) {
+	svc, db := setupTestService(t)
+	ctx := context.Background()
+	insertWorkflow(t, db, "wf-5", "Test")
+
+	createStep(t, svc, &models.WorkflowStep{ID: "start", WorkflowID: "wf-5", Name: "Start", Position: 0, IsStartStep: true})
+	createStep(t, svc, &models.WorkflowStep{ID: "mid", WorkflowID: "wf-5", Name: "Mid", Position: 1})
+	createStep(t, svc, &models.WorkflowStep{
+		ID: "auto-start-limited", WorkflowID: "wf-5", Name: "Auto Start", Position: 2,
+		WIPLimit: 1,
+		Events: models.StepEvents{
+			OnEnter: []models.OnEnterAction{{Type: models.OnEnterAutoStartAgent}},
+		},
+	})
+
+	require.NoError(t, svc.DeleteStep(ctx, "mid"))
+
+	steps, err := svc.repo.ListStepsByWorkflow(ctx, "wf-5")
+	require.NoError(t, err)
+	require.Len(t, steps, 2)
+	for _, s := range steps {
+		assert.NotEqual(t, "mid", s.ID, "deleted step must be removed")
+		if s.ID == "auto-start-limited" {
+			// The WIP-limited/auto-start step itself must remain untouched.
+			assert.Equal(t, 1, s.WIPLimit)
+		}
+	}
+}
+
+func TestDeleteStep_ClearsStepReferences(t *testing.T) {
 	svc, db := setupTestService(t)
 	ctx := context.Background()
 	insertWorkflow(t, db, "wf-4", "Test")

@@ -95,10 +95,6 @@ func provideServices(cfg *config.Config, log *logger.Logger, repos *Repositories
 	// Wire workflow provider to workflow service for export/import
 	workflowSvc.SetWorkflowProvider(&workflowProviderAdapter{svc: taskSvc})
 
-	// Wire task reassigner to workflow service so DeleteStep cascades tasks to the
-	// next available step instead of leaving them as invisible board orphans.
-	workflowSvc.SetTaskReassigner(taskSvc)
-
 	// Wire agent profile resolver/matcher for workflow export/import
 	workflowSvc.SetAgentProfileFuncs(
 		buildAgentProfileResolver(repos),

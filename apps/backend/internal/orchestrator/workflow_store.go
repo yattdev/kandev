@@ -131,6 +131,14 @@ func (s *workflowStore) ApplyTransition(ctx context.Context, taskID, sessionID, 
 		return err
 	}
 
+	// Keep WorkflowID in sync with the target step's owning workflow. Most
+	// callers transition within the same workflow (targetStep.WorkflowID ==
+	// task.WorkflowID already), but applyPendingMove uses this path for
+	// cross-workflow move_task_kandev hand-offs too — without this, the task
+	// would end up with a step ID from a workflow its WorkflowID doesn't match.
+	if targetStep != nil {
+		task.WorkflowID = targetStep.WorkflowID
+	}
 	task.WorkflowStepID = toStepID
 	task.UpdatedAt = time.Now().UTC()
 	if err := s.updateTransitionTask(ctx, task, targetStep); err != nil {

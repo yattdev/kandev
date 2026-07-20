@@ -143,6 +143,46 @@ func TestWorkflowStore_ApplyTransition(t *testing.T) {
 	}
 }
 
+func TestWorkflowStore_ApplyTransitionSyncsWorkflowIDAcrossWorkflows(t *testing.T) {
+	// Regression test: applyPendingMove (deferred cross-workflow move_task_kandev
+	// hand-off for tasks with an active/starting session) calls ApplyTransition
+	// directly, bypassing task.Service.MoveTask. Without syncing WorkflowID here,
+	// a cross-workflow move would leave the task pointing at a step ID that
+	// belongs to a different workflow than task.WorkflowID records.
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1") // seedSession puts the task in wf1
+
+	// Create a second workflow the task is moving into.
+	if err := repo.CreateWorkflow(ctx, &models.Workflow{
+		ID: "wf2", WorkspaceID: "ws1", Name: "Other Workflow",
+	}); err != nil {
+		t.Fatalf("CreateWorkflow wf2: %v", err)
+	}
+
+	stepGetter := newMockStepGetter()
+	stepGetter.steps["step-wf2"] = &wfmodels.WorkflowStep{
+		ID: "step-wf2", WorkflowID: "wf2", Name: "Target", Position: 0,
+	}
+	store := newWorkflowStore(repo, stepGetter, nil, noopPublisher, testLogger())
+
+	if err := store.ApplyTransition(ctx, "t1", "s1", "step1", "step-wf2", "manual_move"); err != nil {
+		t.Fatalf("ApplyTransition: %v", err)
+	}
+
+	task, err := repo.GetTask(ctx, "t1")
+	if err != nil {
+		t.Fatalf("failed to get task: %v", err)
+	}
+	if task.WorkflowStepID != "step-wf2" {
+		t.Errorf("expected task WorkflowStepID %q, got %q", "step-wf2", task.WorkflowStepID)
+	}
+	if task.WorkflowID != "wf2" {
+		t.Errorf("expected task WorkflowID to sync to the target step's workflow %q, got %q",
+			"wf2", task.WorkflowID)
+	}
+}
+
 func TestWorkflowStore_ApplyTransitionRejectsFullWIPLimitedTarget(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)

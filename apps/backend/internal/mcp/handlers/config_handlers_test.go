@@ -716,6 +716,55 @@ func TestDeferMoveTask_RejectsStepFromDifferentWorkflow(t *testing.T) {
 	assert.Empty(t, queue.pendingMoves, "pending move must not be recorded for a step from another workflow")
 }
 
+// TestDeferMoveTask_RejectsWorkspaceMismatch ensures deferMoveTask returns a
+// validation error when the target step's workflow exists and matches
+// req.WorkflowID, but that workflow lives in a different workspace than the
+// task being moved. The deferred path bypasses task.Service.MoveTask (see
+// applyPendingMove's doc comment) so it must validate workspace ownership
+// independently, mirroring the immediate-apply path's validateTaskMove check.
+func TestDeferMoveTask_RejectsWorkspaceMismatch(t *testing.T) {
+	svc, repo, wfCtrl, wfRepo := newTestTaskServiceWithWorkflow(t)
+	ctx := context.Background()
+	seedRunningTask(t, repo, "ws-defer4", "wf-defer4", "task-defer4", "sess-defer4", "src-step4")
+
+	now := time.Now().UTC()
+	require.NoError(t, wfRepo.CreateStep(ctx, &workflowmodels.WorkflowStep{
+		ID: "src-step4", WorkflowID: "wf-defer4", Name: "Source", Position: 0, CreatedAt: now, UpdatedAt: now,
+	}))
+
+	// A separate workspace with its own workflow/step — the step exists and
+	// req.WorkflowID matches it, but its workspace differs from the task's.
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{
+		ID: "ws-defer4-other", Name: "Other", CreatedAt: now, UpdatedAt: now,
+	}))
+	require.NoError(t, repo.CreateWorkflow(ctx, &models.Workflow{
+		ID: "wf-defer4-other", WorkspaceID: "ws-defer4-other", Name: "Other Board", CreatedAt: now, UpdatedAt: now,
+	}))
+	require.NoError(t, wfRepo.CreateStep(ctx, &workflowmodels.WorkflowStep{
+		ID: "dst-step4-other", WorkflowID: "wf-defer4-other", Name: "Dest", Position: 0, CreatedAt: now, UpdatedAt: now,
+	}))
+
+	queue := &pendingMoveRecordingQueuer{}
+	h := &Handlers{
+		taskSvc:      svc,
+		workflowCtrl: wfCtrl,
+		messageQueue: queue,
+		logger:       testLogger(t).WithFields(),
+	}
+
+	msg := makeWSMessage(t, ws.ActionMCPMoveTask, map[string]interface{}{
+		"task_id":          "task-defer4",
+		"workflow_id":      "wf-defer4-other",
+		"workflow_step_id": "dst-step4-other",
+		"position":         0,
+	})
+
+	resp, err := h.handleMoveTask(ctx, msg)
+	require.NoError(t, err)
+	assertWSError(t, resp, ws.ErrorCodeValidation)
+	assert.Empty(t, queue.pendingMoves, "pending move must not be recorded for a cross-workspace target")
+}
+
 // TestDeferMoveTask_AcceptsValidStep ensures deferMoveTask succeeds when the
 // target step exists and belongs to the requested workflow.
 func TestDeferMoveTask_AcceptsValidStep(t *testing.T) {

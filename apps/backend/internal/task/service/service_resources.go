@@ -546,52 +546,6 @@ func (s *Service) DeleteWorkflow(ctx context.Context, id string) error {
 	return nil
 }
 
-// ReassignTasksFromStep moves all tasks currently on deletedStepID to targetStepID.
-// Called when a workflow step is deleted to prevent tasks from becoming orphaned
-// (invisible on the board because no column matches their step).
-// Tasks with active sessions are moved with AllowActivePrimarySession so that
-// running agents are not blocked from being relocated.
-func (s *Service) ReassignTasksFromStep(ctx context.Context, deletedStepID, workflowID, targetStepID string) error {
-	taskList, err := s.tasks.ListTasksByWorkflowStep(ctx, deletedStepID)
-	if err != nil {
-		return fmt.Errorf("list tasks for step reassignment: %w", err)
-	}
-	existingTargetTasks, err := s.tasks.ListTasksByWorkflowStep(ctx, targetStepID)
-	if err != nil {
-		return fmt.Errorf("list target step tasks for reassignment: %w", err)
-	}
-	nextPosition := len(existingTargetTasks)
-	moved := 0
-	for _, task := range taskList {
-		// SuppressPullOnVacate: without it, vacating deletedStepID here would
-		// free WIP capacity and pull a feeder task onto the step we are
-		// about to delete, orphaning that task after this loop returns.
-		if _, err := s.MoveTaskWithOptions(ctx, task.ID, workflowID, targetStepID, nextPosition,
-			MoveTaskOptions{AllowActivePrimarySession: true, SuppressPullOnVacate: true}); err != nil {
-			s.logger.Error("failed to reassign task from deleted step",
-				zap.String("task_id", task.ID),
-				zap.String("deleted_step_id", deletedStepID),
-				zap.String("target_step_id", targetStepID),
-				zap.Error(err))
-			continue
-		}
-		nextPosition++
-		moved++
-	}
-	if moved > 0 || len(taskList) > 0 {
-		logFn := s.logger.Info
-		if moved < len(taskList) {
-			logFn = s.logger.Warn
-		}
-		logFn("reassigned tasks from deleted step",
-			zap.String("deleted_step_id", deletedStepID),
-			zap.String("target_step_id", targetStepID),
-			zap.Int("moved", moved),
-			zap.Int("total", len(taskList)))
-	}
-	return nil
-}
-
 // ListWorkflows returns workflows for a workspace, excluding hidden ones by default.
 // Pass includeHidden=true to include system-only flows like Improve Kandev.
 func (s *Service) ListWorkflows(ctx context.Context, workspaceID string, includeHidden bool) ([]*models.Workflow, error) {

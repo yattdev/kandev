@@ -44,6 +44,15 @@ export const ORPHAN_STEP: WorkflowStep = {
   color: "#f59e0b",
 };
 
+/**
+ * The "Needs Reassignment" column is a display-only fallback, not a real
+ * workflow step — it must never be offered as a manual move destination
+ * (drag-and-drop, "Move to" menus, or Pipeline navigation).
+ */
+export function isOrphanMoveTarget(targetStepId: string): boolean {
+  return targetStepId === ORPHAN_STEP_ID;
+}
+
 export type SwimlaneKanbanContentProps = {
   workflowId: string;
   steps: WorkflowStep[];
@@ -95,7 +104,7 @@ function useSwimlaneKanbanDnd({ tasks, workflowId, onMoveError }: SwimlaneKanban
       const taskId = active.id as string;
       const targetStepId = over.id as string;
       const task = tasks.find((t) => t.id === taskId);
-      if (!task || task.workflowStepId === targetStepId) return;
+      if (!task || task.workflowStepId === targetStepId || isOrphanMoveTarget(targetStepId)) return;
 
       const state = store.getState();
       const snapshot = state.kanbanMulti.snapshots[workflowId];
@@ -239,6 +248,7 @@ function useTasksByStep(tasks: Task[]) {
 
 function MobileKanbanLayout({
   steps,
+  moveTargetSteps,
   tasks,
   activeIndex,
   onIndexChange,
@@ -298,6 +308,7 @@ function MobileKanbanLayout({
       ) : (
         <SwipeableColumns
           steps={steps}
+          moveTargetSteps={moveTargetSteps}
           tasks={tasks}
           activeIndex={activeIndex}
           onIndexChange={onIndexChange}
@@ -317,13 +328,21 @@ function MobileKanbanLayout({
           externalLinkAvailability={externalLinkAvailability}
         />
       )}
-      <MobileDropTargets steps={steps} currentStepId={currentStepId} isDragging={!!activeTask} />
+      <MobileDropTargets
+        steps={moveTargetSteps}
+        currentStepId={currentStepId}
+        isDragging={!!activeTask}
+      />
     </div>
   );
 }
 
 type SharedKanbanLayoutProps = {
   steps: WorkflowStep[];
+  // Real workflow steps only (excludes the synthetic "Needs Reassignment"
+  // sentinel) — used wherever a step is offered as a move destination
+  // (move menus, drop targets), since that sentinel is display-only.
+  moveTargetSteps: WorkflowStep[];
   tasks: Task[];
   onPreviewTask: (task: Task) => void;
   onOpenTask: (task: Task) => void;
@@ -343,6 +362,7 @@ type SharedKanbanLayoutProps = {
 
 function TabletKanbanLayout({
   steps,
+  moveTargetSteps,
   tasks,
   onPreviewTask,
   onOpenTask,
@@ -377,7 +397,7 @@ function TabletKanbanLayout({
             onDeleteTask={onDeleteTask}
             onArchiveTask={onArchiveTask}
             onMoveTask={moveTaskToStep}
-            steps={steps}
+            steps={moveTargetSteps}
             showMaximizeButton={showMaximizeButton}
             deletingTaskId={deletingTaskId}
             archivingTaskId={archivingTaskId}
@@ -395,6 +415,7 @@ function TabletKanbanLayout({
 
 function DesktopKanbanLayout({
   steps,
+  moveTargetSteps,
   tasks,
   onPreviewTask,
   onOpenTask,
@@ -435,7 +456,7 @@ function DesktopKanbanLayout({
           onDeleteTask={onDeleteTask}
           onArchiveTask={onArchiveTask}
           onMoveTask={moveTaskToStep}
-          steps={steps}
+          steps={moveTargetSteps}
           deletingTaskId={deletingTaskId}
           archivingTaskId={archivingTaskId}
           showMaximizeButton={showMaximizeButton}
@@ -535,6 +556,7 @@ export function SwimlaneKanbanContent({
   const sharedProps = useMemo(
     () => ({
       steps: displaySteps,
+      moveTargetSteps: steps,
       tasks: displayTasks,
       onPreviewTask,
       onOpenTask,
@@ -553,6 +575,7 @@ export function SwimlaneKanbanContent({
     }),
     [
       displaySteps,
+      steps,
       displayTasks,
       onPreviewTask,
       onOpenTask,
