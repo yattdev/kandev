@@ -570,61 +570,6 @@ func (r *Repository) recreateTaskRepositoriesForMultiBranch(trigger string) erro
 	)
 }
 
-// migrateSessionsRemoveWorkflowStepID removes the deprecated workflow_step_id column
-// from task_sessions. Workflow step is now tracked on the task, not the session.
-//
-// NOTE: this predates (and is unrelated to) the task_sessions.workflow_step_id
-// column re-added further below in runMigrations for session-tab step-flow
-// ordering — that column is added, and this removal migration is a no-op,
-// after this one runs, since recreateTableNamed's triggerPhrase gate only
-// fires once the deprecated column is actually present.
-func (r *Repository) migrateSessionsRemoveWorkflowStepID() error {
-	return r.recreateTableNamed("task_sessions.recreate_drop_workflow_step_id", "task_sessions", "workflow_step_id", []string{
-		`CREATE TABLE task_sessions_new (
-			id TEXT PRIMARY KEY,
-			task_id TEXT NOT NULL,
-			agent_execution_id TEXT NOT NULL DEFAULT '',
-			container_id TEXT NOT NULL DEFAULT '',
-			agent_profile_id TEXT,
-			execution_profile_id TEXT NOT NULL DEFAULT '',
-			executor_id TEXT DEFAULT '',
-			executor_profile_id TEXT DEFAULT '',
-			environment_id TEXT DEFAULT '',
-			repository_id TEXT DEFAULT '',
-			base_branch TEXT DEFAULT '',
-			agent_profile_snapshot TEXT DEFAULT '{}',
-			executor_snapshot TEXT DEFAULT '{}',
-			environment_snapshot TEXT DEFAULT '{}',
-			repository_snapshot TEXT DEFAULT '{}',
-			state TEXT NOT NULL DEFAULT 'CREATED',
-			error_message TEXT DEFAULT '',
-			metadata TEXT DEFAULT '{}',
-			started_at TIMESTAMP NOT NULL,
-			completed_at TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL,
-			is_primary INTEGER DEFAULT 0,
-			is_passthrough INTEGER DEFAULT 0,
-			review_status TEXT DEFAULT '',
-			base_commit_sha TEXT DEFAULT '',
-			task_environment_id TEXT DEFAULT '',
-			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-		)`,
-		`INSERT INTO task_sessions_new SELECT
-			id, task_id, agent_execution_id, container_id, agent_profile_id, execution_profile_id,
-			executor_id, executor_profile_id, environment_id, repository_id, base_branch,
-			agent_profile_snapshot, executor_snapshot, environment_snapshot, repository_snapshot,
-			state, error_message, metadata, started_at, completed_at, updated_at,
-			is_primary, is_passthrough, review_status,
-			COALESCE(base_commit_sha, ''), COALESCE(task_environment_id, '')
-		FROM task_sessions`,
-		`DROP TABLE task_sessions`,
-		`ALTER TABLE task_sessions_new RENAME TO task_sessions`,
-		`CREATE INDEX IF NOT EXISTS idx_task_sessions_task_id ON task_sessions(task_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_task_sessions_state ON task_sessions(state)`,
-		`CREATE INDEX IF NOT EXISTS idx_task_sessions_task_state ON task_sessions(task_id, state)`,
-	})
-}
-
 // backfillSessionWorkflowStep populates task_sessions.workflow_step_id for
 // legacy rows (created before the column existed) from the most recent
 // session_step_history entry for each session. It maps each session to the

@@ -21,7 +21,7 @@ import {
   buildStepTitleById,
   sortSessionsByStepFlow,
   splitAgentProfileLabel,
-} from "./session-sort";
+} from "@/lib/state/slices/session/session-sort";
 import { resolveSessionTabTitle, resolveSnapshotModel } from "./session-tab-title";
 
 type AgentInfo = { label: string; agentName: string };

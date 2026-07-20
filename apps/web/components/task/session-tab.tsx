@@ -30,7 +30,11 @@ import {
   markSessionTabUserActivationIntent,
   shouldMarkSessionTabUserActivationIntent,
 } from "./session-tab-activation-intent";
-import { isSessionActive, resolveWorkflowStepTitle, splitAgentProfileLabel } from "./session-sort";
+import {
+  isSessionActive,
+  resolveWorkflowStepTitle,
+  splitAgentProfileLabel,
+} from "@/lib/state/slices/session/session-sort";
 import { resolveSessionTabTitle, resolveSnapshotModel } from "./session-tab-title";
 import { TabRenameInput } from "./tab-rename-input";
 import { useTabMaximizeOnDoubleClick } from "./use-tab-maximize";
@@ -232,7 +236,6 @@ function SessionTabTriggerContent({
   sessionId,
   isPrimary,
   showMultiSessionBadges,
-  sessionNumber,
   agentName,
   sessionState,
   isActive,
@@ -243,7 +246,6 @@ function SessionTabTriggerContent({
   sessionId: string | undefined;
   isPrimary: boolean;
   showMultiSessionBadges: boolean;
-  sessionNumber: number | null;
   agentName: string | null;
   sessionState: TaskSessionState | null;
   isActive: boolean;
@@ -264,11 +266,6 @@ function SessionTabTriggerContent({
     <div ref={tabContentRef} className="flex items-center">
       {isPrimary && showMultiSessionBadges && (
         <IconStar className="h-3 w-3 fill-foreground/50 stroke-0 shrink-0 ml-2" />
-      )}
-      {sessionNumber != null && showMultiSessionBadges && (
-        <span className="ml-1.5 text-[11px] font-medium leading-none text-muted-foreground bg-foreground/10 rounded px-1.5 py-0.5">
-          {sessionNumber}
-        </span>
       )}
       {agentName &&
         (isSessionActive(sessionState) ? (
@@ -340,7 +337,6 @@ function SessionTabBody({
   sessionId: string | undefined;
   isPrimary: boolean;
   showMultiSessionBadges: boolean;
-  sessionNumber: number | null;
   agentName: string | null;
   sessionState: TaskSessionState | null;
   isActive: boolean;
@@ -364,7 +360,9 @@ function SessionTabBody({
 
 /**
  * Custom dockview tab for session panels.
- * Shows agent logo, index badge, and star for primary; right-click for lifecycle actions.
+ * Shows agent logo and star for primary (rank is already embedded in the tab
+ * title via `#<rank>`, so no separate numeric badge is rendered); right-click
+ * for lifecycle actions.
  */
 export function SessionTab(props: IDockviewPanelHeaderProps) {
   const { api, containerApi } = props;
@@ -427,7 +425,6 @@ export function SessionTab(props: IDockviewPanelHeaderProps) {
             sessionId={sessionId}
             isPrimary={isPrimary}
             showMultiSessionBadges={showMultiSessionBadges}
-            sessionNumber={sessionNumber}
             agentName={agentName}
             sessionState={sessionState}
             isActive={isActive}

@@ -136,7 +136,13 @@ export function registerWorkflowsHandlers(store: StoreApi<AppState>): WsHandlers
       store.setState((state) => {
         if (state.kanban.workflowId !== step.workflow_id) return state;
         const steps = state.kanban.steps.filter((s) => s.id !== step.id);
-        return { ...state, kanban: { ...state.kanban, steps } };
+        const nextState = { ...state, kanban: { ...state.kanban, steps } };
+        // Deleting a step shifts every later step's position (and can leave
+        // sessions pointing at a now-missing step), which invalidates the
+        // cached step-flow tab order the same way a reorder does — re-derive
+        // it here too so tab order/rank badges don't go stale.
+        const taskSessionsByTask = reorderAllStoredSessionsPlain(nextState);
+        return taskSessionsByTask ? { ...nextState, taskSessionsByTask } : nextState;
       });
     },
   };

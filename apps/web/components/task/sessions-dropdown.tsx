@@ -31,7 +31,7 @@ import {
   buildStepTitleById,
   resolveAgentLabelFor,
   sortSessionsByStepFlow,
-} from "./session-sort";
+} from "@/lib/state/slices/session/session-sort";
 import { resolveSessionTabTitle, resolveSnapshotModel } from "./session-tab-title";
 
 type SessionStatus = "running" | "waiting_input" | "complete" | "failed" | "cancelled";

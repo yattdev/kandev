@@ -41,7 +41,7 @@ import {
   buildStepTitleById,
   sortSessionsByStepFlow,
   splitAgentProfileLabel,
-} from "../session-sort";
+} from "@/lib/state/slices/session/session-sort";
 import { resolveSessionTabTitle, resolveSnapshotModel } from "../session-tab-title";
 
 type SessionRow = {
@@ -286,11 +286,6 @@ function SessionRowItem({
       >
         {row.isPrimary && showBadges && (
           <IconStar className="h-3.5 w-3.5 fill-foreground/60 stroke-0 shrink-0" />
-        )}
-        {showBadges && (
-          <span className="text-[11px] font-medium leading-none text-muted-foreground bg-foreground/10 rounded px-1.5 py-0.5 shrink-0">
-            {row.index}
-          </span>
         )}
         {row.agentName && <AgentLogo agentName={row.agentName} size={16} className="shrink-0" />}
         <span className="text-sm truncate flex-1">{row.agentLabel}</span>

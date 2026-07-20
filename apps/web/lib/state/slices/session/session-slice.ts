@@ -3,7 +3,7 @@ import { original } from "immer";
 import type { Message, TaskSession } from "@/lib/types/http";
 import type { SessionSlice, SessionSliceState } from "./types";
 import { reconcileMessages } from "./message-signature";
-import { sortSessionsByStepFlow, buildStepPositionById } from "@/components/task/session-sort";
+import { sortSessionsByStepFlow, buildStepPositionById } from "./session-sort";
 import {
   migrateEnvKeyedData,
   purgeSessionRuntimeState,
