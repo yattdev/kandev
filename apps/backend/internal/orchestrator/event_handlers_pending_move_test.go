@@ -150,6 +150,15 @@ func TestPendingMove_DropsForeignWorkflowStepWithoutMovingTask(t *testing.T) {
 	if session.State != models.TaskSessionStateRunning {
 		t.Fatalf("session state = %q, want unchanged RUNNING", session.State)
 	}
+
+	// Regression: the workflow-mismatch drop must clean up any hand-off prompt
+	// queued by handleMoveTask before the deferred move was applied. Without
+	// this cleanup, the queued prompt (authored for the foreign-workflow
+	// target step) would still be sitting in the queue and could be
+	// misdelivered to the review session's agent on a future turn.
+	if status := sc.svc.messageQueue.GetStatus(sc.ctx, sc.reviewSessionID); status.Count != 0 {
+		t.Fatalf("queued message count = %d, want 0 after workflow-mismatch drop", status.Count)
+	}
 }
 
 // --- Pending-move scenario builder & assertions ---
