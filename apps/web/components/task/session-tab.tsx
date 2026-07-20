@@ -388,7 +388,15 @@ export function SessionTab(props: IDockviewPanelHeaderProps) {
   const canShare = !!taskId && !!sessionId && shareableSessionStateClient(sessionState);
 
   useEffect(() => {
-    if (tabTitle && api.title !== tabTitle) api.setTitle(tabTitle);
+    // Always call setTitle (not gated on api.title !== tabTitle) when tabTitle
+    // changes: dockview's setTitle already no-ops internally when the value is
+    // unchanged (see DockviewPanelModel.setTitle), so this is cheap, and
+    // reading api.title here to skip the call is unreliable across dockview
+    // panel moves/reconciliation (dockview-react's own useTitle hook has a
+    // similar comment: "the title may already be out of sync, cf. issue
+    // #1003"). Always syncing guarantees the tab strip never gets stuck on a
+    // stale (e.g. rank-less) title after a session is added/reordered.
+    if (tabTitle) api.setTitle(tabTitle);
   }, [tabTitle, api]);
 
   const showMultiSessionBadges = sessionCount > 1;
