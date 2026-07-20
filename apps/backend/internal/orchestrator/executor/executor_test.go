@@ -304,8 +304,15 @@ func TestLaunchPreparedSession_Success(t *testing.T) {
 	if execution.SessionState != v1.TaskSessionStateStarting {
 		t.Errorf("Expected session state STARTING, got %s", execution.SessionState)
 	}
-	if session.TaskEnvironmentID != launchedEnvID {
-		t.Errorf("Expected session TaskEnvironmentID %q, got %q", launchedEnvID, session.TaskEnvironmentID)
+	// GetTaskSession returns a fresh copy (matching real-repository semantics
+	// where each call deserializes a new struct), so re-fetch here rather
+	// than relying on in-place mutation of the locally held `session` pointer.
+	persistedSession, err := repo.GetTaskSession(context.Background(), "session-123")
+	if err != nil {
+		t.Fatalf("failed to reload session: %v", err)
+	}
+	if persistedSession.TaskEnvironmentID != launchedEnvID {
+		t.Errorf("Expected session TaskEnvironmentID %q, got %q", launchedEnvID, persistedSession.TaskEnvironmentID)
 	}
 	if len(repo.createTaskEnvironmentCalls) != 1 {
 		t.Fatalf("Expected 1 CreateTaskEnvironment call, got %d", len(repo.createTaskEnvironmentCalls))

@@ -365,7 +365,8 @@ func (m *mockRepository) GetTaskSession(ctx context.Context, id string) (*models
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if session, ok := m.sessions[id]; ok {
-		return session, nil
+		clone := *session
+		return &clone, nil
 	}
 	return nil, nil
 }
