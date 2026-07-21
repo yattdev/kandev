@@ -118,7 +118,7 @@ func provideServices(cfg *config.Config, log *logger.Logger, repos *Repositories
 	workflowSyncSvc := initWorkflowSyncService(dbPool, githubSvc, workflowSvc, taskSvc, log)
 	pluginsSvc := initPluginsService(cfg, dbPool, eventBus, repos.Secrets, log)
 	if pluginsSvc != nil {
-		pluginsSvc.SetDataSources(taskSvc, taskSvc, workflowSvc, agentSettingsController, analyticsservice.New(repos.Analytics))
+		pluginsSvc.SetDataSources(taskSvc, taskSvc, workflowSvc, agentSettingsController, analyticsservice.New(repos.Analytics), taskSvc)
 	}
 	shareHTTP := initShareHandlers(dbPool, repos.Task, githubSvc, log, version)
 
@@ -551,6 +551,23 @@ func (a slackHostUtilityAdapter) ExecutePromptWithMCP(
 		ResponseTokens: res.ResponseTokens,
 		DurationMs:     res.DurationMs,
 	}, nil
+}
+
+// pluginsHostUtilityAdapter adapts *hostutility.Manager to the plugins
+// package's utilityRunner interface (Host.InvokeUtilityAgent, ADR 0048),
+// returning just the response text. Lives here for the same cycle-avoidance
+// reason as slackHostUtilityAdapter — internal/plugins must not import the
+// agent runtime.
+type pluginsHostUtilityAdapter struct {
+	mgr *hostutility.Manager
+}
+
+func (a pluginsHostUtilityAdapter) ExecutePrompt(ctx context.Context, agentType, model, mode, prompt string) (string, error) {
+	res, err := a.mgr.ExecutePrompt(ctx, agentType, model, mode, prompt)
+	if err != nil {
+		return "", err
+	}
+	return res.Response, nil
 }
 
 // workflowProviderAdapter adapts task service to workflow service's WorkflowProvider interface.

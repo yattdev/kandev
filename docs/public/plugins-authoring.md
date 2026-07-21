@@ -161,6 +161,16 @@ type Host interface {
 	Workflows() WorkflowReader
 	AgentProfiles() AgentProfileReader
 	Repositories() RepositoryReader
+
+	// Messages reads historical user/agent conversation content
+	// (capability api_read:messages). kandev-injected system blocks are
+	// stripped; raw system prompts are never returned.
+	Messages() MessageReader
+
+	// InvokeUtilityAgent runs a one-shot completion using the
+	// operator-configured utility agent (capability agent_invoke). No API
+	// key of your own; FailedPrecondition when no utility agent is set.
+	InvokeUtilityAgent(ctx context.Context, prompt string) (string, error)
 }
 ```
 
@@ -191,15 +201,35 @@ The data-reader accessors return typed, paginated readers — e.g.
 `([]Task, *PageInfo, error)` with an opaque `PageInfo.NextCursor` for the
 next page. See `pkg/pluginsdk/data_types.go` for the full `Task`,
 `Workspace`, `Workflow`, `WorkflowStep`, `AgentProfile`, `Repository`,
-`Session`, and filter/page types.
+`Session`, `Message`, and filter/page types.
+
+`host.Messages().List(ctx, MessageFilter{...}, Page{...})` reads historical
+conversation content (capability `api_read:messages`). Filter by `SessionIDs`,
+`TaskIDs`, a `Since`/`Until` `created_at` window (RFC3339; `Since` inclusive,
+`Until` exclusive — the natural way to fetch "yesterday"), and message
+`Types`. Each `Message` carries `id`, `session_id`, `task_id`, `turn_id`,
+`author_type` (`user` or `agent`), `content`, `type`, and `created_at`.
+`content` has kandev's injected `<kandev-system>` blocks stripped — a plugin
+never sees raw system prompts.
+
+`host.InvokeUtilityAgent(ctx, prompt)` runs a one-shot, non-interactive LLM
+completion using the **utility agent** the operator selects in **Settings >
+System > Utility Agent** (capability `agent_invoke`), and returns its text. Your
+plugin needs no provider API key — it delegates to a kandev-configured agent.
+If the operator has not selected a utility agent (or the selected profile was
+deleted), the call returns a gRPC `FailedPrecondition` error, so handle that as
+"ask the operator to configure one" rather than a transient failure. This is the
+LLM step behind, e.g., a "summarize yesterday" plugin: read the conversation
+with `host.Messages()`, then summarize it with `host.InvokeUtilityAgent(...)`.
 
 **Capability gating.** Every Host RPC except `GetConfig` and `EmitEvent` is
 checked against your manifest's `capabilities` before the handler runs:
 `GetState`/`SetState`/`DeleteState`/`ListState` require
 `capabilities.state: true`; `GetSecret`/`SetSecret`/`DeleteSecret`/
-`RevealSecret` require `capabilities.secrets: true`; each data-reader
-accessor requires its resource in `capabilities.api_read` (e.g. `tasks`,
-`sessions`, `workspaces`, `workflows`, `agent_profiles`, `repositories`).
+`RevealSecret` require `capabilities.secrets: true`; `InvokeUtilityAgent`
+requires `capabilities.agent_invoke: true`; each data-reader accessor requires
+its resource in `capabilities.api_read` (e.g. `tasks`, `sessions`, `messages`,
+`workspaces`, `workflows`, `agent_profiles`, `repositories`).
 Calling one without the declared capability returns gRPC `PermissionDenied`
 with a message naming the missing capability — declare what you use.
 
