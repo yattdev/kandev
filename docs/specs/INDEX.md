@@ -37,6 +37,8 @@ Product-wide capabilities that are not tied to a single feature area.
 | Spec | Status |
 |---|---|
 | [plugins](plugins/spec.md) | draft |
+| [plugins — marketplace](plugins/marketplace.md) | building |
+| [workspace-git-status](platform/workspace-git-status.md) | shipped |
 
 ## tasks/ — task & workflow model
 
@@ -62,6 +64,8 @@ Kandev's task model: documents, execution stages, labels, blocker escalation, su
 | [quick-chat-sessions](tasks/quick-chat-expiration.md) | shipped |
 | [quick-chat-repository-context](tasks/quick-chat-repository-context.md) | shipped |
 | [parent-child-message-interrupt](tasks/parent-child-message-interrupt.md) | shipped |
+| [parent-child-task-stop](tasks/parent-child-task-stop.md) | shipped |
+| [mcp-task-agent-profile-default](tasks/mcp-task-agent-profile-default/spec.md) | shipped |
 
 ## agents/ — agent governance
 
@@ -89,6 +93,7 @@ Per-workspace credentials and triage triggers for external services.
 | Spec | Status |
 |---|---|
 | [deletion](workspaces/deletion.md) | shipped |
+| [local-repositories](workspaces/local-repositories.md) | shipped |
 
 ## costs/ — cost tracking & budgets
 
@@ -111,7 +116,9 @@ Subscription quota tracking and per-agent cheap-model profile routing.
 | [review-file-status](ui/review-file-status.md) | building |
 | [sidebar-view-creation](ui/sidebar-view-creation.md) | shipped |
 | [slash-command-composer](ui/slash-command-composer.md) | shipped |
+| [settings-manual-save](ui/settings-manual-save.md) | shipped |
 | [mobile-task-navigation](ui/mobile-task-navigation.md) | shipped |
+| [task-layout-profiles](ui/task-layout-profiles.md) | draft |
 
 ## system-page/ — operational diagnostics & maintenance UI
 
@@ -120,8 +127,8 @@ System pages (Radarr/Sonarr-style) for status, disk usage, database maintenance,
 | Spec | Status |
 |---|---|
 | [system-page](system-page/spec.md) | draft |
-| [feature-toggles](feature-toggles/spec.md) | draft |
 | [storage-maintenance](system-page/storage-maintenance.md) | building |
+| [feature-toggles](feature-toggles/spec.md) | draft |
 
 ---
 
@@ -137,6 +144,7 @@ System pages (Radarr/Sonarr-style) for status, disk usage, database maintenance,
 | [public-share-links](public-share-links/spec.md) | draft |
 | [ssh-executor](ssh-executor/spec.md) | draft |
 | [cli-mode-parity](cli-mode-parity/spec.md) | draft |
+| [workflow-settings-autosave](workflow-settings-autosave/spec.md) | archived; superseded by settings-manual-save |
 | [mobile-quick-chat-topbar](mobile-quick-chat-topbar/spec.md) | building |
 
 ---

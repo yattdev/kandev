@@ -11,7 +11,14 @@ over gRPC, with an optional native frontend bundle. See [Plugins](plugins.md)
 for the operator-facing install/enable/disable flow, and the [Plugin manifest
 reference](plugins-manifest.md) for the full `manifest.yaml` schema.
 
-Two working example plugins accompany this guide:
+The fastest way to start is the
+[`kdlbs/kandev-plugin-template`](https://github.com/kdlbs/kandev-plugin-template)
+starter repo — click **Use this template** on GitHub for a minimal, working
+plugin with the layout, build/package `Makefile`, tests, and a tag-triggered
+release workflow already wired up. This guide explains what that scaffold
+contains and how to extend it.
+
+Two more example plugins go deeper on specific surfaces:
 
 - `kandev-plugin-hello` — a nav item, native route, sidebar slot component, a
   WS-driven counter, a Host-state-backed event handler, and a webhook.
@@ -101,6 +108,16 @@ Embed `pluginsdk.UnimplementedPlugin` and override only the methods you need
 — it's a no-op base that also implements `HostSetter`, so `Serve` injects a
 live `Host` into your plugin once the broker connection back to kandev is
 established (retrieve it later via `p.Host()`).
+
+## Webhooks
+
+Declare each webhook key in `manifest.yaml`. Kandev relays `GET` and `POST`
+requests for `/api/plugins/<id>/webhooks/<key>` to `HandleWebhook`; undeclared
+keys return `404`. Request bodies are limited to **4 MiB** and requests that
+exceed the limit return `413` before reaching the plugin. Kandev does not
+authenticate webhook callers or enforce the manifest's informational `method`,
+so validate the HTTP method and the upstream provider's signature before any
+side effect.
 
 ## The Host API
 
@@ -234,7 +251,8 @@ interface PluginRegistry {
   registerNavItem(item: NavItem): void;
   // Route under /settings/plugins/{id}/..., rendered inside the settings shell.
   registerSettingsRoute(path: string, Component: React.ComponentType): void;
-  // Named slot injection. Initial slots: "task-sidebar", "settings-nav", "main-nav-footer".
+  // Named slot injection. Initial slots: "task-sidebar", "settings-nav",
+  // "main-nav-footer", "chat-input-actions" (see "Chat toolbar actions" below).
   registerComponent(slot: string, Component: React.ComponentType<{ slotProps?: unknown }>): void;
   // WS action handler, bridged into the existing lib/ws dispatch.
   registerWsHandler(action: string, handler: (payload: unknown) => void): void;
@@ -310,6 +328,112 @@ here for routes that opt out and render their own chrome), and
 `TaskCreateDialog`, so a plugin can hand off task creation to kandev's real
 create-task flow (repo/branch/agent pickers, validation) instead of POSTing
 directly. See `apps/web/lib/plugins/host-api.ts` for the exact current list.
+
+## Named slots
+
+`registerComponent(slot, Component)` injects a component into a host-defined
+slot. The host renders every plugin's component for that slot (each isolated
+behind an error boundary), so a slot may hold contributions from several
+plugins at once. Available slots:
+
+| Slot | Where it renders | `slotProps` |
+| --- | --- | --- |
+| `task-sidebar` | Bottom of the task-detail sidebar | — |
+| `settings-nav` | Settings navigation tree | — |
+| `main-nav-footer` | Footer of the main sidebar | — |
+| `chat-input-actions` | Chat composer toolbar, beside the model picker, mic, and send button | `{ taskId, taskTitle, activeSessionId, sessionIds }` |
+| `chat-top-bar` | Session top bar, beside the CPU/DB metrics and the document/editor/debug controls | `{ taskId, taskTitle, workspaceId, activeSessionId, sessionIds }` |
+
+### Chat toolbar actions
+
+Register a `chat-input-actions` component to add an icon button to the chat
+composer toolbar. The host passes the current context as `slotProps`:
+
+```ts
+type ChatInputActionsSlotProps = {
+  taskId: string | null;
+  taskTitle?: string;
+  activeSessionId: string | null; // session the composer is bound to
+  sessionIds: string[];           // every kandev session id on the task
+};
+```
+
+A task can hold several sessions, so both the active session and the full
+`sessionIds` list are provided. These are **kandev** session ids — resolving one
+to an agent/ACP transcript id (for example, to key per-session cost data from a
+tool like tokscale) is your plugin's job. Do that **server-side in your plugin
+backend** via the Host data API (`host.Sessions()` exposes each session's
+`ACPSessionID`), not in the bundle: propagate the ids from the UI to your
+backend over `host.api.fetch(...)`, and let the backend do the matching.
+
+```js
+function makeChatAction(host) {
+  const { jsx: h, ui } = host;
+  const { Button, Tooltip, TooltipTrigger, TooltipContent } = ui;
+
+  return function ChatAction({ slotProps }) {
+    const { taskId } = slotProps ?? {};
+    return h(
+      Tooltip,
+      null,
+      h(
+        TooltipTrigger,
+        { asChild: true },
+        h(
+          Button,
+          {
+            type: "button",
+            variant: "ghost",
+            size: "icon",
+            className: "h-7 w-7 cursor-pointer hover:bg-muted/40",
+            "aria-label": "Open plugin page",
+            onClick: () => host.navigate("/hello-world"),
+          },
+          /* an icon element built with host.jsx */ myIcon(h),
+        ),
+      ),
+      h(TooltipContent, null, taskId ? `Task: ${taskId}` : "Plugin action"),
+    );
+  };
+}
+
+// inside initialize(registry, host):
+registry.registerComponent("chat-input-actions", makeChatAction(host));
+```
+
+Match the first-party toolbar buttons: `Button` from `host.ui` with
+`variant="ghost"`, `size="icon"`, `h-7 w-7`, `cursor-pointer`, and a 16px
+(`h-4 w-4`) icon. Wrap it in `host.ui.Tooltip` so it reads like the native
+mic/attach controls. `kandev-plugin-hello/ui/bundle.js` ships a working
+example.
+
+### Session top bar
+
+Register a `chat-top-bar` component to surface at-a-glance status in the
+session top bar, beside the first-party CPU/DB metrics and the
+document/editor/debug controls. The host passes the current context as
+`slotProps`:
+
+```ts
+type ChatTopBarSlotProps = {
+  taskId: string | null;
+  taskTitle?: string;
+  workspaceId: string | null;
+  activeSessionId: string | null; // session the top bar is bound to
+  sessionIds: string[];           // every kandev session id on the task
+};
+```
+
+Like `chat-input-actions`, both the active session and the full `sessionIds`
+list are provided (see the note above about resolving kandev session ids to
+ACP transcript ids server-side). The top bar is a compact horizontal strip, so
+keep contributions to small badges or `h-7` buttons that match the native
+metric chips.
+
+```js
+// inside initialize(registry, host):
+registry.registerComponent("chat-top-bar", makeTopBarStatus(host));
+```
 
 ## Three integration patterns
 
@@ -401,6 +525,19 @@ Install the resulting tarball via **Settings > Plugins** (upload) or:
 ```bash
 curl -F "package=@my-plugin-1.0.0.tar.gz" http://localhost:38429/api/plugins/install
 ```
+
+To show a custom card icon in the marketplace, ship an image in the package
+(e.g. `assets/icon.svg`) and point the manifest's [`icon`
+field](plugins-manifest.md#field-reference) at its package-relative path.
+
+## Publishing to the marketplace
+
+To make your plugin discoverable and one-click installable from inside kandev,
+publish the `<id>-<version>.tar.gz` as a GitHub **Release** asset and either
+open a PR listing your repo in the official catalog or host your own source. A
+separate release-level `checksums.txt` is optional; the checksum manifest inside
+the package is mandatory. See [Plugin marketplace →
+Publishing](plugins-marketplace.md#publishing-a-plugin).
 
 ## Iterate loop
 

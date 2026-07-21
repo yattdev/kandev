@@ -11,6 +11,7 @@ import { QuickChatSessionView } from "@/components/quick-chat/quick-chat-session
 import { isQuickChatSetupSessionId } from "@/lib/state/slices/ui/quick-chat-session";
 import { ConfigChatSetup } from "./config-chat-setup";
 import { useConfigChat } from "./use-config-chat";
+import { cn } from "@/lib/utils";
 
 function useConfigChatPanelStore() {
   return useAppStore(
@@ -108,11 +109,29 @@ function useConfigChatPanelController(workspaceId: string) {
   };
 }
 
+type ConfigChatPanelProps = {
+  workspaceId: string;
+  setFloatingActionsHost?: (host: HTMLElement | null) => void;
+};
+
+function ConfigChatFloatingActionsHost({
+  setHost,
+}: {
+  setHost?: ConfigChatPanelProps["setFloatingActionsHost"];
+}) {
+  return (
+    <div
+      ref={setHost}
+      className="pointer-events-none absolute right-0 bottom-[calc(100%+0.75rem)] z-10 max-w-[calc(100vw_-_2rem_-_env(safe-area-inset-left)_-_env(safe-area-inset-right))]"
+      data-testid="config-chat-floating-actions"
+    />
+  );
+}
+
 export const ConfigChatPanel = memo(function ConfigChatPanel({
   workspaceId,
-}: {
-  workspaceId: string;
-}) {
+  setFloatingActionsHost,
+}: ConfigChatPanelProps) {
   const panel = useConfigChatPanelController(workspaceId);
 
   return (
@@ -122,7 +141,12 @@ export const ConfigChatPanel = memo(function ConfigChatPanel({
           <PopoverTrigger asChild>
             <Button
               size="icon"
-              className="fixed bottom-6 right-6 z-50 h-12 w-12 cursor-pointer rounded-full shadow-lg"
+              aria-hidden={panel.isOpen}
+              tabIndex={panel.isOpen ? -1 : undefined}
+              className={cn(
+                "fixed bottom-6 right-6 z-50 h-12 w-12 cursor-pointer rounded-full shadow-lg",
+                panel.isOpen && "pointer-events-none opacity-0",
+              )}
               aria-label="Configuration Chat"
             >
               <IconSparkles className="h-6 w-6" />
@@ -140,25 +164,31 @@ export const ConfigChatPanel = memo(function ConfigChatPanel({
         sideOffset={8}
         onInteractOutside={(event) => event.preventDefault()}
         data-testid="config-chat-popover"
-        className="flex h-[min(550px,calc(100dvh-6rem))] w-[min(420px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 shadow-2xl"
+        className="relative flex h-[min(550px,calc(100dvh_-_11rem_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)))] max-h-[550px] w-[min(420px,calc(100vw_-_2rem))] flex-col gap-0 overflow-visible p-0 shadow-2xl"
       >
-        <PanelHeader onExpand={panel.handleExpand} onClose={() => panel.handleOpenChange(false)} />
-        {panel.session ? (
-          <QuickChatSessionView
-            session={panel.session}
-            onInitialPromptSent={() =>
-              panel.setQuickChatInitialPrompt(panel.session!.sessionId, undefined)
-            }
+        <ConfigChatFloatingActionsHost setHost={setFloatingActionsHost} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
+          <PanelHeader
+            onExpand={panel.handleExpand}
+            onClose={() => panel.handleOpenChange(false)}
           />
-        ) : (
-          <ConfigChatSetup
-            presentation="floating"
-            defaultProfileId={panel.defaultProfileId}
-            isStarting={panel.isStarting}
-            error={panel.error}
-            onStart={panel.handleStart}
-          />
-        )}
+          {panel.session ? (
+            <QuickChatSessionView
+              session={panel.session}
+              onInitialPromptSent={() =>
+                panel.setQuickChatInitialPrompt(panel.session!.sessionId, undefined)
+              }
+            />
+          ) : (
+            <ConfigChatSetup
+              presentation="floating"
+              defaultProfileId={panel.defaultProfileId}
+              isStarting={panel.isStarting}
+              error={panel.error}
+              onStart={panel.handleStart}
+            />
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );
