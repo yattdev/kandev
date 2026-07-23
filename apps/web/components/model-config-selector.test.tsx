@@ -36,6 +36,36 @@ describe("ModelConfigSelector", () => {
     );
   });
 
+  it("selects a model on pointer click, not just keyboard, and closes the popover", () => {
+    const onModelChange = vi.fn();
+
+    render(
+      <ModelConfigSelector
+        modelOptions={[
+          { id: "gpt-5.5", name: "GPT-5.5" },
+          { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+        ]}
+        currentModel="gpt-5.5"
+        onModelChange={onModelChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: modelSettingsButtonName }));
+
+    const otherRow = screen.getByRole("option", { name: /GPT-5\.6 Sol/ });
+    // Regression guard: cmdk's onSelect() (fired on click) only synthesizes a
+    // click from touch/pointer input in WebKit-based engines when the item
+    // looks interactive; a `cursor-default` item silently breaks pointer
+    // selection while leaving keyboard (Enter) selection unaffected.
+    expect(otherRow.className).toContain("cursor-pointer");
+    expect(otherRow.className).not.toContain("cursor-default");
+
+    fireEvent.click(otherRow);
+
+    expect(onModelChange).toHaveBeenCalledWith("gpt-5.6-sol");
+    expect(screen.queryByRole("option", { name: /GPT-5\.6 Sol/ })).toBeNull();
+  });
+
   it("opens extra config options from compact sub-selector rows", () => {
     const onConfigChange = vi.fn();
 

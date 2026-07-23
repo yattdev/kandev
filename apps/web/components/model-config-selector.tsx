@@ -180,7 +180,14 @@ function ModelRow({
       value={model.id}
       keywords={[model.name, model.description ?? "", model.id]}
       onSelect={() => onSelect(model.id)}
-      className="relative pr-7"
+      // cursor-pointer overrides CommandItem's default cursor-default: WebKit-based
+      // engines (iOS Safari, Tauri's WebKitGTK/WKWebView shell) only synthesize a
+      // `click` event from a tap/pointer press when the element looks interactive,
+      // and a non-pointer cursor is one of the signals that suppresses that
+      // synthesis. Without it, cmdk's onClick-driven onSelect() never fires on
+      // pointer/touch — only keyboard (Enter) selection, which doesn't depend on a
+      // synthesized click, keeps working.
+      className="relative cursor-pointer pr-7"
     >
       <div className="flex min-w-0 flex-1 items-center">
         <div className="min-w-0 flex-1">
