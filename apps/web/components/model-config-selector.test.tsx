@@ -261,3 +261,44 @@ describe("ModelConfigSelector provider descriptions", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });
+
+function renderTwoModelSelector(onModelChange: (id: string) => void) {
+  render(
+    <ModelConfigSelector
+      modelOptions={[
+        { id: "gpt-5.5", name: "GPT-5.5" },
+        { id: providerModelId, name: "GPT-5.6 Sol" },
+      ]}
+      currentModel="gpt-5.5"
+      onModelChange={onModelChange}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: modelSettingsButtonName }));
+  return screen.getByRole("option", { name: /GPT-5\.6 Sol/ });
+}
+
+describe("ModelConfigSelector pointer fallback", () => {
+  it("selects a model on a touch pointer-up fallback without double-invoking on the synthesized click", () => {
+    const onModelChange = vi.fn();
+    const otherRow = renderTwoModelSelector(onModelChange);
+
+    // Regression guard: some WebKit/embedded shells fail to synthesize a click
+    // from a touch tap even with cursor-pointer set, so ModelRow also selects
+    // on a touch/pen pointerup. Some engines still synthesize the click too;
+    // the handler must dedupe so a single tap doesn't fire onModelChange twice.
+    fireEvent.pointerUp(otherRow, { pointerType: "touch" });
+    fireEvent.click(otherRow);
+
+    expect(onModelChange).toHaveBeenCalledTimes(1);
+    expect(onModelChange).toHaveBeenCalledWith(providerModelId);
+  });
+
+  it("does not trigger selection on a mouse pointer-up (only click)", () => {
+    const onModelChange = vi.fn();
+    const otherRow = renderTwoModelSelector(onModelChange);
+
+    fireEvent.pointerUp(otherRow, { pointerType: "mouse" });
+
+    expect(onModelChange).not.toHaveBeenCalled();
+  });
+});
