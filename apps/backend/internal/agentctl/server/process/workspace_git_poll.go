@@ -36,11 +36,12 @@ func (wt *WorkspaceTracker) pollGitChanges(ctx context.Context) {
 	}
 	defer timer.Stop()
 
-	// Initialize cached HEAD SHA, branch name, and index hash
+	// Initialize cached HEAD SHA, branch name, index hash, and upstream SHA
 	wt.gitStateMu.Lock()
 	wt.cachedHeadSHA = wt.getHeadSHA(ctx)
 	wt.cachedBranchName = wt.getCurrentBranchName(ctx)
 	wt.cachedIndexHash = wt.getGitStatusHash(ctx)
+	wt.cachedUpstreamSHA = wt.getUpstreamSHA(ctx)
 	wt.gitStateMu.Unlock()
 
 	wt.logger.Info("git polling started",
@@ -161,6 +162,25 @@ func (wt *WorkspaceTracker) getCurrentBranchName(ctx context.Context) string {
 	return strings.TrimSpace(string(out))
 }
 
+// getUpstreamSHA returns the SHA @{upstream} currently resolves to for the
+// checked-out branch, or "" when there's no upstream configured. Used
+// alongside cachedHeadSHA/cachedBranchName/cachedIndexHash in
+// checkGitChanges to detect a push or fetch: neither moves local HEAD,
+// changes the branch name, or touches the working-tree index, so without
+// this signal a push/fetch-only event is invisible to change detection and
+// tryUpdateGitStatus never re-fires to publish the refreshed status (the
+// one carrying the new RemoteAhead/RemoteBranch values push-detection
+// depends on).
+func (wt *WorkspaceTracker) getUpstreamSHA(ctx context.Context) string {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "@{upstream}")
+	cmd.Dir = wt.workDir
+	out, err := subproc.RunGitOutput(ctx, cmd)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // getGitStatusHash returns a hash of the git status porcelain output.
 // This is used to detect changes to the git index (staging/unstaging) that don't
 // change HEAD. Uses --untracked-files=no because untracked file monitoring is
@@ -176,24 +196,48 @@ func (wt *WorkspaceTracker) getGitStatusHash(ctx context.Context) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// checkGitChanges checks if HEAD or git index has changed and processes changes
+// checkGitChanges checks if HEAD, git index, or the upstream ref has changed
+// and processes changes.
 func (wt *WorkspaceTracker) checkGitChanges(ctx context.Context) {
 	currentHead := wt.getHeadSHA(ctx)
 	currentBranch := wt.getCurrentBranchName(ctx)
 	currentIndexHash := wt.getGitStatusHash(ctx)
+	currentUpstream := wt.getUpstreamSHA(ctx)
 
 	wt.gitStateMu.RLock()
 	previousHead := wt.cachedHeadSHA
 	previousBranch := wt.cachedBranchName
 	previousIndexHash := wt.cachedIndexHash
+	previousUpstream := wt.cachedUpstreamSHA
 	wt.gitStateMu.RUnlock()
 
 	headChanged := currentHead != "" && currentHead != previousHead
 	branchChanged := currentBranch != previousBranch // Track all transitions including to/from detached HEAD
 	indexChanged := currentIndexHash != "" && currentIndexHash != previousIndexHash
+	// Deliberately not gated on currentUpstream != "": the "" -> <sha>
+	// transition (upstream just established by a first push) must also
+	// count as a change, unlike headChanged/indexChanged which treat their
+	// own empty/failed-computation value as "nothing to report".
+	upstreamChanged := currentUpstream != previousUpstream
 
 	// If nothing changed, nothing to do
-	if !headChanged && !branchChanged && !indexChanged {
+	if !headChanged && !branchChanged && !indexChanged && !upstreamChanged {
+		return
+	}
+
+	// Upstream ref changed alone (a push or fetch): neither HEAD, the branch
+	// name, nor the working-tree index moves when this happens, so it needs
+	// its own branch — falling through to the headChanged-gated logic below
+	// would silently drop the event. This is the signal push-detection
+	// depends on (lifecycle.GitStatusData.RemoteAhead), so it must reach
+	// tryUpdateGitStatus even when nothing else changed.
+	if upstreamChanged && !headChanged && !branchChanged && !indexChanged {
+		wt.gitStateMu.Lock()
+		wt.cachedUpstreamSHA = currentUpstream
+		wt.gitStateMu.Unlock()
+
+		wt.logger.Debug("git upstream ref changed (push or fetch detected)")
+		wt.tryUpdateGitStatus(ctx)
 		return
 	}
 
@@ -201,6 +245,7 @@ func (wt *WorkspaceTracker) checkGitChanges(ctx context.Context) {
 	if indexChanged && !headChanged && !branchChanged {
 		wt.gitStateMu.Lock()
 		wt.cachedIndexHash = currentIndexHash
+		wt.cachedUpstreamSHA = currentUpstream
 		wt.gitStateMu.Unlock()
 
 		wt.logger.Debug("git index changed (staging/unstaging detected)")
@@ -215,6 +260,7 @@ func (wt *WorkspaceTracker) checkGitChanges(ctx context.Context) {
 		wt.gitStateMu.Lock()
 		wt.cachedBranchName = currentBranch
 		wt.cachedIndexHash = currentIndexHash
+		wt.cachedUpstreamSHA = currentUpstream
 		wt.gitStateMu.Unlock()
 
 		// Only handle branch switch if we're not in detached HEAD state
@@ -238,11 +284,12 @@ func (wt *WorkspaceTracker) checkGitChanges(ctx context.Context) {
 		zap.String("previous", previousHead),
 		zap.String("current", currentHead))
 
-	// Update cached HEAD, branch, and index hash
+	// Update cached HEAD, branch, index hash, and upstream
 	wt.gitStateMu.Lock()
 	wt.cachedHeadSHA = currentHead
 	wt.cachedBranchName = currentBranch
 	wt.cachedIndexHash = currentIndexHash
+	wt.cachedUpstreamSHA = currentUpstream
 	wt.gitStateMu.Unlock()
 
 	// Check if this is a branch switch (branch name changed)
