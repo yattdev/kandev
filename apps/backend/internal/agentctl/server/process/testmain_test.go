@@ -69,6 +69,24 @@ func TestAmbientGitLabEnvIsClearedForTests(t *testing.T) {
 	}
 }
 
+// TestTestMainClearsInheritedGitLabEnv proves the scrub is what makes the suite
+// hermetic. The check above passes on its own in an already-clean environment,
+// so it cannot catch clearAmbientGitLabEnv being dropped from TestMain — which
+// is exactly the regression that reappears only on a developer machine or
+// executor that exports real GitLab configuration. Re-run this binary with
+// ambient values deliberately set (placeholders, never a real credential) and
+// require the invariant to still hold in the child.
+func TestTestMainClearsInheritedGitLabEnv(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestAmbientGitLabEnvIsClearedForTests$")
+	cmd.Env = append(os.Environ(),
+		gitLabHostEnv+"=https://gitlab.invalid",
+		gitLabTokenEnv+"=not-a-real-token",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("test binary with ambient GitLab configuration failed: %v\n%s", err, out)
+	}
+}
+
 // runFixture executes a whitespace-separated command spec and exits.
 // Supported commands:
 //
