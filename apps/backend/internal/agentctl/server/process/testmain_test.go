@@ -27,6 +27,14 @@ const kandevTestFixtureEnv = "KANDEV_TEST_FIXTURE"
 const gitFetchRaceRealGitEnv = "KANDEV_GIT_FETCH_RACE_REAL_GIT"
 const gitFetchRaceWorktreeEnv = "KANDEV_GIT_FETCH_RACE_WORKTREE"
 
+// ambientGitLabEnvVars lists GitLab configuration inherited from the process
+// running this package's tests. Tests that need GitLab configuration install it
+// explicitly with t.Setenv.
+var ambientGitLabEnvVars = []string{
+	gitLabHostEnv,
+	gitLabTokenEnv,
+}
+
 // TestMain branches into fixture-binary mode when the activation env var
 // is set; otherwise it runs the test suite normally — wrapped in goleak so
 // the per-process subprocess managers (workspace tracker, PTY pumps, poll
@@ -36,7 +44,29 @@ func TestMain(m *testing.M) {
 		runFixture(spec)
 		return
 	}
+	clearAmbientGitLabEnv()
 	goleak.VerifyTestMain(m)
+}
+
+// clearAmbientGitLabEnv removes inherited GitLab configuration before normal
+// tests run. Keep fixture mode above this call so fixture child environments
+// remain exactly as supplied by their parent tests.
+func clearAmbientGitLabEnv() {
+	for _, name := range ambientGitLabEnvVars {
+		if err := os.Unsetenv(name); err != nil {
+			panic("process tests: unset " + name + ": " + err.Error())
+		}
+	}
+}
+
+func TestAmbientGitLabEnvIsClearedForTests(t *testing.T) {
+	// Report only the variable name: GITLAB_TOKEN may be a real credential and
+	// test output can be collected in CI logs.
+	for _, name := range ambientGitLabEnvVars {
+		if _, ok := os.LookupEnv(name); ok {
+			t.Errorf("%s is set during tests; TestMain must clear it", name)
+		}
+	}
 }
 
 // runFixture executes a whitespace-separated command spec and exits.
