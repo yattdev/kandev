@@ -35,6 +35,12 @@ var ambientGitLabEnvVars = []string{
 	gitLabTokenEnv,
 }
 
+// ambientGitLabEnvTestName is the test re-executed by
+// TestTestMainClearsInheritedGitLabEnv. Both the -test.run filter and the
+// child-output assertion derive from it so a rename cannot leave the filter
+// matching nothing.
+const ambientGitLabEnvTestName = "TestAmbientGitLabEnvIsClearedForTests"
+
 // TestMain branches into fixture-binary mode when the activation env var
 // is set; otherwise it runs the test suite normally — wrapped in goleak so
 // the per-process subprocess managers (workspace tracker, PTY pumps, poll
@@ -77,13 +83,19 @@ func TestAmbientGitLabEnvIsClearedForTests(t *testing.T) {
 // ambient values deliberately set (placeholders, never a real credential) and
 // require the invariant to still hold in the child.
 func TestTestMainClearsInheritedGitLabEnv(t *testing.T) {
-	cmd := exec.Command(os.Args[0], "-test.run=^TestAmbientGitLabEnvIsClearedForTests$")
+	cmd := exec.Command(os.Args[0], "-test.v", "-test.run=^"+ambientGitLabEnvTestName+"$")
 	cmd.Env = append(os.Environ(),
 		gitLabHostEnv+"=https://gitlab.invalid",
 		gitLabTokenEnv+"=not-a-real-token",
 	)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	out, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("test binary with ambient GitLab configuration failed: %v\n%s", err, out)
+	}
+	// A -test.run filter matching no test still exits 0 ("no tests to run"), so
+	// a passing child is not by itself evidence the invariant was checked.
+	if !strings.Contains(string(out), "--- PASS: "+ambientGitLabEnvTestName) {
+		t.Fatalf("child did not run %s; the scrub was never exercised\n%s", ambientGitLabEnvTestName, out)
 	}
 }
 
