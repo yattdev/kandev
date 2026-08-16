@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { fetchWorkflowSnapshot } from "@/lib/api";
 import { useAppStore, useAppStoreApi } from "@/components/state-provider";
-import { toKanbanTask } from "@/lib/kanban/map-task";
+import { toKanbanTask, preserveOmittedExecutorFields } from "@/lib/kanban/map-task";
 import type { KanbanState, WorkflowSnapshotData } from "@/lib/state/slices/kanban/types";
 import type { Task } from "@/lib/types/http";
 import type { StoreApi } from "zustand";
@@ -80,6 +80,7 @@ async function fetchAndWriteSnapshot(
             mapped.statusSummary,
             existing.statusSummary,
           );
+          preserveOmittedExecutorFields(mapped, existing);
         }
         return mapped;
       })
