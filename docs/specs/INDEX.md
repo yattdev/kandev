@@ -280,6 +280,7 @@ System pages (Radarr/Sonarr-style) for status, disk usage, database maintenance,
 | [mobile-quick-chat-topbar](mobile-quick-chat-topbar/spec.md) | building |
 | [native-code-review](native-code-review/spec.md) | building |
 | [missing-task-route-recovery](missing-task-route-recovery/spec.md) | draft |
+| [kanban-task-executor-cache-staleness](kanban-task-executor-cache-staleness/spec.md) | draft |
 | [browser-inspect-annotations-save](browser-inspect-annotations-save/spec.md) | shipped |
 | [automations-pr-merged-trigger](automations-pr-merged-trigger/spec.md) | draft |
 | [automation-runs-delete-all-by-status](automation-runs-delete-all-by-status/spec.md) | draft |
