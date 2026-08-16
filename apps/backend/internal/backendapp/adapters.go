@@ -192,6 +192,7 @@ func buildLifecycleLaunchRequest(
 		AgentProfileID:                officeProfileID,
 		ExecutionProfileID:            req.AgentProfileID,
 		StartAgent:                    req.StartAgent,
+		TurnID:                        req.TurnID,
 		WorkspacePath:                 workspacePath,
 		TaskDescription:               req.TaskDescription,
 		Attachments:                   convertToLifecycleAttachments(req.Attachments),
@@ -221,6 +222,7 @@ func buildLifecycleLaunchRequest(
 		CheckoutBranch:                req.CheckoutBranch,
 		PRNumber:                      req.PRNumber,
 		RemoteContribution:            req.RemoteContribution,
+		ContributionDestination:       req.ContributionDestination,
 		WorktreeBranchPrefix:          req.WorktreeBranchPrefix,
 		WorktreeBranchTemplate:        req.WorktreeBranchTemplate,
 		WorktreeBranchTicket:          req.WorktreeBranchTicket,
@@ -270,26 +272,27 @@ func lifecycleRepoLaunchSpecs(repos []executor.RepoSpec) []lifecycle.RepoLaunchS
 	specs := make([]lifecycle.RepoLaunchSpec, 0, len(repos))
 	for _, r := range repos {
 		specs = append(specs, lifecycle.RepoLaunchSpec{
-			RepositoryID:           r.RepositoryID,
-			RepositoryPath:         r.RepositoryPath,
-			RepositoryURL:          r.RepositoryURL,
-			RepoName:               r.RepoName,
-			BaseBranch:             r.BaseBranch,
-			DefaultBranch:          r.DefaultBranch,
-			CheckoutBranch:         r.CheckoutBranch,
-			PRNumber:               r.PRNumber,
-			RemoteContribution:     r.RemoteContribution,
-			WorktreeID:             r.WorktreeID,
-			WorktreeBranchPrefix:   r.WorktreeBranchPrefix,
-			WorktreeBranchTemplate: r.WorktreeBranchTemplate,
-			WorktreeBranchTicket:   r.WorktreeBranchTicket,
-			PullBeforeWorktree:     r.PullBeforeWorktree,
-			RemoteSyncHandled:      r.RemoteSyncHandled,
-			RepoSetupScript:        r.RepoSetupScript,
-			RepoCleanupScript:      r.RepoCleanupScript,
-			CopyFiles:              r.CopyFiles,
-			BranchSlug:             r.BranchSlug,
-			BranchIdentitySlug:     r.BranchIdentitySlug,
+			RepositoryID:            r.RepositoryID,
+			RepositoryPath:          r.RepositoryPath,
+			RepositoryURL:           r.RepositoryURL,
+			RepoName:                r.RepoName,
+			BaseBranch:              r.BaseBranch,
+			DefaultBranch:           r.DefaultBranch,
+			CheckoutBranch:          r.CheckoutBranch,
+			PRNumber:                r.PRNumber,
+			RemoteContribution:      r.RemoteContribution,
+			ContributionDestination: r.ContributionDestination,
+			WorktreeID:              r.WorktreeID,
+			WorktreeBranchPrefix:    r.WorktreeBranchPrefix,
+			WorktreeBranchTemplate:  r.WorktreeBranchTemplate,
+			WorktreeBranchTicket:    r.WorktreeBranchTicket,
+			PullBeforeWorktree:      r.PullBeforeWorktree,
+			RemoteSyncHandled:       r.RemoteSyncHandled,
+			RepoSetupScript:         r.RepoSetupScript,
+			RepoCleanupScript:       r.RepoCleanupScript,
+			CopyFiles:               r.CopyFiles,
+			BranchSlug:              r.BranchSlug,
+			BranchIdentitySlug:      r.BranchIdentitySlug,
 		})
 	}
 	return specs
@@ -318,6 +321,10 @@ func convertToLifecycleAttachments(attachments []v1.MessageAttachment) []lifecyc
 // SetExecutionDescription updates the task description in an existing execution's metadata.
 func (a *lifecycleAdapter) SetExecutionDescription(ctx context.Context, agentExecutionID string, description string) error {
 	return a.mgr.SetExecutionDescription(ctx, agentExecutionID, description)
+}
+
+func (a *lifecycleAdapter) SetPromptTurnID(ctx context.Context, agentExecutionID, turnID string) error {
+	return a.mgr.SetPromptTurnID(ctx, agentExecutionID, turnID)
 }
 
 // RequiresCloneURL implements executor.ExecutorTypeCapabilities by delegating to

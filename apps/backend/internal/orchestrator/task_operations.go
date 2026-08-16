@@ -547,10 +547,14 @@ func (s *Service) StartCreatedSession(
 	if isOfficeTask {
 		mcpMode = executor.McpModeOffice
 	}
-	execution, err := s.executor.LaunchPreparedSession(ctx, task, sessionID, executor.LaunchOptions{AgentProfileID: effectiveProfileID, ExecutorID: executorID, Prompt: effectivePrompt, StartAgent: true, McpMode: mcpMode, Attachments: attachments})
+	initialTurnID, initialTurnCreated := s.startTurnForSessionWithOwnership(ctx, sessionID)
+	execution, err := s.executor.LaunchPreparedSession(ctx, task, sessionID, executor.LaunchOptions{AgentProfileID: effectiveProfileID, ExecutorID: executorID, Prompt: effectivePrompt, StartAgent: true, McpMode: mcpMode, Attachments: attachments, TurnID: initialTurnID})
 	if err != nil {
 		// The executor persists LaunchAgent failures. Cover earlier prepared-session
 		// failures here; the session-level claim makes either completion order safe.
+		if initialTurnCreated {
+			s.completeTurnIfCurrent(ctx, sessionID, initialTurnID)
+		}
 		return nil, s.handleSessionLaunchFailure(ctx, taskID, sessionID, err)
 	}
 
@@ -1014,6 +1018,7 @@ func (s *Service) startTask(ctx context.Context, taskID string, agentProfileID s
 	if isOfficeTask {
 		mcpMode = executor.McpModeOffice
 	}
+	initialTurnID, initialTurnCreated := s.startTurnForSessionWithOwnership(ctx, sessionID)
 
 	// Cache the raw prompt so a transient-provider-error (529) retry can
 	// re-drive this first turn — initial launches bypass PromptTask.
@@ -1023,6 +1028,7 @@ func (s *Service) startTask(ctx context.Context, taskID string, agentProfileID s
 		AgentProfileID:       agentProfileID,
 		OfficeAgentProfileID: officeAgentProfileID,
 		ExecutorID:           executorID,
+		TurnID:               initialTurnID,
 		Prompt:               effectivePrompt,
 		WorkflowStepID:       workflowStepID,
 		StartAgent:           true,
@@ -1032,6 +1038,9 @@ func (s *Service) startTask(ctx context.Context, taskID string, agentProfileID s
 		RouteOverride:        route,
 	})
 	if err != nil {
+		if initialTurnCreated {
+			s.completeTurnIfCurrent(ctx, sessionID, initialTurnID)
+		}
 		return nil, s.handleSessionLaunchFailure(ctx, taskID, sessionID, err)
 	}
 
@@ -1800,6 +1809,7 @@ func (s *Service) waitForStartingSessionPromptable(ctx context.Context, taskID, 
 // If the session is not running, it will be resumed first. Then a prompt is sent using the
 // step's prompt_prefix, prompt_suffix, and plan_mode settings combined with the task description.
 func (s *Service) StartSessionForWorkflowStep(ctx context.Context, taskID, sessionID, workflowStepID string) error {
+	ctx = withWorkflowMetaCache(ctx)
 	s.logger.Debug("starting session for workflow step",
 		zap.String("task_id", taskID),
 		zap.String("session_id", sessionID),
@@ -1823,6 +1833,18 @@ func (s *Service) StartSessionForWorkflowStep(ctx context.Context, taskID, sessi
 	}
 	if session.TaskID != taskID {
 		return fmt.Errorf("session does not belong to task")
+	}
+	if !s.agentManager.IsPassthroughSession(ctx, session.ID) {
+		effectiveProfile := s.resolveStepAgentProfile(ctx, step)
+		if effectiveProfile != "" && effectiveProfile != session.AgentProfileID {
+			return fmt.Errorf(
+				"workflow step profile mismatch: step %q resolves to profile %q but session %q uses profile %q; route the session before prompting",
+				workflowStepID,
+				effectiveProfile,
+				session.ID,
+				session.AgentProfileID,
+			)
+		}
 	}
 
 	dbTask, err := s.repo.GetTask(ctx, taskID)
@@ -2793,7 +2815,7 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 		zap.String("state", string(session.State)),
 		zap.Bool("was_primary", wasPrimary))
 
-	if err := s.repo.DeleteTaskSession(ctx, sessionID); err != nil {
+	if err := s.deleteSessionAndPublishError(ctx, taskID, sessionID); err != nil {
 		return fmt.Errorf("failed to delete session: %w", err)
 	}
 
@@ -2823,6 +2845,109 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	}
 
 	return nil
+}
+
+func (s *Service) deleteSessionAndPublishError(ctx context.Context, taskID, sessionID string) error {
+	lock, release := s.acquireTaskSessionErrorGuard(taskID)
+	defer release()
+	lock.Lock()
+	defer lock.Unlock()
+
+	if err := s.repo.DeleteTaskSession(ctx, sessionID); err != nil {
+		return err
+	}
+	s.publishDeletedSessionError(ctx, taskID, sessionID)
+	return nil
+}
+
+func (s *Service) publishDeletedSessionError(ctx context.Context, taskID, sessionID string) {
+	if s.eventBus == nil {
+		return
+	}
+	eventCtx := context.WithoutCancel(ctx)
+	if err := s.publishTaskSessionErrorEvent(eventCtx, taskID, sessionID, false, nil); err != nil {
+		s.logger.Warn("failed to publish deleted task session error event",
+			zap.String("task_id", taskID),
+			zap.String("session_id", sessionID),
+			zap.Error(err))
+	}
+
+	retainedSessionID, lastError, err := s.newestRetainedSessionError(eventCtx, taskID)
+	if err != nil {
+		s.logger.Warn("failed to reload retained task session error after delete",
+			zap.String("task_id", taskID),
+			zap.String("session_id", sessionID),
+			zap.Error(err))
+		return
+	}
+	if lastError == nil {
+		return
+	}
+	if err := s.publishTaskSessionErrorEvent(eventCtx, taskID, retainedSessionID, true, lastError); err != nil {
+		s.logger.Warn("failed to republish retained task session error after delete",
+			zap.String("task_id", taskID),
+			zap.String("session_id", retainedSessionID),
+			zap.Error(err))
+	}
+}
+
+func (s *Service) newestRetainedSessionError(
+	ctx context.Context,
+	taskID string,
+) (string, *models.LastAgentError, error) {
+	sessions, err := s.repo.ListTaskSessions(ctx, taskID)
+	if err != nil {
+		return "", nil, err
+	}
+	var newestSessionID string
+	var newest models.LastAgentError
+	found := false
+	for _, session := range sessions {
+		if session == nil {
+			continue
+		}
+		lastError, ok := models.LoadLastAgentError(session.Metadata)
+		if !ok || lastError.IsDismissed() {
+			continue
+		}
+		if found && !lastError.OccurredAt.After(newest.OccurredAt) {
+			continue
+		}
+		newestSessionID = session.ID
+		newest = lastError
+		found = true
+	}
+	if !found {
+		return "", nil, nil
+	}
+	return newestSessionID, &newest, nil
+}
+
+func (s *Service) publishTaskSessionErrorEvent(
+	ctx context.Context,
+	taskID, sessionID string,
+	active bool,
+	lastError *models.LastAgentError,
+) error {
+	eventData := map[string]interface{}{
+		"task_id":    taskID,
+		"session_id": sessionID,
+		"active":     active,
+	}
+	if active && lastError != nil {
+		eventData["message"] = lastError.Message
+		eventData["occurred_at"] = lastError.OccurredAt.Format(time.RFC3339Nano)
+		eventData["stamp"] = lastError.Stamp()
+		eventData["agent_execution_id"] = lastError.AgentExecutionID
+		if lastError.RemediationURL != "" {
+			eventData["remediation_url"] = lastError.RemediationURL
+		}
+	}
+	return s.eventBus.Publish(ctx, events.TaskSessionErrorChanged, bus.NewEvent(
+		events.TaskSessionErrorChanged,
+		"orchestrator",
+		eventData,
+	))
 }
 
 // cancelDeletedSessionQueue removes pending prompts left on a deleted session
@@ -3466,6 +3591,16 @@ func (s *Service) promptTask(ctx context.Context, taskID, sessionID string, prom
 	// Prompts can take a long time (minutes) while the WS request may timeout in 15 seconds.
 	// We still want to log and respond, but the prompt should continue regardless.
 	promptCtx := context.WithoutCancel(ctx)
+	if rollback.turnID != "" {
+		if setter, ok := s.agentManager.(executor.PromptTurnIDSetter); ok {
+			if err := setter.SetPromptTurnID(promptCtx, session.AgentExecutionID, rollback.turnID); err != nil {
+				s.logger.Warn("failed to bind prompt turn before dispatch",
+					zap.String("session_id", sessionID),
+					zap.String("turn_id", rollback.turnID),
+					zap.Error(err))
+			}
+		}
+	}
 	result, err := s.executor.PromptWithDispatchCallback(
 		promptCtx, taskID, sessionID, effectivePrompt, attachments, dispatchOnly,
 		func() {
@@ -4247,6 +4382,40 @@ func (s *Service) DrainQueuedMessage(ctx context.Context, sessionID string) (boo
 type cancelInFlightGuard struct {
 	mu   sync.Mutex
 	refs int
+}
+
+type taskSessionErrorGuard struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func (s *Service) acquireTaskSessionErrorGuard(taskID string) (*sync.Mutex, func()) {
+	s.taskSessionErrorLocksMu.Lock()
+	if s.taskSessionErrorLocks == nil {
+		s.taskSessionErrorLocks = make(map[string]*taskSessionErrorGuard)
+	}
+	guard, ok := s.taskSessionErrorLocks[taskID]
+	if !ok {
+		guard = &taskSessionErrorGuard{}
+		s.taskSessionErrorLocks[taskID] = guard
+	}
+	guard.refs++
+	s.taskSessionErrorLocksMu.Unlock()
+
+	var released bool
+	release := func() {
+		if released {
+			return
+		}
+		released = true
+		s.taskSessionErrorLocksMu.Lock()
+		guard.refs--
+		if guard.refs == 0 {
+			delete(s.taskSessionErrorLocks, taskID)
+		}
+		s.taskSessionErrorLocksMu.Unlock()
+	}
+	return &guard.mu, release
 }
 
 type cancellationKind string

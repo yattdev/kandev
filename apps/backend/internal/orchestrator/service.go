@@ -632,12 +632,42 @@ type Service struct {
 	// clobber the task back to REVIEW while work is active.
 	taskRuntimeStateMu sync.Mutex
 
+	// taskSessionErrorLocks serialize session deletion with retained-error
+	// selection and publication for each task. Entries are reference-counted
+	// and reclaimed after the last concurrent operation releases them.
+	taskSessionErrorLocksMu sync.Mutex
+	taskSessionErrorLocks   map[string]*taskSessionErrorGuard
+
 	// completedExecutions records execution IDs that have reached a terminal
 	// agent lifecycle event. Buffered stream/tool events for these executions
 	// must not wake their session back to RUNNING after the terminal path makes
 	// it promptable again. Entries expire after a short grace window so the
 	// guard does not grow without bound in long-running backend processes.
 	completedExecutions sync.Map
+
+	// readyTurnMarks records, per (session, execution, prompt generation),
+	// the turn ID handleAgentReady confirmed and is about to close via
+	// completeTurnForSession. handleCompleteStreamEvent reads this snapshot
+	// (on both the terminal and non-terminal path) instead of trusting live
+	// active-turn state or the terminal-execution marker: agent.ready is
+	// published before the complete-stream frame for the same completion
+	// (see markReadyTurn's doc comment for the ordering guarantee and its
+	// NATS-deployment caveat), so both of those alternatives can already
+	// find the turn gone or stale by the time this runs. Entries are
+	// consumed on read and expire after the same grace window as
+	// completedExecutions so an unread entry cannot grow the map unbounded.
+	// This map is per-process — see markReadyTurn's doc comment for why a
+	// horizontally-scaled NATS deployment can miss cross-instance.
+	readyTurnMarks sync.Map
+
+	// readyTurnMarksZeroGen is readyTurnMarks' sibling for promptGeneration==0
+	// completions (transports with no generation tracking at all), which share
+	// one key per (session, execution) with no generation to disambiguate
+	// them — so entries queue FIFO here instead of occupying a single slot in
+	// readyTurnMarks. Guarded by readyTurnMarksZeroGenMu since sync.Map has no
+	// atomic append. See markReadyTurn's doc comment.
+	readyTurnMarksZeroGenMu sync.Mutex
+	readyTurnMarksZeroGen   map[string][]readyTurnMark
 
 	// executionTeardownClaims arbitrates detached runtime teardown by
 	// "<session_id>::<execution_id>". Coordinator stop requests graceful

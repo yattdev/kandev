@@ -51,6 +51,7 @@ Product-wide capabilities that are not tied to a single feature area.
 | [plugins — agent tools](plugins/agent-tools.md) | draft |
 | [plugins — Voice extraction host prerequisites](plugins/voice-extraction-host.md) | shipped |
 | [plugins — Voice Mode leaves core](plugins/voice-extraction.md) | shipped |
+| [plugin-nav-sidebar-footer](plugin-nav-sidebar-footer/spec.md) | draft |
 | [semantic-notifications](platform/notifications.md) | shipped |
 | [workspace-git-status](platform/workspace-git-status.md) | shipped |
 | [git-subprocess-admission](platform/git-subprocess-admission.md) | building |
@@ -264,6 +265,8 @@ System pages (Radarr/Sonarr-style) for status, disk usage, database maintenance,
 | [mcp-session-observability](mcp-session-observability/spec.md) | approved |
 | [subagent-context-persistence](subagent-context-persistence/spec.md) | draft |
 | [auth](auth/spec.md) | building |
+| [auth — self-actions guard](auth/self-actions-guard.md) | shipped |
+| [auth — trusted proxies](auth/trusted-proxies.md) | building |
 | [create-local-repository](create-local-repository/spec.md) | shipped |
 | [workflow-cycle-guardrails](workflow-cycle-guardrails/spec.md) | building |
 | [improve-kandev](improve-kandev/spec.md) | building |
