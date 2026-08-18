@@ -257,6 +257,7 @@ var profileConfigRenameKeys = map[string]string{
 var profileConfigAuthoritativeKeys = []string{
 	lifecycle.MetadataKeySSHWorkdirRoot,
 	lifecycle.MetadataKeySSHShell,
+	lifecycle.MetadataKeyAllowUserNamespaces,
 }
 
 // applyProfileConfigToMetadata projects profile.Config keys into the
