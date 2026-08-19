@@ -196,6 +196,7 @@ func buildLifecycleLaunchRequest(
 		WorkspaceID:                   req.WorkspaceID,
 		SessionID:                     req.SessionID,
 		TaskEnvironmentID:             req.TaskEnvironmentID,
+		WorkspaceReuseRequired:        req.WorkspaceReuseRequired,
 		TaskTitle:                     req.TaskTitle,
 		AgentProfileID:                officeProfileID,
 		ExecutionProfileID:            req.AgentProfileID,
