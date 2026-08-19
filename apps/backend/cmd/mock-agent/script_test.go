@@ -23,6 +23,15 @@ func TestIsScriptMode(t *testing.T) {
 		{"hello world", false},
 		{"", false},
 		{"/all", false},
+		{
+			// Office wraps a task's multi-line description inside a larger
+			// system+assignment template with a "Description: " label on the
+			// same line as the description's first line — only that first
+			// script line is corrupted by the label; later lines land clean.
+			"# CEO Agent\n\nYou lead the company.\n\nDescription: e2e:thinking(\"hi\")\ne2e:message(\"hi\")\nPriority: medium",
+			true,
+		},
+		{"opening row\nmiddle text mentions e2e: mid-sentence, not at a start\nclosing row", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.cmd, func(t *testing.T) {

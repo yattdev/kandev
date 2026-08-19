@@ -12,10 +12,22 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 )
 
-// isScriptMode returns true if the command starts with "e2e:" prefix
-// (excluding the predefined "/e2e:" slash-command format).
+// isScriptMode returns true if any line of cmd starts with "e2e:" (excluding
+// the predefined "/e2e:" slash-command format). A line-based check, not just
+// a whole-string prefix, because some launch paths (Office task assignment,
+// which wraps a task's description inside a larger CEO-agent system prompt
+// and a "Description: <description>" template) embed the script lines partway
+// through the full prompt rather than at position 0. executeScript already
+// silently skips any line that doesn't match a known e2e: directive, so
+// detecting the script anywhere is safe: the surrounding template text is
+// simply ignored line by line.
 func isScriptMode(cmd string) bool {
-	return strings.HasPrefix(cmd, "e2e:")
+	for _, line := range strings.Split(cmd, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "e2e:") {
+			return true
+		}
+	}
+	return false
 }
 
 // executeScript processes a multi-line script command.

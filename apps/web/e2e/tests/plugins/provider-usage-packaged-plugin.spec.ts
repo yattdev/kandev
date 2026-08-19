@@ -1,5 +1,6 @@
 import path from "node:path";
 import { test, expect } from "../../fixtures/office-fixture";
+import { waitForOfficeTaskSessionLive } from "../../helpers/office-launch";
 import { SessionPage } from "../../pages/session-page";
 
 const PLUGIN_ID = "kandev-provider-usage";
@@ -240,29 +241,39 @@ test.describe("Provider Usage packaged plugin — agent tool", () => {
   test("an office task agent (the coordinator surface) can also discover and call the tool", async ({
     testPage,
     apiClient,
-    officeSeed,
+    officeApi,
+    seedData,
   }) => {
     test.setTimeout(90_000);
+    // Install first: an office task's session launches via the scheduler
+    // (see below) as soon as onboarding creates it, so the plugin must
+    // already be active before that happens or the first call can lose the
+    // same discovery race a kanban task's immediate task-creation avoids.
     await installPackagedPlugin(testPage, apiClient);
 
-    const task = await apiClient.createTaskWithAgent(
-      officeSeed.workspaceId,
-      "Provider Usage MCP E2E — office coordinator",
-      officeSeed.agentId,
-      {
-        description: mcpCallScript("{}"),
-        workflow_id: officeSeed.workflowId,
-      },
-    );
-    await testPage.goto(`/t/${task.id}`);
-    const session = new SessionPage(testPage);
-    await session.waitForLoad();
-    await session.waitForChatIdle({ timeout: 60_000 });
-    const { sessions } = await apiClient.listTaskSessions(task.id);
+    // Office tasks cannot be started with the kanban-style start_agent:true
+    // (the backend rejects it: "office tasks must be started through Office;
+    // use StartTaskWithEnv with scheduler-injected credentials"). Onboarding
+    // with taskTitle/taskDescription is the documented way to get a real,
+    // scheduler-dispatched, mock-agent-backed session on a fresh office task —
+    // see tests/office/task-chat.spec.ts for the same pattern.
+    const onboarding = (await officeApi.completeOnboarding({
+      workspaceName: "Provider Usage MCP E2E",
+      taskPrefix: "PU",
+      agentName: "CEO",
+      agentProfileId: seedData.agentProfileId,
+      executorPreference: "local_pc",
+      taskTitle: "Provider Usage MCP E2E — office",
+      taskDescription: mcpCallScript("{}"),
+    })) as { workspaceId: string; agentId: string; projectId: string; taskId?: string };
+    if (!onboarding.taskId) throw new Error("completeOnboarding did not return a taskId");
+
+    await waitForOfficeTaskSessionLive(apiClient, onboarding.taskId);
+    const { sessions } = await apiClient.listTaskSessions(onboarding.taskId);
     const output = await waitForToolCallOutput(apiClient, sessions[0].id);
     expect(output.error).toBeUndefined();
     const result = output.structuredContent as ProviderUsageResult;
-    assertWellFormedResult(result, officeSeed.workspaceId);
+    assertWellFormedResult(result, onboarding.workspaceId);
   });
 
   test("a call carrying an unexpected property is rejected before the plugin is invoked", async ({
