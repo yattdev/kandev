@@ -164,24 +164,30 @@ func executeMCPCommand(e *emitter, fullPrompt, line string) {
 	toolID := nextToolID()
 	e.startTool(toolID, toolName, acp.ToolKindOther, args)
 
-	text, structured, err := callMCPToolFull(context.Background(), server, toolName, args)
+	text, structured, isError, err := callMCPToolFull(context.Background(), server, toolName, args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mock-agent: MCP call %s/%s failed: %v\n", server, toolName, err)
 		e.completeTool(toolID, map[string]any{toolKeyError: "MCP error: " + err.Error()})
 		return
 	}
 
-	e.completeTool(toolID, mcpCallOutput(text, structured))
+	e.completeTool(toolID, mcpCallOutput(text, structured, isError))
 }
 
-// mcpCallOutput builds the completeTool output map for a successful MCP call,
-// including structuredContent only when the tool actually returned any. This
-// lets an e2e script assert on a tool's structured JSON result (via the
-// persisted tool-call message), not only its human-readable fallback text.
-func mcpCallOutput(text string, structured any) map[string]any {
+// mcpCallOutput builds the completeTool output map for an MCP call, including
+// structuredContent only when the tool actually returned any and isError only
+// when the result itself signals a tool-level failure (MCP's convention for
+// most rejections, including schema/argument validation, per the spec: "SHOULD
+// be reported inside the result object, with isError set to true"). This lets
+// an e2e script assert on a tool's structured JSON result or its error state
+// via the persisted tool-call message, not only its human-readable text.
+func mcpCallOutput(text string, structured any, isError bool) map[string]any {
 	output := map[string]any{toolKeyResult: text}
 	if structured != nil {
 		output[toolKeyStructured] = structured
+	}
+	if isError {
+		output[toolKeyIsError] = true
 	}
 	return output
 }

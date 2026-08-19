@@ -220,6 +220,7 @@ const (
 	toolKeyError      = "error"
 	toolKeyResult     = "result"
 	toolKeyStructured = "structuredContent"
+	toolKeyIsError    = "isError"
 )
 
 // parseBulkCmd reports whether the prompt is the /bulk command and, if so, how

@@ -1,6 +1,5 @@
 import path from "node:path";
 import { test, expect } from "../../fixtures/office-fixture";
-import { dwell } from "../../helpers/causal-waits";
 import { SessionPage } from "../../pages/session-page";
 
 const PLUGIN_ID = "kandev-provider-usage";
@@ -70,6 +69,19 @@ const AVAILABILITY_STATES = new Set([
   "unknown",
 ]);
 
+// The streamable-HTTP MCP endpoint may answer a request as plain JSON or, once
+// a session upgrades to SSE (server-decided, not something this raw fetch
+// client controls), as an "event: message\ndata: {...}" frame. Handle both
+// so this assertion doesn't depend on which transport mode the server chose.
+function parseMcpJsonRpcBody(text: string): unknown {
+  const dataLine = text
+    .split("\n")
+    .find((line) => line.startsWith("data:"))
+    ?.slice("data:".length)
+    .trim();
+  return JSON.parse(dataLine ?? text);
+}
+
 function mcpCallScript(argsJson: string): string {
   return [
     'e2e:thinking("Reading provider capacity before routing...")',
@@ -80,7 +92,10 @@ function mcpCallScript(argsJson: string): string {
   ].join("\n");
 }
 
-async function installPackagedPlugin(testPage: import("@playwright/test").Page): Promise<void> {
+async function installPackagedPlugin(
+  testPage: import("@playwright/test").Page,
+  apiClient: { rawRequest: (method: string, path: string) => Promise<Response> },
+): Promise<void> {
   if (!packagePath) throw new Error("Provider Usage plugin package path is required");
   await testPage.goto("/settings/plugins");
   await testPage.getByTestId("install-plugin-trigger").click();
@@ -90,6 +105,22 @@ async function installPackagedPlugin(testPage: import("@playwright/test").Page):
   const pluginRow = testPage.getByTestId(`plugin-row-${PLUGIN_ID}`);
   await expect(pluginRow).toBeVisible({ timeout: 15_000 });
   await expect(pluginRow.getByText("Active", { exact: true })).toBeVisible();
+
+  // The store record flips to Active as soon as install validation passes,
+  // which can be moments before the supervised subprocess has actually
+  // finished starting and is reachable for RPCs (webhook or MCP tool call).
+  // Poll the plugin's own status webhook — a real RPC into the live
+  // subprocess — until it stops 503ing, so the MCP call below lands after
+  // the process (and therefore its agent-tool registration) is genuinely up.
+  await expect
+    .poll(
+      async () => {
+        const res = await apiClient.rawRequest("GET", `/api/plugins/${PLUGIN_ID}/webhooks/status`);
+        return res.status;
+      },
+      { timeout: 20_000, message: "Provider Usage plugin subprocess never became reachable" },
+    )
+    .toBe(200);
 }
 
 /**
@@ -98,8 +129,11 @@ async function installPackagedPlugin(testPage: import("@playwright/test").Page):
  * "other", which the Kandev adapter normalizes as a generic tool payload
  * stored at `message.metadata.normalized.generic.output` — `result` is the
  * tool's fallback text, `structuredContent` is its JSON structured content
- * (present only when the tool actually returned one), `error` is present
- * only when the call failed (e.g. schema validation rejected it).
+ * (present only when the tool actually returned one), `error` is present only
+ * when the MCP call itself transport-failed (e.g. an unknown tool name),
+ * and `isError` is present when the result is a normal MCP response that
+ * signals a tool-level failure (MCP's convention for most rejections,
+ * including schema/argument validation — see the MCP spec).
  */
 async function waitForToolCallOutput(
   apiClient: {
@@ -108,8 +142,10 @@ async function waitForToolCallOutput(
     }>;
   },
   sessionId: string,
-): Promise<{ result?: string; structuredContent?: unknown; error?: string }> {
-  let output: { result?: string; structuredContent?: unknown; error?: string } | undefined;
+): Promise<{ result?: string; structuredContent?: unknown; error?: string; isError?: boolean }> {
+  let output:
+    | { result?: string; structuredContent?: unknown; error?: string; isError?: boolean }
+    | undefined;
   await expect
     .poll(
       async () => {
@@ -170,17 +206,18 @@ test.describe("Provider Usage packaged plugin — agent tool", () => {
     apiClient,
     seedData,
   }) => {
-    test.setTimeout(150_000);
-    await installPackagedPlugin(testPage);
+    test.setTimeout(90_000);
+    await installPackagedPlugin(testPage, apiClient);
 
-    // First call: the plugin may still be on its immediate startup
-    // partial/unknown response (background poll hasn't completed yet). A
-    // successful call at all is proof the tool was discovered on the
+    // A successful call at all is proof the tool was discovered on the
     // kanban-task surface — an undiscovered/unavailable tool fails the
-    // script's MCP call instead of returning a well-formed result.
-    const firstTask = await apiClient.createTaskWithAgent(
+    // script's MCP call instead of returning a well-formed result. The
+    // plugin's own unit tests (injected clock) cover the poll/freshness
+    // boundary deterministically; waiting out a real multi-minute poll
+    // interval here would only duplicate that at large wall-clock cost.
+    const task = await apiClient.createTaskWithAgent(
       seedData.workspaceId,
-      "Provider Usage MCP E2E — kanban first call",
+      "Provider Usage MCP E2E — kanban",
       seedData.agentProfileId,
       {
         description: mcpCallScript("{}"),
@@ -189,47 +226,15 @@ test.describe("Provider Usage packaged plugin — agent tool", () => {
         repository_ids: [seedData.repositoryId],
       },
     );
-    await testPage.goto(`/t/${firstTask.id}`);
-    const firstSession = new SessionPage(testPage);
-    await firstSession.waitForLoad();
-    await firstSession.waitForChatIdle({ timeout: 60_000 });
-    const { sessions: firstSessions } = await apiClient.listTaskSessions(firstTask.id);
-    const firstOutput = await waitForToolCallOutput(apiClient, firstSessions[0].id);
-    expect(firstOutput.error).toBeUndefined();
-    const firstResult = firstOutput.structuredContent as ProviderUsageResult;
-    assertWellFormedResult(firstResult, seedData.workspaceId);
-
-    // The plugin's poller runs on its own configured interval (minimum 60s)
-    // with nothing client-observable to hook a wait on, so this is a real
-    // dwell rather than a disguised sleep for something else.
-    await dwell(
-      testPage,
-      Math.max(firstResult.poll_interval_seconds, 60) * 1000 + 5_000,
-      "poll-interval",
-      "waiting for the plugin's background provider poller (minimum 60s interval) to complete at least one cycle",
-    );
-
-    const secondTask = await apiClient.createTaskWithAgent(
-      seedData.workspaceId,
-      "Provider Usage MCP E2E — kanban second call",
-      seedData.agentProfileId,
-      {
-        description: mcpCallScript("{}"),
-        workflow_id: seedData.workflowId,
-        workflow_step_id: seedData.startStepId,
-        repository_ids: [seedData.repositoryId],
-      },
-    );
-    await testPage.goto(`/t/${secondTask.id}`);
-    const secondSession = new SessionPage(testPage);
-    await secondSession.waitForLoad();
-    await secondSession.waitForChatIdle({ timeout: 60_000 });
-    const { sessions: secondSessions } = await apiClient.listTaskSessions(secondTask.id);
-    const secondOutput = await waitForToolCallOutput(apiClient, secondSessions[0].id);
-    const secondResult = secondOutput.structuredContent as ProviderUsageResult;
-    assertWellFormedResult(secondResult, seedData.workspaceId);
-    // After the first real poll, the snapshot must be populated.
-    expect(secondResult.snapshot_generated_at).not.toBeNull();
+    await testPage.goto(`/t/${task.id}`);
+    const session = new SessionPage(testPage);
+    await session.waitForLoad();
+    await session.waitForChatIdle({ timeout: 60_000 });
+    const { sessions } = await apiClient.listTaskSessions(task.id);
+    const output = await waitForToolCallOutput(apiClient, sessions[0].id);
+    expect(output.error).toBeUndefined();
+    const result = output.structuredContent as ProviderUsageResult;
+    assertWellFormedResult(result, seedData.workspaceId);
   });
 
   test("an office task agent (the coordinator surface) can also discover and call the tool", async ({
@@ -238,7 +243,7 @@ test.describe("Provider Usage packaged plugin — agent tool", () => {
     officeSeed,
   }) => {
     test.setTimeout(90_000);
-    await installPackagedPlugin(testPage);
+    await installPackagedPlugin(testPage, apiClient);
 
     const task = await apiClient.createTaskWithAgent(
       officeSeed.workspaceId,
@@ -266,7 +271,7 @@ test.describe("Provider Usage packaged plugin — agent tool", () => {
     seedData,
   }) => {
     test.setTimeout(90_000);
-    await installPackagedPlugin(testPage);
+    await installPackagedPlugin(testPage, apiClient);
 
     const task = await apiClient.createTaskWithAgent(
       seedData.workspaceId,
@@ -287,10 +292,13 @@ test.describe("Provider Usage packaged plugin — agent tool", () => {
     const output = await waitForToolCallOutput(apiClient, sessions[0].id);
     // additionalProperties: false on the tool's empty input schema means the
     // host's generic MCP schema validation rejects this before the plugin
-    // ever sees the call — never a structured/successful result.
+    // ever sees the call — never a structured/successful result. Per MCP
+    // convention, most tool-level rejections come back as a normal
+    // CallToolResult with isError:true (not a transport-level error), so
+    // check that rather than the transport `error` field.
     expect(output.structuredContent).toBeUndefined();
-    expect(typeof output.error).toBe("string");
-    expect((output.error ?? "").length).toBeGreaterThan(0);
+    expect(output.isError).toBe(true);
+    expect((output.result ?? "").length).toBeGreaterThan(0);
   });
 
   test("the tool is absent from the External MCP surface", async ({ testPage, backend }) => {
@@ -325,8 +333,11 @@ test.describe("Provider Usage packaged plugin — agent tool", () => {
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
     });
-    expect(listRes.status, await listRes.text().catch(() => "")).toBe(200);
-    const body = (await listRes.json()) as { result?: { tools?: Array<{ name: string }> } };
+    const listResText = await listRes.text();
+    expect(listRes.status, listResText).toBe(200);
+    const body = parseMcpJsonRpcBody(listResText) as {
+      result?: { tools?: Array<{ name: string }> };
+    };
     const toolNames = (body.result?.tools ?? []).map((t) => t.name);
     expect(toolNames).not.toContain(TOOL_NAME);
   });

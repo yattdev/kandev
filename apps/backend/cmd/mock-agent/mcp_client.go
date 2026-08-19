@@ -52,6 +52,17 @@ func getMCPClient(serverName string) (*mcpclient.Client, error) {
 		return nil, fmt.Errorf("initialize MCP client %s: %w", serverName, err)
 	}
 
+	// A real ACP client always lists tools before its first call, and the
+	// server's plugin-tool registry is populated lazily on that first
+	// tools/list (see internal/mcp/server's AddBeforeListTools hook) rather
+	// than at server construction. Skipping this made a freshly launched
+	// session's plugin agent tools invisible to every e2e script that went
+	// straight to CallTool, with no way to exercise that catalog path at all.
+	if _, err := c.ListTools(ctx, mcp.ListToolsRequest{}); err != nil {
+		_ = c.Close()
+		return nil, fmt.Errorf("list tools for MCP client %s: %w", serverName, err)
+	}
+
 	mcpClients[serverName] = c
 	return c, nil
 }
@@ -81,15 +92,18 @@ func callMCPToolCtx(ctx context.Context, serverName, toolName string, args map[s
 	return extractMCPResultText(result), nil
 }
 
-// callMCPToolFull calls a tool on the named MCP server and returns both its
-// extracted fallback text and any structured content, for scripts that need
-// to assert on a tool's structured JSON result rather than only its text.
+// callMCPToolFull calls a tool on the named MCP server and returns its
+// extracted fallback text, any structured content, and whether the MCP
+// result itself is a tool-level error (per the MCP spec, most tool failures
+// — including a plugin's own argument/schema rejection — come back as a
+// normal CallToolResult with IsError:true and a text explanation, not as a
+// transport-level error from CallTool).
 func callMCPToolFull(
 	ctx context.Context, serverName, toolName string, args map[string]any,
-) (text string, structured any, err error) {
+) (text string, structured any, isError bool, err error) {
 	c, err := getMCPClient(serverName)
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
 
 	req := mcp.CallToolRequest{}
@@ -98,10 +112,10 @@ func callMCPToolFull(
 
 	result, err := c.CallTool(ctx, req)
 	if err != nil {
-		return "", nil, fmt.Errorf("call tool %s/%s: %w", serverName, toolName, err)
+		return "", nil, false, fmt.Errorf("call tool %s/%s: %w", serverName, toolName, err)
 	}
 
-	return extractMCPResultText(result), result.StructuredContent, nil
+	return extractMCPResultText(result), result.StructuredContent, result.IsError, nil
 }
 
 // extractMCPResultText extracts text from an MCP CallToolResult.
