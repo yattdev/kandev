@@ -214,11 +214,12 @@ const (
 	bulkDefaultCount = 120
 	bulkMaxCount     = 1000
 	// Tool-input/output map keys, shared to avoid repeating the literals.
-	toolKeyFilePath = "file_path"
-	toolKeyContent  = "content"
-	toolKeyTaskID   = "task_id"
-	toolKeyError    = "error"
-	toolKeyResult   = "result"
+	toolKeyFilePath   = "file_path"
+	toolKeyContent    = "content"
+	toolKeyTaskID     = "task_id"
+	toolKeyError      = "error"
+	toolKeyResult     = "result"
+	toolKeyStructured = "structuredContent"
 )
 
 // parseBulkCmd reports whether the prompt is the /bulk command and, if so, how

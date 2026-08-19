@@ -81,6 +81,29 @@ func callMCPToolCtx(ctx context.Context, serverName, toolName string, args map[s
 	return extractMCPResultText(result), nil
 }
 
+// callMCPToolFull calls a tool on the named MCP server and returns both its
+// extracted fallback text and any structured content, for scripts that need
+// to assert on a tool's structured JSON result rather than only its text.
+func callMCPToolFull(
+	ctx context.Context, serverName, toolName string, args map[string]any,
+) (text string, structured any, err error) {
+	c, err := getMCPClient(serverName)
+	if err != nil {
+		return "", nil, err
+	}
+
+	req := mcp.CallToolRequest{}
+	req.Params.Name = toolName
+	req.Params.Arguments = args
+
+	result, err := c.CallTool(ctx, req)
+	if err != nil {
+		return "", nil, fmt.Errorf("call tool %s/%s: %w", serverName, toolName, err)
+	}
+
+	return extractMCPResultText(result), result.StructuredContent, nil
+}
+
 // extractMCPResultText extracts text from an MCP CallToolResult.
 func extractMCPResultText(result *mcp.CallToolResult) string {
 	var parts []string

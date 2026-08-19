@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -163,13 +164,26 @@ func executeMCPCommand(e *emitter, fullPrompt, line string) {
 	toolID := nextToolID()
 	e.startTool(toolID, toolName, acp.ToolKindOther, args)
 
-	result, err := callMCPTool(server, toolName, args)
+	text, structured, err := callMCPToolFull(context.Background(), server, toolName, args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mock-agent: MCP call %s/%s failed: %v\n", server, toolName, err)
 		e.completeTool(toolID, map[string]any{toolKeyError: "MCP error: " + err.Error()})
-	} else {
-		e.completeTool(toolID, map[string]any{toolKeyResult: result})
+		return
 	}
+
+	e.completeTool(toolID, mcpCallOutput(text, structured))
+}
+
+// mcpCallOutput builds the completeTool output map for a successful MCP call,
+// including structuredContent only when the tool actually returned any. This
+// lets an e2e script assert on a tool's structured JSON result (via the
+// persisted tool-call message), not only its human-readable fallback text.
+func mcpCallOutput(text string, structured any) map[string]any {
+	output := map[string]any{toolKeyResult: text}
+	if structured != nil {
+		output[toolKeyStructured] = structured
+	}
+	return output
 }
 
 // executePlanCommand emits an ACP Plan update.
