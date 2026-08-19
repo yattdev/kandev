@@ -180,6 +180,25 @@ signals, not a billing ledger or a guarantee that the next request will be
 accepted; provider availability, account policy, and concurrent usage still
 apply.
 
+Once installed and active, the plugin also exposes a read-only MCP tool,
+`kandev_kandev_provider_usage_get_provider_usage`, on both Office and Kanban
+task agent sessions, so an agent (including the Office board coordinator) can
+read the same provider-capacity snapshot the UI shows without scraping any
+page. The tool takes no arguments and never contacts a provider itself: it
+only reads the plugin's existing background-poll snapshot, so calling it
+repeatedly cannot amplify provider traffic; only the plugin's own poller and a
+human's manual **Refresh** click fetch new data. Each response reports, per
+provider, a stable ID/name, whether the provider is supported, its
+availability (`available`, `quota_exhausted`, `provider_unavailable`,
+`telemetry_stale`, `not_configured`, `unsupported`, or `unknown`), how old the
+retained data is, and whether it has crossed the staleness threshold (twice
+the plugin's poll interval). This data is instance-wide, not scoped to the
+calling user or workspace: any authorized task session on the same Kandev
+instance sees the same snapshot. Like the UI surfaces above, it is a routing
+signal, not a guarantee. See the [Provider Usage agent tool
+spec](../specs/plugins/provider-usage-agent-tool.md) for the full response
+contract.
+
 </details>
 
 <details>

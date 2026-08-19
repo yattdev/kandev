@@ -49,6 +49,7 @@ Product-wide capabilities that are not tied to a single feature area.
 | [plugins — authoring experience](plugins/authoring-experience.md) | draft |
 | [plugins — marketplace](plugins/marketplace.md) | building |
 | [plugins — agent tools](plugins/agent-tools.md) | draft |
+| [plugins — Provider Usage agent tool](plugins/provider-usage-agent-tool.md) | approved |
 | [plugins — Voice extraction host prerequisites](plugins/voice-extraction-host.md) | shipped |
 | [plugins — Voice Mode leaves core](plugins/voice-extraction.md) | shipped |
 | [plugin-nav-sidebar-footer](plugin-nav-sidebar-footer/spec.md) | draft |
