@@ -800,7 +800,7 @@ func (m *Manager) launchBuildExecutorRequest(ctx context.Context, executionID st
 		McpMode:                        reqWithWorktree.McpMode,
 		McpProviders:                   reqWithWorktree.McpProviders,
 		McpProfile:                     reqWithWorktree.McpProfile,
-		AuthToken:                      m.revealRuntimeSecret(ctx, metadata, MetadataKeyAuthTokenSecret),
+		AuthToken:                      m.revealContainerControlAuthToken(ctx, metadata),
 		BootstrapNonce:                 m.revealRuntimeSecret(ctx, metadata, MetadataKeyBootstrapNonceSecret),
 		OnProgress:                     onProgress,
 		RemoteContributions:            remoteContributions,
