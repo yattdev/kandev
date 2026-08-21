@@ -220,6 +220,7 @@ func TestHostData_TaskWritesAndMessage(t *testing.T) {
 	created, err := host.Tasks().Create(context.Background(), CreateTaskInput{
 		WorkspaceID: "ws-1", WorkflowID: "wf-1", WorkflowStepID: &stepID,
 		Title: "Investigate crash", Description: "stack trace attached", StartAgent: true,
+		Priority: "high", Labels: []string{"bug", "redmine"},
 	})
 	require.NoError(t, err)
 	require.Equal(t, "task-new", created.ID)
@@ -227,16 +228,23 @@ func TestHostData_TaskWritesAndMessage(t *testing.T) {
 	require.NotNil(t, impl.lastCreateInput.WorkflowStepID)
 	require.Equal(t, "step-2", *impl.lastCreateInput.WorkflowStepID)
 	require.True(t, impl.lastCreateInput.StartAgent)
+	require.Equal(t, "high", impl.lastCreateInput.Priority)
+	require.Equal(t, []string{"bug", "redmine"}, impl.lastCreateInput.Labels)
 
 	title := "Renamed"
 	state := "IN_PROGRESS"
-	updated, err := host.Tasks().Update(context.Background(), UpdateTaskInput{ID: "task-1", Title: &title, State: &state})
+	priority := "low"
+	labels := []string{}
+	updated, err := host.Tasks().Update(context.Background(), UpdateTaskInput{ID: "task-1", Title: &title, State: &state, Priority: &priority, Labels: &labels})
 	require.NoError(t, err)
 	require.Equal(t, "IN_PROGRESS", updated.State)
 	require.Equal(t, "task-1", impl.lastUpdateInput.ID)
 	require.NotNil(t, impl.lastUpdateInput.Title)
 	require.Equal(t, "Renamed", *impl.lastUpdateInput.Title)
 	require.Nil(t, impl.lastUpdateInput.Description, "an unset field must stay nil across the wire")
+	require.Equal(t, "low", *impl.lastUpdateInput.Priority)
+	require.NotNil(t, impl.lastUpdateInput.Labels)
+	require.Empty(t, *impl.lastUpdateInput.Labels, "an empty label slice must survive the wire as clear")
 
 	dispatch, err := host.Messages().Send(context.Background(), "task-1", "session-1", "rerun the tests")
 	require.NoError(t, err)
