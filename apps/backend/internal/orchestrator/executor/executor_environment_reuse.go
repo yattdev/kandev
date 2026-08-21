@@ -120,6 +120,14 @@ func (e *Executor) reuseExistingEnvironment(ctx context.Context, req *LaunchAgen
 			metadata["sprite_name"] = env.SandboxID
 		}
 	}
+	// Environments created before the control-token handle was added retain the
+	// canonical container ID but have no environment-scoped secret reference.
+	// Recover only that stable control capability from the matching historical
+	// runtime record. Do not copy its execution ID, port, PID, session directory,
+	// or per-session auth token into the sibling launch.
+	if req.WorkspaceReuseRequired && env.ContainerID != "" && env.ContainerControlAuthTokenSecretID == "" {
+		e.applyLegacyContainerControlHandle(ctx, req, env)
+	}
 
 	// Forward the persisted feature branch so the in-sandbox prepare script
 	// can re-create or reuse it. Applies to every clone-based remote executor
@@ -138,6 +146,18 @@ func (e *Executor) reuseExistingEnvironment(ctx context.Context, req *LaunchAgen
 			applyExecutorRunningMetadata(req, running)
 		}
 	}
+}
+
+func (e *Executor) applyLegacyContainerControlHandle(ctx context.Context, req *LaunchAgentRequest, env *models.TaskEnvironment) {
+	running := e.latestExecutorRunningForEnvironment(ctx, req.TaskID, env)
+	if running == nil || running.ContainerID != env.ContainerID || running.Metadata == nil {
+		return
+	}
+	secretID, _ := running.Metadata[lifecycle.MetadataKeyContainerControlAuthSecret].(string)
+	if secretID == "" {
+		return
+	}
+	ensureLaunchMetadata(req)[lifecycle.MetadataKeyContainerControlAuthSecret] = secretID
 }
 
 func extractContainerBootstrapNonceSecretID(metadata map[string]interface{}) string {

@@ -33,6 +33,7 @@ test.describe("Preview session tabs", () => {
         workflow_id: seedData.workflowId,
         workflow_step_id: seedData.startStepId,
         repository_ids: [seedData.repositoryId],
+        executor_profile_id: seedData.worktreeExecutorProfileId,
       },
     );
 
@@ -49,6 +50,13 @@ test.describe("Preview session tabs", () => {
 
     const { sessions: afterFirst } = await apiClient.listTaskSessions(task.id);
     const primaryId = afterFirst[0].id;
+
+    // A ready first session must publish its canonical repository inventory
+    // before another session is allowed to attach. This keeps the preview
+    // scenario on the same shared-workspace contract as the session launcher.
+    const environment = await apiClient.getTaskEnvironment(task.id);
+    expect(environment?.repos).toHaveLength(1);
+    expect(environment?.repos?.[0]?.repository_id).toBe(seedData.repositoryId);
 
     // 3. Launch a second session through the same WS API path the UI uses.
     // This spec is about preview tabs, not dialog mechanics, so it avoids the

@@ -144,6 +144,28 @@ func TestEnvironmentReposForLaunch_PersistsRemoteWorkspaceIdentity(t *testing.T)
 	}
 }
 
+func TestEnvironmentReposForLaunch_PersistsEveryRemoteRepository(t *testing.T) {
+	req := &LaunchAgentRequest{
+		RepositoryID:  "repo-primary",
+		WorkspacePath: "/remote/tasks/task-1",
+		Repositories: []RepoSpec{
+			{RepositoryID: "repo-primary", BranchIdentitySlug: "main"},
+			{RepositoryID: "repo-secondary", BranchIdentitySlug: "release/v2"},
+		},
+	}
+
+	repos := environmentReposForLaunch(req, &LaunchAgentResponse{WorkspacePath: req.WorkspacePath})
+	if len(repos) != 2 {
+		t.Fatalf("environment repos = %#v, want one row per remote repository", repos)
+	}
+	if repos[0].RepositoryID != "repo-primary" || repos[0].BranchSlug != "main" {
+		t.Fatalf("primary remote environment repo = %#v", repos[0])
+	}
+	if repos[1].RepositoryID != "repo-secondary" || repos[1].BranchSlug != "release-v2" {
+		t.Fatalf("secondary remote environment repo = %#v", repos[1])
+	}
+}
+
 func TestReuseExistingEnvironment_ContainerReuse(t *testing.T) {
 	e := newEnvTestExecutor(t)
 	req := &LaunchAgentRequest{TaskID: "task-1", WorkspaceReuseRequired: true}
@@ -166,6 +188,36 @@ func TestReuseExistingEnvironment_ContainerReuse(t *testing.T) {
 	}
 	if req.Metadata[lifecycle.MetadataKeyContainerControlAuthSecret] != "container-control-secret-abc" {
 		t.Errorf("expected canonical container control secret reference, got %v", req.Metadata[lifecycle.MetadataKeyContainerControlAuthSecret])
+	}
+}
+
+func TestReuseExistingEnvironment_UsesLegacyContainerControlHandleOnly(t *testing.T) {
+	repo := newMockRepository()
+	repo.sessions["legacy-session"] = &models.TaskSession{
+		ID: "legacy-session", TaskID: "task-1", TaskEnvironmentID: "env-legacy",
+	}
+	repo.executorsRunning["legacy-session"] = &models.ExecutorRunning{
+		SessionID:   "legacy-session",
+		TaskID:      "task-1",
+		ContainerID: "container-legacy",
+		Metadata: map[string]interface{}{
+			lifecycle.MetadataKeyContainerControlAuthSecret: "legacy-control-secret",
+		},
+	}
+	e := newTestExecutor(t, &mockAgentManager{}, repo)
+	req := &LaunchAgentRequest{
+		TaskID: "task-1", ExecutorType: string(models.ExecutorTypeLocalDocker), WorkspaceReuseRequired: true,
+	}
+
+	e.reuseExistingEnvironment(context.Background(), req, &models.TaskEnvironment{
+		ID: "env-legacy", TaskID: "task-1", ExecutorType: string(models.ExecutorTypeLocalDocker), ContainerID: "container-legacy",
+	})
+
+	if got := req.Metadata[lifecycle.MetadataKeyContainerControlAuthSecret]; got != "legacy-control-secret" {
+		t.Fatalf("legacy container control secret = %v, want only the legacy control handle", got)
+	}
+	if req.PreviousExecutionID != "" {
+		t.Fatalf("PreviousExecutionID = %q, want no sibling runtime reuse", req.PreviousExecutionID)
 	}
 }
 

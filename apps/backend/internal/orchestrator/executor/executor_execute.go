@@ -2083,6 +2083,27 @@ func environmentReposForLaunch(req *LaunchAgentRequest, resp *LaunchAgentRespons
 	if len(resp.Worktrees) > 0 {
 		return buildTaskEnvironmentRepos(resp.Worktrees)
 	}
+	// Clone-based remote executors materialize all repositories inside one
+	// task workspace, so they have no host worktree result to project here.
+	// Still record every repository/branch slot before the environment becomes
+	// reusable; otherwise the next attach-only launch correctly rejects the
+	// partial inventory.
+	if len(req.Repositories) > 0 {
+		repos := make([]*models.TaskEnvironmentRepo, 0, len(req.Repositories))
+		for position, spec := range req.Repositories {
+			if spec.RepositoryID == "" {
+				continue
+			}
+			repos = append(repos, &models.TaskEnvironmentRepo{
+				RepositoryID:   spec.RepositoryID,
+				BranchSlug:     launchRepoBranchIdentitySlug(spec),
+				WorktreePath:   computeWorkspacePath(req, resp),
+				WorktreeBranch: resp.WorktreeBranch,
+				Position:       position,
+			})
+		}
+		return repos
+	}
 	if req.RepositoryID == "" {
 		return nil
 	}
