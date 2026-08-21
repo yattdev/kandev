@@ -72,6 +72,44 @@ Kandev fails closed before provisioning when a repository binding is missing, de
 
 SSH has an additional forwarding boundary. Remote agent and terminal instances receive the managed credential allowlist plus the repository keys explicitly approved by these bindings. Arbitrary host, request, or unrelated executor-profile variables are not forwarded to the remote process.
 
+### Portable agent configuration
+
+Local Docker, SSH, and Sprites profiles can copy selected agent configuration
+bundles. Open an agent row in the remote credentials settings to choose that
+agent's authentication files and configuration bundles independently.
+Kandev owns the allowlist. You cannot enter an arbitrary host path or copy a
+complete agent home.
+
+Kandev copies each selected file without changes. A file can contain secrets,
+environment values, hooks, commands, model settings, permissions, MCP servers,
+endpoints, or host paths that do not work in the executor. A fresh provision or
+**Reset Environment** can replace the target file. A warm resume keeps the
+existing executor file and does not read the host again.
+
+Each file is limited to 1 MiB and each launch is limited to 4 MiB. Kandev
+writes copied files with owner-only mode `0600`. Missing, unreadable, invalid,
+or oversized optional files produce a preparation warning and do not stop the
+launch. File contents are not returned by the API or stored in the profile.
+
+SSH writes below the configured remote user's home. If that account is shared,
+the copied configuration can affect other processes that use the same account.
+Review the selected bundles before saving the profile.
+
+### Model selection in remote executors
+
+The host model probe helps edit a profile, but it is not the launch authority.
+At launch, the selected executor's advertised ACP catalog decides whether
+Kandev sends the saved model. If the executor does not advertise that model,
+Kandev sends no request for it. It uses an advertised fallback only when one
+exists; otherwise the agent uses its current or default model.
+
+Kandev writes one warning to task chat when this happens. The warning can list
+the requested model, effective model, agent, executor, and executor profile.
+It also tells you to check executor credentials, copied agent configuration,
+and the agent version. Kandev does not rewrite the saved profile model.
+Portable configuration can improve parity, but it does not guarantee equal
+host and executor model catalogs.
+
 ### Script behavior is runtime-specific
 
 Do not treat the two script fields as universal hooks:
@@ -239,7 +277,7 @@ docker ps -a --filter label=kandev.managed=true
 3. Select that secret for the required `SPRITES_API_TOKEN` profile environment variable.
 4. Review remote credential methods, Git identity, prepare/cleanup scripts, and network policy.
 
-Sprites profiles do not copy the host-active `gh` CLI token. Kandev may copy explicitly selected agent credential files, resolve selected Kandev secrets into agent environment variables, or run an agent auth setup script. A profile-selected GitHub token is an unmanaged override; otherwise an attached GitHub repository uses the workspace credential broker. Set `githubCredentialBroker.publicBaseUrl` (or `KANDEV_GITHUB_CREDENTIAL_BROKER_PUBLIC_BASE_URL`) to an HTTPS Kandev URL reachable from remote executors; this setting is independent of GitHub App registration. Credential upload is best-effort: provisioning can continue while later agent authentication fails. The remote sandbox receives highly sensitive data; use a scoped provider token and least-privilege repository credentials.
+Sprites profiles do not copy the host-active `gh` CLI token. Kandev may copy explicitly selected agent credential files, resolve selected Kandev secrets into agent environment variables, or run an agent auth setup script. A profile-selected GitHub token is an unmanaged override; otherwise an attached GitHub repository uses the workspace credential broker. Set `githubCredentialBroker.publicBaseUrl` (or `KANDEV_GITHUB_CREDENTIAL_BROKER_PUBLIC_BASE_URL`) to an HTTPS Kandev URL reachable from remote executors. To recover managed Git credentials after a backend restart, configure the stable secret `githubCredentialBroker.reissueSigningKey` (or `KANDEV_GITHUB_CREDENTIAL_BROKER_REISSUE_SIGNING_KEY`); changing it invalidates outstanding execution capabilities. Drain or quiesce active agent sessions before key rotation. The broker uses `/api/v1/git/credentials/resolve` and `/api/v1/git/credentials/reissue`; the older GitHub paths remain compatibility aliases. These settings are independent of GitHub App registration. Credential upload is best-effort: provisioning can continue while later agent authentication fails. The remote sandbox receives highly sensitive data; use a scoped provider token and least-privilege repository credentials.
 
 Network rules are stored in `sprites_network_policy_rules` as JSON entries with `domain`, `action` (`allow` or `deny`), and optional `include`. Kandev applies them only on fresh sandbox creation, and currently does so after credential upload, prepare, controller startup, and agent-instance creation. Bootstrap traffic can therefore occur before the profile policy is installed. A parse/provider failure is reported as skipped and does not abort launch. Provider semantics remain authoritative; do not treat this late, best-effort step as a security boundary, and test the resulting policy.
 

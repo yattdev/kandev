@@ -23,6 +23,7 @@ import { SETTINGS_DISCOVERY_ROUTE_EXCLUSIONS } from "@/lib/settings-discovery/ca
 import { workspaceId, workflowId } from "@/lib/types/ids";
 import type { ListWorkspacesResponse, UserSettingsResponse } from "@/lib/types/http";
 import { DEFAULT_SETTINGS_PATH } from "@/lib/settings/last-settings-page";
+import { scopedCookieName } from "@/lib/routing/route-bootstrap";
 import {
   buildSettingsInitialStateForRoute,
   renderSettingsRoute,
@@ -40,6 +41,7 @@ const TASK_BEHAVIOR_PATH = "/settings/preferences/task-behavior";
 describe("buildSettingsInitialStateForRoute", () => {
   beforeEach(() => {
     document.cookie = `${ACTIVE_WORKSPACE_COOKIE}=; path=/; max-age=0`;
+    document.cookie = `${scopedCookieName(ACTIVE_WORKSPACE_COOKIE)}=; path=/; max-age=0`;
   });
 
   describe("workspace selection", () => {
@@ -65,7 +67,12 @@ describe("buildSettingsInitialStateForRoute", () => {
       expect(state.userSettings?.workspaceId).toBe("ws-2");
     });
 
-    it("falls back to user settings when cookie has an office workspace", () => {
+    it("keeps an office workspace active when the cookie names one", () => {
+      // Settings used to prefer a kanban workspace here. Harmless while chrome
+      // came from the pathname — /settings is not an /office route, so it
+      // rendered kanban chrome regardless — but the chrome now follows the
+      // active workspace, so preferring kanban would switch an Office user's
+      // workspace as a side effect of opening Settings.
       document.cookie = `${ACTIVE_WORKSPACE_COOKIE}=ws-office; path=/`;
 
       const state = buildState({
@@ -76,8 +83,8 @@ describe("buildSettingsInitialStateForRoute", () => {
         userSettingsResponse: userSettings({ workspace_id: workspaceId("ws-kanban") }),
       });
 
-      expect(state.workspaces?.activeId).toBe("ws-kanban");
-      expect(state.userSettings?.workspaceId).toBe("ws-kanban");
+      expect(state.workspaces?.activeId).toBe("ws-office");
+      expect(state.userSettings?.workspaceId).toBe("ws-office");
     });
   });
 

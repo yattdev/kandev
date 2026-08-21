@@ -15,7 +15,7 @@ const BASE_SCALARS = {
   description: "Do it well",
   position: 3,
   state: "TODO" as const,
-  priority: 0,
+  priority: "critical",
   is_ephemeral: false,
   created_at: "2026-04-22T10:00:00Z",
   updated_at: "2026-04-22T10:05:00Z",
@@ -311,5 +311,12 @@ describe("preserveOmittedExecutorFields", () => {
     expect(incoming.primaryExecutorType).toBe("ssh");
     expect(incoming.primaryExecutorName).toBe("Remote box");
     expect(incoming.isRemoteExecutor).toBe(true);
+  });
+});
+
+describe("toKanbanTask priority", () => {
+  it("preserves the canonical priority from HTTP and WebSocket payloads", () => {
+    expect(toKanbanTask(httpDTO()).priority).toBe("critical");
+    expect(toKanbanTask(wsPayload()).priority).toBe("critical");
   });
 });

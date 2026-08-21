@@ -405,8 +405,13 @@ func appendDBSnapshotGitStatus(ctx context.Context, taskRepo *sqliterepo.Reposit
 		"status": map[string]interface{}{
 			branchFieldKey:          latestSnapshot.Branch,
 			"remote_branch":         latestSnapshot.RemoteBranch,
+			"head_commit":           latestSnapshot.HeadCommit,
+			"base_commit":           latestSnapshot.BaseCommit,
 			"ahead":                 latestSnapshot.Ahead,
 			"behind":                latestSnapshot.Behind,
+			"remote_ahead":          metadata["remote_ahead"],
+			"remote_behind":         metadata["remote_behind"],
+			"remote_head_commit":    metadata["remote_head_commit"],
 			"files":                 latestSnapshot.Files,
 			"modified":              metadata["modified"],
 			addedFieldKey:           metadata[addedFieldKey],
@@ -500,13 +505,15 @@ func appendSessionModelsMessage(sessionID string, session *models.TaskSession, l
 	if modelState == nil || (modelState.CurrentModelID == "" && len(modelState.Models) == 0) {
 		return result
 	}
+	snapshot, _ := lifecycle.LoadSessionModelsSnapshot(session.Metadata[models.SessionMetaKeyACPModelState])
 	notification, err := ws.NewNotification(ws.ActionSessionModelsUpdated, lifecycle.SessionModelsEventPayload{
-		TaskID:         session.TaskID,
-		SessionID:      sessionID,
-		CurrentModelID: modelState.CurrentModelID,
-		Models:         modelState.Models,
-		ConfigOptions:  modelState.ConfigOptions,
-		ConfigBaseline: sessionACPConfigBaseline(session),
+		TaskID:               session.TaskID,
+		SessionID:            sessionID,
+		CurrentModelID:       modelState.CurrentModelID,
+		Models:               modelState.Models,
+		ConfigOptions:        modelState.ConfigOptions,
+		ConfigOptionsSettled: modelState.ConfigOptionsSettled || snapshot.ConfigOptionsSettled,
+		ConfigBaseline:       sessionACPConfigBaseline(session),
 	})
 	if err == nil {
 		result = append(result, notification)
@@ -577,8 +584,9 @@ func registerRoutes(p routeParams) {
 	// Per-user task scoping for plan reads/writes (opt-in auth).
 	planService.SetTaskAuthorizer(p.taskSvc.AuthorizeTaskAccess)
 	clarificationStore := clarification.NewStore(2 * time.Hour)
-	clarificationCanceller := clarification.NewCanceller(clarificationStore, p.taskRepo, p.eventBus, p.log)
+	clarificationCanceller := clarification.NewCanceller(clarificationStore, p.taskRepo, p.taskSvc, p.log)
 	p.orchestratorSvc.SetClarificationCanceller(clarificationCanceller)
+	p.taskSvc.SetClarificationCanceller(clarificationCanceller)
 
 	// Wire pending clarification requests into the office inbox.
 	if p.services.OfficeSvcs != nil && p.services.OfficeSvcs.Dashboard != nil {
@@ -1061,6 +1069,7 @@ func registerTaskRoutes(p routeParams, planService *taskservice.PlanService, han
 		})
 	}
 	taskhandlers.RegisterRepositoryRoutes(p.router, p.gateway.Dispatcher, p.taskSvc, p.log)
+	taskhandlers.RegisterRepositorySetRoutes(p.router, p.gateway.Dispatcher, p.taskSvc, p.log)
 	taskhandlers.RegisterExecutorRoutes(p.router, p.gateway.Dispatcher, p.taskSvc, p.log)
 	taskhandlers.RegisterExecutorProfileRoutes(p.router, p.gateway.Dispatcher, p.taskSvc, p.agentList, p.log)
 	taskhandlers.RegisterEnvironmentRoutes(p.router, p.gateway.Dispatcher, p.taskSvc, p.log)
@@ -1132,7 +1141,16 @@ func registerSecondaryRoutes(
 	agentcapabilities.RegisterRoutes(p.router, p.hostUtilityMgr, p.log)
 	p.log.Debug("Registered Agent Capabilities handlers (HTTP)")
 
-	clarification.RegisterRoutes(p.router, clarificationStore, p.gateway.Hub, p.msgCreator, p.taskRepo, p.eventBus, p.log)
+	clarification.RegisterRoutes(
+		p.router,
+		clarificationStore,
+		p.gateway.Hub,
+		p.msgCreator,
+		p.taskRepo,
+		p.eventBus,
+		p.orchestratorSvc,
+		p.log,
+	)
 	p.log.Debug("Registered Clarification handlers (HTTP)")
 
 	if p.secretsSvc != nil {

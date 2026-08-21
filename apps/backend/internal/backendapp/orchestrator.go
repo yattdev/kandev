@@ -151,6 +151,10 @@ func provideOrchestrator(
 	// owns the canonical rich payload. Covers workflow transitions, workflow
 	// step moves, and the primary-session-set callback below.
 	orchestratorSvc.SetTaskEventPublisher(taskSvc)
+	// Feeder promotion after an admitted manual move must wait for the
+	// orchestrator's task lifecycle. The task service keeps ownership of the
+	// candidate filter and promotion rules.
+	orchestratorSvc.SetFeederPullReconciler(taskSvc)
 
 	// Let the task service read the live per-session busy substate so it can
 	// compute the task-level MOST-ACTIVE-WINS activity aggregate carried on the
@@ -265,13 +269,13 @@ func (a githubExecutorCredentialPolicyAdapter) ResolveTaskGitCredentialPolicy(
 func githubCredentialBrokerEndpoint(cfg *config.Config) string {
 	if cfg != nil {
 		if publicBaseURL := strings.TrimRight(strings.TrimSpace(cfg.GitHubCredentialBroker.PublicBaseURL), "/"); publicBaseURL != "" {
-			return publicBaseURL + "/api/v1/github/credentials/resolve"
+			return publicBaseURL + "/api/v1/git/credentials/resolve"
 		}
 		if cfg.Server.Port != 0 {
-			return fmt.Sprintf("http://localhost:%d/api/v1/github/credentials/resolve", cfg.Server.Port)
+			return fmt.Sprintf("http://localhost:%d/api/v1/git/credentials/resolve", cfg.Server.Port)
 		}
 	}
-	return fmt.Sprintf("http://localhost:%d/api/v1/github/credentials/resolve", portsBackendDefault)
+	return fmt.Sprintf("http://localhost:%d/api/v1/git/credentials/resolve", portsBackendDefault)
 }
 
 // resolveQueueMaxPerSession honors the KANDEV_QUEUE_MAX_PER_SESSION env var,

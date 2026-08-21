@@ -1,11 +1,20 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { t } from "@/lib/i18n";
 import { IconAlertTriangle, IconGitBranch, IconTerminal2 } from "@tabler/icons-react";
 import { Badge } from "@kandev/ui/badge";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@kandev/ui/drawer";
 import { ScrollOnOverflow } from "@kandev/ui/scroll-on-overflow";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@kandev/ui/tooltip";
 import type {
   LocalRepository,
   Repository,
@@ -21,15 +30,61 @@ import { formatUserHomePath, truncateRepoPath } from "@/lib/utils";
 import { getExecutorIcon } from "@/lib/executor-icons";
 import { AgentLogo } from "@/components/agent-logo";
 import { getCapabilityWarning } from "@/lib/capability-warning";
+import { useTouchDrawer } from "@/hooks/use-compact-task-chrome";
 import { buildBranchKeywords } from "./task-create-dialog-pill";
 
 type OptionItem = {
   value: string;
   label: string;
   renderLabel: () => React.ReactNode;
+  renderTriggerLabel?: () => React.ReactNode;
   disabled?: boolean;
   disabledReason?: string;
 };
+
+function ModelProbeWarning({ note }: { note: string }) {
+  const usesTouchDrawer = useTouchDrawer();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const trigger = (
+    <button
+      type="button"
+      className="inline-flex min-h-11 min-w-8 shrink-0 cursor-help items-center justify-center rounded-sm border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={note}
+      aria-expanded={usesTouchDrawer ? drawerOpen : undefined}
+      aria-haspopup={usesTouchDrawer ? "dialog" : undefined}
+      data-testid="agent-profile-model-probe-warning"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <IconAlertTriangle className="size-3.5 text-amber-500" aria-hidden />
+    </button>
+  );
+
+  if (usesTouchDrawer) {
+    return (
+      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <DrawerTrigger asChild>{trigger}</DrawerTrigger>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle className="sr-only">{note}</DrawerTitle>
+            <DrawerDescription>{note}</DrawerDescription>
+          </DrawerHeader>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+      <TooltipContent side="top">{note}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ModelProbeWarningIndicator({ note }: { note: string }) {
+  return <IconAlertTriangle className="size-3.5 text-amber-500" title={note} aria-hidden />;
+}
 
 export function useRepositoryOptions(
   repositories: Repository[],
@@ -142,83 +197,54 @@ export function useAgentProfileOptions(agentProfiles: AgentProfileOption[]): Opt
       const profileLabel = parts[1] ?? "";
       const isPassthrough = profile.cli_passthrough === true;
       const warning = getCapabilityWarning(profile.capability_status, profile.capability_error);
-      // No-silent-model-fallback: a profile whose start model is no longer
-      // advertised ("gone") is blocked from selection unless it opted into
-      // an explicit fallback model (shown as a warning) or the legacy
-      // auto-fallback toggle.
-      //
-      // The advertised list is the host-utility probe cache. While it has
-      // not loaded yet (empty list) gone-ness is unknown and deliberately
-      // NOT assumed: nothing is blocked and no warning is shown. The backend
-      // rejects the launch if the model is genuinely unavailable, so this
-      // startup window is cosmetic. A fallback model that is itself gone
-      // does not make the profile selectable — it would promise a switch
-      // SetModel cannot apply, so the profile is blocked like strict mode.
+      // The host-utility probe is an editing hint only. The selected
+      // executor owns the launch-time model catalog, so a host-only mismatch
+      // must never remove a profile from the task selector.
       const advertised = advertisedModelIDs(availableAgents, profile.agent_name);
       const startModelGone = Boolean(
         profile.model && advertised.length > 0 && !advertised.includes(profile.model),
       );
-      const fallbackGone = Boolean(
-        profile.fallback_model &&
-        advertised.length > 0 &&
-        !advertised.includes(profile.fallback_model),
+      const modelProbeNote = startModelGone
+        ? t("settings:profileStartModelNotAdvertisedOnHost", { model: profile.model })
+        : undefined;
+      const renderProfileLabel = (modelProbeWarning: React.ReactNode) => (
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="flex shrink-0 items-center justify-between gap-2">
+            <span className="flex shrink-0 items-center gap-1.5">
+              <AgentLogo agentName={profile.agent_name} className="shrink-0" />
+              <span>{agentLabel}</span>
+              {warning && (
+                <warning.Icon className={`size-3.5 ${warning.color}`} title={warning.title} />
+              )}
+              {modelProbeWarning}
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              {isPassthrough && (
+                <IconTerminal2
+                  className="size-3.5 text-muted-foreground"
+                  title={t("common:cliModeYourPromptWillBe")}
+                />
+              )}
+              {profileLabel ? (
+                <ScrollOnOverflow className="rounded-full border border-border px-2 py-0.5 text-xs">
+                  {profileLabel}
+                </ScrollOnOverflow>
+              ) : null}
+            </span>
+          </span>
+        </span>
       );
-      const autoFallbackOn = profile.auto_fallback === true;
-      const fallbackUsable = Boolean(profile.fallback_model) && !fallbackGone;
-      const blocked = startModelGone && !autoFallbackOn && !fallbackUsable;
-      const fallbackWarning = startModelGone && !autoFallbackOn && fallbackUsable;
-      const disabledReason = blocked
-        ? t("settings:profileStartModelUnavailable", { model: profile.model })
-        : undefined;
-      const fallbackNote = fallbackWarning
-        ? t("settings:profileFallbackWillBeUsed", {
-            model: profile.model,
-            fallback: profile.fallback_model,
-          })
-        : undefined;
       return {
         value: profile.id,
         label: profile.label,
-        disabled: blocked || undefined,
-        disabledReason,
-        renderLabel: () => (
-          <span className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="flex shrink-0 items-center justify-between gap-2">
-              <span className="flex shrink-0 items-center gap-1.5">
-                <AgentLogo agentName={profile.agent_name} className="shrink-0" />
-                <span>{agentLabel}</span>
-                {warning && (
-                  <warning.Icon className={`size-3.5 ${warning.color}`} title={warning.title} />
-                )}
-                {fallbackNote && (
-                  <IconAlertTriangle
-                    className="size-3.5 shrink-0 text-amber-500"
-                    title={fallbackNote}
-                  />
-                )}
-              </span>
-              <span className="flex shrink-0 items-center gap-1.5">
-                {isPassthrough && (
-                  <IconTerminal2
-                    className="size-3.5 text-muted-foreground"
-                    title={t("common:cliModeYourPromptWillBe")}
-                  />
-                )}
-                {profileLabel ? (
-                  <ScrollOnOverflow className="rounded-full border border-border px-2 py-0.5 text-xs">
-                    {profileLabel}
-                  </ScrollOnOverflow>
-                ) : null}
-              </span>
-            </span>
-            {fallbackNote && (
-              <span className="flex items-center gap-1.5 pl-1 text-xs text-amber-600">
-                <IconAlertTriangle className="size-3 shrink-0" aria-hidden />
-                {fallbackNote}
-              </span>
-            )}
-          </span>
-        ),
+        disabled: undefined,
+        disabledReason: undefined,
+        renderLabel: () =>
+          renderProfileLabel(modelProbeNote ? <ModelProbeWarning note={modelProbeNote} /> : null),
+        renderTriggerLabel: () =>
+          renderProfileLabel(
+            modelProbeNote ? <ModelProbeWarningIndicator note={modelProbeNote} /> : null,
+          ),
       };
     });
   }, [agentProfiles, availableAgents, t]);

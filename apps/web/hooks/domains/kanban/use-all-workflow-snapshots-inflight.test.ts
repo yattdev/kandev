@@ -8,6 +8,7 @@ type SnapshotTask = {
   title: string;
   position: number;
   state: "IN_PROGRESS";
+  autoStartFailed?: boolean;
   parentTaskId?: string;
   statusSummary?: {
     revision: number;
@@ -44,6 +45,7 @@ const STEP_ID = "step-1";
 const LIVE_STEP_ID = "step-2";
 const PARENT_TASK_ID = "parent-task";
 const LIVE_PLACEMENT_TASK_ID = "task-with-live-placement";
+const INVALIDATED_STATUS_TASK_ID = "task-with-invalidated-status";
 
 const mocks = vi.hoisted(() => ({
   clearKanbanMulti: vi.fn(),
@@ -234,6 +236,124 @@ describe("useAllWorkflowSnapshots in-flight websocket tasks", () => {
           expect.objectContaining({
             id: "task-with-live-status",
             statusSummary: expect.objectContaining({ revision: 4 }),
+          }),
+        ],
+      }),
+    );
+  });
+});
+
+describe("useAllWorkflowSnapshots auto-start marker races", () => {
+  it("keeps a newer live auto-start marker when an older snapshot finishes later", async () => {
+    resetState();
+    let resolveFetch: (value: unknown) => void = () => {};
+    mocks.fetchWorkflowSnapshot.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    renderHook(() => useAllWorkflowSnapshots(WORKSPACE_ID));
+    await waitFor(() =>
+      expect(mocks.fetchWorkflowSnapshot).toHaveBeenCalledWith(WORKFLOW_ID, expect.anything()),
+    );
+
+    setLightweightSnapshot({
+      id: "task-with-live-auto-start-marker",
+      workflowStepId: STEP_ID,
+      title: "Live auto-start marker",
+      position: 0,
+      state: "IN_PROGRESS",
+      autoStartFailed: true,
+    });
+    resolveFetch({
+      steps: [{ id: STEP_ID, name: "Doing", color: null, position: 0 }],
+      tasks: [
+        {
+          id: "task-with-live-auto-start-marker",
+          workflow_step_id: STEP_ID,
+          title: "Live auto-start marker",
+          position: 0,
+          state: "IN_PROGRESS",
+          auto_start_failed: false,
+        },
+      ],
+    });
+
+    await waitFor(() => expect(mocks.setWorkflowSnapshot).toHaveBeenCalled());
+    expect(mocks.setWorkflowSnapshot).toHaveBeenCalledWith(
+      WORKFLOW_ID,
+      expect.objectContaining({
+        tasks: [
+          expect.objectContaining({
+            id: "task-with-live-auto-start-marker",
+            autoStartFailed: true,
+          }),
+        ],
+      }),
+    );
+  });
+});
+
+describe("useAllWorkflowSnapshots status invalidation races", () => {
+  it("keeps a live summary that advanced while an invalidating snapshot was in flight", async () => {
+    resetState();
+    let resolveFetch: (value: unknown) => void = () => {};
+    mocks.fetchWorkflowSnapshot.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    setLightweightSnapshot({
+      id: INVALIDATED_STATUS_TASK_ID,
+      workflowStepId: STEP_ID,
+      title: "Invalidated status",
+      position: 0,
+      state: "IN_PROGRESS",
+      statusSummary: {
+        revision: 4,
+        updated_at: "2026-08-13T00:00:04Z",
+      },
+    });
+
+    renderHook(() => useAllWorkflowSnapshots(WORKSPACE_ID));
+    await waitFor(() =>
+      expect(mocks.fetchWorkflowSnapshot).toHaveBeenCalledWith(WORKFLOW_ID, expect.anything()),
+    );
+
+    setLightweightSnapshot({
+      id: INVALIDATED_STATUS_TASK_ID,
+      workflowStepId: STEP_ID,
+      title: "Invalidated status",
+      position: 0,
+      state: "IN_PROGRESS",
+      statusSummary: {
+        revision: 5,
+        updated_at: "2026-08-13T00:00:05Z",
+      },
+    });
+    resolveFetch({
+      steps: [{ id: STEP_ID, name: "Doing", color: null, position: 0 }],
+      tasks: [
+        {
+          id: INVALIDATED_STATUS_TASK_ID,
+          workflow_step_id: STEP_ID,
+          title: "Invalidated status",
+          position: 0,
+          state: "IN_PROGRESS",
+          status_summary_invalidated: true,
+        },
+      ],
+    });
+
+    await waitFor(() => expect(mocks.setWorkflowSnapshot).toHaveBeenCalled());
+    expect(mocks.setWorkflowSnapshot).toHaveBeenCalledWith(
+      WORKFLOW_ID,
+      expect.objectContaining({
+        tasks: [
+          expect.objectContaining({
+            id: INVALIDATED_STATUS_TASK_ID,
+            statusSummary: expect.objectContaining({ revision: 5 }),
           }),
         ],
       }),

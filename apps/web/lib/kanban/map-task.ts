@@ -7,6 +7,7 @@ import type { KanbanState, TaskDependencyRef } from "@/lib/state/slices/kanban/t
 import type {
   ForegroundActivity,
   TaskPendingAction,
+  TaskPriority,
   TaskState,
   TaskSessionState,
 } from "@/lib/types/http";
@@ -34,7 +35,7 @@ export type TaskLike = {
   autopilot?: boolean;
   position?: number;
   state?: TaskState;
-  priority?: string | number;
+  priority?: TaskPriority;
   repositories?: Array<{
     id?: string;
     repository_id: string;
@@ -55,6 +56,9 @@ export type TaskLike = {
   task_pending_action?: TaskPendingAction | null;
   /** True when the task's session was mid-turn when the backend died. */
   interrupted?: boolean;
+  /** True when a workflow step's auto_start_agent on_enter action failed to
+   *  launch a run for this task. */
+  auto_start_failed?: boolean;
   foreground_activity?: ForegroundActivity | null;
   active_subagent_count?: number;
   session_count?: number | null;
@@ -77,6 +81,7 @@ export type TaskLike = {
   metadata?: Record<string, unknown> | null;
   archived_at?: string | null;
   status_summary?: TaskStatusSummary | null;
+  status_summary_invalidated?: boolean;
 };
 
 export type WorkspaceMode = "inherit_parent" | "new_workspace" | "shared_group";
@@ -205,6 +210,7 @@ export function toKanbanTask(source: TaskLike): KanbanTask {
     primarySessionPendingAction: pickPendingAction(source.primary_session_pending_action),
     taskPendingAction: pickPendingAction(source.task_pending_action),
     interrupted: source.interrupted,
+    autoStartFailed: source.auto_start_failed,
     foregroundActivity: pickForegroundActivity(source.foreground_activity),
     activeSubagentCount: source.active_subagent_count ?? undefined,
     sessionCount: source.session_count ?? undefined,

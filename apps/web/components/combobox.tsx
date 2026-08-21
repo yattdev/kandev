@@ -17,6 +17,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@kandev/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@kandev/ui/tooltip";
 import { useTaskCreateDialogPopoverContainer } from "@/hooks/use-task-create-dialog-popover-container";
+import { t } from "@/lib/i18n";
 
 export type ComboboxOption = {
   value: string;
@@ -24,6 +25,8 @@ export type ComboboxOption = {
   description?: string;
   keywords?: string[];
   renderLabel?: () => React.ReactNode;
+  /** Optional label renderer for the selected value inside the trigger. */
+  renderTriggerLabel?: () => React.ReactNode;
   /** When true the option renders dimmed and isn't selectable. */
   disabled?: boolean;
   /** Tooltip shown on hover when disabled is true. */
@@ -71,6 +74,9 @@ function TriggerLabel({
   plainTrigger: boolean;
   placeholder: string;
 }) {
+  if (!plainTrigger && selectedOption?.renderTriggerLabel) {
+    return selectedOption.renderTriggerLabel();
+  }
   if (!plainTrigger && selectedOption?.renderLabel) {
     return selectedOption.renderLabel();
   }
@@ -144,9 +150,9 @@ export const Combobox = memo(function Combobox({
   onValueChange,
   ariaLabel,
   dropdownLabel,
-  placeholder = "Select option...",
-  searchPlaceholder = "Search...",
-  emptyMessage = "No option found.",
+  placeholder = t("common:selectOption"),
+  searchPlaceholder = t("common:searchPlaceholder"),
+  emptyMessage = t("common:noOptionFound"),
   disabled = false,
   className,
   triggerClassName,

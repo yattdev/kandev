@@ -1,6 +1,7 @@
 import type {
   ForegroundActivity,
   TaskPendingAction,
+  TaskPriority,
   TaskState as TaskStatus,
 } from "@/lib/types/http";
 import type { TaskStatusSummary } from "@/lib/types/task-status-summary";
@@ -70,7 +71,7 @@ export type KanbanState = {
     title: string;
     description?: string;
     autopilot?: boolean;
-    priority?: string | number;
+    priority?: TaskPriority;
     position: number;
     state?: TaskStatus;
     /** Primary repository id (lowest position). Kept for backwards compat. */
@@ -105,6 +106,9 @@ export type KanbanState = {
     foregroundActivity?: ForegroundActivity | null;
     /** True when the task's session was mid-turn when the backend died. */
     interrupted?: boolean;
+    /** True when a workflow step's auto_start_agent on_enter action failed to
+     *  launch a run for this task. */
+    autoStartFailed?: boolean;
     /** Live subagents across this task's sessions; drives the board count chip. */
     activeSubagentCount?: number;
     sessionCount?: number | null;

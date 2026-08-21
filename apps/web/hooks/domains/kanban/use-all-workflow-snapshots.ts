@@ -27,10 +27,29 @@ function hasNewerLivePlacement(existing: KanbanTask, fetchStart: KanbanTask | un
   );
 }
 
+function hasNewerLiveStatusSummary(
+  existing: KanbanTask,
+  fetchStart: KanbanTask | undefined,
+): boolean {
+  const existingRevision = existing.statusSummary?.revision;
+  if (existingRevision === undefined) return false;
+  if (!fetchStart) return true;
+  return existingRevision > (fetchStart.statusSummary?.revision ?? -1);
+}
+
+function hasNewerLiveAutoStartFailed(
+  existing: KanbanTask,
+  fetchStart: KanbanTask | undefined,
+): boolean {
+  if (!fetchStart) return true;
+  return existing.autoStartFailed !== fetchStart.autoStartFailed;
+}
+
 function mergeFetchedTask(
   mapped: KanbanTask,
   existing: KanbanTask,
   fetchStart: KanbanTask | undefined,
+  statusSummaryInvalidated: boolean,
 ): KanbanTask {
   // Production snapshot payloads can be surfaced through read-only objects.
   // Merge into a fresh task copy before applying any live-field backfills.
@@ -49,19 +68,28 @@ function mergeFetchedTask(
   // A response that started before a live WS status update may finish
   // afterwards, so do not let an older snapshot roll the status
   // projection back to a lower revision.
-  const existingRevision = existing.statusSummary?.revision;
-  const mappedRevision = merged.statusSummary?.revision;
-  if (existingRevision !== undefined && existingRevision > (mappedRevision ?? -1)) {
-    merged.statusSummary = existing.statusSummary;
+  if (statusSummaryInvalidated && !hasNewerLiveStatusSummary(existing, fetchStart)) {
+    merged.statusSummary = undefined;
+  } else {
+    const existingRevision = existing.statusSummary?.revision;
+    const mappedRevision = merged.statusSummary?.revision;
+    if (existingRevision !== undefined && existingRevision > (mappedRevision ?? -1)) {
+      merged.statusSummary = existing.statusSummary;
+    }
+    // An equal revision can still carry a newer queued-prompt count. Preserve
+    // the freshest status projection while keeping the revision guard above.
+    merged.statusSummary = pickFreshestStatusSummary(merged.statusSummary, existing.statusSummary);
   }
-  // An equal revision can still carry a newer queued-prompt count. Preserve
-  // the freshest status projection while keeping the revision guard above.
-  merged.statusSummary = pickFreshestStatusSummary(merged.statusSummary, existing.statusSummary);
   merged.primarySessionId = merged.primarySessionId || existing.primarySessionId;
   merged.primarySessionState = merged.primarySessionState || existing.primarySessionState;
   // Autopilot is immutable after creation. Keep the cached value when
   // an older or partial snapshot does not include the field.
   merged.autopilot = merged.autopilot ?? existing.autopilot;
+  // A task.updated event can set or clear this marker while the snapshot is
+  // in flight. Preserve that newer live value instead of rolling it back.
+  if (merged.autoStartFailed === undefined || hasNewerLiveAutoStartFailed(existing, fetchStart)) {
+    merged.autoStartFailed = existing.autoStartFailed;
+  }
   preserveOmittedExecutorFields(merged, existing);
   return merged;
 }
@@ -84,7 +112,14 @@ function mergeSnapshotTasks(
       const mapped = mapSnapshotTask(task, stepIds);
       if (!mapped) return null;
       const existing = existingById.get(mapped.id);
-      return existing ? mergeFetchedTask(mapped, existing, fetchStartById.get(mapped.id)) : mapped;
+      return existing
+        ? mergeFetchedTask(
+            mapped,
+            existing,
+            fetchStartById.get(mapped.id),
+            task.status_summary_invalidated === true,
+          )
+        : mapped;
     })
     .filter((t): t is KanbanTask => t !== null);
   const snapshotTaskIds = new Set(tasks.map((t) => t.id));

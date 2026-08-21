@@ -86,12 +86,12 @@ export function resolveInputPlaceholder(
   hasClarification: boolean,
   needsRecovery: boolean,
 ): string {
-  if (needsRecovery) return "Choose a recovery option above to continue...";
-  if (hasClarification) return "Queue instructions while the question is pending...";
-  if (isAgentBusy) return "Queue instructions to the agent...";
-  if (activeDocumentType === "file") return "Continue working on the file...";
-  if (planModeEnabled) return "Continue working on the plan...";
-  return "Continue working on the task...";
+  if (needsRecovery) return t("task:composerPlaceholderRecovery");
+  if (hasClarification) return t("task:composerPlaceholderClarification");
+  if (isAgentBusy) return t("task:composerPlaceholderBusy");
+  if (activeDocumentType === "file") return t("task:composerPlaceholderFile");
+  if (planModeEnabled) return t("task:composerPlaceholderPlan");
+  return t("task:composerPlaceholderTask");
 }
 
 type PlaceholderArgs = {
@@ -107,7 +107,7 @@ type PlaceholderArgs = {
 /** Picks the composer placeholder: an explicit override wins, then the
  *  "switching agent" state, then {@link resolveInputPlaceholder}. */
 function pickInputPlaceholder(a: PlaceholderArgs): string {
-  if (a.isMoving) return "Switching agent...";
+  if (a.isMoving) return t("task:composerPlaceholderSwitchingAgent");
   // Preserve the prior `??` semantics: an explicit "" override (caller wants
   // no placeholder text) must NOT fall through to the resolver default.
   if (a.override !== undefined) return a.override;
@@ -164,7 +164,6 @@ function usePanelMessageHandler(panelState: ChatPanelState) {
     prompts,
   });
 }
-
 /** Builds the composer's submit handler, tracking in-flight sends and
  *  routing errors to a toast. */
 export function useSubmitHandler(
@@ -399,12 +398,6 @@ function useChatInputDerived(
   return { planActions, executor, placeholder };
 }
 
-/** Whether the user can manually drain the queued-message backlog right now
- *  (no pending clarification, and the session is idle/waiting for input). */
-function canManuallyDrainQueue(pendingClarification: unknown, sessionState: string | null) {
-  return !pendingClarification && (sessionState === "WAITING_FOR_INPUT" || sessionState === "IDLE");
-}
-
 /**
  * The chat composer: input box, submit/cancel handling, plan-mode toggle,
  * clarification banner, and the {@link ChatStatusBar} above it.
@@ -437,7 +430,6 @@ export function ChatInputArea({
   const statusRowTaskId = resolveStatusRowTaskId(taskId, statusTaskId);
   const composerWorkspaceId = useComposerWorkspaceId(resolvedSessionId, taskId);
   const sessionState = panelState.session?.state ?? null;
-  const canDrainQueue = canManuallyDrainQueue(panelState.pendingClarification, sessionState);
   const { planActions, executor, placeholder } = useChatInputDerived(
     panelState,
     chatInputRef,
@@ -475,7 +467,6 @@ export function ChatInputArea({
       />
       <QueueAffordance
         sessionId={resolvedSessionId}
-        canDrain={canDrainQueue}
         renderStatusBar={(queueChip) => (
           <ChatStatusBar
             todoItems={panelState.todoItems}

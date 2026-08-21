@@ -68,6 +68,14 @@ func (c *Controller) RegisterHTTPRoutes(router *gin.Engine) {
 	api.DELETE("/personal-connection", c.httpDisconnectPersonalAuth)
 	api.GET("/credentials/resolve", c.httpCredentialBrokerReady)
 	api.POST("/credentials/resolve", c.httpResolveCredentialLease)
+	api.POST("/credentials/reissue", c.httpReissueCredentialLease)
+
+	// Git credential broker routes are provider-neutral. Keep the GitHub paths
+	// above as compatibility aliases for existing executors and integrations.
+	gitAPI := router.Group("/api/v1/git")
+	gitAPI.GET("/credentials/resolve", c.httpCredentialBrokerReady)
+	gitAPI.POST("/credentials/resolve", c.httpResolveCredentialLease)
+	gitAPI.POST("/credentials/reissue", c.httpReissueCredentialLease)
 
 	api.GET("/task-prs", c.httpListTaskPRs)
 	api.POST("/task-prs", c.httpCreateTaskPR)
@@ -759,7 +767,7 @@ func (c *Controller) httpMergePR(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "merge_method must be merge, squash, or rebase"})
 		return
 	}
-	principal, err := c.service.MergePRForWorkspace(
+	principal, outcome, err := c.service.MergePRForWorkspace(
 		ctx.Request.Context(), ctx.Query("workspace_id"), currentGitHubUserID(ctx),
 		owner, repo, number, req.MergeMethod,
 	)
@@ -771,6 +779,8 @@ func (c *Controller) httpMergePR(ctx *gin.Context) {
 		var apiErr *GitHubAPIError
 		if errors.As(err, &apiErr) {
 			switch apiErr.StatusCode {
+			case http.StatusBadRequest:
+				status = http.StatusBadRequest
 			case http.StatusMethodNotAllowed, http.StatusConflict:
 				status = http.StatusConflict
 			case http.StatusUnauthorized:
@@ -784,7 +794,7 @@ func (c *Controller) httpMergePR(ctx *gin.Context) {
 		ctx.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"merged": true, "principal": principal})
+	ctx.JSON(http.StatusOK, gin.H{"status": outcome, "principal": principal})
 }
 
 func (c *Controller) httpListPRWatches(ctx *gin.Context) {

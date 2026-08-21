@@ -535,7 +535,7 @@ func (r *Repository) updateTaskTx(ctx context.Context, tx *sql.Tx, task *models.
 	// (occurred_at, id) chain invariant under real concurrent load — SQLite's
 	// single-writer connection pool serializes callers regardless, so this
 	// was invisible until exercised against Postgres with real concurrency.
-	task.UpdatedAt = time.Now().UTC()
+	task.UpdatedAt = r.nowUTC()
 
 	updateQuery := `
 		UPDATE tasks SET workspace_id = ?, workflow_id = ?, workflow_step_id = ?, title = ?, description = ?, state = ?, priority = ?, position = ?, wip_admitted = ?, queued_for_step_id = ?, queued_at = ?, metadata = ?, parent_id = ?, updated_at = ?, origin = ?, project_id = ?, labels = ?, identifier = ?
@@ -842,6 +842,47 @@ func (r *Repository) SetTaskMetadataKey(ctx context.Context, taskID, key string,
 	return err
 }
 
+// SetTaskMetadataKeyIfNoActiveSession writes one metadata key only when the
+// task has no session in STARTING or RUNNING. This prevents a delayed failure
+// callback from re-adding a marker after a newer launch has already started.
+func (r *Repository) SetTaskMetadataKeyIfNoActiveSession(
+	ctx context.Context, taskID, key string, value interface{},
+) (bool, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return false, err
+	}
+	var query string
+	if dialect.IsPostgres(r.db.DriverName()) {
+		query = `UPDATE tasks
+			SET metadata = jsonb_set(CASE WHEN metadata IS NULL OR metadata = 'null' OR metadata = '' THEN '{}'::jsonb ELSE metadata::jsonb END, ARRAY[?]::text[], ?::jsonb, true)::text, updated_at = ?
+			WHERE id = ?
+			  AND NOT EXISTS (
+				SELECT 1 FROM task_sessions
+				WHERE task_id = ? AND state IN (?, ?)
+			  )`
+	} else {
+		query = `UPDATE tasks
+			SET metadata = json_set(CASE WHEN metadata IS NULL OR metadata = 'null' OR metadata = '' THEN '{}' ELSE metadata END, ?, json(?)), updated_at = ?
+			WHERE id = ?
+			  AND NOT EXISTS (
+				SELECT 1 FROM task_sessions
+				WHERE task_id = ? AND state IN (?, ?)
+			  )`
+	}
+	path := key
+	if !dialect.IsPostgres(r.db.DriverName()) {
+		path = jsonPath(key)
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(query), path, string(payload), time.Now().UTC(),
+		taskID, taskID, models.TaskSessionStateStarting, models.TaskSessionStateRunning)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows > 0, err
+}
+
 // SetTaskMetadataKeyIfNotArchived writes one metadata key atomically with the
 // archived_at guard: the write only lands when the task row still has
 // archived_at IS NULL, and reports whether it landed. Startup reconciliation
@@ -864,6 +905,40 @@ func (r *Repository) SetTaskMetadataKeyIfNotArchived(ctx context.Context, taskID
 		path = jsonPath(key)
 	}
 	result, err := r.db.ExecContext(ctx, r.db.Rebind(query), path, string(payload), time.Now().UTC(), taskID)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows > 0, err
+}
+
+// SetTaskMetadataKeyIfPresent rewrites one metadata key only while that key is
+// still present, and reports whether the write landed.
+//
+// It is the compare-and-swap counterpart to RemoveTaskMetadataKey: an editor
+// that read a key, decided to change it, and then writes it back must not
+// RE-CREATE the key if a concurrent claim removed it in between. Editing a
+// deferred launch prompt is the case this exists for — a full-row UpdateTask
+// there would resurrect a launch intent that a just-started task had already
+// consumed, and the gate would then fire a second session.
+func (r *Repository) SetTaskMetadataKeyIfPresent(ctx context.Context, taskID, key string, value interface{}) (bool, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return false, err
+	}
+	var query string
+	if dialect.IsPostgres(r.db.DriverName()) {
+		query = `UPDATE tasks SET metadata = jsonb_set(CASE WHEN metadata IS NULL OR metadata = 'null' OR metadata = '' THEN '{}'::jsonb ELSE metadata::jsonb END, ARRAY[?]::text[], ?::jsonb, true)::text, updated_at = ?
+			WHERE id = ? AND jsonb_extract_path(CASE WHEN metadata IS NULL OR metadata = 'null' OR metadata = '' THEN '{}'::jsonb ELSE metadata::jsonb END, ?) IS NOT NULL`
+	} else {
+		query = `UPDATE tasks SET metadata = json_set(CASE WHEN metadata IS NULL OR metadata = 'null' OR metadata = '' THEN '{}' ELSE metadata END, ?, json(?)), updated_at = ?
+			WHERE id = ? AND json_type(CASE WHEN metadata IS NULL OR metadata = 'null' OR metadata = '' THEN '{}' ELSE metadata END, ?) IS NOT NULL`
+	}
+	path := key
+	if !dialect.IsPostgres(r.db.DriverName()) {
+		path = jsonPath(key)
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(query), path, string(payload), time.Now().UTC(), taskID, path)
 	if err != nil {
 		return false, err
 	}

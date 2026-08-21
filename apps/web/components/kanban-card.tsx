@@ -32,6 +32,7 @@ import {
   type ForegroundActivity,
   type Repository,
   type TaskPendingAction,
+  type TaskPriority,
   type TaskState,
 } from "@/lib/types/http";
 import type { PluginTaskMenuContext } from "@/lib/plugins/types";
@@ -44,7 +45,7 @@ export interface Task {
   title: string;
   workflowStepId: string;
   state?: TaskState;
-  priority?: string | number;
+  priority?: TaskPriority;
   description?: string;
   position?: number;
   repositoryId?: string;
@@ -68,6 +69,9 @@ export interface Task {
   foregroundActivity?: ForegroundActivity | null;
   /** True when the task's session was mid-turn when the backend died. */
   interrupted?: boolean;
+  /** True when a workflow step's auto_start_agent on_enter action failed to
+   *  launch a run for this task. */
+  autoStartFailed?: boolean;
   /** Live subagents summed across this task's sessions; drives the count chip. */
   activeSubagentCount?: number;
   reviewStatus?: "pending" | "approved" | "changes_requested" | "rejected" | null;
