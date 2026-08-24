@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/kandev/kandev/internal/coordinator"
 	"github.com/kandev/kandev/internal/orchestrator"
 	"github.com/kandev/kandev/internal/task/models"
 	taskrepo "github.com/kandev/kandev/internal/task/repository"
@@ -43,7 +44,11 @@ func (h *Handlers) handleStopTask(ctx context.Context, msg *ws.Message) (*ws.Mes
 		return lookupError.response, lookupError.err
 	}
 
-	if !canStopTask(sender, target) {
+	decision, err := h.authorizeCoordinatorAction(ctx, sender, target, "stop_task", coordinator.CapabilityOrchestrate)
+	if err != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "failed to authorize target task", nil)
+	}
+	if !decision.Allowed {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden,
 			"only a task's direct parent in the same workspace can stop it", nil)
 	}
@@ -52,6 +57,9 @@ func (h *Handlers) handleStopTask(ctx context.Context, msg *ws.Message) (*ws.Mes
 	}
 
 	result, err := h.taskStopper.StopTaskForCoordinator(ctx, target.ID)
+	if finishErr := h.finishCoordinatorAction(ctx, decision, err); finishErr != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "failed to record task stop", nil)
+	}
 	if err != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "failed to stop target task", nil)
 	}
