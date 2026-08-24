@@ -45,6 +45,7 @@ signals, and task-scoped scheduling contracts.
 - [Autopilot mode](requirements/autopilot-mode.md)
 - [Blocked task escalation](requirements/blocked-task-escalation.md)
 - [Cancelled turn completion](requirements/workflow-cancelled-turn-completion.md)
+- [Coordinator task authority](requirements/coordinator-task-authority.md)
 - [Create dialog advanced dependency settings](requirements/task-dependencies-create-dialog-advanced-settings.md)
 - [Create dialog dependency selector](requirements/task-dependencies-create-dialog-dependency-selector.md)
 - [Documents](requirements/documents.md)
@@ -107,6 +108,7 @@ signals, and task-scoped scheduling contracts.
 
 - [Active clarification lifecycle](system-design/clarification-active-lifecycle.md)
 - [Attach workspace sources](system-design/attach-workspace-sources.md)
+- [Coordinator task authority](system-design/coordinator-task-authority.md)
 - [External task ID idempotency](system-design/external-id-idempotency.md)
 - [External task ID idempotency operations](system-design/external-id-idempotency-operations.md)
 - [Model unification](system-design/model-unification.md)
