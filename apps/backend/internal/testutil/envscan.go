@@ -19,9 +19,8 @@ import (
 // scrub against silently falling behind new environment reads.
 //
 // os.Getenv and os.LookupEnv are always treated as environment reads. They are
-// matched on the literal identifier os, so a file that imports os under an
-// alias or through a dot import is not scanned; no file in this repository
-// does either, and a review of one that did would be the place to catch it.
+// matched by the file-local import name bound to the os package. Blank and dot
+// imports are not scanned because neither supports selector calls.
 // Names are likewise resolved against package-level constants with no scope
 // analysis, so a local variable shadowing one of those constants resolves to
 // the constant's value rather than its own.
@@ -296,13 +295,14 @@ func recordConstSpecs(constants packageConstants, specs []ast.Spec) {
 // parameter to an accessor dropped all of its call sites from the scan without
 // failing a single test.
 func envReadCalls(file *ast.File, extraReaders map[string]bool) []*ast.CallExpr {
+	osNames := osPackageNames(file)
 	var calls []*ast.CallExpr
 	ast.Inspect(file, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
 			return true
 		}
-		if isEnvRead(call.Fun, extraReaders) {
+		if isEnvRead(call.Fun, osNames, extraReaders) {
 			calls = append(calls, call)
 		}
 		return true
@@ -310,17 +310,38 @@ func envReadCalls(file *ast.File, extraReaders map[string]bool) []*ast.CallExpr 
 	return calls
 }
 
+// osPackageNames returns the local import names that name the os package in file.
+// A dot import cannot form a selector and a blank import names no package, so
+// neither belongs in the result.
+func osPackageNames(file *ast.File) map[string]bool {
+	names := make(map[string]bool)
+	for _, spec := range file.Imports {
+		path, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || path != "os" {
+			continue
+		}
+		if spec.Name == nil {
+			names["os"] = true
+			continue
+		}
+		if spec.Name.Name != "_" && spec.Name.Name != "." {
+			names[spec.Name.Name] = true
+		}
+	}
+	return names
+}
+
 // isEnvRead reports whether fun names os.Getenv, os.LookupEnv, or one of the
 // extraReaders. An extraReader matches on the trailing name alone, so both
 // receiver.environmentValue(x) and a bare environmentValue(x) count.
-func isEnvRead(fun ast.Expr, extraReaders map[string]bool) bool {
+func isEnvRead(fun ast.Expr, osNames, extraReaders map[string]bool) bool {
 	switch target := fun.(type) {
 	case *ast.SelectorExpr:
 		if extraReaders[target.Sel.Name] {
 			return true
 		}
 		pkgIdent, ok := target.X.(*ast.Ident)
-		if !ok || pkgIdent.Name != "os" {
+		if !ok || !osNames[pkgIdent.Name] {
 			return false
 		}
 		return target.Sel.Name == "Getenv" || target.Sel.Name == "LookupEnv"

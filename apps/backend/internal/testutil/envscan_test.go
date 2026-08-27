@@ -87,6 +87,25 @@ func read() (string, bool) { return os.LookupEnv("BAR") }
 	}
 }
 
+// TestUncoveredEnvReadsUncoveredAliasedOSImport ensures a local import name
+// cannot hide an environment read from the hermetic-environment guard.
+func TestUncoveredEnvReadsUncoveredAliasedOSImport(t *testing.T) {
+	fileSet, file := parseSnippet(t, `package example
+
+import stdos "os"
+
+func read() string { return stdos.Getenv("BAR") }
+`)
+
+	messages := uncoveredEnvReads(fileSet, []*ast.File{file}, nil, nil)
+	if len(messages) != 1 {
+		t.Fatalf("expected exactly one uncovered-name message, got %v", messages)
+	}
+	if !strings.Contains(messages[0], "BAR") {
+		t.Fatalf("message %q does not name the uncovered variable", messages[0])
+	}
+}
+
 func TestUncoveredEnvReadsUnresolvableIdentifier(t *testing.T) {
 	fileSet, file := parseSnippet(t, `package example
 
