@@ -26,11 +26,7 @@ async function seedTaskWithPlan(
   await testPage.goto(`/t/${task.id}`);
   const session = new SessionPage(testPage);
   await session.waitForLoad();
-  await expect
-    .poll(() => apiClient.getTaskPlan(task.id).then((plan) => plan?.content.trim() ?? ""), {
-      timeout: 30_000,
-    })
-    .not.toBe("");
+  await expect.poll(() => apiClient.getTaskPlan(task.id), { timeout: 30_000 }).not.toBeNull();
   await session.waitForChatIdle({ timeout: 45_000 });
   await session.composerReady();
   await openPlanPanel(session);
@@ -59,7 +55,7 @@ test.describe("Plan toolbar implement", () => {
 
     const toolbarButton = testPage.getByTestId("plan-toolbar-implement-button");
     await expect(toolbarButton).toBeVisible({ timeout: 10_000 });
-    await expect(toolbarButton).toBeEnabled({ timeout: 30_000 });
+    await expect(toolbarButton).toBeEnabled();
 
     const toolbarSpacing = await testPage
       .getByTestId("plan-toolbar-implement-control")

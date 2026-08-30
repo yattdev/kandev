@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Card, CardContent } from "@kandev/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@kandev/ui/card";
 import { Input } from "@kandev/ui/input";
 import { Badge } from "@kandev/ui/badge";
 import { Button } from "@kandev/ui/button";
@@ -15,8 +15,6 @@ import {
   IconAlertTriangle,
 } from "@tabler/icons-react";
 import type { LicenseEntry } from "@/lib/types/system";
-import { SettingsCardHeader } from "@/components/settings/settings-card-header";
-import { settingsControlClassName } from "@/components/settings/settings-control";
 
 type Props = {
   entries: LicenseEntry[];
@@ -118,13 +116,11 @@ export function LicensesList({ entries }: Props) {
 
   return (
     <Card data-testid="system-licenses-card">
-      <SettingsCardHeader
-        title={
-          <span className="flex items-center gap-2">
-            <IconScale className="h-4 w-4" /> {t("system:licensesTitle")}
-          </span>
-        }
-      />
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <IconScale className="h-4 w-4" /> {t("system:licensesTitle")}
+        </CardTitle>
+      </CardHeader>
       <CardContent className="space-y-4">
         {hasStaleGoEntries && (
           <Alert data-testid="system-licenses-stale-warning">
@@ -132,13 +128,12 @@ export function LicensesList({ entries }: Props) {
             <AlertDescription>{t("system:licensesStaleWarning")}</AlertDescription>
           </Alert>
         )}
-        <div className="flex flex-col items-stretch gap-3 md:flex-row md:items-center">
+        <div className="flex items-center justify-between gap-3">
           <Input
             placeholder={t("system:licensesFilterPlaceholder")}
             aria-label={t("system:licensesFilterPlaceholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className={settingsControlClassName()}
             data-testid="system-licenses-filter"
           />
           <p

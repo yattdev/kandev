@@ -9,14 +9,10 @@ export function openContentSearchResult(
   sessionId: string,
 ): void {
   const repo = result.repository_name || undefined;
-  setPendingCursorPosition(result.path, result.line, result.column, repo, {
-    sessionId,
-    flashLine: true,
-  });
-  useDockviewStore.getState().addFileEditorPanel(result.path, getFileName(result.path), { repo });
+  setPendingCursorPosition(result.path, result.line, result.column, repo, sessionId);
   scrollEditorIfMounted(result.path, worktreePath, result.line, result.column, {
     repo,
     sessionId,
-    flashLine: true,
   });
+  useDockviewStore.getState().addFileEditorPanel(result.path, getFileName(result.path), { repo });
 }

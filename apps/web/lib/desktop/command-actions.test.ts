@@ -13,7 +13,7 @@ describe("desktop command actions", () => {
 
     actions["open-settings"]();
 
-    expect(navigate).toHaveBeenCalledWith("/settings/preferences/appearance");
+    expect(navigate).toHaveBeenCalledWith("/settings/general");
   });
 
   it("uses the shared New Task request instead of creating another dialog", () => {
@@ -53,7 +53,7 @@ describe("desktop command actions", () => {
     listeners.get("open-settings")?.();
     listeners.get("new-task")?.();
     expect(closeContext).toHaveBeenCalledOnce();
-    expect(navigate).toHaveBeenCalledWith("/settings/preferences/appearance");
+    expect(navigate).toHaveBeenCalledWith("/settings/general");
     expect(requestNewTask).toHaveBeenCalledOnce();
     stop();
     expect(unlisten).toHaveBeenCalledTimes(3);

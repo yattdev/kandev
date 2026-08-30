@@ -66,7 +66,6 @@ function launchText(payload: AzureDevOpsLaunchPayload) {
     "",
     plainText(pullRequest.description),
   ].join("\n");
-  // i18n-exempt: persisted as the created task's title.
   return {
     title: truncateRemoteTaskTitle(
       payload.action
@@ -142,7 +141,7 @@ export function AzureDevOpsTaskLauncher({
   const onSuccess = async (task: Task) => {
     if (payload?.kind === "work-item" && workspaceId) {
       if (!payload.item.project) {
-        toast.error(t("azuredevops:failedToLinkWorkItemNoProject"));
+        toast.error("Failed to link Azure DevOps work item: project is missing.");
       } else {
         try {
           const linked = await associateAzureDevOpsWorkItem(workspaceId, task.id, {
@@ -153,7 +152,7 @@ export function AzureDevOpsTaskLauncher({
           setTaskWorkItem(task.id, linked);
         } catch (error: unknown) {
           toast.error(
-            error instanceof Error ? error.message : t("azuredevops:failedToLinkWorkItem"),
+            error instanceof Error ? error.message : "Failed to link Azure DevOps work item.",
           );
         }
       }
@@ -168,7 +167,7 @@ export function AzureDevOpsTaskLauncher({
         setTaskPullRequest(task.id, linked);
       } catch (error: unknown) {
         toast.error(
-          error instanceof Error ? error.message : t("azuredevops:failedToLinkPullRequest"),
+          error instanceof Error ? error.message : "Failed to link Azure DevOps pull request.",
         );
       }
     }

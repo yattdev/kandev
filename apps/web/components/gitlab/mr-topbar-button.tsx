@@ -28,19 +28,18 @@ import { Popover, PopoverAnchor, PopoverContent } from "@kandev/ui/popover";
 import {
   useGitLabAvailable,
   useTaskMRs,
-  useUnlinkTaskMR,
   useWorkspaceMRs,
 } from "@/hooks/domains/gitlab/use-task-mr";
 import { useTaskById } from "@/hooks/domains/kanban/use-task-by-id";
 import { useAppStore } from "@/components/state-provider";
+import { useToast } from "@/components/toast-provider";
+import { deleteTaskMR } from "@/lib/api/domains/gitlab-api";
 import type { TaskMR } from "@/lib/types/gitlab";
 import type { Repository } from "@/lib/types/http";
 import { TaskMRLinkDialog } from "./task-mr-link-dialog";
 import { MRAutomationControls } from "./mr-automation-controls";
 import { MRCIPopover } from "./mr-ci-popover";
 import { useDockviewStore } from "@/lib/state/dockview-store";
-import type { ReviewPanelOptions } from "@/lib/state/dockview-panel-actions";
-import { reviewItemId } from "@/components/task/review-selection";
 import { mrTaskKey } from "./mr-detail-panel";
 import { useTranslation } from "react-i18next";
 import { MRStatusIcon } from "./mr-task-icon";
@@ -55,7 +54,7 @@ const MR_POPOVER_CLOSE_DELAY_MS = 150;
  * PRMultiButton (C7). A multi-MR aggregate popover is out of scope (§9) —
  * hovering a 2+ MR trigger only ever opens the click-driven dropdown.
  */
-export function useMRPopoverInteractions() {
+function useMRPopoverInteractions() {
   const usesTouchDrawer = useTouchDrawer();
   const hover = useHoverPopover({
     openDelayMs: MR_POPOVER_OPEN_DELAY_MS,
@@ -75,19 +74,11 @@ export function openMobileMRReview(
   sessionId: string,
   mr: TaskMR,
 ) {
-  setReview(
-    sessionId,
-    reviewItemId({
-      providerId: "gitlab",
-      connectionScope: mr.host,
-      repositoryId: mr.repository_id || mr.project_path,
-      changeRequestNumber: mr.mr_iid,
-    }),
-  );
+  setReview(sessionId, mrTaskKey(mr));
 }
 
 export function openDesktopMRReview(
-  addMRPanel: (mrKey: string, opts?: ReviewPanelOptions) => void,
+  addMRPanel: (mrKey: string) => void,
   mr: TaskMR,
   schedule: (callback: FrameRequestCallback) => number = requestAnimationFrame,
 ) {
@@ -458,6 +449,7 @@ export const MRTopbarButton = memo(function MRTopbarButton({
   compact?: boolean;
   mobile?: boolean;
 }) {
+  const { t } = useTranslation();
   const [linkOpen, setLinkOpen] = useState(false);
   const activeTaskId = useAppStore((s) => s.tasks.activeTaskId);
   const workspaceId = useAppStore((s) => s.workspaces.activeId);
@@ -470,9 +462,24 @@ export const MRTopbarButton = memo(function MRTopbarButton({
   useWorkspaceMRs(workspaceId);
   const mrs = useTaskMRs(activeTaskId);
   const gitlabAvailable = useGitLabAvailable();
-  const unlink = useUnlinkTaskMR(workspaceId);
+  const removeTaskMR = useAppStore((state) => state.removeTaskMR);
+  const { toast } = useToast();
 
   if (!activeTaskId || !workspaceId) return null;
+
+  const unlink = async (associationId: string) => {
+    try {
+      await deleteTaskMR(associationId, workspaceId);
+      removeTaskMR(workspaceId, associationId);
+    } catch (error) {
+      toast({
+        title: t("gitlab:failedToUnlinkMergeRequest"),
+        description:
+          error instanceof Error ? error.message : t("gitlab:theMergeRequestIsStillLinked"),
+        variant: "error",
+      });
+    }
+  };
 
   return (
     <>

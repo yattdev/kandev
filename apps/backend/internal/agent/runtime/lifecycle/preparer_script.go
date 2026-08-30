@@ -2,7 +2,6 @@ package lifecycle
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -17,20 +16,13 @@ import (
 // prepareScriptLogger is a package-level logger for setup script resolution.
 var prepareScriptLogger = logger.Default().WithFields(zap.String("component", "prepare-script"))
 
-func resolvePreparerSetupScript(req *EnvPrepareRequest, workspacePath string) (string, error) {
+func resolvePreparerSetupScript(req *EnvPrepareRequest, workspacePath string) string {
 	script := strings.TrimSpace(req.SetupScript)
 	if script == "" {
 		script = defaultPreparerSetupScript(req)
 	}
-	if req.ContributionDestination != nil {
-		destinationScript, err := scriptengine.ContributionDestinationSetupScriptAt(req.ContributionDestination, workspacePath)
-		if err != nil {
-			return "", fmt.Errorf("resolve contribution destination setup: %w", err)
-		}
-		script += destinationScript
-	}
 	if script == "" {
-		return "", nil
+		return ""
 	}
 
 	metadata := map[string]any{
@@ -68,9 +60,9 @@ func resolvePreparerSetupScript(req *EnvPrepareRequest, workspacePath string) (s
 			zap.String("executor_type", string(req.ExecutorType)),
 			zap.Bool("use_worktree", req.UseWorktree),
 			zap.Bool("has_explicit_script", strings.TrimSpace(req.SetupScript) != ""))
-		return "", nil
+		return ""
 	}
-	return resolved, nil
+	return resolved
 }
 
 // isScriptEffectivelyEmpty returns true when a script contains only a shebang,

@@ -14,7 +14,6 @@ import { Alert, AlertDescription } from "@kandev/ui/alert";
 import { Button } from "@kandev/ui/button";
 import { Card, CardContent } from "@kandev/ui/card";
 import { Input } from "@kandev/ui/input";
-import { settingsCredentialClassName } from "@/components/settings/settings-control";
 import { Label } from "@kandev/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@kandev/ui/select";
 import { Separator } from "@kandev/ui/separator";
@@ -276,9 +275,7 @@ type ProjectsState = ReturnType<typeof useAzureDevOpsProjects>;
 // Azure DevOps names these two PAT scope groups in its own token UI. They are
 // pointers into that screen, not copy, so they are interpolated as values — the
 // pseudo-locale must not transliterate a label the user has to find verbatim.
-// i18n-exempt: Azure DevOps' own PAT scope names; the user picks these exact entries in Azure's UI.
 const PAT_SCOPE_WORK_ITEMS = "Work Items";
-// i18n-exempt: Azure DevOps' own PAT scope names; the user picks these exact entries in Azure's UI.
 const PAT_SCOPE_CODE = "Code";
 
 function PATSetupHelp({ organizationUrl }: { organizationUrl: string }) {
@@ -419,7 +416,6 @@ function ConnectionFields({
             autoComplete="new-password"
             aria-describedby="azure-devops-pat-help"
             data-testid="azure-devops-pat"
-            className={settingsCredentialClassName()}
           />
         </div>
       </div>
@@ -497,7 +493,7 @@ export function AzureDevOpsConnectionSection({ workspaceId }: { workspaceId: str
       icon={<IconBrandAzure className="h-5 w-5" />}
       title={t("azuredevops:integrationTitle")}
       description={t("azuredevops:integrationDescription")}
-      action={<AzureDevOpsEnabledControl workspaceId={workspaceId} />}
+      action={<AzureDevOpsEnabledControl />}
     >
       <Card>
         <CardContent className="space-y-4 pt-6">

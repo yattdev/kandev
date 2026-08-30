@@ -1,4 +1,3 @@
-import { t } from "@/lib/i18n";
 export type LoadState<T> =
   | { status: "loading" }
   | { status: "ready"; data: T }
@@ -6,7 +5,7 @@ export type LoadState<T> =
 
 export function toRouteErrorState(
   error: unknown,
-  fallbackMessage = t("common:failedToLoadRoute"),
+  fallbackMessage = "Failed to load route",
 ): LoadState<never> {
   return {
     status: "error",

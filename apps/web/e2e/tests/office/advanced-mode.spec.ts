@@ -1,7 +1,6 @@
 import { type Page } from "@playwright/test";
 import { test as base, expect } from "../../fixtures/test-base";
 import { OfficeApiClient } from "../../helpers/office-api-client";
-import { waitForOfficeTaskSessionLive } from "../../helpers/office-launch";
 
 /**
  * E2E tests for the office advanced mode dockview layout.
@@ -32,7 +31,7 @@ const test = base.extend<{ testPage: Page }, AdvancedModeFixtures>({
   ],
 
   advancedSeed: [
-    async ({ officeApi, apiClient, seedData }, use) => {
+    async ({ officeApi, seedData }, use) => {
       const result = (await officeApi.completeOnboarding({
         workspaceName: "Advanced Mode Workspace",
         taskPrefix: "AM",
@@ -47,10 +46,30 @@ const test = base.extend<{ testPage: Page }, AdvancedModeFixtures>({
         throw new Error("completeOnboarding did not return a taskId");
       }
 
-      // Wait for the agent runtime to come up. We only need it to have
+      // Wait for the agent to leave the pre-launch states. The task
+      // state surfaces from the API in canonical lowercase form
+      // (`in_progress`, `in_review`, `done`, …); legacy SCREAMING_SNAKE_CASE
+      // values are accepted defensively. We only need the agent to have
       // *started* — the test pages exercise the live session once the
       // dockview mounts, they don't require a finished turn.
-      await waitForOfficeTaskSessionLive(apiClient, result.taskId);
+      const launched = new Set([
+        "in_progress",
+        "in_review",
+        "done",
+        "completed",
+        "waiting_for_input",
+        "review",
+      ]);
+      const deadline = Date.now() + 25_000;
+      while (Date.now() < deadline) {
+        const issue = await officeApi.getTask(result.taskId);
+        const raw = issue as Record<string, unknown>;
+        const inner = (raw.task as Record<string, unknown>) ?? raw;
+        const state = ((inner.state as string) ?? (inner.status as string) ?? "").toLowerCase();
+        if (state === "failed") throw new Error("Task entered FAILED state");
+        if (launched.has(state)) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
 
       await use({
         workspaceId: result.workspaceId,

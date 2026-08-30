@@ -18,9 +18,8 @@ test.describe("Sentry settings — instances", () => {
     });
 
     const settings = new SentrySettingsPage(testPage);
-    await settings.goto(seedData.workspaceId);
+    await settings.goto();
     const card = settings.cardByName("Original Sentry");
-    await expect(card).toBeVisible({ timeout: 15_000 });
     await card.getByTestId("sentry-instance-edit-button").click();
     await testPage.getByTestId("sentry-edit-name-input").fill("Renamed Sentry");
 
@@ -38,15 +37,11 @@ test.describe("Sentry settings — instances", () => {
 
   // The settings page manages a LIST of named instances per workspace. This
   // covers add → the card appears → the backend probe flips it healthy.
-  test("adds a named instance and reports it healthy", async ({
-    testPage,
-    apiClient,
-    seedData,
-  }) => {
+  test("adds a named instance and reports it healthy", async ({ testPage, apiClient }) => {
     await apiClient.mockSentryReset();
 
     const settings = new SentrySettingsPage(testPage);
-    await settings.goto(seedData.workspaceId);
+    await settings.goto();
 
     // The add form pre-fills the SaaS URL default.
     await settings.addInstanceButton.click();
@@ -60,7 +55,7 @@ test.describe("Sentry settings — instances", () => {
     // flips lastOk true; reload to pick up the health banner deterministically.
     await expect(settings.cardByName("Production")).toBeVisible();
     await apiClient.waitForIntegrationAuthHealthy("sentry");
-    await settings.goto(seedData.workspaceId);
+    await settings.goto();
     await expect(
       settings.cardByName("Production").getByTestId("integration-auth-status-banner"),
     ).toHaveAttribute("data-state", "ok");
@@ -110,7 +105,7 @@ test.describe("Sentry settings — instances", () => {
     // UI: the delete is surfaced as an error and the primary card survives; the
     // watcher-free secondary deletes cleanly.
     const settings = new SentrySettingsPage(testPage);
-    await settings.goto(seedData.workspaceId);
+    await settings.goto();
     await expect(settings.cards).toHaveCount(2);
     testPage.on("dialog", (d) => d.accept());
 
@@ -155,7 +150,7 @@ test.describe("Sentry settings — issue watchers", () => {
     ]);
 
     const settings = new SentrySettingsPage(testPage);
-    await settings.goto(seedData.workspaceId);
+    await settings.goto();
 
     await testPage.getByRole("button", { name: "New watcher" }).click();
     const dialog = testPage.getByRole("dialog");

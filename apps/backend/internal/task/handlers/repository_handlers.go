@@ -308,7 +308,6 @@ type httpCreateRepositoryRequest struct {
 	Provider               string                                 `json:"provider"`
 	ProviderRepoID         string                                 `json:"provider_repo_id"`
 	ProviderHost           string                                 `json:"provider_host"`
-	ProviderScope          string                                 `json:"provider_scope"`
 	ProviderOwner          string                                 `json:"provider_owner"`
 	ProviderName           string                                 `json:"provider_name"`
 	DefaultBranch          string                                 `json:"default_branch"`
@@ -449,7 +448,6 @@ func (h *RepositoryHandlers) httpCreateRepository(c *gin.Context) {
 		Provider:               body.Provider,
 		ProviderRepoID:         body.ProviderRepoID,
 		ProviderHost:           body.ProviderHost,
-		ProviderScope:          body.ProviderScope,
 		ProviderOwner:          body.ProviderOwner,
 		ProviderName:           body.ProviderName,
 		DefaultBranch:          body.DefaultBranch,
@@ -540,7 +538,6 @@ type httpUpdateRepositoryRequest struct {
 	Provider               *string                                 `json:"provider"`
 	ProviderRepoID         *string                                 `json:"provider_repo_id"`
 	ProviderHost           *string                                 `json:"provider_host"`
-	ProviderScope          *string                                 `json:"provider_scope"`
 	ProviderOwner          *string                                 `json:"provider_owner"`
 	ProviderName           *string                                 `json:"provider_name"`
 	DefaultBranch          *string                                 `json:"default_branch"`
@@ -570,7 +567,6 @@ func (h *RepositoryHandlers) httpUpdateRepository(c *gin.Context) {
 		Provider:               body.Provider,
 		ProviderRepoID:         body.ProviderRepoID,
 		ProviderHost:           body.ProviderHost,
-		ProviderScope:          body.ProviderScope,
 		ProviderOwner:          body.ProviderOwner,
 		ProviderName:           body.ProviderName,
 		DefaultBranch:          body.DefaultBranch,
@@ -654,7 +650,6 @@ type wsCreateRepositoryRequest struct {
 	Provider               string                                 `json:"provider"`
 	ProviderRepoID         string                                 `json:"provider_repo_id"`
 	ProviderHost           string                                 `json:"provider_host"`
-	ProviderScope          string                                 `json:"provider_scope"`
 	ProviderOwner          string                                 `json:"provider_owner"`
 	ProviderName           string                                 `json:"provider_name"`
 	DefaultBranch          string                                 `json:"default_branch"`
@@ -686,7 +681,6 @@ func (h *RepositoryHandlers) wsCreateRepository(ctx context.Context, msg *ws.Mes
 		Provider:               req.Provider,
 		ProviderRepoID:         req.ProviderRepoID,
 		ProviderHost:           req.ProviderHost,
-		ProviderScope:          req.ProviderScope,
 		ProviderOwner:          req.ProviderOwner,
 		ProviderName:           req.ProviderName,
 		DefaultBranch:          req.DefaultBranch,
@@ -735,7 +729,6 @@ type wsUpdateRepositoryRequest struct {
 	Provider               *string                                 `json:"provider,omitempty"`
 	ProviderRepoID         *string                                 `json:"provider_repo_id,omitempty"`
 	ProviderHost           *string                                 `json:"provider_host,omitempty"`
-	ProviderScope          *string                                 `json:"provider_scope,omitempty"`
 	ProviderOwner          *string                                 `json:"provider_owner,omitempty"`
 	ProviderName           *string                                 `json:"provider_name,omitempty"`
 	DefaultBranch          *string                                 `json:"default_branch,omitempty"`
@@ -766,7 +759,6 @@ func (h *RepositoryHandlers) wsUpdateRepository(ctx context.Context, msg *ws.Mes
 		Provider:               req.Provider,
 		ProviderRepoID:         req.ProviderRepoID,
 		ProviderHost:           req.ProviderHost,
-		ProviderScope:          req.ProviderScope,
 		ProviderOwner:          req.ProviderOwner,
 		ProviderName:           req.ProviderName,
 		DefaultBranch:          req.DefaultBranch,

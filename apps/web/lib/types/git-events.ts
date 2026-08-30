@@ -14,7 +14,6 @@ export type GitStatusData = {
   remote_branch: string | null;
   head_commit?: string;
   base_commit?: string;
-  remote_head_commit?: string;
   modified: string[];
   added: string[];
   deleted: string[];
@@ -22,8 +21,6 @@ export type GitStatusData = {
   renamed: string[];
   ahead: number;
   behind: number;
-  remote_ahead: number;
-  remote_behind: number;
   files: Record<string, FileInfo>;
   branch_additions?: number;
   branch_deletions?: number;

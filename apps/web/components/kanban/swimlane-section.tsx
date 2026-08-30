@@ -12,7 +12,6 @@ export type SwimlaneSectionProps = {
   dragHandleProps?: HTMLAttributes<HTMLDivElement>;
   onToggleMultiSelect?: () => void;
   isMultiSelectMode?: boolean;
-  columnsMenu?: ReactNode;
   children: ReactNode;
 };
 
@@ -24,7 +23,6 @@ export function SwimlaneSection({
   dragHandleProps,
   onToggleMultiSelect,
   isMultiSelectMode,
-  columnsMenu,
   children,
 }: SwimlaneSectionProps) {
   return (
@@ -37,7 +35,6 @@ export function SwimlaneSection({
         dragHandleProps={dragHandleProps}
         onToggleMultiSelect={onToggleMultiSelect}
         isMultiSelectMode={isMultiSelectMode}
-        columnsMenu={columnsMenu}
       />
       {!isCollapsed && children}
     </div>

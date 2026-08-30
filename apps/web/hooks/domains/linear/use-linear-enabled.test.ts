@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { useLinearEnabled } from "./use-linear-enabled";
-import { resetIntegrationEnabledMigrations } from "../integrations/use-integration-enabled";
 
 const STORAGE_KEY = "kandev:linear:enabled:v1";
 
@@ -37,7 +36,6 @@ Object.defineProperty(window, "localStorage", {
 describe("useLinearEnabled", () => {
   beforeEach(() => {
     localStorageMock.clear();
-    resetIntegrationEnabledMigrations();
   });
   afterEach(() => {
     localStorageMock.clear();
@@ -76,20 +74,17 @@ describe("useLinearEnabled", () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe("false");
   });
 
-  it("restores a legacy per-workspace key to that workspace's own key", async () => {
-    // The pre-scoping keys were `kandev:linear:enabled:<workspaceId>:v1`, one per
-    // workspace, so each is restored to the workspace it came from rather than
-    // folded into a single install-wide value.
-    window.localStorage.setItem("kandev:linear:enabled:ws-123:v1", "false");
-
-    const { result } = renderHook(() => useLinearEnabled("ws-123"));
-
+  it("migrates a legacy per-workspace key into the new install-wide key on first read", async () => {
+    // Single legacy entry so the migration outcome is deterministic — with
+    // multiple, the "first one we encounter" depends on localStorage iteration
+    // order, which the test shouldn't depend on.
+    window.localStorage.setItem("kandev:linear:enabled:ws-1:v1", "false");
+    const { result } = renderHook(() => useLinearEnabled());
     await waitFor(() => expect(result.current.loaded).toBe(true));
+
     expect(result.current.enabled).toBe(false);
-    expect(window.localStorage.getItem(`${STORAGE_KEY}:ws-123`)).toBe("false");
-    expect(window.localStorage.getItem("kandev:linear:enabled:ws-123:v1")).toBeNull();
-    // Another workspace is untouched by that migration.
-    expect(renderHook(() => useLinearEnabled("ws-other")).result.current.enabled).toBe(true);
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("false");
+    expect(window.localStorage.getItem("kandev:linear:enabled:ws-1:v1")).toBeNull();
   });
 
   it("propagates updates dispatched via the kandev:linear:enabled-changed event", async () => {

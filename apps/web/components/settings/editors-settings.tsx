@@ -8,7 +8,7 @@ import { Separator } from "@kandev/ui/separator";
 import { Textarea } from "@kandev/ui/textarea";
 import { SettingsPageTemplate } from "@/components/settings/settings-page-template";
 import { SettingsTarget } from "@/components/settings/settings-target";
-import { GENERAL_SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/preferences";
+import { GENERAL_SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/general";
 import { Combobox, type ComboboxOption } from "@/components/combobox";
 import { EditableCard } from "@/components/settings/editable-card";
 import { LspStatusLocationSetting } from "@/components/settings/lsp-status-location-setting";
@@ -39,8 +39,6 @@ import { isDraftEntryDirty, isEditorsSettingsDirty } from "./settings-dirty";
 import { LspLanguageCards } from "./lsp-language-cards";
 import { LSP_LANGUAGE_OPTIONS } from "./lsp-language-options";
 import { Trans, useTranslation } from "react-i18next";
-import { settingsActionClassName } from "@/components/settings/settings-control";
-import { SETTINGS_TYPOGRAPHY } from "@/components/settings/settings-typography";
 
 /**
  * Code identifiers rendered inside `<Trans>` copy. They are passed as
@@ -205,21 +203,21 @@ function CustomEditorRow({
       )}
       renderPreview={({ open }) => (
         <div
-          className="rounded-lg border border-border/70 bg-background p-4 flex flex-col gap-3 cursor-pointer md:flex-row md:items-center md:justify-between"
+          className="rounded-lg border border-border/70 bg-background p-4 flex items-center justify-between gap-3 cursor-pointer"
           onClick={open}
         >
           <div className="min-w-0">
-            <div className="break-words font-medium text-sm text-foreground">{editor.name}</div>
+            <div className="font-medium text-sm text-foreground truncate">{editor.name}</div>
             <div className="text-xs text-muted-foreground truncate">
               {getCustomEditorSummary(t, editor)}
             </div>
           </div>
-          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
+          <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className={settingsActionClassName("cursor-pointer")}
+              className="cursor-pointer"
               onClick={(event) => {
                 event.stopPropagation();
                 open();
@@ -232,7 +230,7 @@ function CustomEditorRow({
               type="button"
               variant="outline"
               size="sm"
-              className={settingsActionClassName("cursor-pointer")}
+              className="cursor-pointer"
               onClick={(event) => {
                 event.stopPropagation();
                 void deleteRequest.run(editor.id);
@@ -261,14 +259,9 @@ function CustomEditorsList({
   const { t } = useTranslation();
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-center justify-between">
         <div className="text-sm font-medium text-foreground">{t("settings:customEditors")}</div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setIsAdding(true)}
-          className={settingsActionClassName()}
-        >
+        <Button type="button" variant="outline" onClick={() => setIsAdding(true)}>
           {t("settings:addCustomEditor")}
         </Button>
       </div>
@@ -307,7 +300,6 @@ function CustomEditorsList({
 }
 
 type EditorsSectionProps = {
-  embedded: boolean;
   defaultOptions: ComboboxOption[];
   defaultEditorId: string;
   baselineDefaultId: string;
@@ -325,7 +317,6 @@ type EditorsSectionProps = {
 };
 
 function EditorsSection({
-  embedded,
   defaultOptions,
   defaultEditorId,
   baselineDefaultId,
@@ -344,13 +335,9 @@ function EditorsSection({
   const { t } = useTranslation();
   return (
     <div className="space-y-6">
-      {embedded ? (
-        <h3 className={SETTINGS_TYPOGRAPHY.sectionTitle}>{t("settings:editors")}</h3>
-      ) : (
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t("settings:editors")}
-        </div>
-      )}
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {t("settings:editors")}
+      </div>
       <div className="space-y-2">
         <div className="text-sm font-medium text-foreground">{t("settings:default")}</div>
         <div
@@ -419,7 +406,7 @@ function useSyncEditors(editors: EditorOption[], setEditors: (editors: EditorOpt
   useEffect(() => setEditors(editors), [editors, setEditors]);
 }
 
-export function EditorsSettings({ embedded = false }: { embedded?: boolean }) {
+export function EditorsSettings() {
   const { t } = useTranslation();
   const state = useEditorsSettingsState();
   const { setLspConfigStrings, setLspConfigErrors, setEditors, editors } = state;
@@ -460,7 +447,6 @@ export function EditorsSettings({ embedded = false }: { embedded?: boolean }) {
         hasInvalidConfig ? t("settings:fixInvalidLspServerConfigurationBefore") : undefined
       }
       onSave={() => saveDefaultRequest.run()}
-      showPageChrome={!embedded}
     >
       <div className="space-y-6">
         <SettingsTarget targetId={GENERAL_SETTINGS_TARGETS.fileEditor} className="space-y-4">
@@ -491,7 +477,6 @@ export function EditorsSettings({ embedded = false }: { embedded?: boolean }) {
         </SettingsTarget>
         <Separator />
         <EditorsSection
-          embedded={embedded}
           defaultOptions={defaultOptions}
           defaultEditorId={state.defaultEditorId}
           baselineDefaultId={state.baselineDefaultId}

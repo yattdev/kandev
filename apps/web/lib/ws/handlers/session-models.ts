@@ -2,10 +2,6 @@ import type { StoreApi } from "zustand";
 import type { AppState } from "@/lib/state/store";
 import type { WsHandlers } from "@/lib/ws/handlers/types";
 import type { SessionModelsPayload } from "@/lib/types/backend";
-import type {
-  ConfigOptionEntry,
-  SessionModelsState,
-} from "@/lib/state/slices/session-runtime/types";
 import { createDebugLogger, isDebug } from "@/lib/debug/log";
 
 const debug = createDebugLogger("model-selector:ws");
@@ -157,28 +153,6 @@ function debugModelsUpdate(
   });
 }
 
-// resolveConfigOptions keeps the previously settled config options when the
-// incoming update is a preserved echo, otherwise rebuilds from the payload.
-function resolveConfigOptions(
-  preserve: boolean,
-  existing: ConfigOptionEntry[] | undefined,
-  payload: SessionModelsPayload,
-  pendingRuntime: PersistedRuntimeConfig,
-): ConfigOptionEntry[] {
-  if (preserve && existing) {
-    return existing;
-  }
-  return (payload.config_options ?? []).map((o) => ({
-    type: o.type,
-    id: o.id,
-    name: o.name,
-    description: o.description,
-    currentValue: pendingRuntime.configOptions?.[o.id] ?? o.current_value,
-    category: o.category,
-    options: o.options,
-  }));
-}
-
 function clearStaleContextWindow(state: AppState, sessionId: string, currentModelId: string) {
   const previousModelId = state.sessionModels.bySessionId[sessionId]?.currentModelId ?? "";
   if (previousModelId && currentModelId && previousModelId !== currentModelId) {
@@ -186,82 +160,22 @@ function clearStaleContextWindow(state: AppState, sessionId: string, currentMode
   }
 }
 
-function resolvedConfigOptionsSettled(
-  payload: SessionModelsPayload,
-  existing: SessionModelsState["bySessionId"][string] | undefined,
-): boolean | undefined {
-  return payload.config_options_settled ?? existing?.configOptionsSettled;
-}
-
-// resolveModelsUpdatedState computes the convergence target for a
-// models_updated event: which model becomes current, whether the update is
-// an empty relaunch echo, and whether the previously settled config options
-// must be preserved. The fallback note makes the payload's reported model
-// win over the persisted runtime model (which can still name the gone start
-// model) so the picker converges on the fallback as the live model instead
-// of re-selecting the unavailable configured model.
-function resolveModelsUpdatedState(
+function clearStaleActiveModel(
   state: AppState,
   sessionId: string,
-  payload: SessionModelsPayload,
-  pendingRuntime: PersistedRuntimeConfig,
-): {
-  currentModelId: string;
-  isEmpty: boolean;
-  populated: boolean;
-  preserveConfigOptions: boolean;
-  existingEntry: SessionModelsState["bySessionId"][string] | undefined;
-  existingFallback: string | undefined;
-} {
-  const payloadCurrentModelId = resolveCurrentModelId(payload);
-  const existingEntry = state.sessionModels.bySessionId[sessionId];
-  const existingFallback = existingEntry?.fallbackModel;
-  return {
-    currentModelId:
-      existingFallback && payloadCurrentModelId
-        ? payloadCurrentModelId
-        : pendingRuntime.model || payloadCurrentModelId,
-    isEmpty: isEmptyModelsUpdate(
-      payloadCurrentModelId,
-      payload.models ?? [],
-      payload.config_options,
-    ),
-    populated: hasPopulatedModels(state, sessionId),
-    preserveConfigOptions: shouldPreserveExistingConfigOptions(state, sessionId, payload),
-    existingEntry,
-    existingFallback,
-  };
+  acpModels: SessionModelsPayload["models"],
+) {
+  if (!acpModels?.length) {
+    return;
+  }
+  const currentActive = state.activeModel.bySessionId[sessionId];
+  if (currentActive && !acpModels.some((m) => m.model_id === currentActive)) {
+    state.setActiveModel(sessionId, "");
+  }
 }
 
 export function registerSessionModelsHandlers(store: StoreApi<AppState>): WsHandlers {
   return {
-    "session.model_fallback": (message) => {
-      const payload = message.payload as
-        | { session_id?: string; fallback_model?: string }
-        | undefined;
-      if (!payload?.session_id || !payload.fallback_model) {
-        return;
-      }
-      const state = store.getState();
-      const sessionId = payload.session_id;
-      const existing = state.sessionModels.bySessionId[sessionId];
-      // Merge the explicit "using fallback model" signal into the session's
-      // model entry so the picker can show why the start model was replaced.
-      // The fallback model also becomes the current model: the persisted
-      // runtime model may still name the unavailable start model, and the
-      // picker must not keep showing that as the live model.
-      store.getState().setSessionModels(sessionId, {
-        currentModelId: payload.fallback_model,
-        models: existing?.models ?? [],
-        configOptions: existing?.configOptions ?? [],
-        ...(existing?.configOptionsSettled === undefined
-          ? {}
-          : { configOptionsSettled: existing.configOptionsSettled }),
-        configBaseline: existing?.configBaseline,
-        fallbackModel: payload.fallback_model,
-      });
-    },
-
     "session.models_updated": (message) => {
       const payload = message.payload as SessionModelsPayload | undefined;
       if (!payload?.session_id) {
@@ -275,24 +189,39 @@ export function registerSessionModelsHandlers(store: StoreApi<AppState>): WsHand
       const matchesPersisted = payloadMatchesPersistedRuntime(payload, persisted);
       if (matchesPersisted) hydrated.add(sessionId);
       const pendingRuntime = matchesPersisted ? {} : persisted;
-      const resolved = resolveModelsUpdatedState(state, sessionId, payload, pendingRuntime);
-      debugModelsUpdate(state, sessionId, payload, resolved);
-      if (resolved.isEmpty && resolved.populated) {
+      const payloadCurrentModelId = resolveCurrentModelId(payload);
+      const currentModelId = pendingRuntime.model || payloadCurrentModelId;
+      // Classify emptiness from the incoming payload alone; persisted metadata
+      // must not make a genuinely empty relaunch event look populated.
+      const isEmpty = isEmptyModelsUpdate(payloadCurrentModelId, acpModels, payload.config_options);
+      const populated = hasPopulatedModels(state, sessionId);
+      const preserveConfigOptions = shouldPreserveExistingConfigOptions(state, sessionId, payload);
+      debugModelsUpdate(state, sessionId, payload, {
+        currentModelId,
+        isEmpty,
+        populated,
+        preserveConfigOptions,
+      });
+      if (isEmpty && populated) {
         return;
       }
-      clearStaleContextWindow(state, sessionId, resolved.currentModelId);
+      clearStaleContextWindow(state, sessionId, currentModelId);
 
-      const configOptions = resolveConfigOptions(
-        resolved.preserveConfigOptions,
-        resolved.existingEntry?.configOptions,
-        payload,
-        pendingRuntime,
-      );
-      const configOptionsSettled = resolvedConfigOptionsSettled(payload, resolved.existingEntry);
+      const existingEntry = state.sessionModels.bySessionId[sessionId];
+      const configOptions = preserveConfigOptions
+        ? existingEntry.configOptions
+        : (payload.config_options ?? []).map((o) => ({
+            type: o.type,
+            id: o.id,
+            name: o.name,
+            description: o.description,
+            currentValue: pendingRuntime.configOptions?.[o.id] ?? o.current_value,
+            category: o.category,
+            options: o.options,
+          }));
 
       state.setSessionModels(sessionId, {
-        currentModelId: resolved.currentModelId,
-        fallbackModel: resolved.existingFallback,
+        currentModelId,
         models: acpModels.map((m) => ({
           modelId: m.model_id,
           name: m.name,
@@ -301,12 +230,13 @@ export function registerSessionModelsHandlers(store: StoreApi<AppState>): WsHand
           meta: m.meta,
         })),
         configOptions,
-        ...(configOptionsSettled === undefined ? {} : { configOptionsSettled }),
         configBaseline:
           payload.config_baseline ??
           persisted.baseline ??
           state.sessionModels.bySessionId[sessionId]?.configBaseline,
       });
+
+      clearStaleActiveModel(state, sessionId, acpModels);
     },
   };
 }

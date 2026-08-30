@@ -267,17 +267,21 @@ func (a *Adapter) sendPrompt(
 		zap.String("stop_reason", stopReason))
 	a.cancelAsyncTurnComplete(sessionID)
 	usage := a.dialect.promptUsage(extractUsage(&resp), resp.Meta)
-	// Typed per-turn usage frames aren't universal — an adapter with no
-	// result.usage and no recognized _meta shape leaves usage nil here.
-	// usageBySession tracks cumulative context-window occupancy
-	// (usage_update frames) as a fallback signal for that case; see
-	// fallbackUsageForNilTypedUsage's doc comment. usage_update cost is
-	// cumulative session cost; consumeUsageDelta converts it to the
-	// current turn's nonnegative delta.
-	delta, costSubcents, costPresent := a.consumeUsageDeltaWithPresence(sessionID)
+	// codex-acp emits no per-turn usage frame, only cumulative context
+	// occupancy. Fall back to nonnegative occupancy growth so the office cost
+	// subscriber sees an approximate input count. It has no input/output split,
+	// so Estimated remains true. usage_update cost is cumulative session cost;
+	// consumeUsageDelta converts it to the current turn's nonnegative delta.
+	delta, costSubcents := a.consumeUsageDelta(sessionID)
 	if usage == nil {
-		usage = fallbackUsageForNilTypedUsage(delta, costSubcents, costPresent)
-	} else if costPresent {
+		if delta > 0 || costSubcents > 0 {
+			usage = &streams.PromptUsage{
+				InputTokens:                  delta,
+				Estimated:                    true,
+				ProviderReportedCostSubcents: costSubcents,
+			}
+		}
+	} else if costSubcents > 0 {
 		// claude-acp: usage_update.cost.amount carries authoritative cumulative
 		// USD cost — attach the derived turn delta so Layer A wins
 		// downstream and the office cost subscriber stores the row
@@ -285,7 +289,6 @@ func (a *Adapter) sendPrompt(
 		// model id is a logical alias (sonnet / haiku) that won't match
 		// any pricing entry, so this is the only accurate cost path.
 		usage.ProviderReportedCostSubcents = costSubcents
-		usage.ProviderReportedCostPresent = true
 	}
 	a.sendUpdate(AgentEvent{
 		Type:             streams.EventTypeComplete,
@@ -296,30 +299,6 @@ func (a *Adapter) sendPrompt(
 	})
 
 	return nil
-}
-
-// fallbackUsageForNilTypedUsage synthesizes a usage frame from
-// context-window-occupancy growth for an adapter that reported no typed
-// per-turn usage at all (extractUsage found nothing recognizable). It
-// fires on nonnegative context growth or a provider-reported cost sample —
-// whichever is present — matching the pre-existing contract other callers
-// (e.g. the steering handoff path, which reports usage via cumulative
-// context growth alone with no cost) already depend on. It only ever
-// carries InputTokens: this adapter shape has no way to observe output
-// tokens, so OutputTokens is left at its zero value and Estimated=true is
-// the signal downstream must use to treat the whole row, including that
-// zero, as approximate rather than measured (see streams.PromptUsage's
-// doc comment).
-func fallbackUsageForNilTypedUsage(delta, costSubcents int64, costPresent bool) *streams.PromptUsage {
-	if delta <= 0 && !costPresent {
-		return nil
-	}
-	return &streams.PromptUsage{
-		InputTokens:                  delta,
-		Estimated:                    true,
-		ProviderReportedCostSubcents: costSubcents,
-		ProviderReportedCostPresent:  costPresent,
-	}
 }
 
 // supportsPromptHandoff reports whether this adapter's connected agent may have

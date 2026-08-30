@@ -482,10 +482,7 @@ export function MRDetailPanelComponent({
   const workspaceId = useAppStore((state) => state.workspaces.activeId);
   const sessionId = useAppStore((state) => state.tasks.activeSessionId);
   const { status, loading } = useGitLabStatus();
-  useEffect(
-    () => setPanelTitle(panelId, mr ? `MR !${mr.mr_iid}` : t("task:panelMergeRequest")),
-    [mr, panelId, t],
-  );
+  useEffect(() => setPanelTitle(panelId, mr ? `MR !${mr.mr_iid}` : "Merge Request"), [mr, panelId]);
   if (!mr || !workspaceId || !sessionId)
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

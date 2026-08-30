@@ -1,4 +1,3 @@
-import { t } from "@/lib/i18n";
 import { describe, expect, it } from "vitest";
 import type {
   Automation,
@@ -7,13 +6,13 @@ import type {
   AutomationSummary,
 } from "@/lib/types/automation";
 import {
-  AUTOMATION_OFF_REASON_KEY,
+  AUTOMATION_OFF_REASON,
   automationState,
   buildAutomationRows,
   concurrencyReason,
-  NO_SCHEDULE_REASON_KEY,
+  NO_SCHEDULE_REASON,
   nextFiring,
-  SCHEDULE_OFF_REASON_KEY,
+  SCHEDULE_OFF_REASON,
 } from "./automation-rows";
 
 const SINGAPORE = "Asia/Singapore";
@@ -86,20 +85,20 @@ describe("nextFiring", () => {
   it("explains a disabled automation instead of promising a time", () => {
     const next = nextFiring(mkAutomation({ enabled: false }), 0, NOW);
 
-    expect(next).toEqual({ kind: "reason", text: t(AUTOMATION_OFF_REASON_KEY) });
+    expect(next).toEqual({ kind: "reason", text: AUTOMATION_OFF_REASON });
   });
 
   it("explains an automation with no schedule at all", () => {
     expect(nextFiring(mkAutomation({ triggers: [] }), 0, NOW)).toEqual({
       kind: "reason",
-      text: t(NO_SCHEDULE_REASON_KEY),
+      text: NO_SCHEDULE_REASON,
     });
   });
 
   it("explains a schedule trigger that is switched off", () => {
     const off = mkAutomation({ triggers: [mkTrigger({ enabled: false })] });
 
-    expect(nextFiring(off, 0, NOW)).toEqual({ kind: "reason", text: t(SCHEDULE_OFF_REASON_KEY) });
+    expect(nextFiring(off, 0, NOW)).toEqual({ kind: "reason", text: SCHEDULE_OFF_REASON });
   });
 
   it("explains a firing blocked by the concurrency cap, naming the cap", () => {
@@ -138,7 +137,7 @@ describe("nextFiring", () => {
     // cap is not why it will not fire.
     const off = mkAutomation({ enabled: false });
 
-    expect(nextFiring(off, 1, NOW).text).toBe(t(AUTOMATION_OFF_REASON_KEY));
+    expect(nextFiring(off, 1, NOW).text).toBe(AUTOMATION_OFF_REASON);
   });
 
   it("states the rule for an interval it cannot resolve to an instant", () => {

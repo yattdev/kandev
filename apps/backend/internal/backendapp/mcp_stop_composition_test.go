@@ -29,13 +29,12 @@ func TestRegisterMCPAndDebugRoutesWiresCoordinatorTaskStopper(t *testing.T) {
 	steps, err := harness.workflowSvc.ListStepsByWorkflow(ctx, workflows[0].ID)
 	require.NoError(t, err)
 	require.NotEmpty(t, steps)
-	parentResult, err := harness.taskSvc.CreateTask(ctx, &taskservice.CreateTaskRequest{
+	parent, err := harness.taskSvc.CreateTask(ctx, &taskservice.CreateTaskRequest{
 		WorkspaceID:    workspaces[0].ID,
 		WorkflowID:     workflows[0].ID,
 		WorkflowStepID: steps[0].ID,
 		Title:          "Stop coordinator",
 	})
-	parent := parentResult.Task
 	require.NoError(t, err)
 	childID, err := harness.taskSvc.CreateChildTask(ctx, parent, taskservice.ChildTaskSpec{
 		Title: "Unneeded child",

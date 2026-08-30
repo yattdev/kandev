@@ -69,7 +69,7 @@ describe("useAgentRuntimeUpdates", () => {
 
     const { result } = render();
 
-    await expect(result.current.startUpdate(AGENT, "1.1.0")).rejects.toThrow(
+    await expect(result.current.startUpdate(AGENT)).rejects.toThrow(
       "Agent installation is already in progress.",
     );
     expect(getInstallJobMock).toHaveBeenCalledWith("job-1", { cache: "no-store" });
@@ -83,9 +83,7 @@ describe("useAgentRuntimeUpdates", () => {
 
     const { result } = render();
 
-    await expect(result.current.startUpdate(AGENT, "1.1.0")).resolves.toMatchObject({
-      job_id: "job-1",
-    });
+    await expect(result.current.startUpdate(AGENT)).resolves.toMatchObject({ job_id: "job-1" });
     expect(getAgentUpdateJobMock).toHaveBeenCalledWith("job-1", { cache: "no-store" });
   });
 
@@ -94,7 +92,7 @@ describe("useAgentRuntimeUpdates", () => {
 
     const { result } = render();
 
-    await expect(result.current.startUpdate(AGENT, "1.1.0")).rejects.toThrow("network down");
+    await expect(result.current.startUpdate(AGENT)).rejects.toThrow("network down");
     expect(getInstallJobMock).not.toHaveBeenCalled();
     expect(getAgentUpdateJobMock).not.toHaveBeenCalled();
   });
@@ -104,8 +102,6 @@ describe("useAgentRuntimeUpdates", () => {
 
     const { result } = render();
 
-    await expect(result.current.startUpdate(AGENT, "1.1.0")).resolves.toMatchObject({
-      status: "queued",
-    });
+    await expect(result.current.startUpdate(AGENT)).resolves.toMatchObject({ status: "queued" });
   });
 });

@@ -7,7 +7,9 @@ import { useRepositories } from "@/hooks/domains/workspace/use-repositories";
 import { useBranches } from "@/hooks/domains/workspace/use-repository-branches";
 import {
   NO_REPOSITORY,
+  NO_REPOSITORY_LABEL,
   DEFAULT_BRANCH,
+  DEFAULT_BRANCH_LABEL,
   branchPlaceholder,
   resolveBaseBranch,
   resolveRepositoryId,
@@ -19,7 +21,7 @@ type PickItem = { id: string; label: string };
 function PickSelect(props: {
   label: string;
   description: string;
-  value: string | undefined;
+  value: string;
   onChange: (v: string) => void;
   placeholder: string;
   items: PickItem[];
@@ -81,15 +83,6 @@ export function WatcherRepositoryFields({
   const { repositories } = useRepositories(workspaceId, !!workspaceId, true);
   const branchSource = repositoryId ? ({ kind: "id", workspaceId, repositoryId } as const) : null;
   const { branches, isLoading: branchesLoading } = useBranches(branchSource, !!repositoryId);
-  const noRepositoryLabel = t("common:noRepositoryOption");
-  const defaultBranchLabel = t("common:repositoryDefaultBranchOption");
-  const branchPlaceholderLabels = {
-    defaultBranch: defaultBranchLabel,
-    loading: t("common:watcherLoadingBranchesPlaceholder"),
-    pickRepository: t("common:watcherPickRepositoryPlaceholder"),
-  };
-  const branchPlaceholderLabel =
-    branchPlaceholderLabels[branchPlaceholder(repositoryId, branchesLoading)];
   // A branch name can appear twice (local + remote tracking, e.g. "main" and
   // origin/"main"), which would emit two <SelectItem value="main"> — Radix then
   // renders every matching item's text in the trigger ("mainmain") and React
@@ -102,20 +95,20 @@ export function WatcherRepositoryFields({
         description={t("common:optionalTheRepositoryTheAgentWorks")}
         value={repositoryId || NO_REPOSITORY}
         onChange={(v) => onRepositoryChange(resolveRepositoryId(v))}
-        placeholder={noRepositoryLabel}
+        placeholder={NO_REPOSITORY_LABEL}
         items={[
-          { id: NO_REPOSITORY, label: noRepositoryLabel },
+          { id: NO_REPOSITORY, label: NO_REPOSITORY_LABEL },
           ...repositories.map((r) => ({ id: r.id, label: r.name })),
         ]}
       />
       <PickSelect
         label={t("common:baseBranch")}
         description={t("common:theBaseBranchTheAgentStarts")}
-        value={repositoryId && !branchesLoading ? baseBranch || DEFAULT_BRANCH : undefined}
+        value={baseBranch || DEFAULT_BRANCH}
         onChange={(v) => onBaseBranchChange(resolveBaseBranch(v))}
-        placeholder={branchPlaceholderLabel}
+        placeholder={branchPlaceholder(repositoryId, branchesLoading)}
         items={[
-          { id: DEFAULT_BRANCH, label: defaultBranchLabel },
+          { id: DEFAULT_BRANCH, label: DEFAULT_BRANCH_LABEL },
           ...uniqueBranchNames.map((name) => ({ id: name, label: name })),
         ]}
         disabled={!repositoryId || branchesLoading}

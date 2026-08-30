@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { activateLocale } from "@/lib/i18n";
 import type { SecretListItem } from "@/lib/types/http-secrets";
-import { DeleteSecretDialog } from "./secrets-delete-dialog";
+import { DeleteSecretDialog } from "./secrets-settings";
 
 /**
  * A secret's name is user data. It reaches the dialog as an interpolated value

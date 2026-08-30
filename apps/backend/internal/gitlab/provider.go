@@ -46,10 +46,7 @@ func Provide(
 		svc.SetHostStore(hostStore)
 	}
 
-	cleanup := func() error {
-		svc.unsubscribeTaskEvents()
-		return nil
-	}
+	cleanup := func() error { return nil }
 	return svc, cleanup, nil
 }
 

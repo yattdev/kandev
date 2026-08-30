@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "@kandev/ui/button";
 import { useAppStore } from "@/components/state-provider";
-import { selectOfficeAgentProfiles } from "@/lib/state/slices/office/selectors";
 import { useOfficeRefetch } from "@/hooks/use-office-refetch";
 import type { OfficeTask } from "@/lib/state/slices/office/types";
 import { NewTaskDialog } from "../components/new-task-dialog";
@@ -113,7 +112,7 @@ export function TasksList() {
   const groupBy = useAppStore((s) => s.office.tasks.groupBy);
   const nestingEnabled = useAppStore((s) => s.office.tasks.nestingEnabled);
   const isLoading = useAppStore((s) => s.office.tasks.isLoading);
-  const agents = useAppStore(selectOfficeAgentProfiles);
+  const agents = useAppStore((s) => s.office.agentProfiles);
 
   const setTaskFilters = useAppStore((s) => s.setTaskFilters);
   const setTaskViewMode = useAppStore((s) => s.setTaskViewMode);

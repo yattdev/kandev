@@ -29,7 +29,7 @@ import {
 import { DEFAULT_REVIEW_WATCH_PROMPT } from "@/components/github/review-watch-placeholders";
 import { ReviewWatchPromptField } from "@/components/github/review-watch-prompt-field";
 import { RepoFilterSelector } from "@/components/github/repo-filter-selector";
-import { STEP_DEFAULT, resolveProfileId } from "@/lib/watcher-profile-default";
+import { STEP_DEFAULT, STEP_DEFAULT_LABEL, resolveProfileId } from "@/lib/watcher-profile-default";
 import type {
   RepoFilter,
   ReviewWatch,
@@ -433,7 +433,6 @@ function ProfileFields({
   executorProfiles: Array<{ id: string; name: string }>;
 }) {
   const { t } = useTranslation();
-  const stepDefaultLabel = t("common:useStepDefaultOption");
   return (
     <div className="grid grid-cols-2 gap-4">
       <SelectField
@@ -441,9 +440,9 @@ function ProfileFields({
         description={t("github:optionalFallsBackToStepDefault")}
         value={form.agentProfileId || STEP_DEFAULT}
         onChange={(v) => setForm((prev) => ({ ...prev, agentProfileId: resolveProfileId(v) }))}
-        placeholder={stepDefaultLabel}
+        placeholder={STEP_DEFAULT_LABEL}
         items={[
-          { id: STEP_DEFAULT, label: stepDefaultLabel },
+          { id: STEP_DEFAULT, label: STEP_DEFAULT_LABEL },
           ...agentProfiles.map((p) => ({
             id: p.id,
             label: p.label,
@@ -470,10 +469,10 @@ function ProfileFields({
           }
         >
           <SelectTrigger className="cursor-pointer">
-            <SelectValue placeholder={stepDefaultLabel} />
+            <SelectValue placeholder={STEP_DEFAULT_LABEL} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={STEP_DEFAULT}>{stepDefaultLabel}</SelectItem>
+            <SelectItem value={STEP_DEFAULT}>{STEP_DEFAULT_LABEL}</SelectItem>
             {executorProfiles.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name}

@@ -1,5 +1,4 @@
 import { test, expect } from "../../fixtures/test-base";
-import { dwell } from "../../helpers/causal-waits";
 
 // Wait until the backend has a populated disk-usage cache (the initial walk
 // is async; the first call returns `{data: null, computing: true}` and kicks
@@ -16,11 +15,7 @@ async function waitForDiskUsageCached(apiClient: {
       const body = (await res.json()) as { data: unknown; computing: boolean };
       if (body.data) return;
     }
-    await dwell(
-      250,
-      "poll-interval",
-      "sampling interval for the disk-usage cache poll above; the cache is computed in the background and only observable by re-reading the endpoint",
-    );
+    await new Promise((r) => setTimeout(r, 250));
   }
   throw new Error("disk-usage cache never populated within 20s");
 }

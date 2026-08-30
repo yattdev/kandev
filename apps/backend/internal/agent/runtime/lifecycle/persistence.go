@@ -71,7 +71,7 @@ func buildRunningFromExecution(execution *AgentExecution, prior *models.Executor
 		lastSeenAt = &now
 	}
 
-	metadata := execution.MetadataSnapshot()
+	metadata := execution.metadataSnapshot()
 	running := &models.ExecutorRunning{
 		ID:                 execution.SessionID,
 		SessionID:          execution.SessionID,
@@ -120,10 +120,10 @@ func agentctlPortFromExecution(execution *AgentExecution, agentctlURL string) in
 	if execution.standalonePort > 0 {
 		return execution.standalonePort
 	}
-	if port := execution.metadataInt(MetadataKeySSHLocalForwardPort); port > 0 {
+	if port := metadataInt(execution.Metadata, MetadataKeySSHLocalForwardPort); port > 0 {
 		return port
 	}
-	if port := execution.metadataInt(MetadataKeyLocalPort); port > 0 {
+	if port := metadataInt(execution.Metadata, MetadataKeyLocalPort); port > 0 {
 		return port
 	}
 	if agentctlURL == "" {
@@ -161,7 +161,7 @@ func agentctlPIDFromExecution(execution *AgentExecution) int {
 	if execution == nil {
 		return 0
 	}
-	return execution.metadataInt(MetadataKeySSHRemoteAgentctlPID)
+	return metadataInt(execution.Metadata, MetadataKeySSHRemoteAgentctlPID)
 }
 
 func metadataInt(metadata map[string]interface{}, key string) int {

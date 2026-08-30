@@ -18,7 +18,7 @@ import {
 } from "@/lib/notifications/sound";
 import { useSettingsSaveContributor } from "./settings-save-provider";
 import { SettingsTarget } from "./settings-target";
-import { GENERAL_SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/preferences";
+import { GENERAL_SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/general";
 
 /**
  * Catalog keys for the preset names, keyed by the preset id — the id is the

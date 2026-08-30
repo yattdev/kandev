@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo } from "react";
 import { useAppStore } from "@/components/state-provider";
-import { selectOfficeAgentProfiles } from "@/lib/state/slices/office/selectors";
 import { listTasks } from "@/lib/api/domains/office-tasks-api";
 import { agentProfileId as toAgentProfileId } from "@/lib/types/ids";
 import { TaskRow } from "../../tasks/task-row";
@@ -10,11 +9,11 @@ import { useTranslation } from "react-i18next";
 
 type ProjectTasksSectionProps = {
   projectId: string;
-  workspaceId: string;
 };
 
-export function ProjectTasksSection({ projectId, workspaceId }: ProjectTasksSectionProps) {
+export function ProjectTasksSection({ projectId }: ProjectTasksSectionProps) {
   const { t } = useTranslation();
+  const workspaceId = useAppStore((s) => s.workspaces.activeId);
   const appendTasks = useAppStore((s) => s.appendTasks);
   // Select stable references; derive the filtered list and the agent-name
   // lookup via useMemo. Returning a freshly `.filter()`'d array or a
@@ -22,7 +21,7 @@ export function ProjectTasksSection({ projectId, workspaceId }: ProjectTasksSect
   // getSnapshot caching guard because every render produced a new
   // reference.
   const allTasks = useAppStore((s) => s.office.tasks.items);
-  const agentProfiles = useAppStore(selectOfficeAgentProfiles);
+  const agentProfiles = useAppStore((s) => s.office.agentProfiles);
 
   // Fetch tasks for this project once on mount. The list is merged into
   // the global store via appendTasks so other consumers (the Tasks page,

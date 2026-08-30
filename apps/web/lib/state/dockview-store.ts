@@ -34,7 +34,6 @@ import {
 } from "./layout-manager";
 import type { BuiltInPreset, LayoutState, LayoutGroupIds } from "./layout-manager";
 import type { CommitDetailTarget } from "@/components/task/changes-diff-target";
-import type { ReviewItemSummary } from "@/lib/plugins/types";
 import { performEnvSwitch, replaceStaleSessionPanels } from "./dockview-env-switch";
 import { enforcePinnedTargets } from "./dockview-pinned-enforce";
 import {
@@ -45,11 +44,10 @@ import {
 import { buildFileStateActions } from "./dockview-file-state";
 import {
   buildPanelActions,
+  buildExtraPanelActions,
   type OpenPanelOpts,
   type PreviewType,
-  type ReviewPanelOptions,
 } from "./dockview-panel-actions";
-import { buildExtraPanelActions } from "./dockview-extra-panel-actions";
 import { preserveChatScrollDuringLayout } from "./dockview-scroll-preserve";
 import { measureDockviewContainer } from "./dockview-measure";
 import { panelPortalManager } from "@/lib/layout/panel-portal-manager";
@@ -158,8 +156,6 @@ type DockviewStore = {
   addFileEditorPanel: (path: string, name: string, opts?: OpenPanelOpts) => void;
   promotePreviewToPinned: (type: PreviewType) => void;
   addBrowserPanel: (url?: string, groupId?: string) => void;
-  /** Focus the existing preview browser, or open one when there is none. */
-  focusOrAddBrowserPanel: (groupId?: string) => void;
   openBrowserPanel: (url: string) => void;
   addVscodePanel: () => void;
   openInternalVscode: (goto_: { file: string; line: number; col: number } | null) => void;
@@ -174,24 +170,10 @@ type DockviewStore = {
   /** Close every currently-open panel contributed by pluginId (disable/uninstall — AC4). */
   closePluginPanels: (pluginId: string) => void;
   addTodosPanel: (opts?: { groupId?: string; quiet?: boolean; inCenter?: boolean }) => void;
-  addPromptHistoryPanel: (opts?: { groupId?: string; quiet?: boolean; inCenter?: boolean }) => void;
   /** Open a PR detail panel. prKey (owner/repo/pr_number) gives multi-repo tasks one tab per PR. */
-  addPRPanel: (prKey?: string, opts?: ReviewPanelOptions) => void;
+  addPRPanel: (prKey?: string) => void;
   /** Open a GitLab merge request detail panel keyed by host/project/iid. */
-  addMRPanel: (mrKey: string, opts?: ReviewPanelOptions) => void;
-  /** Open a provider-neutral review detail panel. */
-  addReviewPanel: (
-    review: Pick<
-      ReviewItemSummary,
-      | "providerId"
-      | "reviewKey"
-      | "connectionScope"
-      | "repositoryId"
-      | "changeRequestNumber"
-      | "title"
-    >,
-    opts?: ReviewPanelOptions,
-  ) => void;
+  addMRPanel: (mrKey: string) => void;
   addTerminalPanel: (
     terminalId?: string,
     groupId?: string,
@@ -199,19 +181,8 @@ type DockviewStore = {
     taskID?: string,
     title?: string,
   ) => void;
-  /** Read-only output panel for the repository dev script. */
-  addDevServerPanel: (groupId?: string) => void;
   selectedDiff: { path: string; content?: string } | null;
   setSelectedDiff: (diff: { path: string; content?: string } | null) => void;
-  scrollTarget: {
-    sessionId: string;
-    messageId: string;
-    token: number;
-    hostPanelId: string;
-  } | null;
-  scrollTranscriptToMessage: (sessionId: string, messageId: string, title: string) => void;
-  clearScrollTarget: (token: number) => void;
-  clearScrollTargetForOwner: (sessionId: string, hostPanelId: string) => void;
   activeGroupId: string | null;
   centerGroupId: string;
   rightTopGroupId: string;
@@ -266,12 +237,6 @@ type StoreSet = (
   partial: Partial<DockviewStore> | ((s: DockviewStore) => Partial<DockviewStore>),
 ) => void;
 
-/**
- * Apply queued deferred panel actions to the dockview API after a layout
- * build/restore. "tab" placements land in the reference panel's group; other
- * placements position the new panel relative to the reference panel
- * (defaulting to the chat panel).
- */
 function applyDeferredPanelActions(api: DockviewApi, actions: DeferredPanelAction[]): void {
   for (const action of actions) {
     const ref = action.referencePanel ?? "chat";
@@ -407,7 +372,6 @@ export function resolveCustomLayoutPinnedWidths(
   totalWidth: number,
 ): Map<string, number> {
   const widths = new Map<string, number>();
-  /** True when the column carries a finite, positive saved width. */
   const hasValidWidth = (column: LayoutState["columns"][number]): boolean =>
     typeof column.width === "number" && Number.isFinite(column.width) && column.width > 0;
   const hasCompleteGeometry =
@@ -416,11 +380,6 @@ export function resolveCustomLayoutPinnedWidths(
     ? columns.reduce((total, column) => total + (column.width ?? 0), 0)
     : 0;
 
-  /**
-   * Resolve a column's saved width to a pixel width: scaled proportionally to
-   * the current workbench when every column has a valid saved width, otherwise
-   * used as-is, then clamped to the column's min/max bounds.
-   */
   const resolveColumn = (column: LayoutState["columns"][number], sidebarWidth = 0): number => {
     const savedWidth = column.width;
     if (typeof savedWidth !== "number") return 0;
@@ -476,11 +435,6 @@ function enforceFromStore(api: DockviewApi, get: StoreGet): void {
   });
 }
 
-/**
- * Apply a layout state to the dockview API and persist the resulting group
- * IDs to the store. Uses the caller-provided `preMeasured` container size when
- * supplied, otherwise measures the dockview container itself.
- */
 function applyLayoutAndSet(
   api: DockviewApi,
   state: LayoutState,
@@ -506,7 +460,6 @@ function applyLayoutAndSet(
   return ids;
 }
 
-/** True when the column is the default right column or hosts a right-side group. */
 function isRightColumn(column: LayoutState["columns"][number]): boolean {
   return (
     column.id === "right" ||
@@ -514,10 +467,6 @@ function isRightColumn(column: LayoutState["columns"][number]): boolean {
   );
 }
 
-/**
- * True when the column holds at least one right-owned panel (changes, files,
- * terminal — or pr-detail when the column is a right column).
- */
 function columnHasRightPanel(column: LayoutState["columns"][number]): boolean {
   const includesLayoutOwnedPRDetails = isRightColumn(column);
   return column.groups.some((group) =>
@@ -528,12 +477,6 @@ function columnHasRightPanel(column: LayoutState["columns"][number]): boolean {
   );
 }
 
-/**
- * Return a copy of the layout with right-owned tabs (changes/files/terminal,
- * plus pr-detail in right columns) stripped from their groups; groups and
- * columns left empty are dropped, and `activePanel` falls back to the first
- * remaining panel.
- */
 function removeRightPanelTabs(state: LayoutState): LayoutState {
   const columns = state.columns
     .map((col) => {
@@ -558,12 +501,6 @@ function removeRightPanelTabs(state: LayoutState): LayoutState {
   return { columns };
 }
 
-/**
- * Build the store's visibility actions. `toggleRightPanels` shows/hides the
- * right column, capturing live widths and chat scroll before the layout swap
- * and re-enforcing pinned targets afterwards; the legacy sidebar toggles are
- * kept as no-ops since the embedded sidebar moved to the unified AppSidebar.
- */
 function buildVisibilityActions(set: StoreSet, get: StoreGet) {
   return {
     // Legacy dockview-embedded sidebar is gone after the unified AppSidebar
@@ -622,12 +559,6 @@ function buildVisibilityActions(set: StoreSet, get: StoreGet) {
   };
 }
 
-/**
- * Build the store's preset/custom-layout actions. `applyBuiltInPreset`
- * switches to a built-in preset (merging current panels, optionally resetting
- * widths), `applyCustomLayout` restores a saved custom layout, and
- * `captureCurrentLayout` snapshots the current layout for reuse.
- */
 function buildPresetActions(set: StoreSet, get: StoreGet) {
   return {
     applyBuiltInPreset: (preset: BuiltInPreset, resetWidths = false) => {
@@ -726,13 +657,6 @@ type RestoreCustomLayoutParams = {
   set: StoreSet;
 };
 
-/**
- * Restore a saved custom layout onto the dockview API. New-format layouts
- * (with columns) are normalized (reusable session panels, chat materialization)
- * and applied with resolved pinned widths; legacy serialized blobs are
- * restored via `api.fromJSON`. Returns the applied state and whether a legacy
- * restore threw.
- */
 function restoreCustomLayout({
   api,
   layout,
@@ -769,10 +693,6 @@ function restoreCustomLayout({
   }
 }
 
-/**
- * Capture the current layout as a reusable snapshot: ephemeral panels are
- * filtered out and session panels are normalized to reusable placeholders.
- */
 function captureReusableLayout(get: StoreGet): Record<string, unknown> {
   const { api } = get();
   if (!api) return {};
@@ -821,12 +741,6 @@ function restoreMaximizeFromStorage(
 }
 
 // Persist settled layout to env storage; auto-save in setupLayoutPersistence is gated by isRestoringLayout, so preset/custom actions must call this after the flag clears.
-/**
- * Persist the settled layout to the env's storage slot. No-op when maximized
- * (the maximize overlay is saved separately) or when envId is null; called
- * after preset/custom actions clear `isRestoringLayout`, since the auto-save
- * in setupLayoutPersistence is gated during restore.
- */
 export function persistEnvLayoutNow(
   api: DockviewApi,
   envId: string | null,
@@ -907,12 +821,6 @@ function saveOutgoingEnv(
   panelPortalManager.releaseByEnv(oldEnvId);
 }
 
-/**
- * Build the `switchEnvLayout` action: persists and releases the outgoing
- * env's layout/portals, then restores the new env's saved layout (or a saved
- * maximized state), falling back to the default layout. Same-env switches
- * are a no-op.
- */
 function buildEnvSwitchAction(set: StoreSet, get: StoreGet) {
   return (
     oldEnvId: string | null,
@@ -1004,12 +912,6 @@ function buildEnvSwitchAction(set: StoreSet, get: StoreGet) {
   };
 }
 
-/**
- * Build the maximize actions. `maximizeGroup` collapses the layout to the
- * sidebar plus the requested group, persisting the pre-maximize layout (and
- * a saved maximize state for the current env); `exitMaximizedLayout` restores
- * that pre-maximize layout and clears the saved maximize state.
- */
 function buildMaximizeActions(set: StoreSet, get: StoreGet) {
   return {
     maximizeGroup: (groupId: string) => {
@@ -1081,12 +983,6 @@ function buildMaximizeActions(set: StoreSet, get: StoreGet) {
   };
 }
 
-/**
- * Build and apply the default layout — the user's saved default or the active
- * preset, optionally injected with an intent's panels/active-panel overrides —
- * then flush any deferred panel actions and re-enforce pinned targets once
- * the layout settles.
- */
 function performBuildDefault(
   api: DockviewApi,
   set: StoreSet,
@@ -1142,11 +1038,6 @@ function performBuildDefault(
   });
 }
 
-/**
- * Reset the dockview to the effective default layout: clear any maximize
- * state, rebuild the default layout, and persist the settled layout to the
- * current env's storage.
- */
 function resetToEffectiveDefault(set: StoreSet, get: StoreGet): void {
   const { api, currentLayoutEnvId, preMaximizeLayout } = get();
   if (!api) return;
@@ -1168,18 +1059,12 @@ type ActiveFileState = Pick<
   "activeFilePath" | "activeFileRepo" | "activePanelComponent"
 >;
 
-/**
- * Infer the panel component from its id when the panel is not live in
- * dockview: `file-editor` for file/preview-editor ids and `diff-viewer` for
- * diff ids, otherwise null.
- */
 function inferPanelComponent(panelId: string): string | null {
   if (panelId === "preview:file-editor" || panelId.startsWith("file:")) return "file-editor";
   if (panelId === "preview:file-diff" || panelId.startsWith("diff:file:")) return "diff-viewer";
   return null;
 }
 
-/** Build the active-file state slice (path, repo, and panel component). */
 function activeFileState(
   activeFilePath: string | null,
   activeFileRepo: string | null,
@@ -1188,10 +1073,6 @@ function activeFileState(
   return { activeFilePath, activeFileRepo, activePanelComponent };
 }
 
-/**
- * Resolve the active file identity for a panel id: reads path/repo from the
- * panel's params, falling back to legacy bare-path `file:`/`diff:file:` ids.
- */
 function resolveActiveFile(api: DockviewApi, panelId: string | undefined): ActiveFileState {
   if (!panelId) return activeFileState(null, null, null);
   const panel = api.getPanel(panelId);
@@ -1276,7 +1157,6 @@ export const useDockviewStore = create<DockviewStore>((set, get) => ({
   activeGroupId: null,
   selectedDiff: null,
   setSelectedDiff: (diff) => set({ selectedDiff: diff }),
-  scrollTarget: null,
   openFiles: new Map(),
   ...buildFileStateActions(set),
   centerGroupId: CENTER_GROUP,
@@ -1318,7 +1198,7 @@ export const useDockviewStore = create<DockviewStore>((set, get) => ({
   maximizedGroupId: null,
   ...buildMaximizeActions(set, get),
   ...buildPanelActions(set, get),
-  ...buildExtraPanelActions(set, get),
+  ...buildExtraPanelActions(get),
 }));
 
 /**

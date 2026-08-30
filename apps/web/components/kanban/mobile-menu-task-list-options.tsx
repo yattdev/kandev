@@ -3,8 +3,6 @@
 import { Checkbox } from "@kandev/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@kandev/ui/select";
 import {
-  GROUP_OPTION_LABEL_KEYS,
-  SORT_OPTION_LABEL_KEYS,
   TASKS_LIST_GROUP_OPTIONS,
   TASKS_LIST_SORT_OPTIONS,
   type TasksListGroup,
@@ -50,7 +48,7 @@ export function MobileTasksListOptions({ options }: { options: TasksListDisplayO
             <SelectContent>
               {TASKS_LIST_SORT_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value} className="cursor-pointer">
-                  {t(SORT_OPTION_LABEL_KEYS[option.value])}
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -76,7 +74,7 @@ export function MobileTasksListOptions({ options }: { options: TasksListDisplayO
             <SelectContent>
               {TASKS_LIST_GROUP_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value} className="cursor-pointer">
-                  {t(GROUP_OPTION_LABEL_KEYS[option.value])}
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>

@@ -59,20 +59,8 @@ type PendingClarification struct {
 	resp      *Response
 	mu        sync.Mutex
 	resolved  bool
-	cancelled bool
-	// mu guards the deliveryConfirmation* and deliveryAbandoned fields except
-	// deliveryConfirmationOnce. deliveryConfirmationDone exists only when a
-	// callback was supplied; started and complete distinguish an in-flight
-	// callback from its result.
-	deliveryConfirmation         func() error
-	deliveryConfirmationOnce     sync.Once
-	deliveryConfirmationErr      error
-	deliveryConfirmationDone     chan struct{}
-	deliveryConfirmationStarted  bool
-	deliveryConfirmationComplete bool
-	deliveryAbandoned            bool
-	CancelCh                     chan struct{} // Closed when session's turn completes (agent moved on)
-	CreatedAt                    time.Time
+	CancelCh  chan struct{} // Closed when session's turn completes (agent moved on)
+	CreatedAt time.Time
 }
 
 // Status represents the status of a clarification request.

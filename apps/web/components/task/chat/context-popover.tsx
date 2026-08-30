@@ -11,7 +11,6 @@ import { useCustomPrompts } from "@/hooks/domains/settings/use-custom-prompts";
 import { isDirectory, getFileName } from "@/lib/utils/file-path";
 import type { ContextFile } from "@/lib/state/context-files-store";
 import { useTranslation } from "react-i18next";
-import { t } from "@/lib/i18n";
 
 type ContextPopoverProps = {
   open: boolean;
@@ -26,12 +25,7 @@ type ContextPopoverProps = {
 
 const FILE_SEARCH_DEBOUNCE = 300;
 
-// `name` is display copy; it is resolved per call rather than at module load.
-const planContextFile = (): ContextFile => ({
-  path: "plan:context",
-  name: t("task:panelPlan"),
-  pinned: true,
-});
+const PLAN_CONTEXT_FILE: ContextFile = { path: "plan:context", name: "Plan", pinned: true };
 
 function FileResultsList({
   isLoading,
@@ -234,11 +228,11 @@ function ContextPopoverList({
       {!query && (
         <div
           className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 cursor-pointer"
-          onClick={() => onToggleFile(planContextFile())}
+          onClick={() => onToggleFile(PLAN_CONTEXT_FILE)}
         >
           <Checkbox
             checked={planContextEnabled}
-            onCheckedChange={() => onToggleFile(planContextFile())}
+            onCheckedChange={() => onToggleFile(PLAN_CONTEXT_FILE)}
             className="h-3.5 w-3.5"
           />
           <IconListCheck className="h-4 w-4 text-muted-foreground shrink-0" />

@@ -293,13 +293,12 @@ func TestLaunchPreparedSession_MultiRepo_PersistsPerRepoEnvironmentAndWorktreeRo
 		t.Errorf("expected 2 task_environment_repos, got %d", got)
 	}
 
-	// Two task_environment_repos rows, one per repo.
-	envRepos := repo.taskEnvironmentRepos[envID]
-	if len(envRepos) != 2 {
-		t.Fatalf("expected 2 task_environment_repos rows, got %d", len(envRepos))
+	// Two TaskSessionWorktree rows, one per repo.
+	if len(repo.sessionWorktrees) != 2 {
+		t.Fatalf("expected 2 session_worktree rows, got %d", len(repo.sessionWorktrees))
 	}
 	repoIDsSeen := map[string]bool{}
-	for _, w := range envRepos {
+	for _, w := range repo.sessionWorktrees {
 		repoIDsSeen[w.RepositoryID] = true
 	}
 	if !repoIDsSeen["repo-front"] || !repoIDsSeen["repo-back"] {
@@ -319,6 +318,7 @@ func TestLaunchPreparedSession_MultiRepo_ReusesPerRepoWorktreeIDsFromEnvironment
 		TaskID:       taskID,
 		ExecutorType: string(models.ExecutorTypeWorktree),
 		Status:       models.TaskEnvironmentStatusReady,
+		WorktreeID:   "wt-front",
 		Repos: []*models.TaskEnvironmentRepo{
 			{
 				TaskEnvironmentID: "env-existing",
@@ -392,20 +392,6 @@ func TestResumeSession_MultiRepo_PopulatesRequestRepositories(t *testing.T) {
 	const sessionID = "session-multi-resume"
 	seedMultiRepoTask(t, repo, taskID)
 	seedWorktreeExecutor(repo)
-	// Repository display names may change after initial materialization. The
-	// environment rows remain the physical-worktree authority for a resume.
-	repo.repositories["repo-front"].Name = "frontend-renamed"
-	repo.taskEnvironments["env-resume"] = &models.TaskEnvironment{
-		ID:           "env-resume",
-		TaskID:       taskID,
-		ExecutorType: string(models.ExecutorTypeWorktree),
-		Status:       models.TaskEnvironmentStatusReady,
-		Repos: []*models.TaskEnvironmentRepo{
-			{TaskEnvironmentID: "env-resume", RepositoryID: "repo-front", WorktreeID: "wt-front", WorktreePath: "/tasks/x/frontend-original", Position: 0},
-			{TaskEnvironmentID: "env-resume", RepositoryID: "repo-back", WorktreeID: "wt-back", WorktreePath: "/tasks/x/backend-original", Position: 1},
-		},
-	}
-	repo.taskEnvironmentRepos["env-resume"] = repo.taskEnvironments["env-resume"].Repos
 
 	// Mirrors the raw repository GetTask: no Repositories slice attached.
 	repo.tasks[taskID] = &models.Task{ID: taskID, WorkspaceID: "ws-1", Title: "Multi Resume"}
@@ -451,10 +437,6 @@ func TestResumeSession_MultiRepo_PopulatesRequestRepositories(t *testing.T) {
 	if captured.Repositories[0].RepositoryID != "repo-front" || captured.Repositories[1].RepositoryID != "repo-back" {
 		t.Errorf("unexpected repo order: %+v", captured.Repositories)
 	}
-	if captured.Repositories[0].WorktreePath != "/tasks/x/frontend-original" ||
-		captured.Repositories[1].WorktreePath != "/tasks/x/backend-original" {
-		t.Errorf("resume worktree paths = %+v, want durable environment paths", captured.Repositories)
-	}
 	if got, want := captured.McpProviders, []string{"github", "gitlab"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("McpProviders = %#v, want %#v", got, want)
 	}
@@ -472,18 +454,18 @@ func TestReuseExistingRepositoryWorktrees_EnvironmentRowsWinOverSessionRows(t *t
 		StartedAt:         now.Add(-time.Minute),
 		UpdatedAt:         now.Add(-time.Minute),
 	}
-	repo.taskEnvironmentRepos[envID] = append(repo.taskEnvironmentRepos[envID],
-		&models.TaskEnvironmentRepo{
-			TaskEnvironmentID: envID,
-			RepositoryID:      "repo-a",
-			BranchSlug:        "main",
-			WorktreeID:        "wt-session-a",
+	repo.sessionWorktrees = append(repo.sessionWorktrees,
+		&models.TaskSessionWorktree{
+			SessionID:    "session-prev",
+			RepositoryID: "repo-a",
+			BranchSlug:   "main",
+			WorktreeID:   "wt-session-a",
 		},
-		&models.TaskEnvironmentRepo{
-			TaskEnvironmentID: envID,
-			RepositoryID:      "repo-b",
-			BranchSlug:        "feature",
-			WorktreeID:        "wt-session-b",
+		&models.TaskSessionWorktree{
+			SessionID:    "session-prev",
+			RepositoryID: "repo-b",
+			BranchSlug:   "feature",
+			WorktreeID:   "wt-session-b",
 		},
 	)
 	exec := newTestExecutor(t, &mockAgentManager{}, repo)
@@ -536,17 +518,15 @@ func TestReuseExistingRepositoryWorktrees_LegacyFlatEnvWorktreeFeedsFlatBranchSp
 		},
 	}
 	env := &models.TaskEnvironment{
-		ID: "env-legacy-flat",
-		Repos: []*models.TaskEnvironmentRepo{{
-			RepositoryID: "repo-kandev",
-			WorktreeID:   "wt-legacy-flat",
-		}},
+		ID:           "env-legacy-flat",
+		RepositoryID: "repo-kandev",
+		WorktreeID:   "wt-legacy-flat",
 	}
 
 	exec.reuseExistingRepositoryWorktrees(context.Background(), req, env)
 
 	if req.Repositories[0].WorktreeID != "wt-legacy-flat" {
-		t.Fatalf("repo WorktreeID = %q, want wt-legacy-flat", req.Repositories[0].WorktreeID)
+		t.Fatalf("flat repo WorktreeID = %q, want legacy top-level wt-legacy-flat", req.Repositories[0].WorktreeID)
 	}
 	if req.Repositories[1].WorktreeID != "" {
 		t.Fatalf("nested repo WorktreeID = %q, want empty", req.Repositories[1].WorktreeID)
@@ -602,7 +582,9 @@ func TestReuseExistingEnvironment_SingleRepoUsesBranchScopedEnvRow(t *testing.T)
 		UseWorktree:  true,
 	}
 	env := &models.TaskEnvironment{
-		ID: "env-single-branch-row",
+		ID:           "env-single-branch-row",
+		RepositoryID: "repo-kandev",
+		WorktreeID:   "wt-main",
 		Repos: []*models.TaskEnvironmentRepo{
 			{RepositoryID: "repo-kandev", BranchSlug: "main", WorktreeID: "wt-main"},
 			{RepositoryID: "repo-kandev", BranchSlug: "feature-x", WorktreeID: "wt-feature"},
@@ -628,7 +610,9 @@ func TestReuseExistingEnvironment_SingleRepoBranchMatchKeepsScopedRepoSpec(t *te
 		UseWorktree:    true,
 	}
 	env := &models.TaskEnvironment{
-		ID: "env-single-branch-row",
+		ID:           "env-single-branch-row",
+		RepositoryID: "repo-kandev",
+		WorktreeID:   "wt-main",
 		Repos: []*models.TaskEnvironmentRepo{
 			{RepositoryID: "repo-kandev", BranchSlug: "main", WorktreeID: "wt-main"},
 			{RepositoryID: "repo-kandev", BranchSlug: "feature-x", WorktreeID: "wt-feature"},
@@ -671,7 +655,9 @@ func TestReuseExistingEnvironment_SingleRepoUsesDefaultBranchScopedEnvRow(t *tes
 		UseWorktree:   true,
 	}
 	env := &models.TaskEnvironment{
-		ID: "env-single-default-branch-row",
+		ID:           "env-single-default-branch-row",
+		RepositoryID: "repo-kandev",
+		WorktreeID:   "wt-feature",
 		Repos: []*models.TaskEnvironmentRepo{
 			{RepositoryID: "repo-kandev", BranchSlug: "main", WorktreeID: "wt-main"},
 		},
@@ -694,7 +680,9 @@ func TestReuseExistingEnvironment_SingleRepoDoesNotFallBackToWrongScopedEnvWorkt
 		UseWorktree:  true,
 	}
 	env := &models.TaskEnvironment{
-		ID: "env-single-no-match",
+		ID:           "env-single-no-match",
+		RepositoryID: "repo-kandev",
+		WorktreeID:   "wt-main",
 		Repos: []*models.TaskEnvironmentRepo{
 			{RepositoryID: "repo-kandev", BranchSlug: "main", WorktreeID: "wt-main"},
 		},
@@ -721,7 +709,9 @@ func TestReuseExistingEnvironment_SingleRepoUnmatchedScopedEnvUsesBranchPathSlug
 		UseWorktree:          true,
 	}
 	env := &models.TaskEnvironment{
-		ID: "env-single-new-scoped-branch",
+		ID:           "env-single-new-scoped-branch",
+		RepositoryID: "repo-kandev",
+		WorktreeID:   "wt-main",
 		Repos: []*models.TaskEnvironmentRepo{
 			{RepositoryID: "repo-kandev", BranchSlug: "main", WorktreeID: "wt-main"},
 		},
@@ -768,11 +758,11 @@ func TestReuseExistingEnvironment_SingleRepoIgnoresEmptySessionBranchWhenEnvIsSc
 		StartedAt:         now.Add(-time.Minute),
 		UpdatedAt:         now.Add(-time.Minute),
 	}
-	repo.taskEnvironmentRepos[envID] = append(repo.taskEnvironmentRepos[envID], &models.TaskEnvironmentRepo{
-		TaskEnvironmentID: envID,
-		RepositoryID:      "repo-kandev",
-		BranchSlug:        "",
-		WorktreeID:        "wt-stale-empty-branch",
+	repo.sessionWorktrees = append(repo.sessionWorktrees, &models.TaskSessionWorktree{
+		SessionID:    "session-prev",
+		RepositoryID: "repo-kandev",
+		BranchSlug:   "",
+		WorktreeID:   "wt-stale-empty-branch",
 	})
 	exec := newTestExecutor(t, &mockAgentManager{}, repo)
 	req := &LaunchAgentRequest{
@@ -782,7 +772,9 @@ func TestReuseExistingEnvironment_SingleRepoIgnoresEmptySessionBranchWhenEnvIsSc
 		UseWorktree:  true,
 	}
 	env := &models.TaskEnvironment{
-		ID: envID,
+		ID:           envID,
+		RepositoryID: "repo-kandev",
+		WorktreeID:   "wt-main",
 		Repos: []*models.TaskEnvironmentRepo{
 			{RepositoryID: "repo-kandev", BranchSlug: "main", WorktreeID: "wt-main"},
 		},
@@ -807,11 +799,11 @@ func TestReuseExistingEnvironment_SingleRepoIgnoresEmptySessionBranchForNewBranc
 		StartedAt:         now.Add(-time.Minute),
 		UpdatedAt:         now.Add(-time.Minute),
 	}
-	repo.taskEnvironmentRepos[envID] = append(repo.taskEnvironmentRepos[envID], &models.TaskEnvironmentRepo{
-		TaskEnvironmentID: envID,
-		RepositoryID:      "repo-kandev",
-		BranchSlug:        "",
-		WorktreeID:        "wt-stale-empty-branch",
+	repo.sessionWorktrees = append(repo.sessionWorktrees, &models.TaskSessionWorktree{
+		SessionID:    "session-prev",
+		RepositoryID: "repo-kandev",
+		BranchSlug:   "",
+		WorktreeID:   "wt-stale-empty-branch",
 	})
 	exec := newTestExecutor(t, &mockAgentManager{}, repo)
 	req := &LaunchAgentRequest{
@@ -821,7 +813,8 @@ func TestReuseExistingEnvironment_SingleRepoIgnoresEmptySessionBranchForNewBranc
 		UseWorktree:  true,
 	}
 	env := &models.TaskEnvironment{
-		ID: envID,
+		ID:           envID,
+		RepositoryID: "repo-kandev",
 	}
 
 	exec.reuseExistingEnvironment(context.Background(), req, env)
@@ -856,9 +849,7 @@ func TestLaunchPreparedSession_MultiBranch_ReusesWorktreeIDsByBranchSlug(t *test
 		TaskID:       taskID,
 		ExecutorType: string(models.ExecutorTypeWorktree),
 		Status:       models.TaskEnvironmentStatusReady,
-		Repos: []*models.TaskEnvironmentRepo{
-			{TaskEnvironmentID: "env-existing", RepositoryID: "repo-kandev", WorktreeID: "wt-main", BranchSlug: "main"},
-		},
+		WorktreeID:   "wt-main",
 	}
 	repo.sessions[sourceSessionID] = &models.TaskSession{
 		ID:                sourceSessionID,
@@ -876,22 +867,22 @@ func TestLaunchPreparedSession_MultiBranch_ReusesWorktreeIDsByBranchSlug(t *test
 		StartedAt:      now,
 		UpdatedAt:      now,
 	}
-	repo.taskEnvironmentRepos["env-existing"] = append(repo.taskEnvironmentRepos["env-existing"],
-		&models.TaskEnvironmentRepo{
-			TaskEnvironmentID: "env-existing",
-			RepositoryID:      "repo-kandev",
-			WorktreeID:        "wt-main",
-			BranchSlug:        "main",
-			WorktreePath:      "/tasks/t/kandev",
-			WorktreeBranch:    "feature/t",
+	repo.sessionWorktrees = append(repo.sessionWorktrees,
+		&models.TaskSessionWorktree{
+			SessionID:      sourceSessionID,
+			RepositoryID:   "repo-kandev",
+			WorktreeID:     "wt-main",
+			BranchSlug:     "main",
+			WorktreePath:   "/tasks/t/kandev",
+			WorktreeBranch: "feature/t",
 		},
-		&models.TaskEnvironmentRepo{
-			TaskEnvironmentID: "env-existing",
-			RepositoryID:      "repo-kandev",
-			WorktreeID:        "wt-branch",
-			BranchSlug:        "branch-5hn",
-			WorktreePath:      "/tasks/t/kandev-branch-5hn",
-			WorktreeBranch:    "branch-5hn",
+		&models.TaskSessionWorktree{
+			SessionID:      sourceSessionID,
+			RepositoryID:   "repo-kandev",
+			WorktreeID:     "wt-branch",
+			BranchSlug:     "branch-5hn",
+			WorktreePath:   "/tasks/t/kandev-branch-5hn",
+			WorktreeBranch: "branch-5hn",
 		},
 	)
 
@@ -1048,7 +1039,7 @@ func TestPersistTaskEnvironmentRepos_RefreshesExistingRows(t *testing.T) {
 		},
 	}
 
-	exec.persistTaskEnvironmentRepos(context.Background(), "env-refresh", []*models.TaskEnvironmentRepo{
+	exec.persistTaskEnvironmentRepos(context.Background(), "env-refresh", []RepoWorktreeResult{
 		{
 			RepositoryID:   "repo-kandev",
 			BranchSlug:     "main",
@@ -1083,7 +1074,7 @@ func TestPersistTaskEnvironmentRepos_MigratesLegacyFlatRowToBranchIdentity(t *te
 		},
 	}
 
-	exec.persistTaskEnvironmentRepos(context.Background(), "env-legacy", []*models.TaskEnvironmentRepo{
+	exec.persistTaskEnvironmentRepos(context.Background(), "env-legacy", []RepoWorktreeResult{
 		{
 			RepositoryID:   "repo-kandev",
 			BranchSlug:     "release-1.2",

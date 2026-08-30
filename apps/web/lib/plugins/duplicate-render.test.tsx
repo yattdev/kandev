@@ -4,7 +4,6 @@ import { render, screen, cleanup } from "@testing-library/react";
 import { loadPlugins } from "./host";
 import { pluginRegistry } from "./registry";
 import { PluginSlot } from "@/components/plugins/plugin-slot";
-import { useResponsiveBreakpoint } from "@/hooks/use-responsive-breakpoint";
 import type { ActivePlugin, PluginHostApi, PluginRegistry } from "./types";
 
 /** No-op `host.toast`; these specs exercise lifecycle, never notifications. */
@@ -31,49 +30,23 @@ function makeHostFactory(pluginId: string): PluginHostApi {
     React,
     jsx: React.createElement,
     store: { getState: () => ({}) as never, setState: () => {}, subscribe: () => () => {} },
-    context: {
-      getActiveWorkspaceId: () => undefined,
-      subscribeActiveWorkspace: () => () => {},
-      getWorkspaceIds: () => [],
-      subscribeWorkspaces: () => () => {},
-      getTaskCreationContext: () => null,
-      subscribeTaskCreationContext: () => () => {},
-      resolveRepositoryId: () => undefined,
-    },
-    api: {
-      fetch: async () => new Response(),
-      invokeAction: async <TResponse,>() => undefined as TResponse,
-      baseUrl: "",
-    },
-    i18n: {
-      locale: "en",
-      t: (key) => key,
-      useTranslation: () => ({ locale: "en", t: (key) => key }),
-    },
-    ui: {} as PluginHostApi["ui"],
-    useResponsiveBreakpoint,
+    api: { fetch: async () => new Response(), baseUrl: "" },
+    ui: {},
     theme: "light",
     onThemeChange: () => () => {},
     navigate: () => {},
     openModal: () => ({ close: () => {} }),
-    openTaskLinkDialog: () => ({ close: () => {} }),
-    openTaskReview: () => {},
     toast: NOOP_TOAST,
-    useSettingsSaveContributor: () => {},
-    setIntegrationEnabled: () => {},
-    utils: {
-      cn: () => "",
-      generateUUID: () => "uuid",
-      formatRelativeTime: () => "",
-      integrationStatusRefreshMs: 90000,
-    },
+    utils: { cn: () => "", formatRelativeTime: () => "" },
     storage: {
       get: async () => undefined,
       set: async () => ({ updatedAt: "" }),
       delete: async () => {},
       list: async () => [],
+      listByKey: async () => ({ entries: [], truncated: false }),
       subscribe: () => () => {},
     },
+    taskFilters: { getSelection: () => [], setSelection: () => {}, subscribe: () => () => {} },
   };
 }
 

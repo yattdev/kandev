@@ -45,15 +45,11 @@ export type ShortcutEntry =
  * than raw `PluginRecord[]`) can merge core + plugin entries without
  * re-deriving the core list themselves.
  */
-type TranslateShortcutLabel = (key: string) => string;
-
-export function coreShortcutEntries(
-  translate: TranslateShortcutLabel = (key) => key,
-): ShortcutEntry[] {
+export function coreShortcutEntries(): ShortcutEntry[] {
   return (Object.keys(CONFIGURABLE_SHORTCUTS) as ConfigurableShortcutId[]).map((id) => ({
     source: "core",
     id,
-    label: translate(CONFIGURABLE_SHORTCUTS[id].labelKey),
+    label: CONFIGURABLE_SHORTCUTS[id].label,
     default: CONFIGURABLE_SHORTCUTS[id].default,
   }));
 }
@@ -93,11 +89,8 @@ function buildPluginEntries(plugins: PluginRecord[]): ShortcutEntry[] {
  * by plugin (dynamic) entries — for rendering in Settings > Keyboard
  * Shortcuts. Core behavior/order is unchanged from `CONFIGURABLE_SHORTCUTS`.
  */
-export function buildConfigurableShortcutEntries(
-  plugins: PluginRecord[],
-  translate?: TranslateShortcutLabel,
-): ShortcutEntry[] {
-  return [...coreShortcutEntries(translate), ...buildPluginEntries(plugins)];
+export function buildConfigurableShortcutEntries(plugins: PluginRecord[]): ShortcutEntry[] {
+  return [...coreShortcutEntries(), ...buildPluginEntries(plugins)];
 }
 
 /** Builds only the plugin-sourced entries — used by callers that already have core entries. */

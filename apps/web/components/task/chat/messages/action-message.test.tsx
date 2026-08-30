@@ -32,16 +32,12 @@ const RECOVERY_MESSAGE = "Agent encountered an error";
 const RESUME_LABEL = "Resume session";
 const RESUME_TEST_ID = "recovery-resume-button";
 const STALL_CANCEL_TEST_ID = "stall-cancel-turn-button";
-const TEST_SESSION_ID = "sess-1";
-const TEST_TASK_ID = "task-1";
-const SESSION_RECOVER_METHOD = "session.recover";
 
-/** Builds a system status Message describing a transient provider retry, with an optional Cancel action. */
 function retryMessage(overrides: Partial<Message> = {}): Message {
   return {
     id: "msg-1",
-    session_id: toSessionId(TEST_SESSION_ID),
-    task_id: toTaskId(TEST_TASK_ID),
+    session_id: toSessionId("sess-1"),
+    task_id: toTaskId("task-1"),
     author_type: "system",
     content: "Provider overloaded — retrying in 5s (attempt 1/5)",
     type: "status",
@@ -52,8 +48,8 @@ function retryMessage(overrides: Partial<Message> = {}): Message {
       attempt: 1,
       max_attempts: 5,
       retry_in_seconds: 5,
-      session_id: TEST_SESSION_ID,
-      task_id: TEST_TASK_ID,
+      session_id: "sess-1",
+      task_id: "task-1",
       actions: [
         {
           type: "ws_request",
@@ -61,8 +57,8 @@ function retryMessage(overrides: Partial<Message> = {}): Message {
           icon: "x",
           test_id: CANCEL_TEST_ID,
           params: {
-            method: SESSION_RECOVER_METHOD,
-            payload: { task_id: TEST_TASK_ID, session_id: TEST_SESSION_ID, action: "cancel_retry" },
+            method: "session.recover",
+            payload: { task_id: "task-1", session_id: "sess-1", action: "cancel_retry" },
           },
         },
       ],
@@ -71,7 +67,6 @@ function retryMessage(overrides: Partial<Message> = {}): Message {
   } as Message;
 }
 
-/** Builds the "warning" retrying metadata object for a given attempt and retry delay. */
 function transientRetryMetadata(attempt: number, retryInSeconds: number) {
   return {
     variant: "warning",
@@ -79,13 +74,12 @@ function transientRetryMetadata(attempt: number, retryInSeconds: number) {
     attempt,
     max_attempts: 5,
     retry_in_seconds: retryInSeconds,
-    session_id: TEST_SESSION_ID,
-    task_id: TEST_TASK_ID,
+    session_id: "sess-1",
+    task_id: "task-1",
     actions: [],
   };
 }
 
-/** Builds an error-variant recovery Message with an optional Resume action carrying request params. */
 function recoveryMessage(withParams = false): Message {
   return retryMessage({
     content: RECOVERY_MESSAGE,
@@ -100,8 +94,8 @@ function recoveryMessage(withParams = false): Message {
           ...(withParams
             ? {
                 params: {
-                  method: SESSION_RECOVER_METHOD,
-                  payload: { task_id: TEST_TASK_ID, session_id: TEST_SESSION_ID },
+                  method: "session.recover",
+                  payload: { task_id: "task-1", session_id: "sess-1" },
                 },
               }
             : {}),
@@ -111,7 +105,6 @@ function recoveryMessage(withParams = false): Message {
   } as Partial<Message>);
 }
 
-/** Builds a running-stall notice Message for the given turn with a Cancel turn action. */
 function stalledMessage(turnId = "turn-1"): Message {
   return retryMessage({
     turn_id: turnId,
@@ -123,7 +116,7 @@ function stalledMessage(turnId = "turn-1"): Message {
           type: "ws_request",
           label: "Cancel turn",
           test_id: STALL_CANCEL_TEST_ID,
-          params: { method: "agent.cancel", payload: { session_id: TEST_SESSION_ID } },
+          params: { method: "agent.cancel", payload: { session_id: "sess-1" } },
         },
       ],
     },
@@ -142,15 +135,12 @@ function renderAction(
     ? {
         taskSessions: {
           items: {
-            [TEST_SESSION_ID]: { state: sessionState, error_message: sessionError } as TaskSession,
+            "sess-1": { state: sessionState, error_message: sessionError } as TaskSession,
           },
         },
         turns: {
           bySession: {},
-          activeBySession: activeTurnId ? { [TEST_SESSION_ID]: activeTurnId } : {},
-          loadedBySession: {},
-          reconcileEpochBySession: {},
-          settledBoundaryBySession: {},
+          activeBySession: activeTurnId ? { "sess-1": activeTurnId } : {},
         },
       }
     : {};
@@ -186,8 +176,8 @@ describe("ActionMessage — transient retry (warning variant)", () => {
             failure_code: "model_capacity",
             provider_name: "Codex",
             model_id: "gpt-5",
-            session_id: TEST_SESSION_ID,
-            task_id: TEST_TASK_ID,
+            session_id: "sess-1",
+            task_id: "task-1",
             actions: [],
           },
         }),
@@ -206,9 +196,9 @@ describe("ActionMessage — transient retry (warning variant)", () => {
     renderAction(retryMessage(), "WAITING_FOR_INPUT");
     fireEvent.click(screen.getByTestId(CANCEL_TEST_ID));
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
-    expect(requestMock).toHaveBeenCalledWith(SESSION_RECOVER_METHOD, {
-      task_id: TEST_TASK_ID,
-      session_id: TEST_SESSION_ID,
+    expect(requestMock).toHaveBeenCalledWith("session.recover", {
+      task_id: "task-1",
+      session_id: "sess-1",
       action: "cancel_retry",
     });
   });
@@ -257,22 +247,6 @@ describe("ActionMessage — transient retry (warning variant)", () => {
   });
 });
 
-describe("ActionMessage — agent transport lost", () => {
-  it("renders the agent-transport-lost reason for a dropped ACP connection", () => {
-    renderAction(
-      retryMessage({
-        content: "Agent connection lost",
-        metadata: {
-          ...transientRetryMetadata(1, 5),
-          failure_code: "agent_transport_lost",
-        },
-      }),
-      "WAITING_FOR_INPUT",
-    );
-    expect(screen.getByText(/Agent connection lost/i)).toBeTruthy();
-  });
-});
-
 describe("ActionMessage — retry schedule updates", () => {
   it("resets the fallback countdown when a later retry schedule arrives", () => {
     vi.useFakeTimers();
@@ -313,22 +287,13 @@ describe("ActionMessage — running stall notice", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("keeps a terminal stall diagnostic visible after the session fails", () => {
-    const message = stalledMessage();
-    message.type = "error";
-
-    renderAction(message, "FAILED");
-
-    expect(screen.getByText("Still waiting on Start dev server.")).toBeTruthy();
-  });
-
   it("sends agent.cancel when Cancel turn is activated", async () => {
     renderAction(stalledMessage(), "RUNNING", undefined, "turn-1");
 
     fireEvent.click(screen.getByTestId(STALL_CANCEL_TEST_ID));
 
     await waitFor(() =>
-      expect(requestMock).toHaveBeenCalledWith("agent.cancel", { session_id: TEST_SESSION_ID }),
+      expect(requestMock).toHaveBeenCalledWith("agent.cancel", { session_id: "sess-1" }),
     );
   });
 
@@ -480,62 +445,10 @@ describe("ActionMessage — provider quota recovery", () => {
   });
 });
 
-describe("ActionMessage — managed npm runtime recovery", () => {
-  it("renders one localized retry action with collapsed technical details", async () => {
-    renderAction(
-      retryMessage({
-        content: "managed runtime failed",
-        metadata: {
-          variant: "error",
-          recovery_actions: true,
-          failure_kind: "managed_runtime_npm_resolution",
-          error_output: "npm error code ETARGET\nnpm error notarget No matching version found",
-          actions: [
-            {
-              type: "ws_request",
-              label: "backend label is ignored",
-              test_id: "managed-runtime-npm-retry-button",
-              params: {
-                method: SESSION_RECOVER_METHOD,
-                payload: {
-                  task_id: TEST_TASK_ID,
-                  session_id: TEST_SESSION_ID,
-                  action: "runtime_retry",
-                },
-              },
-            },
-          ],
-        },
-      } as Partial<Message>),
-      "WAITING_FOR_INPUT",
-    );
-
-    const card = screen.getByTestId("managed-runtime-npm-recovery");
-    expect(card.textContent).toContain("npm could not prepare the runtime");
-    expect(card.textContent).toContain("Kandev refreshed package data");
-    expect(card.textContent).not.toMatch(/ACP/i);
-    expect(screen.getByText(TECHNICAL_DETAILS).closest("details")?.open).toBe(false);
-    expect(screen.getAllByRole("button")).toHaveLength(1);
-    expect(screen.getByTestId("managed-runtime-npm-retry-button").textContent).toContain(
-      "Retry runtime",
-    );
-
-    fireEvent.click(screen.getByTestId("managed-runtime-npm-retry-button"));
-    await waitFor(() =>
-      expect(requestMock).toHaveBeenCalledWith(SESSION_RECOVER_METHOD, {
-        task_id: TEST_TASK_ID,
-        session_id: TEST_SESSION_ID,
-        action: "runtime_retry",
-      }),
-    );
-  });
-});
-
 describe("ActionMessage — remediation link", () => {
   const REMEDIATION_URL = "https://opencode.ai/workspace/wrk_01KQM7K5CYT715264YKKFB17ZY/go";
   const QUOTA_OUTPUT = "5-hour usage limit reached";
 
-  /** Builds a recovery Message carrying the given remediation URL in its metadata. */
   function recoveryMeta(remediationUrl?: string): Message {
     return retryMessage({
       content: RECOVERY_MESSAGE,

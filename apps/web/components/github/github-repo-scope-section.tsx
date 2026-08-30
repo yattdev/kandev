@@ -16,8 +16,6 @@ import { Input } from "@kandev/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@kandev/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@kandev/ui/tooltip";
 import { useToast } from "@/components/toast-provider";
-import { SettingsFieldLabel } from "@/components/settings/settings-typography";
-import { settingsControlClassName } from "@/components/settings/settings-control";
 import { SettingsSection } from "@/components/settings/settings-section";
 import { SettingsCard } from "@/components/settings/settings-card";
 import { useSettingsSaveContributor } from "@/components/settings/settings-save-provider";
@@ -149,7 +147,9 @@ function RepositoryScopeFields({
     >
       <CardContent className="grid gap-4 py-4 md:grid-cols-[220px_minmax(0,1fr)]">
         <div className="space-y-1.5">
-          <SettingsFieldLabel htmlFor="github-scope-mode">{t("github:mode")}</SettingsFieldLabel>
+          <label className="text-sm font-medium" htmlFor="github-scope-mode">
+            {t("github:mode")}
+          </label>
           <Select
             value={mode}
             onValueChange={(value) => onModeChange(value as GitHubRepoScopeMode)}
@@ -159,7 +159,6 @@ function RepositoryScopeFields({
               id="github-scope-mode"
               data-testid="github-scope-mode"
               data-settings-dirty={mode !== baseline.mode}
-              className={settingsControlClassName()}
             >
               <SelectValue />
             </SelectTrigger>
@@ -172,9 +171,9 @@ function RepositoryScopeFields({
         </div>
         <div className="grid gap-3">
           <div className="space-y-1.5">
-            <SettingsFieldLabel htmlFor="github-scope-orgs">
+            <label className="text-sm font-medium" htmlFor="github-scope-orgs">
               {t("github:organizations")}
-            </SettingsFieldLabel>
+            </label>
             <Input
               id="github-scope-orgs"
               value={orgs}
@@ -190,9 +189,9 @@ function RepositoryScopeFields({
             />
           </div>
           <div className="space-y-1.5">
-            <SettingsFieldLabel htmlFor="github-scope-repos">
+            <label className="text-sm font-medium" htmlFor="github-scope-repos">
               {t("github:repositories")}
-            </SettingsFieldLabel>
+            </label>
             <Input
               id="github-scope-repos"
               value={repos}

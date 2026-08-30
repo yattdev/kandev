@@ -43,24 +43,9 @@ type restartMockAgentctlServer struct {
 	httpActions []string
 	wsActions   []string
 	setModelIDs []string
-	setModeIDs  []string
-	setOptions  []restartConfigOption
 
-	failStop           bool
-	failSessionNew     bool
-	failSessionReset   bool
-	failMode           bool
-	failModel          bool
-	failConfigOptionID string
-	modelState         *streams.SessionModelState
-	newModelState      *streams.SessionModelState
-	onReset            func()
-	onSessionNew       func()
-}
-
-type restartConfigOption struct {
-	ID    string `json:"config_id"`
-	Value string `json:"value"`
+	failStop       bool
+	failSessionNew bool
 }
 
 func TestStopAgentWithReason_MissingExecutionIsClassified(t *testing.T) {
@@ -69,30 +54,6 @@ func TestStopAgentWithReason_MissingExecutionIsClassified(t *testing.T) {
 	err := mgr.StopAgentWithReason(context.Background(), "missing", "cleanup", true)
 
 	require.ErrorIs(t, err, ErrExecutionNotFound)
-}
-
-func TestWaitForFreshSessionModelStateWaitsForAdvertisedCatalog(t *testing.T) {
-	execution := &AgentExecution{ID: "exec-model-catalog"}
-	execution.SetModelState(&CachedModelState{CurrentModelID: "mock-fast"})
-
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		execution.SetModelState(&CachedModelState{
-			CurrentModelID: "mock-fast",
-			Models:         []streams.SessionModelInfo{{ModelID: "mock-fast"}},
-		})
-	}()
-
-	require.True(t, waitForFreshSessionModelState(context.Background(), newTestLogger(), execution))
-}
-
-func TestFreshSessionModelCatalogReadyAcceptsConfigOptionsWithoutModels(t *testing.T) {
-	require.True(t, freshSessionModelCatalogReady(&CachedModelState{
-		ConfigOptions: []streams.ConfigOption{{ID: "effort", CurrentValue: "max"}},
-	}))
-	require.True(t, freshSessionModelCatalogReady(&CachedModelState{
-		ConfigOptionsSettled: true,
-	}))
 }
 
 func newRestartMockAgentctlServer(t *testing.T, failStop, failSessionNew bool) *restartMockAgentctlServer {
@@ -162,78 +123,33 @@ func newRestartMockAgentctlServer(t *testing.T, failStop, failSessionNew bool) *
 					},
 				})
 			case "agent.session.new":
-				if m.onSessionNew != nil {
-					m.onSessionNew()
-				}
 				if m.failSessionNew {
 					resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
 						"success": false,
 						"error":   "session new failed",
 					})
 				} else {
-					payload := map[string]interface{}{
+					resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
 						"success":    true,
 						"session_id": "new-session-123",
-					}
-					if m.newModelState != nil {
-						payload["model_state"] = m.newModelState
-					}
-					resp, _ = ws.NewResponse(msg.ID, msg.Action, payload)
+					})
 				}
 			case "agent.session.reset":
-				if m.onReset != nil {
-					m.onReset()
-				}
-				if m.failSessionReset {
-					resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
-						"success": false,
-						"error":   "session reset failed",
-					})
-					break
-				}
-				payload := map[string]interface{}{
+				resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
 					"success":    true,
 					"session_id": "reset-session-456",
-				}
-				if m.modelState != nil {
-					payload["model_state"] = m.modelState
-				}
-				resp, _ = ws.NewResponse(msg.ID, msg.Action, payload)
+				})
 			case "agent.session.set_mode":
-				if m.failMode {
-					resp, _ = ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "mode rejected", nil)
-				} else {
-					resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
-						"success": true,
-					})
-				}
-			case "agent.session.set_model":
-				if m.failModel {
-					resp, _ = ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "model rejected", nil)
-				} else {
-					resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
-						"success": true,
-					})
-				}
-			case "agent.session.set_config_option":
-				var payload struct {
-					ConfigID string `json:"config_id"`
-					Value    string `json:"value"`
-				}
-				_ = json.Unmarshal(msg.Payload, &payload)
-				if payload.ConfigID == m.failConfigOptionID {
-					resp, _ = ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "config option rejected", nil)
-				} else {
-					resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
-						"success": true,
-					})
-				}
-			case "agent.stderr":
 				resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
-					"lines": []string{
-						"npm error code ETARGET",
-						"npm error notarget No matching version found for opencode-ai@1.2.3",
-					},
+					"success": true,
+				})
+			case "agent.session.set_model":
+				resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
+					"success": true,
+				})
+			case "agent.session.set_config_option":
+				resp, _ = ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
+					"success": true,
 				})
 			default:
 				resp, _ = ws.NewError(msg.ID, msg.Action, ws.ErrorCodeUnknownAction, "unknown action", nil)
@@ -278,26 +194,14 @@ func (m *restartMockAgentctlServer) recordWS(message ws.Message) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.wsActions = append(m.wsActions, message.Action)
-	switch message.Action {
-	case "agent.session.set_model":
-		var payload struct {
-			ModelID string `json:"model_id"`
-		}
-		if err := json.Unmarshal(message.Payload, &payload); err == nil {
-			m.setModelIDs = append(m.setModelIDs, payload.ModelID)
-		}
-	case "agent.session.set_mode":
-		var payload struct {
-			ModeID string `json:"mode_id"`
-		}
-		if err := json.Unmarshal(message.Payload, &payload); err == nil {
-			m.setModeIDs = append(m.setModeIDs, payload.ModeID)
-		}
-	case "agent.session.set_config_option":
-		var payload restartConfigOption
-		if err := json.Unmarshal(message.Payload, &payload); err == nil {
-			m.setOptions = append(m.setOptions, payload)
-		}
+	if message.Action != "agent.session.set_model" {
+		return
+	}
+	var payload struct {
+		ModelID string `json:"model_id"`
+	}
+	if err := json.Unmarshal(message.Payload, &payload); err == nil {
+		m.setModelIDs = append(m.setModelIDs, payload.ModelID)
 	}
 }
 
@@ -325,22 +229,6 @@ func (m *restartMockAgentctlServer) getSetModelIDs() []string {
 	return out
 }
 
-func (m *restartMockAgentctlServer) getSetModeIDs() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]string, len(m.setModeIDs))
-	copy(out, m.setModeIDs)
-	return out
-}
-
-func (m *restartMockAgentctlServer) getSetOptions() []restartConfigOption {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]restartConfigOption, len(m.setOptions))
-	copy(out, m.setOptions)
-	return out
-}
-
 func TestManager_RestartAgentProcess_Success(t *testing.T) {
 	mgr := newTestManager(t)
 	mock := newRestartMockAgentctlServer(t, false, false)
@@ -357,7 +245,7 @@ func TestManager_RestartAgentProcess_Success(t *testing.T) {
 		AgentCommand:   "auggie --model test",
 		Status:         v1.AgentStatusRunning,
 		WorkspacePath:  "/workspace",
-		metadata: map[string]interface{}{
+		Metadata: map[string]interface{}{
 			"task_description": "review the changes",
 		},
 		agentctl:     client,
@@ -863,52 +751,10 @@ func TestManager_ResetAgentContext_ReappliesSessionModel(t *testing.T) {
 	resetIndex := slices.Index(actions, "agent.session.reset")
 	modelIndex := slices.Index(actions, "agent.session.set_model")
 	require.GreaterOrEqual(t, resetIndex, 0)
-	require.Equal(t, -1, modelIndex,
-		"an empty fresh-session model catalog must not receive a model-selection request")
-	require.Empty(t, mock.getSetModelIDs(),
-		"reset must continue on the fresh-session provider default when no model is advertised")
-}
-
-func TestManager_ResetAgentContext_UsesSynchronousSessionModelCatalog(t *testing.T) {
-	mgr := newTestManager(t)
-	mgr.workspaceInfoProvider = &mockWorkspaceInfoProvider{
-		infos: map[string]*WorkspaceInfo{
-			"session-1": {SessionID: "session-1", RuntimeModel: "mock-smart"},
-		},
-	}
-	mock := newRestartMockAgentctlServer(t, false, false)
-	mock.modelState = &streams.SessionModelState{
-		CurrentModelID: "mock-fast",
-		Models:         []streams.SessionModelInfo{{ModelID: "mock-fast"}, {ModelID: "mock-smart"}},
-	}
-
-	client := createTestClient(t, mock.server.URL)
-	t.Cleanup(client.Close)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	require.NoError(t, client.StreamUpdates(ctx, func(agentctl.AgentEvent) {}, nil, nil))
-
-	exec := &AgentExecution{
-		ID:                 "exec-model-reset-response",
-		TaskID:             "task-1",
-		SessionID:          "session-1",
-		AgentProfileID:     "profile-1",
-		ACPSessionID:       "old-session",
-		AgentCommand:       "auggie --model test",
-		Status:             v1.AgentStatusRunning,
-		WorkspacePath:      "/workspace",
-		sessionInitialized: true,
-		agentctl:           client,
-		promptDoneCh:       make(chan PromptCompletionSignal, 1),
-	}
-	exec.SetModelState(&CachedModelState{CurrentModelID: "mock-fast"})
-	require.NoError(t, mgr.executionStore.Add(exec))
-
-	require.NoError(t, mgr.ResetAgentContext(ctx, exec.ID))
-
+	require.Greater(t, modelIndex, resetIndex,
+		"the model must be reapplied after the fresh ACP session is created")
 	require.Equal(t, []string{"mock-smart"}, mock.getSetModelIDs(),
-		"reset must use the synchronous session catalog before the stream event is dispatched")
+		"reset must restore the persisted effective model, not the fresh-session default")
 }
 
 // TestManager_RestartAgentProcess_PrefersPersistedModeOverStaleCache is the
@@ -995,7 +841,7 @@ func TestManager_SetSessionModel_Passthrough_PersistsOverride(t *testing.T) {
 		SessionID:            "session-pt",
 		PassthroughProcessID: "pt-process-1",
 		Status:               v1.AgentStatusRunning,
-		metadata:             map[string]interface{}{},
+		Metadata:             map[string]interface{}{},
 		agentctl:             nil, // passthrough sessions have no agentctl client
 	}
 	require.NoError(t, mgr.executionStore.Add(exec))
@@ -1005,21 +851,21 @@ func TestManager_SetSessionModel_Passthrough_PersistsOverride(t *testing.T) {
 	// must already be persisted by the time the restart fires.
 	_ = mgr.SetSessionModel(context.Background(), exec.ID, "claude-opus-4-7")
 
-	require.Equal(t, "claude-opus-4-7", exec.metadataString(MetadataKeyModelOverride),
+	require.Equal(t, "claude-opus-4-7", exec.Metadata[MetadataKeyModelOverride],
 		"SetSessionModel must persist model override on passthrough executions")
 }
 
 func TestEffectivePassthroughModel(t *testing.T) {
 	t.Run("returns override when set", func(t *testing.T) {
 		execution := &AgentExecution{
-			metadata: map[string]interface{}{MetadataKeyModelOverride: "claude-opus-4-7"},
+			Metadata: map[string]interface{}{MetadataKeyModelOverride: "claude-opus-4-7"},
 		}
 		profile := &AgentProfileInfo{Model: "claude-sonnet-4-6"}
 		require.Equal(t, "claude-opus-4-7", effectivePassthroughModel(execution, profile))
 	})
 
 	t.Run("falls back to profile model when override empty", func(t *testing.T) {
-		execution := &AgentExecution{metadata: map[string]interface{}{}}
+		execution := &AgentExecution{Metadata: map[string]interface{}{}}
 		profile := &AgentProfileInfo{Model: "claude-sonnet-4-6"}
 		require.Equal(t, "claude-sonnet-4-6", effectivePassthroughModel(execution, profile))
 	})
@@ -1593,7 +1439,7 @@ func TestIsRemoteSession(t *testing.T) {
 			SessionID:   "session-2",
 			RuntimeName: executor.NameStandalone,
 			Status:      v1.AgentStatusRunning,
-			metadata:    map[string]interface{}{MetadataKeyIsRemote: true},
+			Metadata:    map[string]interface{}{MetadataKeyIsRemote: true},
 		})
 		mgr := &Manager{executionStore: store}
 		require.True(t, mgr.IsRemoteSession(context.Background(), "session-2"))
@@ -1701,7 +1547,7 @@ func TestShouldUseContainerShell(t *testing.T) {
 			SessionID:   "session-3",
 			RuntimeName: executor.NameStandalone,
 			Status:      v1.AgentStatusRunning,
-			metadata:    map[string]interface{}{MetadataKeyIsRemote: true},
+			Metadata:    map[string]interface{}{MetadataKeyIsRemote: true},
 		})
 		mgr := &Manager{executionStore: store}
 		require.True(t, mgr.ShouldUseContainerShell(context.Background(), "session-3"))

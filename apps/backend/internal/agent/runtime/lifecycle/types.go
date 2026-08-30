@@ -17,9 +17,7 @@ import (
 	"github.com/kandev/kandev/internal/agentctl/types/streams"
 	"github.com/kandev/kandev/internal/agentruntime"
 	"github.com/kandev/kandev/internal/common/ports"
-	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/task/models"
-	"github.com/kandev/kandev/internal/worktree"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -39,35 +37,26 @@ type AgentExecution struct {
 	AgentProfileID string
 	// OfficeAgentProfileID is the stable Office identity. Empty for non-Office
 	// launches, where AgentProfileID owns both identity and execution config.
-	OfficeAgentProfileID   string
-	AgentID                string // Agent type ID (e.g., "claude-acp", "codex") — used for fallback auth methods
-	ContainerID            string
-	ContainerIP            string                            // IP address of the container for agentctl communication
-	WorkspacePath          string                            // Path to the workspace (worktree or repository path)
-	WorkspaceSourceRoots   []string                          // Canonical durable source roots permitted by agentctl file operations
-	GitMetadataProjections []*worktree.GitMetadataProjection // Active task-owned Git metadata policy.
-	ACPSessionID           string                            // ACP session ID to resume, if available
-	AgentCommand           string                            // Command to start the agent subprocess
-	ContinueCommand        string                            // Command for follow-up prompts (one-shot agents like Amp)
-	AgentArgs              []string                          // Structured argv for AgentCommand
-	ContinueArgs           []string                          // Structured argv for ContinueCommand
-	RuntimeName            agentruntime.Runtime              // Name of the runtime used (e.g., "docker", "standalone")
-	Status                 v1.AgentStatus
-	StartedAt              time.Time
-	FinishedAt             *time.Time
-	ExitCode               *int
-	ErrorMessage           string
-	// FailureCode and FailureDetails carry a bounded, structured startup
-	// diagnostic to the orchestrator. They remain separate from the generic
-	// error message so user-facing recovery can choose a stable presentation.
-	FailureCode    string
-	FailureDetails string
-	ProviderError  *streams.ProviderError
-	// metadata is unexported on purpose: it is touched from the launch, prompt
-	// and stop paths concurrently, so all access must go through the metadataMu
-	// helpers in execution_metadata.go.
-	metadata   map[string]interface{}
-	metadataMu sync.RWMutex
+	OfficeAgentProfileID string
+	AgentID              string // Agent type ID (e.g., "claude-acp", "codex") — used for fallback auth methods
+	ContainerID          string
+	ContainerIP          string               // IP address of the container for agentctl communication
+	WorkspacePath        string               // Path to the workspace (worktree or repository path)
+	WorkspaceSourceRoots []string             // Canonical durable source roots permitted by agentctl file operations
+	ACPSessionID         string               // ACP session ID to resume, if available
+	AgentCommand         string               // Command to start the agent subprocess
+	ContinueCommand      string               // Command for follow-up prompts (one-shot agents like Amp)
+	AgentArgs            []string             // Structured argv for AgentCommand
+	ContinueArgs         []string             // Structured argv for ContinueCommand
+	RuntimeName          agentruntime.Runtime // Name of the runtime used (e.g., "docker", "standalone")
+	Status               v1.AgentStatus
+	StartedAt            time.Time
+	FinishedAt           *time.Time
+	ExitCode             *int
+	ErrorMessage         string
+	ProviderError        *streams.ProviderError
+	Metadata             map[string]interface{}
+	metadataMu           sync.RWMutex
 	// runtimeEnv is the effective environment used to create the task's
 	// runtime instance. It is kept in memory only so authorized task-scoped
 	// terminals and passthrough processes can inherit the same credentials and
@@ -85,12 +74,7 @@ type AgentExecution struct {
 	// out a generation that was merely admitted (not yet dispatched — its buffers
 	// are still being reset) or already completed.
 	dispatchedPromptGeneration uint64
-	// promptTurnID is the durable Kandev turn bound to the currently
-	// dispatched prompt. It is snapshotted onto terminal AgentEvents before
-	// AgentReady is published, so a queued successor cannot overwrite the
-	// completion's attribution while its stream frame is in flight.
-	promptTurnID      string
-	promptLifecycleMu sync.Mutex
+	promptLifecycleMu          sync.Mutex
 
 	// PrepareResult carries the environment preparation result back to the caller
 	// so it can be persisted synchronously before UpdateTaskSession clobbers metadata.
@@ -119,12 +103,8 @@ type AgentExecution struct {
 	IsPassthrough bool
 
 	// Passthrough mode info (CLI passthrough without ACP)
-	// passthroughLifecycleMu serializes process replacement paths. A workflow
-	// context reset and a delayed exit auto-restart must not both replace the
-	// same PTY, or the execution can point at the wrong process.
-	passthroughLifecycleMu sync.Mutex
-	PassthroughProcessID   string    // Process ID in the interactive runner (empty if not in passthrough mode)
-	PassthroughStartedAt   time.Time // When the current passthrough process was launched; used to detect fast-fail exits and skip auto-restart loops
+	PassthroughProcessID string    // Process ID in the interactive runner (empty if not in passthrough mode)
+	PassthroughStartedAt time.Time // When the current passthrough process was launched; used to detect fast-fail exits and skip auto-restart loops
 	// passthroughLaunchUsedResume is true if the current passthrough process was
 	// launched via ResumePassthroughSession with the resume flag attached. The
 	// fast-fail handler reads this to decide whether to retry once with a fresh
@@ -176,8 +156,7 @@ type AgentExecution struct {
 
 	// sessionInitialized is set to true after InitializeAndPrompt completes successfully.
 	// Used to distinguish launch-phase failures from normal prompt failures.
-	sessionInitialized   bool
-	sessionInitializedMu sync.RWMutex
+	sessionInitialized bool
 
 	// Available commands from the agent (for slash command menu)
 	availableCommands   []streams.AvailableCommand
@@ -213,20 +192,10 @@ type AgentExecution struct {
 	promptFinishedMu sync.Mutex
 
 	// Last time an agent event was received (for stall detection)
-	lastActivityAt time.Time
-	// agentEventSincePrompt is armed (false) on each prompt dispatch and set
-	// true by the first genuine agent event (recordActivity/handleCompleteEvent)
-	// that follows. It lets the stall watchdog distinguish "the agent never
-	// produced a single frame for this prompt" from "it worked, then paused" —
-	// both cases otherwise bump the same lastActivityAt timestamp.
-	agentEventSincePrompt bool
-	// promptActivityEpoch changes when a prompt is armed or a genuine agent
-	// event arrives. Stall consumers use it to reject a snapshot that became
-	// stale while the event was crossing the bus.
-	promptActivityEpoch uint64
-	lastActivityAtMu    sync.Mutex
-	activeTool          *activeTopLevelTool
-	activeToolMu        sync.RWMutex
+	lastActivityAt   time.Time
+	lastActivityAtMu sync.Mutex
+	activeTool       *activeTopLevelTool
+	activeToolMu     sync.RWMutex
 
 	// Fires once on the first agent event to publish AgentRunning.
 	firstActivityOnce sync.Once
@@ -234,26 +203,6 @@ type AgentExecution struct {
 	// Session-level trace span for grouping all operations under one trace
 	sessionSpan   trace.Span
 	sessionSpanMu sync.RWMutex
-
-	// Startup attempts are generation-bearing so callbacks from the first
-	// process cannot fail a replacement process after npm recovery starts.
-	// This state has its own mutex because stream setup can run while
-	// promptLifecycleMu is held by workspace rebind waiting for readiness.
-	startupAttemptGeneration uint64
-	startupRecoveryStarted   bool
-	startupLifecycleMu       sync.Mutex
-}
-
-func (e *AgentExecution) isSessionInitialized() bool {
-	e.sessionInitializedMu.RLock()
-	defer e.sessionInitializedMu.RUnlock()
-	return e.sessionInitialized
-}
-
-func (e *AgentExecution) setSessionInitialized(value bool) {
-	e.sessionInitializedMu.Lock()
-	e.sessionInitialized = value
-	e.sessionInitializedMu.Unlock()
 }
 
 type activeTopLevelTool struct {
@@ -338,129 +287,16 @@ func (e *AgentExecution) officeProfileID() string {
 
 // PromptCompletionSignal carries the result from a complete event or disconnect.
 type PromptCompletionSignal struct {
-	StopReason        string
-	IsError           bool
-	Error             string
-	PromptGeneration  uint64
-	StartupGeneration uint64
+	StopReason       string
+	IsError          bool
+	Error            string
+	PromptGeneration uint64
 }
 
 func (e *AgentExecution) promptGenerationSnapshot() uint64 {
 	e.promptLifecycleMu.Lock()
 	defer e.promptLifecycleMu.Unlock()
 	return e.promptGeneration
-}
-
-func (e *AgentExecution) armPromptActivity() {
-	e.lastActivityAtMu.Lock()
-	e.lastActivityAt = time.Now()
-	e.agentEventSincePrompt = false
-	e.promptActivityEpoch++
-	e.lastActivityAtMu.Unlock()
-}
-
-func (e *AgentExecution) markAgentActivity() {
-	e.lastActivityAtMu.Lock()
-	e.lastActivityAt = time.Now()
-	e.agentEventSincePrompt = true
-	e.promptActivityEpoch++
-	e.lastActivityAtMu.Unlock()
-}
-
-func (e *AgentExecution) promptActivitySnapshot() (time.Time, bool, uint64) {
-	e.lastActivityAtMu.Lock()
-	defer e.lastActivityAtMu.Unlock()
-	return e.lastActivityAt, e.agentEventSincePrompt, e.promptActivityEpoch
-}
-
-func (e *AgentExecution) promptActivityEpochSnapshot() uint64 {
-	e.lastActivityAtMu.Lock()
-	defer e.lastActivityAtMu.Unlock()
-	return e.promptActivityEpoch
-}
-
-// beginStartupAttempt starts a generation for a new ACP process. Generation
-// zero is reserved for executions that predate startup tracking.
-func (e *AgentExecution) beginStartupAttempt() uint64 {
-	e.startupLifecycleMu.Lock()
-	defer e.startupLifecycleMu.Unlock()
-	e.startupAttemptGeneration++
-	e.startupRecoveryStarted = false
-	return e.startupAttemptGeneration
-}
-
-// beginStartupRecovery advances the startup generation exactly once. The
-// caller uses the returned generation when wiring the replacement streams.
-func (e *AgentExecution) beginStartupRecovery() (uint64, bool) {
-	e.startupLifecycleMu.Lock()
-	defer e.startupLifecycleMu.Unlock()
-	if e.startupRecoveryStarted {
-		return e.startupAttemptGeneration, false
-	}
-	e.startupRecoveryStarted = true
-	e.startupAttemptGeneration++
-	return e.startupAttemptGeneration, true
-}
-
-func (e *AgentExecution) finishStartupRecovery() {
-	e.startupLifecycleMu.Lock()
-	e.startupRecoveryStarted = false
-	e.startupLifecycleMu.Unlock()
-}
-
-func (e *AgentExecution) startupAttemptSnapshot() uint64 {
-	e.startupLifecycleMu.Lock()
-	defer e.startupLifecycleMu.Unlock()
-	return e.startupAttemptGeneration
-}
-
-func (e *AgentExecution) acceptsStartupAttempt(generation uint64) bool {
-	e.startupLifecycleMu.Lock()
-	defer e.startupLifecycleMu.Unlock()
-	return e.startupAttemptGeneration == generation
-}
-
-// signalPromptCompletionForStartupGeneration claims the current startup
-// generation and enqueues its completion signal as one ownership operation.
-// A stream can finish its generation check just before recovery advances the
-// execution, so checking and sending under the same mutex prevents an old
-// stream from publishing into the replacement prompt's channel.
-func (e *AgentExecution) signalPromptCompletionForStartupGeneration(
-	startupGeneration uint64,
-	signal PromptCompletionSignal,
-) bool {
-	if e == nil {
-		return false
-	}
-	e.startupLifecycleMu.Lock()
-	defer e.startupLifecycleMu.Unlock()
-	if e.startupAttemptGeneration != startupGeneration {
-		return false
-	}
-	signal.StartupGeneration = startupGeneration
-	select {
-	case e.promptDoneCh <- signal:
-	default:
-	}
-	return true
-}
-
-func (e *AgentExecution) promptTurnIDSnapshot() string {
-	if e == nil {
-		return ""
-	}
-	e.promptLifecycleMu.Lock()
-	defer e.promptLifecycleMu.Unlock()
-	return e.promptTurnID
-}
-
-func (e *AgentExecution) setPromptTurnID(turnID string) {
-	if e == nil {
-		return
-	}
-	e.promptLifecycleMu.Lock()
-	e.promptTurnID = turnID
-	e.promptLifecycleMu.Unlock()
 }
 
 // GetAgentCtlClient returns the agentctl client for this execution
@@ -538,9 +374,6 @@ type CachedModelState struct {
 	ConfigOptions  []streams.ConfigOption
 	ConfigSource   string
 	ConfigID       string
-	// ConfigOptionsSettled is true after startup config application has a
-	// complete provider snapshot, including snapshots with no options.
-	ConfigOptionsSettled bool
 }
 
 type configSettlement struct {
@@ -622,11 +455,8 @@ func (ae *AgentExecution) SetModelStateApplyingSettlement(state *CachedModelStat
 	}
 	if settlement.configID == "" {
 		ae.pendingConfigSettlement = nil
-		state.ConfigOptionsSettled = true
 		if settlement.providerDefault != nil {
-			settled := cloneCachedModelState(settlement.providerDefault)
-			settled.ConfigOptionsSettled = true
-			return settled, true
+			return cloneCachedModelState(settlement.providerDefault), true
 		}
 		return state, true
 	}
@@ -635,18 +465,12 @@ func (ae *AgentExecution) SetModelStateApplyingSettlement(state *CachedModelStat
 		return state, false
 	}
 	ae.pendingConfigSettlement = nil
-	state.ConfigOptionsSettled = true
 	if settlement.providerDefault != nil {
-		settled := cloneCachedModelState(settlement.providerDefault)
-		settled.ConfigOptionsSettled = true
-		return settled, true
+		return cloneCachedModelState(settlement.providerDefault), true
 	}
 	if ae.providerDefaultModelState != nil {
-		settled := cloneCachedModelState(ae.providerDefaultModelState)
-		settled.ConfigOptionsSettled = true
-		return settled, true
+		return cloneCachedModelState(ae.providerDefaultModelState), true
 	}
-	response.ConfigOptionsSettled = true
 	return response, true
 }
 
@@ -677,12 +501,11 @@ func cloneCachedModelState(state *CachedModelState) *CachedModelState {
 		return nil
 	}
 	cloned := &CachedModelState{
-		CurrentModelID:       state.CurrentModelID,
-		Models:               append([]streams.SessionModelInfo(nil), state.Models...),
-		ConfigOptions:        append([]streams.ConfigOption(nil), state.ConfigOptions...),
-		ConfigSource:         state.ConfigSource,
-		ConfigID:             state.ConfigID,
-		ConfigOptionsSettled: state.ConfigOptionsSettled,
+		CurrentModelID: state.CurrentModelID,
+		Models:         append([]streams.SessionModelInfo(nil), state.Models...),
+		ConfigOptions:  append([]streams.ConfigOption(nil), state.ConfigOptions...),
+		ConfigSource:   state.ConfigSource,
+		ConfigID:       state.ConfigID,
 	}
 	for i := range cloned.ConfigOptions {
 		cloned.ConfigOptions[i].Options = append(
@@ -748,29 +571,23 @@ func (ae *AgentExecution) EndSessionSpan() {
 // the top level. When LaunchRequest.Repositories is set, each entry produces
 // one prepared worktree under the shared TaskDirName.
 type RepoLaunchSpec struct {
-	RepositoryID   string
-	RepositoryPath string
-	// WorktreePath is the durable task-environment checkout path used only
-	// when resuming an existing worktree. It must not be reconstructed from
-	// mutable repository display or branch metadata.
-	WorktreePath            string
-	RepositoryURL           string // Clone URL for remote executors that need to clone
-	RepoName                string // Repository name used as subdirectory inside TaskDirName
-	BaseBranch              string
-	DefaultBranch           string // Repository's default_branch, used as fallback when BaseBranch is missing
-	CheckoutBranch          string
-	PRNumber                int // GitHub PR number when CheckoutBranch is a PR head; enables refs/pull/<N>/head fetch for fork PRs.
-	RemoteContribution      *models.RemoteContribution
-	WorktreeID              string // Existing worktree ID to reuse (skip creation if set)
-	WorktreeBranchPrefix    string
-	WorktreeBranchTemplate  string
-	WorktreeBranchTicket    string
-	PullBeforeWorktree      bool
-	RemoteSyncHandled       bool
-	RepoSetupScript         string // Repository-level setup script (optional)
-	RepoCleanupScript       string // Repository-level cleanup script (optional)
-	CopyFiles               string // Comma-separated paths/globs to copy from the source repo (gitignored .env / config files)
-	ContributionDestination *models.ContributionDestination
+	RepositoryID           string
+	RepositoryPath         string
+	RepositoryURL          string // Clone URL for remote executors that need to clone
+	RepoName               string // Repository name used as subdirectory inside TaskDirName
+	BaseBranch             string
+	DefaultBranch          string // Repository's default_branch, used as fallback when BaseBranch is missing
+	CheckoutBranch         string
+	PRNumber               int // GitHub PR number when CheckoutBranch is a PR head; enables refs/pull/<N>/head fetch for fork PRs.
+	RemoteContribution     *models.RemoteContribution
+	WorktreeID             string // Existing worktree ID to reuse (skip creation if set)
+	WorktreeBranchPrefix   string
+	WorktreeBranchTemplate string
+	WorktreeBranchTicket   string
+	PullBeforeWorktree     bool
+	RepoSetupScript        string // Repository-level setup script (optional)
+	RepoCleanupScript      string // Repository-level cleanup script (optional)
+	CopyFiles              string // Comma-separated paths/globs to copy from the source repo (gitignored .env / config files)
 	// BranchSlug, when set, suffixes the worktree directory as
 	// {RepoName}-{BranchSlug} so multi-branch tasks (same repo, multiple
 	// branches) don't collide.
@@ -801,7 +618,6 @@ type WorkspaceRepositorySpec struct {
 	WorktreeBranchPrefix   string
 	WorktreeBranchTemplate string
 	PullBeforeWorktree     bool
-	RemoteSyncHandled      bool
 	BranchSlug             string
 	BranchIdentitySlug     string
 }
@@ -834,7 +650,6 @@ type LaunchRequest struct {
 	// backward-compatible behavior by using AgentProfileID.
 	ExecutionProfileID string
 	StartAgent         bool                // Transfer launch activity through initial startup/prompt
-	TurnID             string              // Durable Kandev turn for the initial prompt, when present
 	WorkspacePath      string              // Host path to workspace (original repository path)
 	TaskDescription    string              // Task description to send via ACP prompt
 	Attachments        []MessageAttachment // Attachments (images/files) for the initial prompt
@@ -874,7 +689,6 @@ type LaunchRequest struct {
 	PreviousExecutionID string            // Previous execution ID for runtime reconnect
 	McpMode             string            // MCP tool mode: "task" (default), "config", or "office"
 	McpProviders        []string          // Normalized provider capabilities attached to the task
-	McpProfile          *mcpprofile.Context
 
 	// Environment preparation
 	SetupScript string // Setup script to run before agent starts
@@ -887,21 +701,19 @@ type LaunchRequest struct {
 	CopyFiles string
 
 	// Worktree configuration
-	UseWorktree             bool   // Whether to use a Git worktree for isolation
-	WorktreeID              string // Existing worktree ID to reuse (skip creation if set)
-	RepositoryID            string // Repository ID for worktree tracking
-	RepositoryPath          string // Path to the main repository (for worktree creation)
-	BaseBranch              string // Base branch for the worktree (e.g., "main")
-	DefaultBranch           string // Repository's default_branch, used as fallback when BaseBranch is missing
-	CheckoutBranch          string // Branch to fetch and checkout after worktree creation (e.g., PR head branch)
-	PRNumber                int    // GitHub PR number when CheckoutBranch is a PR head; enables refs/pull/<N>/head fetch for fork PRs.
-	RemoteContribution      *models.RemoteContribution
-	WorktreeBranchPrefix    string // Branch prefix for worktree branches
-	WorktreeBranchTemplate  string // Branch name template for worktree branches
-	WorktreeBranchTicket    string // External ticket value for branch templates
-	PullBeforeWorktree      bool   // Whether to pull from remote before creating the worktree
-	RemoteSyncHandled       bool   // Authenticated provider refresh already completed
-	ContributionDestination *models.ContributionDestination
+	UseWorktree            bool   // Whether to use a Git worktree for isolation
+	WorktreeID             string // Existing worktree ID to reuse (skip creation if set)
+	RepositoryID           string // Repository ID for worktree tracking
+	RepositoryPath         string // Path to the main repository (for worktree creation)
+	BaseBranch             string // Base branch for the worktree (e.g., "main")
+	DefaultBranch          string // Repository's default_branch, used as fallback when BaseBranch is missing
+	CheckoutBranch         string // Branch to fetch and checkout after worktree creation (e.g., PR head branch)
+	PRNumber               int    // GitHub PR number when CheckoutBranch is a PR head; enables refs/pull/<N>/head fetch for fork PRs.
+	RemoteContribution     *models.RemoteContribution
+	WorktreeBranchPrefix   string // Branch prefix for worktree branches
+	WorktreeBranchTemplate string // Branch name template for worktree branches
+	WorktreeBranchTicket   string // External ticket value for branch templates
+	PullBeforeWorktree     bool   // Whether to pull from remote before creating the worktree
 
 	// Task directory mode: place worktree at ~/.kandev/tasks/{TaskDirName}/{RepoName}/
 	TaskDirName string // Semantic task directory name (e.g. "fix-bug_ab12")
@@ -935,24 +747,22 @@ func (r *LaunchRequest) RepoSpecs() []RepoLaunchSpec {
 		return nil
 	}
 	return []RepoLaunchSpec{{
-		RepositoryID:            r.RepositoryID,
-		RepositoryPath:          r.RepositoryPath,
-		RepoName:                r.RepoName,
-		BaseBranch:              r.BaseBranch,
-		DefaultBranch:           r.DefaultBranch,
-		CheckoutBranch:          r.CheckoutBranch,
-		PRNumber:                r.PRNumber,
-		RemoteContribution:      r.RemoteContribution,
-		ContributionDestination: r.ContributionDestination,
-		WorktreeID:              r.WorktreeID,
-		WorktreeBranchPrefix:    r.WorktreeBranchPrefix,
-		WorktreeBranchTemplate:  r.WorktreeBranchTemplate,
-		WorktreeBranchTicket:    r.WorktreeBranchTicket,
-		PullBeforeWorktree:      r.PullBeforeWorktree,
-		RemoteSyncHandled:       r.RemoteSyncHandled,
-		CopyFiles:               r.CopyFiles,
-		BranchSlug:              r.BranchSlug,
-		BranchIdentitySlug:      r.BranchIdentitySlug,
+		RepositoryID:           r.RepositoryID,
+		RepositoryPath:         r.RepositoryPath,
+		RepoName:               r.RepoName,
+		BaseBranch:             r.BaseBranch,
+		DefaultBranch:          r.DefaultBranch,
+		CheckoutBranch:         r.CheckoutBranch,
+		PRNumber:               r.PRNumber,
+		RemoteContribution:     r.RemoteContribution,
+		WorktreeID:             r.WorktreeID,
+		WorktreeBranchPrefix:   r.WorktreeBranchPrefix,
+		WorktreeBranchTemplate: r.WorktreeBranchTemplate,
+		WorktreeBranchTicket:   r.WorktreeBranchTicket,
+		PullBeforeWorktree:     r.PullBeforeWorktree,
+		CopyFiles:              r.CopyFiles,
+		BranchSlug:             r.BranchSlug,
+		BranchIdentitySlug:     r.BranchIdentitySlug,
 	}}
 }
 
@@ -981,19 +791,13 @@ type CredentialsManager interface {
 
 // AgentProfileInfo contains resolved profile information
 type AgentProfileInfo struct {
-	ProfileID     string
-	ProfileName   string
-	AgentID       string
-	AgentName     string // e.g., "auggie", "claude", "codex"
-	Model         string // applied through ACP model selection at session start
-	Mode          string // applied via ACP session/set_mode at session start (empty = use agent default)
-	ConfigOptions map[string]string
-	// FallbackModel is the optional single ACP model ID to switch to when
-	// Model is unavailable. Ignored when AutoFallback is enabled.
-	FallbackModel string
-	// AutoFallback opts the profile into the legacy automatic-fallback
-	// behavior (session-start best-effort).
-	AutoFallback        bool
+	ProfileID           string
+	ProfileName         string
+	AgentID             string
+	AgentName           string // e.g., "auggie", "claude", "codex"
+	Model               string // applied through ACP model selection at session start
+	Mode                string // applied via ACP session/set_mode at session start (empty = use agent default)
+	ConfigOptions       map[string]string
 	AllowIndexing       bool // Deprecated: legacy, kept so existing call sites compile; launch path reads CLIFlags.
 	CLIPassthrough      bool
 	NativeSessionResume bool // Agent supports ACP session/load for resume

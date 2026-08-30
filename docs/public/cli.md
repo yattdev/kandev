@@ -166,24 +166,23 @@ These commands and options describe the installed native launcher. Unknown argum
 
 ### `dev` and the internal web port are source-checkout options
 
-The native launcher supports hot-reload development with this CLI syntax:
+The repository's TypeScript launcher supports hot-reload development with this logical CLI syntax:
 
 ```text
 kandev dev [--port <backend-port>] [--web-internal-port <web-port>]
 kandev --dev [--port <backend-port>] [--web-internal-port <web-port>]
 ```
 
-Run its normal setup path from the repository root with `make dev`. To pass the internal-port override directly, invoke the launcher binary:
+Run its normal setup path from the repository root with `make dev`. To pass the internal-port override directly, invoke the same package script used by that Make target:
 
 ```bash
-make dev WEB_PORT=37430
-# or, after `make -C apps/backend build`:
-apps/backend/bin/kandev dev --web-internal-port 37430
+cd apps
+pnpm -C cli dev -- dev --web-internal-port 37430
 ```
 
-`--web-internal-port` accepts an integer from `1` through `65535`, including the `--web-internal-port=<port>` form. It controls the Vite development server that the Go backend reverse-proxies to; `--port` continues to control the backend URL. The flag is valid only with `dev` or `--dev`. `KANDEV_WEB_PORT` is its environment equivalent in dev mode and is ignored by `run` and `start`. Without either override, the launcher prefers web port `37429` and selects a fallback if that port is unavailable.
+`--web-internal-port` accepts an integer from `1` through `65535`, including the `--web-internal-port=<port>` form. It controls the Vite development server that the Go backend reverse-proxies to; `--port` continues to control the backend URL. The flag is valid only with `dev` or `--dev`. `KANDEV_WEB_PORT` is its environment equivalent in dev mode and is ignored by `run` and `start`. Without either override, the source launcher prefers web port `37429` and selects a fallback if that port is unavailable.
 
-The old `--web-port` spelling has been removed, not retained as an alias. The launcher rejects both `--web-port <port>` and `--web-port=<port>` and directs callers to `--web-internal-port`; outside dev mode the release launcher rejects both web-port spellings because it serves embedded web assets and has no separate web process.
+The old `--web-port` spelling has been removed, not retained as an alias. The TypeScript launcher rejects both `--web-port <port>` and `--web-port=<port>` and directs callers to `--web-internal-port`; the native release launcher rejects both web-port spellings because it serves embedded web assets and has no separate web process.
 
 ### `start` is for a source build
 
@@ -200,7 +199,7 @@ Development hot reload is also checkout-only:
 make dev
 ```
 
-`make dev` builds the launcher plus the host `agentctl` and, on hosts other than Linux/amd64, one Linux/amd64 helper. It then invokes the repository's native Go launcher. The `kandev dev` syntax above belongs to that source launcher; installing the npm or Homebrew release does not install it as a second runtime mode.
+`make dev` builds the remote `agentctl` helpers and invokes the repository's TypeScript development launcher. The `kandev dev` syntax above belongs to that source launcher; installing the npm or Homebrew release does not install it as a second runtime mode.
 
 ### OS service commands
 
@@ -225,9 +224,7 @@ Supported actions are `install`, `uninstall`, `start`, `stop`, `restart`, `statu
 
 There is no separate web-server port in an installed release: the backend serves embedded assets. For the `run`, `start`, and development launcher flows, if `--port`, `KANDEV_BACKEND_PORT`, or `KANDEV_PORT` specifies a port, the launcher checks it before declaring the backend ready, does not substitute another one, and fails startup if the configured listen address cannot bind it. `kandev service install --port` remains the separate installer behavior described above.
 
-The launcher prints `http://localhost:<port>`. When it can enumerate non-loopback interfaces, it also prints `network:` URLs for each unique non-loopback, non-link-local address on the same port, including local-network and Tailscale addresses. IPv6 addresses are shown in brackets. If `KANDEV_SERVER_HOST` restricts the listener, the launcher only prints matching addresses. These lines are informational and are omitted if interface discovery is unavailable.
-
-The backend's default `server.host` is `0.0.0.0`. That can expose Kandev to other machines on the network, and the current local product path is not an authenticated multi-user boundary. Bind it to loopback unless remote access is deliberately protected:
+The launcher prints `http://localhost:<port>`, but the backend's default `server.host` is `0.0.0.0`. That can expose Kandev to other machines on the network, and the current local product path is not an authenticated multi-user boundary. Bind it to loopback unless remote access is deliberately protected:
 
 ```bash
 KANDEV_SERVER_HOST=127.0.0.1 kandev
@@ -244,7 +241,7 @@ Flags take precedence over the equivalent port variables. `KANDEV_BACKEND_PORT` 
 | `KANDEV_BACKEND_PORT` | unset | Backend port when `--port` is absent. |
 | `KANDEV_PORT` | unset | Compatibility backend-port alias. |
 | `KANDEV_HOME_DIR` | `~/.kandev` | Root for application data, tasks, repositories, logs, and launcher state. |
-| `KANDEV_DATABASE_PATH` | `<home>/data/kandev.db` | Advanced SQLite path override. System backups use the sibling `backups/` directory. See [Configuration](./configuration.md). |
+| `KANDEV_DATABASE_PATH` | `<home>/data/kandev.db` | Advanced SQLite path override. See the backup caveat in [Configuration](./configuration.md). |
 | `KANDEV_LOG_LEVEL` | `warn` from the launcher | Explicit backend log level; overrides `--verbose` and `--debug` log-level selection. |
 | `KANDEV_HEALTH_TIMEOUT_MS` | `45000` | Positive integer startup-health timeout. Invalid or non-positive values fall back to 45 seconds. |
 | `KANDEV_NO_BROWSER` | unset | The exact value `1` suppresses browser opening. |
@@ -254,19 +251,11 @@ Flags take precedence over the equivalent port variables. `KANDEV_BACKEND_PORT` 
 
 The launcher also sets the selected server and `agentctl` ports for the backend. Treat its supervisor socket and manifest under `<home>/supervisor/` as private implementation state, not a control API.
 
-`--debug` sets `KANDEV_DEBUG_AGENT_MESSAGES=true` and
-`KANDEV_DEBUG_PPROF_ENABLED=true` without selecting the `dev` profile. The
-`make start-debug` launcher also defaults the browser title to `Debug Kandev`;
-`make dev` selects the development profile and uses `Dev Kandev`. Debug events
-go to `<home>/logs/backend-logs.log`; warn and above still appear on stdout.
-ACP logs can contain full prompts, file content, and tool calls, while
-diagnostic endpoints expose process details. Use debug mode only on a trusted
-machine and remove retained debug logs afterward. [Configuration](./configuration.md)
-lists locations and retention.
+`--debug` sets `KANDEV_DEBUG_AGENT_MESSAGES=true` and `KANDEV_DEBUG_PPROF_ENABLED=true`. Debug events go to `<home>/logs/backend-logs.log`; warn and above still appear on stdout. ACP logs can contain full prompts, file content, and tool calls, while diagnostic endpoints expose process details. Use debug mode only on a trusted machine and remove retained debug logs afterward. [Configuration](./configuration.md) lists locations and retention.
 
 ## Data and cleanup
 
-The default persistent root is `~/.kandev` (on Windows, `.kandev` below the user's profile directory). The SQLite database normally resides at `<home>/data/kandev.db`; its snapshots reside at `<home>/data/backups/`. With `KANDEV_DATABASE_PATH`, Kandev uses `backups/` beside the configured database file. Repositories, task worktrees, logs, and encrypted settings also live below the home root.
+The default persistent root is `~/.kandev` (on Windows, `.kandev` below the user's profile directory). The SQLite database normally resides at `<home>/data/kandev.db`; repositories, task worktrees, logs, and encrypted settings also live below the home root.
 
 Runtime program files live in the Homebrew Cellar, the global npm dependency tree, or npm's `_npx` cache. They are not application data. `npm config get cache` and `npm root -g` show the latter two roots.
 

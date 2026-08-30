@@ -70,8 +70,6 @@ type RateTracker struct {
 	snapshots   map[Resource]RateSnapshot
 	exhausted   map[Resource]bool
 	lastEmitted map[Resource]time.Time
-	refreshMu   sync.Mutex
-	refreshDone chan struct{}
 	bus         bus.EventBus
 	log         *logger.Logger
 }
@@ -144,30 +142,6 @@ func (r *RateTracker) All() map[Resource]RateSnapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.allLocked()
-}
-
-func (r *RateTracker) beginRateLimitRefresh(force bool) (chan struct{}, bool) {
-	r.refreshMu.Lock()
-	defer r.refreshMu.Unlock()
-	if r.refreshDone != nil {
-		return r.refreshDone, false
-	}
-	if !force && hasCompleteRateLimitSnapshot(r) {
-		return nil, false
-	}
-	done := make(chan struct{})
-	r.refreshDone = done
-	return done, true
-}
-
-func (r *RateTracker) finishRateLimitRefresh(done chan struct{}) {
-	r.refreshMu.Lock()
-	defer r.refreshMu.Unlock()
-	if r.refreshDone != done {
-		return
-	}
-	r.refreshDone = nil
-	close(done)
 }
 
 func (r *RateTracker) allLocked() map[Resource]RateSnapshot {

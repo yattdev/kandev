@@ -10,7 +10,6 @@ import (
 	"github.com/kandev/kandev/internal/agent/discovery"
 	agentdto "github.com/kandev/kandev/internal/agent/dto"
 	"github.com/kandev/kandev/internal/agent/hostutility"
-	"github.com/kandev/kandev/internal/agent/managedruntime"
 	"github.com/kandev/kandev/internal/agent/mcpconfig"
 	"github.com/kandev/kandev/internal/agent/registry"
 	"github.com/kandev/kandev/internal/agent/settings/modelfetcher"
@@ -49,30 +48,26 @@ var (
 	ErrCommandRequired       = errors.New("command is required")
 	ErrInvalidProfileEnvVars = errors.New("invalid profile env vars")
 	ErrInvalidCommandPrefix  = errors.New("invalid command prefix")
-	ErrUnknownMCPStrategy    = errors.New("unknown MCP strategy")
-	ErrNotCustomTUIAgent     = errors.New("agent is not a custom TUI agent")
 )
 
 type Controller struct {
-	repo                     store.Repository
-	discovery                *discovery.Registry
-	agentRegistry            *registry.Registry
-	sessionChecker           SessionChecker
-	watcherDeps              WatcherDependencyChecker
-	routingTierDeps          RoutingTierDependencyChecker
-	automationDeps           AutomationDependencyChecker
-	utilityDeps              UtilityDependencyChecker
-	mcpService               *mcpconfig.Service
-	modelCache               *modelfetcher.Cache
-	hostUtility              hostUtilityProvider
-	jobStore                 *JobStore
-	updateJobStore           *AgentUpdateJobStore
-	runtimeUpdater           RuntimeUpdater
-	managedRuntimeSelections managedruntime.SelectionStore
-	maintenance              *maintenanceCoordinator
-	hub                      JobBroadcaster
-	logger                   *logger.Logger
-	secretStore              secrets.SecretStore
+	repo            store.Repository
+	discovery       *discovery.Registry
+	agentRegistry   *registry.Registry
+	sessionChecker  SessionChecker
+	watcherDeps     WatcherDependencyChecker
+	routingTierDeps RoutingTierDependencyChecker
+	automationDeps  AutomationDependencyChecker
+	mcpService      *mcpconfig.Service
+	modelCache      *modelfetcher.Cache
+	hostUtility     hostUtilityProvider
+	jobStore        *JobStore
+	updateJobStore  *AgentUpdateJobStore
+	runtimeUpdater  RuntimeUpdater
+	maintenance     *maintenanceCoordinator
+	hub             JobBroadcaster
+	logger          *logger.Logger
+	secretStore     secrets.SecretStore
 }
 
 // SetSecretStore wires the metadata-only validator used by shared agent
@@ -102,12 +97,6 @@ func (c *Controller) SetAutomationDependencyChecker(a AutomationDependencyChecke
 	c.automationDeps = a
 }
 
-// SetUtilityDependencyChecker wires utility-agent binding lookups used by
-// disable and delete confirmation flows.
-func (c *Controller) SetUtilityDependencyChecker(u UtilityDependencyChecker) {
-	c.utilityDeps = u
-}
-
 // ErrProfileInUseDetail is returned when a profile cannot be deleted because
 // active sessions or external integration watchers reference it. The UI uses
 // the breakdown to render a "this will also disable N watchers — continue?"
@@ -117,23 +106,12 @@ type ErrProfileInUseDetail struct {
 	Watchers       []WatcherReference
 	RoutingTiers   []RoutingTierReference
 	Automations    []AutomationReference
-	UtilityAgents  []UtilityAgentReference
 }
 
 func (e *ErrProfileInUseDetail) Error() string {
 	return fmt.Sprintf(
-		"agent profile is used by %d active session(s), %d watcher(s), %d routing tier(s), %d automation(s), and %d utility agent(s)",
-		len(e.ActiveSessions), len(e.Watchers), len(e.RoutingTiers), len(e.Automations), len(e.UtilityAgents))
-}
-
-type UtilityAgentReference struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type UtilityDependencyChecker interface {
-	ListUtilityAgentsByAgentProfile(context.Context, string) ([]UtilityAgentReference, error)
-	ClearUtilityAgentProfileBindings(context.Context, string) error
+		"agent profile is used by %d active session(s), %d watcher(s), %d routing tier(s), and %d automation(s)",
+		len(e.ActiveSessions), len(e.Watchers), len(e.RoutingTiers), len(e.Automations))
 }
 
 // WatcherReference points at one issue/PR watcher row that uses the profile
@@ -255,13 +233,6 @@ func (c *Controller) SetRuntimeUpdater(updater RuntimeUpdater) {
 	c.initializeUpdateJobStore()
 }
 
-// SetManagedRuntimeSelectionStore wires the install-wide active-version
-// persistence used by previews, jobs, and the available-agent catalogue.
-func (c *Controller) SetManagedRuntimeSelectionStore(store managedruntime.SelectionStore) {
-	c.managedRuntimeSelections = store
-	c.initializeUpdateJobStore()
-}
-
 // SetJobBroadcaster initializes the install job store with a WS broadcaster
 // for streaming install progress. Called once during handler registration.
 // If unset (hub == nil), the streaming install API returns
@@ -312,7 +283,6 @@ func (c *Controller) initializeUpdateJobStore() {
 		c.runtimeUpdater,
 		c.maintenance,
 		c.BroadcastAvailableAgents,
-		c.managedRuntimeSelections,
 	)
 }
 

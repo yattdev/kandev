@@ -2,7 +2,6 @@
 
 import { createContext, useContext, memo } from "react";
 import { PanelRoot, PanelBody } from "./panel-primitives";
-import { useTranslation } from "react-i18next";
 
 type TaskArchivedState = {
   isArchived: boolean;
@@ -25,18 +24,15 @@ export function useArchivedTaskState() {
 }
 
 export const ArchivedPanelPlaceholder = memo(function ArchivedPanelPlaceholder({
-  message,
+  message = "Workspace not available — this task is archived",
 }: {
   message?: string;
 }) {
-  const { t } = useTranslation();
-  // Resolved in the body: a parameter default runs before the hook is in scope.
-  const text = message ?? t("task:workspaceUnavailableArchived");
   return (
     <PanelRoot>
       <PanelBody>
         <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
-          {text}
+          {message}
         </div>
       </PanelBody>
     </PanelRoot>

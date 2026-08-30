@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/components/state-provider";
 import { useToast } from "@/components/toast-provider";
 
@@ -12,21 +11,16 @@ export function useSidebarViewsSync() {
   const clearError = useAppStore((s) => s.clearSidebarSyncError);
   const clearTaskPrefsError = useAppStore((s) => s.clearSidebarTaskPrefsSyncError);
   const { toast } = useToast();
-  const { t } = useTranslation("sidebar");
 
   useEffect(() => {
     if (!syncError) return;
-    toast({ title: t("sidebar:views"), description: syncError, variant: "error" });
+    toast({ title: "Sidebar views", description: syncError, variant: "error" });
     clearError();
-  }, [syncError, t, toast, clearError]);
+  }, [syncError, toast, clearError]);
 
   useEffect(() => {
     if (!taskPrefsSyncError) return;
-    toast({
-      title: t("sidebar:taskPreferences"),
-      description: taskPrefsSyncError,
-      variant: "error",
-    });
+    toast({ title: "Sidebar task preferences", description: taskPrefsSyncError, variant: "error" });
     clearTaskPrefsError();
-  }, [taskPrefsSyncError, t, toast, clearTaskPrefsError]);
+  }, [taskPrefsSyncError, toast, clearTaskPrefsError]);
 }

@@ -57,7 +57,7 @@ describe("useMermaidErrorToast", () => {
           detail: { message: "Plan parser error again", taskId: "task-1" },
         }),
       );
-      showMermaidErrorToast(mockToast, "task-1", "Chat parser error", "Failed to render diagram");
+      showMermaidErrorToast(mockToast, "task-1", "Chat parser error");
     });
 
     expect(mockToast).toHaveBeenCalledOnce();

@@ -20,7 +20,6 @@ import {
 import { EXECUTOR_ICON_MAP, getExecutorLabel } from "@/lib/executor-icons";
 import type { Executor, ExecutorProfile } from "@/lib/types/http";
 import { useTranslation } from "react-i18next";
-import { SettingsPageHeader, SETTINGS_TYPOGRAPHY } from "@/components/settings/settings-typography";
 
 const EXECUTORS_ROUTE = "/settings/executors";
 const DefaultIcon = EXECUTOR_ICON_MAP.local;
@@ -68,31 +67,29 @@ export function ProfileHeader({
   const router = useRouter();
   return (
     <>
-      <SettingsPageHeader
-        title={
-          <span className="flex min-w-0 flex-wrap items-center gap-2 break-words">
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <div className="flex items-center gap-2">
             <ExecutorTypeIcon type={executor.type} />
-            <span className="min-w-0 break-words">{profileName}</span>
-            <Badge variant="outline" className={SETTINGS_TYPOGRAPHY.meta}>
+            <h2 className="text-2xl font-bold">{profileName}</h2>
+            <Badge variant="outline" className="text-xs">
               {getExecutorLabel(executor.type)}
             </Badge>
-          </span>
-        }
-        description={description}
-        actions={
-          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
-            {actions}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(EXECUTORS_ROUTE)}
-              className="min-h-11 w-full cursor-pointer text-sm md:min-h-7 md:w-auto md:text-xs"
-            >
-              {t("executors:backToExecutors")}
-            </Button>
           </div>
-        }
-      />
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          {actions}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(EXECUTORS_ROUTE)}
+            className="w-full cursor-pointer sm:w-auto"
+          >
+            {t("executors:backToExecutors")}
+          </Button>
+        </div>
+      </div>
       <Separator />
     </>
   );
@@ -102,20 +99,15 @@ export function ProfileFormActions({ onDelete }: { onDelete: () => void }) {
   const { t } = useTranslation();
   const router = useRouter();
   return (
-    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-      <Button
-        variant="destructive"
-        size="sm"
-        onClick={onDelete}
-        className="min-h-11 cursor-pointer text-sm md:min-h-7 md:text-xs"
-      >
+    <div className="flex items-center justify-between">
+      <Button variant="destructive" size="sm" onClick={onDelete} className="cursor-pointer">
         <IconTrash className="mr-1 h-4 w-4" />
         {t("executors:deleteProfile")}
       </Button>
       <Button
         variant="outline"
         onClick={() => router.push(EXECUTORS_ROUTE)}
-        className="min-h-11 cursor-pointer text-sm md:min-h-7 md:text-xs"
+        className="cursor-pointer"
       >
         {t("common:cancel")}
       </Button>

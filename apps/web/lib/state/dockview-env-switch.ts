@@ -36,7 +36,6 @@ import {
   formatWidthsSnapshot,
   formatJsonRootSizes,
 } from "./dockview-widths-debug";
-import { t } from "@/lib/i18n";
 
 const debug = createDebugLogger("dockview:env-switch");
 const debugWidths = createDebugLogger("dockview:widths");
@@ -500,7 +499,7 @@ function addIncomingSessionPanel(
     id: `session:${sessionId}`,
     component: "chat",
     tabComponent: "sessionTab",
-    title: t("common:agent"),
+    title: "Agent",
     params: { sessionId },
     position,
     inactive: options.inactive,

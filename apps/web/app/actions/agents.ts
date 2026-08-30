@@ -95,8 +95,6 @@ export async function createAgentProfileAction(
   payload: {
     name: string;
     model: string;
-    fallback_model?: string;
-    auto_fallback?: boolean;
     mode?: string;
     config_options?: Record<string, string>;
     cli_passthrough: boolean;
@@ -120,8 +118,6 @@ export async function updateAgentProfileAction(
   payload: {
     name?: string;
     model?: string;
-    fallback_model?: string;
-    auto_fallback?: boolean;
     mode?: string;
     config_options?: Record<string, string>;
     allow_indexing?: boolean;
@@ -132,29 +128,11 @@ export async function updateAgentProfileAction(
     command_prefix?: string;
     env_vars?: ProfileEnvVar[];
   },
-  force = false,
 ): Promise<AgentProfile> {
-  const raw = await agentSettingsRequest<unknown>(
-    `${apiBaseUrl}/api/v1/agent-profiles/${id}${force ? "?force=true" : ""}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    },
-  );
-  return normalizeAgentProfile(raw);
-}
-
-/**
- * Duplicate a profile: the backend copies the source's full configuration
- * into a new row named "<source> copy" and returns the new profile. The
- * existing `agent.profile.created` WS notification also picks the copy up in
- * every open settings surface.
- */
-export async function duplicateAgentProfileAction(id: string): Promise<AgentProfile> {
-  const raw = await agentSettingsRequest<unknown>(
-    `${apiBaseUrl}/api/v1/agent-profiles/${id}/duplicate`,
-    { method: "POST" },
-  );
+  const raw = await agentSettingsRequest<unknown>(`${apiBaseUrl}/api/v1/agent-profiles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
   return normalizeAgentProfile(raw);
 }
 
@@ -163,7 +141,6 @@ import type {
   AutomationReference,
   RoutingTierReference,
   WatcherReference,
-  UtilityAgentReference,
 } from "@/lib/types/agent-profile-errors";
 
 export type DeleteProfileResult =
@@ -174,11 +151,9 @@ export type DeleteProfileResult =
       watchers: WatcherReference[];
       routingTiers: RoutingTierReference[];
       automations: AutomationReference[];
-      utilityAgents: UtilityAgentReference[];
     }
   | { status: "error"; message: string };
 
-// eslint-disable-next-line complexity
 export async function deleteAgentProfileAction(
   id: string,
   force?: boolean,
@@ -200,11 +175,7 @@ export async function deleteAgentProfileAction(
     // conflict (the new self-heal path) must still pop the dialog.
     if (
       response.status === 409 &&
-      (body.active_sessions ||
-        body.watchers ||
-        body.routing_tiers ||
-        body.automations ||
-        body.utility_agents)
+      (body.active_sessions || body.watchers || body.routing_tiers || body.automations)
     ) {
       return {
         status: "conflict",
@@ -212,11 +183,8 @@ export async function deleteAgentProfileAction(
         watchers: body.watchers ?? [],
         routingTiers: body.routing_tiers ?? [],
         automations: body.automations ?? [],
-        utilityAgents: body.utility_agents ?? [],
       };
     }
-    // i18n-exempt: server-provided error text, or an HTTP status diagnostic when
-    // the server sent none. The toast title around it is translated.
     return {
       status: "error",
       message: body?.error || `Request failed: ${response.status} ${response.statusText}`,

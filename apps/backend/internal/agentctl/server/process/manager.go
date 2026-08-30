@@ -403,33 +403,6 @@ func (m *Manager) currentWorkspaceSourceRoots() []string {
 	return append([]string(nil), m.workspaceSourceRoots...)
 }
 
-// WorkspaceSourceRoots returns the canonical server-owned roots that may be
-// represented in an ACP session. The API owns the caller boundary so a remote
-// client cannot inject arbitrary filesystem scope into a provider request.
-func (m *Manager) WorkspaceSourceRoots() []string {
-	return m.currentWorkspaceSourceRoots()
-}
-
-// ValidatedWorkspaceSourceRoots re-resolves every lifecycle-authorized root
-// immediately before an ACP session consumes it. The snapshot must remain the
-// exact canonical allowlist; a removed, swapped, or widened root fails closed.
-func (m *Manager) ValidatedWorkspaceSourceRoots() ([]string, error) {
-	roots := m.currentWorkspaceSourceRoots()
-	if len(roots) == 0 {
-		return nil, errors.New("workspace source roots are unavailable")
-	}
-	validated := canonicalWorkspaceSourceRoots(roots)
-	if len(validated) != len(roots) {
-		return nil, errors.New("workspace source roots changed")
-	}
-	for index := range roots {
-		if validated[index] != roots[index] {
-			return nil, errors.New("workspace source roots changed")
-		}
-	}
-	return validated, nil
-}
-
 // lookupBaseBranch reads the task's recorded base branch for a given
 // repository name from the per-instance map. The empty key "" addresses the
 // single-repo / root tracker. Falls back to the empty-key entry when the
@@ -948,9 +921,6 @@ func (m *Manager) GitOperator() *GitOperator {
 		if binding, ok := m.cfg.RemoteContributions[""]; ok {
 			m.gitOperator.setRemoteContribution(&binding)
 		}
-		if destination, ok := m.cfg.ContributionDestinations[""]; ok {
-			m.gitOperator.setContributionDestination(&destination)
-		}
 	}
 	return m.gitOperator
 }
@@ -987,9 +957,6 @@ func (m *Manager) GitOperatorFor(subpath string) (*GitOperator, error) {
 	op.setEnvironmentProvider(m.gitEnvironment)
 	if binding, ok := m.cfg.RemoteContributions[cleaned]; ok {
 		op.setRemoteContribution(&binding)
-	}
-	if destination, ok := m.cfg.ContributionDestinations[cleaned]; ok {
-		op.setContributionDestination(&destination)
 	}
 	m.gitOperatorsBySubpath[cleaned] = op
 	return op, nil
@@ -1553,7 +1520,6 @@ func (m *Manager) Configure(command string, agentArgs []string, agentArgsPresent
 	// Merge additional env vars
 	if len(env) > 0 {
 		for k, v := range env {
-			m.cfg.AgentEnv = utility.RemoveEnvEntry(m.cfg.AgentEnv, k)
 			m.cfg.AgentEnv = append(m.cfg.AgentEnv, fmt.Sprintf("%s=%s", k, v))
 		}
 	}

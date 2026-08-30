@@ -34,7 +34,6 @@ import { TabRenameInput } from "./tab-rename-input";
 import { useTabMaximizeOnDoubleClick } from "./use-tab-maximize";
 import { SessionTabCloseAction } from "./session-tab-close-action";
 import { useSessionTabDelete } from "./use-session-tab-delete";
-import { useTranslation } from "react-i18next";
 
 function useSessionTabState(sessionId: string | undefined) {
   const isPrimary = useAppStore((state) => {
@@ -138,7 +137,6 @@ function useSessionRenameCommitter(
   currentName: string | null,
   onDone: () => void,
 ) {
-  const { t } = useTranslation();
   const appStoreApi = useAppStoreApi();
   const { toast } = useToast();
   return useCallback(
@@ -158,8 +156,8 @@ function useSessionRenameCommitter(
       } catch (error) {
         console.error("rename session:", error);
         toast({
-          title: t("task:renameFailed"),
-          description: error instanceof Error ? error.message : t("common:unknownError"),
+          title: "Rename failed",
+          description: error instanceof Error ? error.message : "Unknown error",
           variant: "error",
         });
       }

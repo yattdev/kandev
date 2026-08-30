@@ -1,7 +1,6 @@
 import type {
   ForegroundActivity,
   TaskPendingAction,
-  TaskPriority,
   TaskState as TaskStatus,
 } from "@/lib/types/http";
 import type { TaskStatusSummary } from "@/lib/types/task-status-summary";
@@ -18,21 +17,6 @@ export type KanbanStepEvents = {
   on_heartbeat?: Array<{ type: string; config?: Record<string, unknown> }>;
   on_budget_alert?: Array<{ type: string; config?: Record<string, unknown> }>;
   on_agent_error?: Array<{ type: string; config?: Record<string, unknown> }>;
-};
-
-/**
- * One end of a dependency edge. Carries title and state so the dependency chip
- * and blocked badge render without fetching each related task.
- *
- * `status` is the resolution verdict and is only meaningful on `dependsOn`
- * entries: "resolved" (finished successfully), "failed" (FAILED/CANCELLED —
- * halts the chain), or "pending" (anything else, including archived).
- */
-export type TaskDependencyRef = {
-  id: string;
-  title?: string;
-  state?: TaskStatus;
-  status?: "resolved" | "failed" | "pending";
 };
 
 export type KanbanState = {
@@ -62,16 +46,10 @@ export type KanbanState = {
   tasks: Array<{
     id: string;
     workspaceId?: string;
-    // Required for workflow-backed kanban tasks: every producer (kanban.update
-    // WS handler, snapshotToState, toKanbanTask) must populate it, or the
-    // prevent-auto-start gate would resolve a task's step list against the
-    // wrong workflow. Ephemeral tasks are filtered out before this point.
-    workflowId: string;
+    workflowId?: string;
     workflowStepId: string;
     title: string;
     description?: string;
-    autopilot?: boolean;
-    priority?: TaskPriority;
     position: number;
     state?: TaskStatus;
     /** Primary repository id (lowest position). Kept for backwards compat. */
@@ -121,19 +99,6 @@ export type KanbanState = {
     wipAdmitted?: boolean;
     queuedForStepId?: string;
     queuedAt?: string;
-    /**
-     * Task dependencies. Derived on the backend per read (never stored), so
-     * these arrive fresh on every boot payload and task.updated event.
-     */
-    blocked?: boolean;
-    /** "pending" | "failed" | "unknown"; absent when not blocked. */
-    blockedReason?: string;
-    /** Direct predecessors — the tasks this one is waiting on. Not transitive. */
-    dependsOn?: TaskDependencyRef[];
-    /** Direct dependents — the tasks waiting on this one. Not transitive. */
-    blocks?: TaskDependencyRef[];
-    /** A launch intent is waiting on dependency resolution. */
-    startWhenUnblocked?: boolean;
     isPRReview?: boolean;
     isIssueWatch?: boolean;
     metadata?: Record<string, unknown> | null;
@@ -172,7 +137,6 @@ export type WorkflowsState = {
     workspaceId: string;
     name: string;
     description?: string | null;
-    prompt?: string;
     sortOrder?: number;
     agent_profile_id?: string;
     hidden?: boolean;
@@ -199,12 +163,6 @@ export type TaskState = {
   // map survives task switches so navigating back to a task can restore the
   // user's last-selected session instead of always jumping to primary.
   lastSessionByTaskId: Record<string, string>;
-  // resumeSkippedSessionIds records sessions whose open-time auto-resume was
-  // skipped because the prevent-auto-start-on-open preference is enabled. A
-  // Record (not a Set): the slice is Immer-managed and SSR-hydrated, so a
-  // native Set would break mutation and serialization. The Start agent button
-  // renders for these sessions until the agent confirms RUNNING.
-  resumeSkippedSessionIds: Record<string, true>;
 };
 
 export type KanbanSliceState = {
@@ -228,11 +186,6 @@ export type KanbanSliceActions = {
   // it explicitly after checking no non-terminal manual pin should be preserved.
   setActiveSessionAuto: (taskId: string, sessionId: string) => void;
   clearActiveSession: () => void;
-  // setResumeSkipped records/clears the resume-skipped marker for a session.
-  // Recording is guarded at the call site (the session-resumption hook reads
-  // the live session row with typed store access), so a stale status response
-  // can never leave a Start button while the agent is actually running.
-  setResumeSkipped: (sessionId: string, skipped: boolean) => void;
   setWorkflowSnapshot: (workflowId: string, data: WorkflowSnapshotData) => void;
   setKanbanMultiLoading: (loading: boolean) => void;
   clearKanbanMulti: () => void;

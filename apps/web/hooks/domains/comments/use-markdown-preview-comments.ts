@@ -9,7 +9,6 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { useTranslation } from "react-i18next";
 import { useToast } from "@/components/toast-provider";
 import { useCommentsStore, type DiffComment } from "@/lib/state/slices/comments";
 import {
@@ -170,7 +169,6 @@ function useMarkdownCommentSubmitters({
   textSelection: MarkdownPreviewSelection | null;
   clearTextSelection: () => void;
 }) {
-  const { t } = useTranslation();
   const addComment = useCommentsStore((s) => s.addComment);
   const { runComment } = useRunComment({ sessionId: sessionId ?? null, taskId: taskId ?? null });
   const { toast } = useToast();
@@ -195,27 +193,24 @@ function useMarkdownCommentSubmitters({
     [addComment, clearTextSelection, path, repositoryId, sessionId, textSelection],
   );
 
-  // Same `editors:` copy as the CodeMirror and Monaco comment flows in
-  // `components/editors/**`, which say exactly this. The markdown preview is
-  // the third surface of the same feature and was the one left in English.
   const submitComment = useCallback(
     (text: string) => {
       const comment = createComment(text);
       if (!comment) return;
       toast({
-        title: t("editors:commentAdded"),
-        description: t("editors:commentWillBeSentWithNextMessage"),
+        title: "Comment added",
+        description: "Your comment will be sent with your next message.",
       });
     },
-    [createComment, t, toast],
+    [createComment, toast],
   );
 
   const submitAndRunComment = useCallback(
     async (text: string) => {
       if (!canRunComment) {
         toast({
-          title: t("editors:failedToSendComment"),
-          description: t("editors:openTaskSessionBeforeSending"),
+          title: "Failed to send comment",
+          description: "Open a task session before sending to the agent.",
           variant: "error",
         });
         return;
@@ -225,18 +220,18 @@ function useMarkdownCommentSubmitters({
       try {
         const { queued } = await runComment(comment);
         toast({
-          title: t("editors:commentSent"),
-          description: queued ? t("editors:queuedForTheAgent") : t("editors:sentToTheAgent"),
+          title: "Comment sent",
+          description: queued ? "Queued for the agent." : "Sent to the agent.",
         });
       } catch {
         toast({
-          title: t("editors:failedToSendComment"),
-          description: t("editors:pleaseTryAgain"),
+          title: "Failed to send comment",
+          description: "Please try again.",
           variant: "error",
         });
       }
     },
-    [canRunComment, createComment, runComment, t, toast],
+    [canRunComment, createComment, runComment, toast],
   );
 
   return { submitComment, submitAndRunComment: canRunComment ? submitAndRunComment : undefined };
@@ -283,7 +278,6 @@ function useVisibleMarkdownCommentActions({
 }: {
   setCommentView: Dispatch<SetStateAction<MarkdownCommentView>>;
 }) {
-  const { t } = useTranslation();
   const removeComment = useCommentsStore((s) => s.removeComment);
   const updateComment = useCommentsStore((s) => s.updateComment);
   const { toast } = useToast();
@@ -295,9 +289,9 @@ function useVisibleMarkdownCommentActions({
         const nextComments = view.comments.filter((comment) => comment.id !== commentId);
         return nextComments.length > 0 ? { ...view, comments: nextComments } : null;
       });
-      toast({ title: t("editors:commentDeleted") });
+      toast({ title: "Comment deleted" });
     },
-    [removeComment, setCommentView, t, toast],
+    [removeComment, setCommentView, toast],
   );
   const updateVisibleComment = useCallback(
     (commentId: string, text: string) => {
@@ -311,9 +305,9 @@ function useVisibleMarkdownCommentActions({
           ),
         };
       });
-      toast({ title: t("editors:commentUpdated") });
+      toast({ title: "Comment updated" });
     },
-    [setCommentView, t, toast, updateComment],
+    [setCommentView, toast, updateComment],
   );
 
   return { removeVisibleComment, updateVisibleComment };

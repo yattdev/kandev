@@ -1,6 +1,5 @@
 import type { TaskSession } from "@/lib/types/http";
 import { getSessionWorkspacePath } from "@/lib/session-workspace-path";
-import { t } from "@/lib/i18n";
 
 const HOME_PATH_PATTERN = /^\/(?:Users|home)\/[^/]+\//;
 
@@ -38,6 +37,6 @@ export function resolveFileBrowserPaths({
 
   return {
     fullPath,
-    displayPath: treeLoaded ? t("task:workspaceRoot") : "",
+    displayPath: treeLoaded ? "Workspace root" : "",
   };
 }

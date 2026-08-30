@@ -70,12 +70,11 @@ type AppInstallationResult struct {
 }
 
 type AppInstallationService struct {
-	config                        AppInstallationConfig
-	flows                         *OAuthFlowManager
-	store                         appInstallationStore
-	app                           appInstallationVerifier
-	oauth                         githubAppOAuth
-	installationAccessRetryDelays []time.Duration
+	config AppInstallationConfig
+	flows  *OAuthFlowManager
+	store  appInstallationStore
+	app    appInstallationVerifier
+	oauth  githubAppOAuth
 }
 
 func NewAppInstallationService(
@@ -85,12 +84,7 @@ func NewAppInstallationService(
 	app appInstallationVerifier,
 	oauth githubAppOAuth,
 ) *AppInstallationService {
-	return &AppInstallationService{
-		config: config, flows: flows, store: store, app: app, oauth: oauth,
-		installationAccessRetryDelays: []time.Duration{
-			250 * time.Millisecond, 500 * time.Millisecond, time.Second, 2 * time.Second,
-		},
-	}
+	return &AppInstallationService{config: config, flows: flows, store: store, app: app, oauth: oauth}
 }
 
 func (s *AppInstallationService) Start(
@@ -146,7 +140,7 @@ func (s *AppInstallationService) Complete(
 	if err != nil {
 		return AppInstallationResult{}, err
 	}
-	installation, user, err := s.verifyInstallationCallback(ctx, callback)
+	installation, user, err := s.verifyInstallationCallback(ctx, callback, flow)
 	if err != nil {
 		return AppInstallationResult{}, err
 	}
@@ -164,20 +158,14 @@ func (s *AppInstallationService) Complete(
 func (s *AppInstallationService) verifyInstallationCallback(
 	ctx context.Context,
 	callback AppInstallationCallback,
+	flow *AuthFlow,
 ) (AppInstallation, GitHubOAuthUser, error) {
-	if callback.InstallationID <= 0 {
-		return AppInstallation{}, GitHubOAuthUser{}, fmt.Errorf(
-			"validate GitHub App installation ID: %w", ErrInstallationAssociationUnverified,
-		)
-	}
-	if callback.Code == "" {
-		return AppInstallation{}, GitHubOAuthUser{}, fmt.Errorf(
-			"validate GitHub App authorizer code: %w", ErrInstallationAssociationUnverified,
-		)
+	if callback.InstallationID <= 0 || callback.Code == "" ||
+		(callback.SetupAction != "install" && callback.SetupAction != "update") {
+		return AppInstallation{}, GitHubOAuthUser{}, ErrInstallationAssociationUnverified
 	}
 
-	// GitHub starts OAuth-on-install without a caller-supplied PKCE challenge.
-	tokens, err := s.oauth.ExchangeUserCode(ctx, callback.Code, "", s.config.CallbackURL)
+	tokens, err := s.oauth.ExchangeUserCode(ctx, callback.Code, flow.PKCEVerifier, s.config.CallbackURL)
 	if err != nil || tokens.AccessToken == "" {
 		return AppInstallation{}, GitHubOAuthUser{}, fmt.Errorf(
 			"exchange GitHub App authorizer code: %w", associationError(err),
@@ -189,7 +177,7 @@ func (s *AppInstallationService) verifyInstallationCallback(
 			"verify GitHub App authorizing user: %w", associationError(err),
 		)
 	}
-	accessible, err := s.userCanAccessInstallation(ctx, tokens.AccessToken, callback.InstallationID)
+	accessible, err := s.oauth.UserCanAccessInstallation(ctx, tokens.AccessToken, callback.InstallationID)
 	if err != nil || !accessible {
 		return AppInstallation{}, GitHubOAuthUser{}, fmt.Errorf(
 			"verify GitHub App installation access: %w", associationError(err),
@@ -202,26 +190,6 @@ func (s *AppInstallationService) verifyInstallationCallback(
 		)
 	}
 	return installation, user, nil
-}
-
-func (s *AppInstallationService) userCanAccessInstallation(
-	ctx context.Context,
-	accessToken string,
-	installationID int64,
-) (bool, error) {
-	for attempt := 0; ; attempt++ {
-		accessible, err := s.oauth.UserCanAccessInstallation(ctx, accessToken, installationID)
-		if err != nil || accessible || attempt >= len(s.installationAccessRetryDelays) {
-			return accessible, err
-		}
-		timer := time.NewTimer(s.installationAccessRetryDelays[attempt])
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return false, ctx.Err()
-		case <-timer.C:
-		}
-	}
 }
 
 func (s *AppInstallationService) newInstallationConnection(

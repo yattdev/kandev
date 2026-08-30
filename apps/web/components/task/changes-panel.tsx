@@ -4,17 +4,13 @@ import { memo } from "react";
 import { PanelRoot } from "./panel-primitives";
 import { useIsTaskArchived, ArchivedPanelPlaceholder } from "./task-archived-context";
 import { ChangesPanelHeader } from "./changes-panel-header";
-import {
-  filterUnpushedCommits,
-  mergeCommits,
-  separateCommitHistories,
-} from "./changes-panel-helpers";
+import { filterUnpushedCommits, mergeCommits } from "./changes-panel-helpers";
 import { useChangesPanelData, buildChangesPanelBodyProps } from "./changes-panel-data";
 import { ChangesPanelBody } from "./changes-panel-body";
 import type { CommitDetailTarget, OpenDiffOptions } from "./changes-diff-target";
 import { useRequestChangesWalkthrough } from "@/hooks/domains/session/use-request-changes-walkthrough";
 
-export { filterUnpushedCommits, mergeCommits, separateCommitHistories };
+export { filterUnpushedCommits, mergeCommits };
 
 type ChangesPanelProps = {
   onOpenDiffFile: (path: string, options?: OpenDiffOptions) => void;
@@ -42,9 +38,7 @@ const ChangesPanel = memo(function ChangesPanel(props: ChangesPanelProps) {
         displayBranch={data.git.branch}
         baseBranchDisplay={data.baseBranchDisplay}
         baseBranchByRepo={data.baseBranchByRepo}
-        behindCount={data.git.pullBehind}
-        pullDisabled={data.pullDisabled}
-        pullDisabledReason={data.pullDisabledReason}
+        behindCount={data.git.behind}
         isLoading={data.git.isLoading}
         loadingOperation={data.git.loadingOperation}
         onOpenDiffAll={props.onOpenDiffAll}
@@ -60,11 +54,6 @@ const ChangesPanel = memo(function ChangesPanel(props: ChangesPanelProps) {
         repoDisplayName={data.repoDisplayName}
         taskId={data.activeTaskId}
         credentialDisplay={data.gitCredentialDisplay}
-        relation={data.relation}
-        resolution={data.resolution}
-        resolutionTarget={data.resolutionTarget}
-        remoteContributionUrl={data.selectedPR?.pr_url ?? data.existingPrUrl}
-        remoteContributionNumber={data.selectedPR?.pr_number}
       />
       <ChangesPanelBody {...buildChangesPanelBodyProps(data, props)} />
     </PanelRoot>

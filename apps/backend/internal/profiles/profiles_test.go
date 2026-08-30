@@ -39,6 +39,9 @@ func TestApplyProfile_DefaultsToProd(t *testing.T) {
 	if v := os.Getenv("KANDEV_FEATURES_OFFICE"); v != "false" {
 		t.Errorf("KANDEV_FEATURES_OFFICE = %q after prod ApplyProfile; want %q", v, "false")
 	}
+	if v := os.Getenv("KANDEV_FEATURES_APP_STATUS_BAR"); v != "false" {
+		t.Errorf("KANDEV_FEATURES_APP_STATUS_BAR = %q after prod ApplyProfile; want %q", v, "false")
+	}
 	if v := os.Getenv("KANDEV_FEATURES_AUTH"); v != "false" {
 		t.Errorf("KANDEV_FEATURES_AUTH = %q after prod ApplyProfile; want %q", v, "false")
 	}
@@ -49,12 +52,10 @@ func TestApplyProfile_DefaultsToProd(t *testing.T) {
 			"false",
 		)
 	}
-	if _, ok := os.LookupEnv("KANDEV_WEB_TITLE_PREFIX"); ok {
-		t.Errorf("KANDEV_WEB_TITLE_PREFIX is set in prod; want it unset")
-	}
 }
 
-// TestApplyProfile_DevUsesDevelopmentDefaults verifies the mixed dev profile.
+// TestApplyProfile_DevUsesDevelopmentDefaults verifies the mixed dev profile:
+// active development tools turn on while the user-facing status bar stays opt-in.
 func TestApplyProfile_DevUsesDevelopmentDefaults(t *testing.T) {
 	clearProfileSelectors(t)
 	clearProfilesYAMLVars(t)
@@ -70,6 +71,9 @@ func TestApplyProfile_DevUsesDevelopmentDefaults(t *testing.T) {
 	if v := os.Getenv("KANDEV_FEATURES_OFFICE"); v != "true" {
 		t.Errorf("KANDEV_FEATURES_OFFICE = %q in dev; want %q", v, "true")
 	}
+	if v := os.Getenv("KANDEV_FEATURES_APP_STATUS_BAR"); v != "false" {
+		t.Errorf("KANDEV_FEATURES_APP_STATUS_BAR = %q in dev; want %q", v, "false")
+	}
 	// Auth is off by default even in dev — it locks the instance behind a
 	// login, so it must be an explicit opt-in.
 	if v := os.Getenv("KANDEV_FEATURES_AUTH"); v != "false" {
@@ -81,43 +85,6 @@ func TestApplyProfile_DevUsesDevelopmentDefaults(t *testing.T) {
 			v,
 			"false",
 		)
-	}
-	if v := os.Getenv("KANDEV_WEB_TITLE_PREFIX"); v != "Dev" {
-		t.Errorf("KANDEV_WEB_TITLE_PREFIX = %q in dev; want %q", v, "Dev")
-	}
-}
-
-func TestApplyProfile_PprofDebugKeepsProductionProfile(t *testing.T) {
-	clearProfileSelectors(t)
-	clearProfilesYAMLVars(t)
-	t.Setenv("KANDEV_DEBUG_PPROF_ENABLED", "true")
-
-	_, env, err := ApplyProfile()
-	if err != nil {
-		t.Fatalf("ApplyProfile: %v", err)
-	}
-	if env != EnvProd {
-		t.Fatalf("env = %q with pprof-only debug; want %q", env, EnvProd)
-	}
-	if v := os.Getenv("KANDEV_FEATURES_OFFICE"); v != "false" {
-		t.Errorf("KANDEV_FEATURES_OFFICE = %q with pprof-only debug; want %q", v, "false")
-	}
-	if _, ok := os.LookupEnv("KANDEV_WEB_TITLE_PREFIX"); ok {
-		t.Error("KANDEV_WEB_TITLE_PREFIX was set by the production profile; want it unset")
-	}
-}
-
-func TestApplyProfile_ExplicitTitlePrefixWinsInDev(t *testing.T) {
-	clearProfileSelectors(t)
-	clearProfilesYAMLVars(t)
-	t.Setenv("KANDEV_DEBUG_DEV_MODE", "true")
-	t.Setenv("KANDEV_WEB_TITLE_PREFIX", "Custom")
-
-	if _, _, err := ApplyProfile(); err != nil {
-		t.Fatalf("ApplyProfile: %v", err)
-	}
-	if v := os.Getenv("KANDEV_WEB_TITLE_PREFIX"); v != "Custom" {
-		t.Errorf("ApplyProfile overwrote explicit title prefix: got %q; want %q", v, "Custom")
 	}
 }
 
@@ -150,9 +117,6 @@ func TestApplyProfile_E2EWinsOverDev(t *testing.T) {
 			v,
 			"false",
 		)
-	}
-	if _, ok := os.LookupEnv("KANDEV_WEB_TITLE_PREFIX"); ok {
-		t.Errorf("KANDEV_WEB_TITLE_PREFIX is set in e2e; want it unset")
 	}
 }
 
@@ -210,8 +174,8 @@ func TestFeatureFlagDefaults_LowercasesShortName(t *testing.T) {
 	if _, ok := defaults["office"]; !ok {
 		t.Errorf("FeatureFlagDefaults missing %q key; got %#v", "office", defaults)
 	}
-	if _, ok := defaults["app_status_bar"]; ok {
-		t.Errorf("FeatureFlagDefaults includes retired %q key", "app_status_bar")
+	if _, ok := defaults["app_status_bar"]; !ok {
+		t.Errorf("FeatureFlagDefaults missing %q key; got %#v", "app_status_bar", defaults)
 	}
 	if _, ok := defaults["claude_background_prompt_handoff"]; !ok {
 		t.Errorf(
@@ -264,15 +228,12 @@ func TestProfilesYAML_ContainsRequiredSections(t *testing.T) {
 		"mocks:",
 		"debug:",
 		"KANDEV_FEATURES_OFFICE:",
+		"KANDEV_FEATURES_APP_STATUS_BAR:",
 		"KANDEV_FEATURES_CLAUDE_BACKGROUND_PROMPT_HANDOFF:",
-		"KANDEV_WEB_TITLE_PREFIX:",
 	} {
 		if !strings.Contains(yaml, section) {
 			t.Errorf("embedded profiles.yaml missing section/key %q; embed broken or file truncated", section)
 		}
-	}
-	if strings.Contains(yaml, "KANDEV_FEATURES_APP_STATUS_BAR:") {
-		t.Error("embedded profiles.yaml still declares retired KANDEV_FEATURES_APP_STATUS_BAR")
 	}
 }
 

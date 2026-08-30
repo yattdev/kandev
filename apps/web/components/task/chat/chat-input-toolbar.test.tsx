@@ -100,6 +100,10 @@ vi.mock("./chat-input-plugin-actions", () => ({
   ChatInputPluginActions: () => null,
 }));
 
+vi.mock("./voice-input-button", () => ({
+  VoiceInputButton: () => <button type="button">Voice</button>,
+}));
+
 import { ChatInputToolbar } from "./chat-input-toolbar";
 import type { ChatInputToolbarProps } from "./chat-input-toolbar";
 

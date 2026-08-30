@@ -133,19 +133,9 @@ func (c *Controller) RegisterHTTPRoutes(router *gin.Engine) {
 
 func (c *Controller) httpGetStatus(ctx *gin.Context) {
 	workspaceID := ctx.Query("workspace_id")
-	var (
-		status *WorkspaceAuthStatus
-		err    error
+	status, err := c.service.GetWorkspaceAuthStatus(
+		ctx.Request.Context(), workspaceID, currentGitHubUserID(ctx),
 	)
-	if ctx.Query("refresh_rate_limit") == "true" {
-		status, err = c.service.RefreshWorkspaceRateLimit(
-			ctx.Request.Context(), workspaceID, currentGitHubUserID(ctx),
-		)
-	} else {
-		status, err = c.service.GetWorkspaceAuthStatus(
-			ctx.Request.Context(), workspaceID, currentGitHubUserID(ctx),
-		)
-	}
 	if err != nil {
 		writeGitHubAuthError(ctx, err)
 		return
@@ -369,7 +359,8 @@ func (c *Controller) handleTaskIssueLinkError(ctx *gin.Context, err error) {
 func (c *Controller) httpGetTaskCIOptions(ctx *gin.Context) {
 	resp, err := c.service.GetTaskCIOptionsResponse(ctx.Request.Context(), ctx.Param("taskId"))
 	if err != nil {
-		c.writeTaskCIOptionsError(ctx, err, "get", "failed to load CI automation options")
+		c.logger.Error("get task CI options failed", zap.String("task_id", ctx.Param("taskId")), zap.Error(err))
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load CI automation options"})
 		return
 	}
 	ctx.JSON(http.StatusOK, resp)
@@ -384,7 +375,8 @@ func (c *Controller) httpPatchTaskCIOptions(ctx *gin.Context) {
 	if !patch.HasAny() {
 		resp, err := c.service.GetTaskCIOptionsResponse(ctx.Request.Context(), ctx.Param("taskId"))
 		if err != nil {
-			c.writeTaskCIOptionsError(ctx, err, "load", "failed to load CI automation options")
+			c.logger.Error("load task CI options failed", zap.String("task_id", ctx.Param("taskId")), zap.Error(err))
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load CI automation options"})
 			return
 		}
 		ctx.JSON(http.StatusOK, resp)
@@ -392,29 +384,12 @@ func (c *Controller) httpPatchTaskCIOptions(ctx *gin.Context) {
 	}
 	resp, err := c.service.UpdateTaskCIOptions(ctx.Request.Context(), ctx.Param("taskId"), patch)
 	if err != nil {
-		c.writeTaskCIOptionsError(ctx, err, "update", "failed to update CI automation options")
+		c.logger.Error("update task CI options failed", zap.String("task_id", ctx.Param("taskId")), zap.Error(err))
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update CI automation options"})
 		return
 	}
 	c.publishTaskCIOptionsUpdated(ctx.Request.Context(), resp)
 	ctx.JSON(http.StatusOK, resp)
-}
-
-func (c *Controller) writeTaskCIOptionsError(ctx *gin.Context, err error, operation, message string) {
-	if errors.Is(err, ErrTaskNotFound) ||
-		errors.Is(err, repoerrors.ErrWorkspaceNotFound) ||
-		errors.Is(err, ErrGitHubWorkspaceRequired) {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
-		return
-	}
-	if errors.Is(err, ErrTaskPRNotLinked) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if writeGitHubOperationalAuthError(ctx, err) {
-		return
-	}
-	c.logger.Error(operation+" task CI options failed", zap.String("task_id", ctx.Param("taskId")), zap.Error(err))
-	ctx.JSON(http.StatusInternalServerError, gin.H{"error": message})
 }
 
 func parseTaskCIOptionsPatch(ctx *gin.Context) (TaskCIOptionsPatch, error) {
@@ -431,18 +406,6 @@ func parseTaskCIOptionsPatch(ctx *gin.Context) (TaskCIOptionsPatch, error) {
 	var patch TaskCIOptionsPatch
 	for key, value := range raw {
 		switch key {
-		case "repository_id":
-			var repositoryID string
-			if err := json.Unmarshal(value, &repositoryID); err != nil {
-				return TaskCIOptionsPatch{}, err
-			}
-			patch.RepositoryID = &repositoryID
-		case "pr_number":
-			var prNumber int
-			if err := json.Unmarshal(value, &prNumber); err != nil {
-				return TaskCIOptionsPatch{}, err
-			}
-			patch.PRNumber = &prNumber
 		case "auto_fix_enabled":
 			var enabled bool
 			if err := json.Unmarshal(value, &enabled); err != nil {
@@ -759,7 +722,7 @@ func (c *Controller) httpMergePR(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "merge_method must be merge, squash, or rebase"})
 		return
 	}
-	principal, outcome, err := c.service.MergePRForWorkspace(
+	principal, err := c.service.MergePRForWorkspace(
 		ctx.Request.Context(), ctx.Query("workspace_id"), currentGitHubUserID(ctx),
 		owner, repo, number, req.MergeMethod,
 	)
@@ -771,8 +734,6 @@ func (c *Controller) httpMergePR(ctx *gin.Context) {
 		var apiErr *GitHubAPIError
 		if errors.As(err, &apiErr) {
 			switch apiErr.StatusCode {
-			case http.StatusBadRequest:
-				status = http.StatusBadRequest
 			case http.StatusMethodNotAllowed, http.StatusConflict:
 				status = http.StatusConflict
 			case http.StatusUnauthorized:
@@ -786,7 +747,7 @@ func (c *Controller) httpMergePR(ctx *gin.Context) {
 		ctx.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"status": outcome, "principal": principal})
+	ctx.JSON(http.StatusOK, gin.H{"merged": true, "principal": principal})
 }
 
 func (c *Controller) httpListPRWatches(ctx *gin.Context) {

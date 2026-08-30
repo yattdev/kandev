@@ -18,12 +18,10 @@ type inMemorySecretStore struct {
 var _ secrets.SecretStore = (*inMemorySecretStore)(nil)
 var _ secrets.ScopedSecretStore = (*inMemorySecretStore)(nil)
 
-// newInMemorySecretStore returns an empty in-memory secret store for testing.
 func newInMemorySecretStore() *inMemorySecretStore {
 	return &inMemorySecretStore{store: make(map[string]*secrets.SecretWithValue)}
 }
 
-// Create stores the secret, returning the injected error when set.
 func (s *inMemorySecretStore) Create(_ context.Context, secret *secrets.SecretWithValue) error {
 	if s.err != nil {
 		return s.err
@@ -35,7 +33,6 @@ func (s *inMemorySecretStore) Create(_ context.Context, secret *secrets.SecretWi
 	return nil
 }
 
-// Get returns the stored secret for the given ID, or an error when absent.
 func (s *inMemorySecretStore) Get(_ context.Context, id string) (*secrets.Secret, error) {
 	if sw, ok := s.store[id]; ok {
 		return &sw.Secret, nil
@@ -43,7 +40,6 @@ func (s *inMemorySecretStore) Get(_ context.Context, id string) (*secrets.Secret
 	return nil, fmt.Errorf("not found")
 }
 
-// Reveal returns the plaintext value for the given ID, or an error when absent.
 func (s *inMemorySecretStore) Reveal(_ context.Context, id string) (string, error) {
 	if sw, ok := s.store[id]; ok {
 		return sw.Value, nil
@@ -51,23 +47,15 @@ func (s *inMemorySecretStore) Reveal(_ context.Context, id string) (string, erro
 	return "", fmt.Errorf("not found")
 }
 
-// Update is a no-op for the in-memory store.
 func (s *inMemorySecretStore) Update(_ context.Context, _ string, _ *secrets.UpdateSecretRequest) error {
 	return nil
 }
-
-// Delete is a no-op for the in-memory store.
 func (s *inMemorySecretStore) Delete(_ context.Context, _ string) error { return nil }
-
-// List returns no items for the in-memory store.
 func (s *inMemorySecretStore) List(_ context.Context) ([]*secrets.SecretListItem, error) {
 	return nil, nil
 }
-
-// Close is a no-op for the in-memory store.
 func (s *inMemorySecretStore) Close() error { return nil }
 
-// ListScoped returns stored secrets filtered by the requested scope and workspace.
 func (s *inMemorySecretStore) ListScoped(_ context.Context, opts secrets.SecretListOptions) ([]*secrets.SecretListItem, error) {
 	items := make([]*secrets.SecretListItem, 0, len(s.store))
 	for _, stored := range s.store {
@@ -89,7 +77,6 @@ func (s *inMemorySecretStore) ListScoped(_ context.Context, opts secrets.SecretL
 	return items, nil
 }
 
-// GetForWorkspace returns the secret when it is global or belongs to the given workspace.
 func (s *inMemorySecretStore) GetForWorkspace(_ context.Context, id, workspaceID string) (*secrets.Secret, error) {
 	secret, err := s.Get(context.Background(), id)
 	if err != nil {
@@ -101,7 +88,6 @@ func (s *inMemorySecretStore) GetForWorkspace(_ context.Context, id, workspaceID
 	return secret, nil
 }
 
-// RevealGlobal reveals a global secret's value, rejecting workspace-scoped secrets.
 func (s *inMemorySecretStore) RevealGlobal(ctx context.Context, id string) (string, error) {
 	secret, err := s.Get(ctx, id)
 	if err != nil {
@@ -113,7 +99,6 @@ func (s *inMemorySecretStore) RevealGlobal(ctx context.Context, id string) (stri
 	return s.Reveal(ctx, id)
 }
 
-// RevealForWorkspace reveals a secret's value after confirming workspace access.
 func (s *inMemorySecretStore) RevealForWorkspace(ctx context.Context, id, workspaceID string) (string, error) {
 	if _, err := s.GetForWorkspace(ctx, id, workspaceID); err != nil {
 		return "", err
@@ -121,7 +106,6 @@ func (s *inMemorySecretStore) RevealForWorkspace(ctx context.Context, id, worksp
 	return s.Reveal(ctx, id)
 }
 
-// DeleteWorkspaceSecrets removes all secrets belonging to the given workspace.
 func (s *inMemorySecretStore) DeleteWorkspaceSecrets(_ context.Context, workspaceID string) error {
 	for id, stored := range s.store {
 		if stored.Scope == secrets.ScopeWorkspace && stored.WorkspaceID == workspaceID {
@@ -131,7 +115,6 @@ func (s *inMemorySecretStore) DeleteWorkspaceSecrets(_ context.Context, workspac
 	return nil
 }
 
-// TestPersistAuthToken verifies persistAuthToken stores the instance auth token as a secret, records its ID in execution metadata, and no-ops when the token or store is absent.
 func TestPersistAuthToken(t *testing.T) {
 	log, _ := logger.NewLogger(logger.LoggingConfig{Level: "error", Format: "json"})
 
@@ -144,7 +127,7 @@ func TestPersistAuthToken(t *testing.T) {
 			AuthToken:  "handshake-token-abc",
 		}
 		execution := &AgentExecution{
-			metadata: make(map[string]interface{}),
+			Metadata: make(map[string]interface{}),
 		}
 
 		m.persistAuthToken(context.Background(), instance, execution)
@@ -155,10 +138,9 @@ func TestPersistAuthToken(t *testing.T) {
 		}
 
 		// Verify metadata has the secret ID
-		raw, _ := execution.metadataValue(MetadataKeyAuthTokenSecret)
-		secretID, ok := raw.(string)
+		secretID, ok := execution.Metadata[MetadataKeyAuthTokenSecret].(string)
 		if !ok || secretID == "" {
-			t.Fatalf("expected secret ID in metadata, got %v", raw)
+			t.Fatalf("expected secret ID in metadata, got %v", execution.Metadata[MetadataKeyAuthTokenSecret])
 		}
 
 		// Verify we can retrieve the token
@@ -176,14 +158,14 @@ func TestPersistAuthToken(t *testing.T) {
 		m := &Manager{logger: log, secretStore: store}
 
 		instance := &ExecutorInstance{InstanceID: "exec-123456789012"}
-		execution := &AgentExecution{metadata: make(map[string]interface{})}
+		execution := &AgentExecution{Metadata: make(map[string]interface{})}
 
 		m.persistAuthToken(context.Background(), instance, execution)
 
 		if len(store.store) != 0 {
 			t.Fatal("expected no secrets stored")
 		}
-		if _, ok := execution.metadataValue(MetadataKeyAuthTokenSecret); ok {
+		if _, ok := execution.Metadata[MetadataKeyAuthTokenSecret]; ok {
 			t.Fatal("expected no metadata key")
 		}
 	})
@@ -195,7 +177,7 @@ func TestPersistAuthToken(t *testing.T) {
 			InstanceID: "exec-123456789012",
 			AuthToken:  "some-token",
 		}
-		execution := &AgentExecution{metadata: make(map[string]interface{})}
+		execution := &AgentExecution{Metadata: make(map[string]interface{})}
 
 		// Should not panic
 		m.persistAuthToken(context.Background(), instance, execution)
@@ -213,13 +195,15 @@ func TestPersistAuthToken(t *testing.T) {
 
 		m.persistAuthToken(context.Background(), instance, execution)
 
-		if _, ok := execution.metadataValue(MetadataKeyAuthTokenSecret); !ok {
+		if execution.Metadata == nil {
+			t.Fatal("expected metadata to be initialized")
+		}
+		if _, ok := execution.Metadata[MetadataKeyAuthTokenSecret]; !ok {
 			t.Fatal("expected secret ID in metadata")
 		}
 	})
 }
 
-// TestPersistRuntimeSecrets verifies persistRuntimeSecrets stores the auth token and bootstrap nonce as secrets and records both IDs so they can be revealed later.
 func TestPersistRuntimeSecrets(t *testing.T) {
 	log, _ := logger.NewLogger(logger.LoggingConfig{Level: "error", Format: "json"})
 	store := newInMemorySecretStore()
@@ -230,25 +214,23 @@ func TestPersistRuntimeSecrets(t *testing.T) {
 		AuthToken:      "agentctl-token",
 		BootstrapNonce: "bootstrap-nonce",
 	}
-	execution := &AgentExecution{metadata: make(map[string]interface{})}
+	execution := &AgentExecution{Metadata: make(map[string]interface{})}
 
 	m.persistRuntimeSecrets(context.Background(), instance, execution)
 
-	rawAuth, _ := execution.metadataValue(MetadataKeyAuthTokenSecret)
-	authSecretID, ok := rawAuth.(string)
+	authSecretID, ok := execution.Metadata[MetadataKeyAuthTokenSecret].(string)
 	if !ok || authSecretID == "" {
-		t.Fatalf("expected auth token secret ID, got %v", rawAuth)
+		t.Fatalf("expected auth token secret ID, got %v", execution.Metadata[MetadataKeyAuthTokenSecret])
 	}
-	rawNonce, _ := execution.metadataValue(MetadataKeyBootstrapNonceSecret)
-	nonceSecretID, ok := rawNonce.(string)
+	nonceSecretID, ok := execution.Metadata[MetadataKeyBootstrapNonceSecret].(string)
 	if !ok || nonceSecretID == "" {
-		t.Fatalf("expected bootstrap nonce secret ID, got %v", rawNonce)
+		t.Fatalf("expected bootstrap nonce secret ID, got %v", execution.Metadata[MetadataKeyBootstrapNonceSecret])
 	}
 
-	if got := m.revealRuntimeSecret(context.Background(), execution.MetadataSnapshot(), MetadataKeyAuthTokenSecret); got != "agentctl-token" {
+	if got := m.revealRuntimeSecret(context.Background(), execution.Metadata, MetadataKeyAuthTokenSecret); got != "agentctl-token" {
 		t.Fatalf("revealed auth token = %q, want agentctl-token", got)
 	}
-	if got := m.revealRuntimeSecret(context.Background(), execution.MetadataSnapshot(), MetadataKeyBootstrapNonceSecret); got != "bootstrap-nonce" {
+	if got := m.revealRuntimeSecret(context.Background(), execution.Metadata, MetadataKeyBootstrapNonceSecret); got != "bootstrap-nonce" {
 		t.Fatalf("revealed bootstrap nonce = %q, want bootstrap-nonce", got)
 	}
 }

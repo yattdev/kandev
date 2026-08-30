@@ -1,9 +1,6 @@
 package lifecycle
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,63 +8,7 @@ import (
 	"github.com/kandev/kandev/internal/agent/agents"
 	"github.com/kandev/kandev/internal/agent/docker"
 	"github.com/kandev/kandev/internal/common/logger"
-	"github.com/kandev/kandev/internal/worktree"
 )
-
-func TestGitMetadataMountsMasksSiblingWorktrees(t *testing.T) {
-	repo := filepath.Join(t.TempDir(), "repo")
-	runContainerGit(t, "", "init", "-b", "main", repo)
-	runContainerGit(t, repo, "config", "user.email", "test@example.com")
-	runContainerGit(t, repo, "config", "user.name", "Test")
-	if err := os.WriteFile(filepath.Join(repo, "file"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	runContainerGit(t, repo, "add", "file")
-	runContainerGit(t, repo, "commit", "-m", "initial")
-	checkout := filepath.Join(t.TempDir(), "checkout")
-	runContainerGit(t, repo, "worktree", "add", "-b", "task", checkout)
-	projection, err := worktree.ResolveGitMetadata(checkout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mounts, err := gitMetadataMounts([]*worktree.GitMetadataProjection{projection})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertGitMount(t, mounts, projection.CommonDir, true, false)
-	assertGitMount(t, mounts, projection.WorktreesDir, false, true)
-	for _, path := range projection.WritablePaths {
-		assertGitMount(t, mounts, path, false, false)
-	}
-	for _, mount := range mounts {
-		if mount.Source == repo || mount.Target == repo {
-			t.Fatalf("source checkout must not be mounted: %#v", mount)
-		}
-		if mount.Target == projection.CommonDir && !mount.ReadOnly {
-			t.Fatalf("common git root must not be writable: %#v", mount)
-		}
-	}
-}
-
-func runContainerGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	if dir != "" {
-		args = append([]string{"-C", dir}, args...)
-	}
-	if output, err := exec.Command("git", args...).CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, output)
-	}
-}
-
-func assertGitMount(t *testing.T, mounts []docker.MountConfig, target string, readOnly, tmpfs bool) {
-	t.Helper()
-	for _, mount := range mounts {
-		if mount.Target == target && mount.ReadOnly == readOnly && mount.Tmpfs == tmpfs {
-			return
-		}
-	}
-	t.Fatalf("missing mount target=%q readOnly=%t tmpfs=%t: %#v", target, readOnly, tmpfs, mounts)
-}
 
 // configStubAgent wraps MockAgent and overrides Runtime() with a fixed
 // RuntimeConfig that mimics ACP agents (image+tag, {workspace} placeholder).
@@ -184,53 +125,6 @@ func TestBuildContainerConfigPreflightsBrokerBeforePrepareClone(t *testing.T) {
 	}
 }
 
-func TestBuildContainerConfigBoundsPrepareScriptBeforeAgentctl(t *testing.T) {
-	cm := newCMTest(t)
-	cfg := ContainerConfig{
-		AgentConfig:   newConfigStubAgent(),
-		InstanceID:    "0123456789abcdef",
-		TaskID:        "task-1",
-		PrepareScript: "sleep 1",
-	}
-
-	got, err := cm.buildContainerConfig(cfg)
-	if err != nil {
-		t.Fatalf("buildContainerConfig: %v", err)
-	}
-	if len(got.Entrypoint) != 3 {
-		t.Fatalf("entrypoint = %#v", got.Entrypoint)
-	}
-
-	script := got.Entrypoint[2]
-	want := fmt.Sprintf(
-		"timeout -s TERM -k 1s %s sh -c",
-		"600s",
-	)
-	if !strings.Contains(script, want) {
-		t.Fatalf("prepare timeout = %q, want bootstrap to contain %q", script, want)
-	}
-	if strings.Index(script, want) >= strings.Index(script, "exec /usr/local/bin/agentctl") {
-		t.Fatalf("prepare timeout must run before agentctl: %s", script)
-	}
-}
-
-func TestCloneGitMetadataPrepareScriptAttestsCanonicalWorkspace(t *testing.T) {
-	script := cloneGitMetadataPrepareScript("git clone https://example.test/repo /workspace")
-	if !strings.Contains(script, "git clone https://example.test/repo /workspace") {
-		t.Fatalf("prepare script lost clone command: %s", script)
-	}
-	if !strings.Contains(script, "git -C \"$workspace\" rev-parse --absolute-git-dir") {
-		t.Fatalf("prepare script does not attest canonical Git directory: %s", script)
-	}
-}
-
-func TestBuildContainerCreateInstanceRequestUsesContainerWorkspaceSourceRoot(t *testing.T) {
-	request := buildContainerCreateInstanceRequest(ContainerConfig{InstanceID: "instance-1"}, "codex", false, false, false, false, nil)
-	if !equalStrings(request.WorkspaceSourceRoots, []string{dockerWorkspacePath}) {
-		t.Fatalf("WorkspaceSourceRoots = %v, want the container workspace only", request.WorkspaceSourceRoots)
-	}
-}
-
 func TestBuildContainerConfigPublishesManagedGitCredentialHelperBeforeAgentctlStartup(t *testing.T) {
 	cm := newCMTest(t)
 	cfg := ContainerConfig{
@@ -324,21 +218,6 @@ func TestBuildContainerConfig_LabelsExecutorProfileAndTaskEnvironment(t *testing
 	assertLabel(t, got.Labels, "kandev.executor_profile_id", "profile-1")
 	assertLabel(t, got.Labels, "kandev.profile_id", "profile-1")
 	assertLabel(t, got.Labels, "com.kandev.image", "kandev/agent:custom")
-}
-
-func TestBuildContainerConfig_LabelsE2EDockerScope(t *testing.T) {
-	t.Setenv("KANDEV_E2E_DOCKER_SCOPE", "e2e-test-scope")
-	cm := newCMTest(t)
-	got, err := cm.buildContainerConfig(ContainerConfig{
-		AgentConfig: newConfigStubAgent(),
-		InstanceID:  "0123456789abcdef",
-		TaskID:      "task-1",
-	})
-	if err != nil {
-		t.Fatalf("buildContainerConfig: %v", err)
-	}
-
-	assertLabel(t, got.Labels, "kandev.e2e.run", "e2e-test-scope")
 }
 
 func TestBuildContainerConfig_PublishesAgentctlPorts(t *testing.T) {

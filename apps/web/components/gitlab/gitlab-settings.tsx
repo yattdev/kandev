@@ -33,7 +33,6 @@ import { GitLabWatchSettings } from "./watch-settings";
 import { GitLabActionPresetsSection } from "./action-presets-section";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { settingsCredentialClassName } from "@/components/settings/settings-control";
 import { INTEGRATION_SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/integrations";
 
 const DEFAULT_HOST = "https://gitlab.com";
@@ -148,7 +147,7 @@ function HostForm({
         value={host}
         data-settings-dirty={isDirty}
         onChange={(event) => onHostChange(event.target.value)}
-        className={settingsCredentialClassName()}
+        className="font-mono text-sm"
       />
     </div>
   );
@@ -301,7 +300,7 @@ export function GitLabCredentialsForm(props: GitLabCredentialsFormProps) {
               value={draft.token}
               data-settings-dirty={Boolean(draft.token)}
               onChange={(event) => draft.setToken(event.target.value)}
-              className={settingsCredentialClassName("pr-9")}
+              className="font-mono text-sm pr-9"
               autoComplete="off"
             />
             <button
@@ -440,7 +439,7 @@ function GitLabConnectionCard(props: ConnectionCardProps) {
       icon={<IconBrandGitlab className="h-4 w-4" />}
       action={
         <div className="flex items-center gap-2">
-          <GitLabEnabledControl workspaceId={workspaceId} />
+          <GitLabEnabledControl />
           <Button
             variant="outline"
             size="sm"

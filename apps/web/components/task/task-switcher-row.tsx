@@ -21,7 +21,6 @@ export type TaskRowProps = {
   stepsByWorkflowId?: Record<string, StepDef[]>;
   activeTaskId: string | null;
   selectedTaskId: string | null;
-  showActivityTime?: boolean;
   onSelectTask: (taskId: string) => void;
   onEditTask?: (task: TaskSwitcherItem) => void;
   onRenameTask?: (taskId: string, currentTitle: string) => void;
@@ -92,7 +91,6 @@ type TaskRowItemProps = Pick<
   | "subtaskToggle"
   | "activeTaskId"
   | "selectedTaskId"
-  | "showActivityTime"
   | "onSelectTask"
   | "selectedTaskIds"
   | "onToggleSelectTask"
@@ -109,7 +107,6 @@ function TaskRowItem({
   subtaskToggle,
   activeTaskId,
   selectedTaskId,
-  showActivityTime,
   onSelectTask,
   selectedTaskIds,
   onToggleSelectTask,
@@ -141,7 +138,6 @@ function TaskRowItem({
         )
       }
       title={task.title}
-      autopilot={task.autopilot}
       state={task.state}
       sessionState={task.sessionState}
       foregroundActivity={task.foregroundActivity}
@@ -157,12 +153,9 @@ function TaskRowItem({
       hasPendingClarification={task.hasPendingClarification}
       hasPendingPermission={task.hasPendingPermission}
       updatedAt={task.updatedAt}
-      lastActivityAt={task.lastActivityAt}
-      showActivityTime={showActivityTime}
       repositories={task.repositories}
       prInfo={task.prInfo}
       queuedCount={task.queuedCount}
-      wipQueue={task.wipQueue}
       issueInfo={task.issueInfo}
       agentErrorMessage={task.agentErrorMessage}
       isSubTask={isSubTask}

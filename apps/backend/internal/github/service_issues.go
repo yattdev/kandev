@@ -75,12 +75,7 @@ func (s *Service) createIssueWatch(ctx context.Context, req *CreateIssueWatchReq
 	if err := s.store.CreateIssueWatch(ctx, iw); err != nil {
 		return nil, fmt.Errorf("create issue watch: %w", err)
 	}
-	// Poll in the background off a *copy*: the watch we return is JSON-encoded
-	// by the caller while the check writes LastPolledAt, and sharing the pointer
-	// races on that field. The goroutine persists its own timestamp, and the
-	// returned watch has legitimately not been polled yet.
-	initial := *iw
-	go s.initialIssueCheck(context.Background(), &initial)
+	go s.initialIssueCheck(context.Background(), iw)
 	return iw, nil
 }
 

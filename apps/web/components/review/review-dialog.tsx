@@ -28,7 +28,6 @@ import {
   splitReviewFileKey as splitFileKey,
   suppressAvailableGitlinkFiles,
 } from "./types";
-import { t } from "@/lib/i18n";
 
 /**
  * Multi-repo dedup: keying ReviewFile entries by `path` only collapses
@@ -309,17 +308,17 @@ function useReviewDialogHandlers(opts: ReviewDialogHandlerOptions) {
       try {
         const result = await discard([path], repositoryName);
         if (result.success)
-          toast({ title: t("review:changesDiscarded"), description: path, variant: "success" });
+          toast({ title: "Changes discarded", description: path, variant: "success" });
         else
           toast({
-            title: t("review:discardFailed"),
-            description: result.error || t("common:anErrorOccurred"),
+            title: "Discard failed",
+            description: result.error || "An error occurred",
             variant: "error",
           });
       } catch (e) {
         toast({
-          title: t("review:discardFailed"),
-          description: e instanceof Error ? e.message : t("common:anErrorOccurred"),
+          title: "Discard failed",
+          description: e instanceof Error ? e.message : "An error occurred",
           variant: "error",
         });
       }

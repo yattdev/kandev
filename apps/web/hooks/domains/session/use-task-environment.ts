@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/lib/toast/sonner";
-import { t } from "@/lib/i18n";
 
 import {
   fetchTaskEnvironmentLive,
@@ -102,15 +101,15 @@ export function useTaskEnvironment(taskId: string | null | undefined, active: bo
       setIsResetting(true);
       try {
         await resetTaskEnvironment(taskId, { push_branch: pushBranch });
-        toast.success(t("task:environmentReset"));
+        toast.success("Environment reset");
         lastStatusRef.current = getEnvironmentStatusSnapshot(null, null);
         setEnv(null);
         setContainer(null);
         setSsh(null);
         return true;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : t("task:unknownError");
-        toast.error(t("task:environmentResetFailed", { error: msg }));
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        toast.error(`Reset failed: ${msg}`);
         return false;
       } finally {
         setIsResetting(false);
@@ -133,10 +132,10 @@ function maybeNotifyEnvironmentStatus(
 ) {
   if (!prev || prev.key === next.key) return;
   if (prev.tone === "running" && next.tone !== "running") {
-    toast.error(t("task:executorEnvironmentStopped"), {
-      description: t("task:environmentStateCurrent", { state: next.label }),
+    toast.error("Executor environment stopped", {
+      description: `Current state: ${next.label}`,
     });
   } else if (prev.tone !== "running" && next.tone === "running") {
-    toast.success(t("task:executorEnvironmentRunning"));
+    toast.success("Executor environment running");
   }
 }

@@ -99,7 +99,6 @@ func setupImportHandlers(t *testing.T) (*Handlers, *memWorkflowProvider, *reposi
 	require.NoError(t, err)
 
 	svc := workflowsvc.NewService(repo, testLogger(t))
-	t.Cleanup(func() { _ = svc.Close() })
 	provider := &memWorkflowProvider{}
 	svc.SetWorkflowProvider(provider)
 

@@ -11,7 +11,6 @@ import {
   missingRequiredFields,
   parseConfigSchema,
   serializeConfigValues,
-  type PluginConfigField,
 } from "@/lib/plugins/config-schema";
 import type { PluginRecord } from "@/lib/types/plugins";
 
@@ -33,30 +32,6 @@ function maskSecretsIn(
 }
 
 /**
- * Whether the form is showing a required value that is not stored yet: the key
- * is absent from the config, but buildInitialValues put something persistable
- * in the field (a schema default, or false for a boolean).
- *
- * Those cases are otherwise undirtiable. The displayed value equals its own
- * baseline, so Save never enables and the operator cannot persist the value
- * already in front of them, leaving the list's "Setup required" badge with no
- * way to clear. A required field that is simply blank is excluded: there is
- * nothing to save yet, and the missing-field validation already covers it.
- */
-function hasUnsavedRequiredDefaults(
-  fields: PluginConfigField[],
-  config: Record<string, unknown>,
-  displayed: FormValues,
-): boolean {
-  return fields.some((field) => {
-    if (!field.required) return false;
-    if (Object.prototype.hasOwnProperty.call(config, field.name)) return false;
-    const value = displayed[field.name];
-    return typeof value === "boolean" || (typeof value === "string" && value.trim() !== "");
-  });
-}
-
-/**
  * Load/edit/save state for one plugin's schema-driven settings form.
  * Mirrors use-plugin-actions' local-hook pattern: fetch + toast wiring lives
  * here, the components stay presentational. Saving PATCHes the full config
@@ -67,12 +42,6 @@ export function usePluginConfigForm(plugin: PluginRecord | null) {
   const fields = useMemo(() => parseConfigSchema(plugin?.config_schema), [plugin?.config_schema]);
   const [values, setValues] = useState<FormValues>({});
   const [initialValues, setInitialValues] = useState<FormValues>({});
-  // True when a required key is absent from the stored config while the form
-  // shows a value for it (a schema default, or false for a boolean). Without
-  // this the baseline equals what is displayed, isDirty stays false, and the
-  // operator cannot save the value the form is already showing them: the
-  // "Setup required" badge on the plugin list would have no way to clear.
-  const [requiredKeysUnsaved, setRequiredKeysUnsaved] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -91,7 +60,6 @@ export function usePluginConfigForm(plugin: PluginRecord | null) {
         const initial = buildInitialValues(fields, config);
         setValues(initial);
         setInitialValues(initial);
-        setRequiredKeysUnsaved(hasUnsavedRequiredDefaults(fields, config, initial));
       })
       .catch((err) => {
         if (!cancelled) {
@@ -110,10 +78,8 @@ export function usePluginConfigForm(plugin: PluginRecord | null) {
   }, [pluginId, hasFields]);
 
   const isDirty = useMemo(
-    () =>
-      requiredKeysUnsaved ||
-      fields.some((field) => values[field.name] !== initialValues[field.name]),
-    [fields, values, initialValues, requiredKeysUnsaved],
+    () => fields.some((field) => values[field.name] !== initialValues[field.name]),
+    [fields, values, initialValues],
   );
   const missing = useMemo(() => missingRequiredFields(fields, values), [fields, values]);
 
@@ -147,15 +113,11 @@ export function usePluginConfigForm(plugin: PluginRecord | null) {
       const initial = buildInitialValues(fields, refreshed);
       setValues(initial);
       setInitialValues(initial);
-      setRequiredKeysUnsaved(hasUnsavedRequiredDefaults(fields, refreshed, initial));
       toast.success(t("plugins:settingsSaved"));
     } catch {
       const masked = maskSecretsIn(values, fields);
       setValues(masked);
       setInitialValues(masked);
-      // The PATCH went through, so the required keys are stored even though
-      // the re-read did not come back.
-      setRequiredKeysUnsaved(false);
       toast.warning(t("plugins:settingsSavedReloadFailed"));
     }
     setSaveStatus("success");

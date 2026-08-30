@@ -23,7 +23,6 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/kandev/kandev/internal/agent/agents"
 	agentctl "github.com/kandev/kandev/internal/agent/runtime/agentctl"
 	"github.com/kandev/kandev/internal/common/logger"
 )
@@ -124,9 +123,7 @@ func runSSHCommandStdin(ctx context.Context, client *ssh.Client, cmd string, std
 	}
 	defer func() { _ = session.Close() }()
 
-	// Synchronized because the cancellation path below reads these while
-	// session.Run is still going — see syncBuffer.
-	var outBuf, errBuf syncBuffer
+	var outBuf, errBuf bytes.Buffer
 	session.Stdout = &outBuf
 	session.Stderr = &errBuf
 	if stdin != nil {
@@ -144,34 +141,6 @@ func runSSHCommandStdin(ctx context.Context, client *ssh.Client, cmd string, std
 	case err := <-done:
 		return outBuf.String(), errBuf.String(), err
 	}
-}
-
-// syncBuffer is a bytes.Buffer safe for concurrent use by one writer and one
-// reader. It exists for runSSHCommandStdin's cancellation path: that path
-// returns while session.Run is still executing, so golang.org/x/crypto/ssh's
-// stdout/stderr copier goroutines are still writing into these buffers when we
-// read them — a data race on a plain bytes.Buffer, and one that outlives the
-// call, since the copiers keep writing until the remote command actually ends.
-//
-// Deliberately not an io.ReaderFrom: bytes.Buffer implements ReadFrom, and
-// io.Copy prefers it, which would let the copier reach the underlying buffer
-// without taking the lock. Exposing only Write keeps every mutation guarded.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-// String returns a consistent snapshot of whatever the remote has sent so far.
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
 }
 
 // detectRemoteInfo runs a tiny probe to learn about the host. The support gate
@@ -614,33 +583,26 @@ echo "$AGENTCTL_PID"
 
 const sshAgentctlLogTailLines = 25
 
-func buildSSHCreateInstanceRequest(
-	req *ExecutorCreateRequest,
-	workspacePath string,
-	agentctlBin string,
-) agentctl.CreateInstanceRequest {
+func buildSSHCreateInstanceRequest(req *ExecutorCreateRequest, workspacePath string) agentctl.CreateInstanceRequest {
 	return agentctl.CreateInstanceRequest{
-		ID:                   req.InstanceID,
-		WorkspacePath:        workspacePath,
-		WorkspaceSourceRoots: []string{workspacePath},
-		SessionID:            req.SessionID,
-		TaskID:               req.TaskID,
-		Protocol:             req.Protocol,
-		AgentType:            sshAgentTypeFromReq(req),
+		ID:            req.InstanceID,
+		WorkspacePath: workspacePath,
+		SessionID:     req.SessionID,
+		TaskID:        req.TaskID,
+		Protocol:      req.Protocol,
+		AgentType:     sshAgentTypeFromReq(req),
 		AutoApprovePermissions: autoApprovePermissionsOverride(
 			req.AutoApprovePermissions,
 			req.AutoApprovePermissionsOverride,
 		),
-		McpServers:               req.McpServers,
-		McpMode:                  req.McpMode,
-		McpProviders:             req.McpProviders,
-		McpProfile:               req.McpProfile,
-		RequiresProcessKill:      requiresProcessKillFromReq(req),
-		StripEnv:                 stripEnvFromReq(req),
-		BaseBranches:             getMetadataStringMap(req.Metadata, MetadataKeyBaseBranches),
-		RemoteContributions:      req.RemoteContributions,
-		ContributionDestinations: req.ContributionDestinations,
-		Env:                      sshRemoteContributionEnv(req, agentctlBin),
+		McpServers:          req.McpServers,
+		McpMode:             req.McpMode,
+		McpProviders:        req.McpProviders,
+		RequiresProcessKill: requiresProcessKillFromReq(req),
+		StripEnv:            stripEnvFromReq(req),
+		BaseBranches:        getMetadataStringMap(req.Metadata, MetadataKeyBaseBranches),
+		RemoteContributions: req.RemoteContributions,
+		Env:                 sshRemoteAgentEnv(req),
 	}
 }
 
@@ -655,12 +617,11 @@ func createRemoteAgentInstance(
 	client *ssh.Client,
 	controlPort int,
 	workspacePath string,
-	agentctlBin string,
 	req *ExecutorCreateRequest,
 	authToken string,
 	log *logger.Logger,
 ) (int, error) {
-	body, err := json.Marshal(buildSSHCreateInstanceRequest(req, workspacePath, agentctlBin))
+	body, err := json.Marshal(buildSSHCreateInstanceRequest(req, workspacePath))
 	if err != nil {
 		return 0, fmt.Errorf("ssh: marshal create-instance: %w", err)
 	}
@@ -820,13 +781,6 @@ func sshRemoteAgentEnv(req *ExecutorCreateRequest) map[string]string {
 	// than a GitHub broker lease. Preserve that credential-free routing shape
 	// for the remote agentctl process as well.
 	copyIndexedGitConfig(req.Env, env)
-	if policyAgent, ok := req.AgentConfig.(agents.FilesystemPolicyAgent); ok {
-		if descriptor, supported := policyAgent.FilesystemPolicyDescriptor(); supported && descriptor != nil && descriptor.ConfigEnvKey != "" {
-			if value := req.Env[descriptor.ConfigEnvKey]; value != "" {
-				env[descriptor.ConfigEnvKey] = value
-			}
-		}
-	}
 
 	for _, key := range req.ApprovedSecretEnvKeys {
 		if !posixSSHEnvIdentifier.MatchString(key) {

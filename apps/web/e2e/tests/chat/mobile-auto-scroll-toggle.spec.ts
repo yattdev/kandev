@@ -52,8 +52,6 @@ async function seedOverflowingTask(
 }
 
 test.describe("Mobile transcript auto-scroll toggle", () => {
-  test.describe.configure({ timeout: 120_000 });
-
   test("can be hidden without changing the mobile transcript auto-scroll default", async ({
     testPage,
     apiClient,

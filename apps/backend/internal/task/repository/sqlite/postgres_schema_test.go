@@ -399,12 +399,7 @@ func TestPostgresUpdateSessionContextWindowCountsStrictUsageDrops(t *testing.T) 
 	}
 }
 
-// TestPostgresNormalizeTaskWorktreeOwnershipIsNoOpOnFreshSchema proves the
-// one-time cutover is a no-op on a database that already carries the final
-// schema: the legacy table does not exist, so nothing is normalized and the
-// orphaned session stays untouched (the startup heal
-// healSessionTaskEnvironmentIDs owns that repair on final-schema databases).
-func TestPostgresNormalizeTaskWorktreeOwnershipIsNoOpOnFreshSchema(t *testing.T) {
+func TestPostgresSkipsLegacyTaskEnvironmentBackfill(t *testing.T) {
 	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
 	repo, err := NewWithDB(db, db, nil)
 	if err != nil {
@@ -425,8 +420,8 @@ func TestPostgresNormalizeTaskWorktreeOwnershipIsNoOpOnFreshSchema(t *testing.T)
 		t.Fatalf("insert orphaned session: %v", err)
 	}
 
-	if err := repo.normalizeTaskWorktreeOwnership(); err != nil {
-		t.Fatalf("normalize task worktree ownership: %v", err)
+	if err := repo.backfillTaskEnvironments(); err != nil {
+		t.Fatalf("backfill task environments: %v", err)
 	}
 
 	var count int
@@ -436,22 +431,8 @@ func TestPostgresNormalizeTaskWorktreeOwnershipIsNoOpOnFreshSchema(t *testing.T)
 		t.Fatalf("count task environments: %v", err)
 	}
 	if count != 0 {
-		t.Fatalf("task environment count = %d, want 0 (cutover is a no-op on the final schema)", count)
+		t.Fatalf("task environment count = %d, want 0", count)
 	}
-}
-
-func TestPostgresCutoverHybridNormalizedEnvironmentWithLegacySessionWorktrees(t *testing.T) {
-	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
-	if _, err := NewWithDB(db, db, nil); err != nil {
-		t.Fatalf("seed final postgres schema: %v", err)
-	}
-	seed := seedHybridCutoverState(t, db, "postgres")
-
-	repo, err := NewWithDB(db, db, nil)
-	if err != nil {
-		t.Fatalf("upgrade hybrid postgres schema: %v", err)
-	}
-	assertHybridCutoverResult(t, repo, seed)
 }
 
 func TestPostgresWorkflowHiddenRoundTrip(t *testing.T) {

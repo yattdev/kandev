@@ -1,6 +1,4 @@
-import { createElement } from "react";
 import { pluginRegistry } from "@/lib/plugins/registry";
-import { resolvePluginIcon } from "@/lib/plugins/icons";
 import type { PluginTaskMenuContext } from "@/lib/plugins/types";
 import type { KanbanCardMenuEntry } from "./kanban-card-menu-items";
 type PluginTaskMenuAction = ReturnType<typeof pluginRegistry.getTaskMenuActions>[number];
@@ -43,9 +41,7 @@ export function runnablePluginMenuEntry(
   return {
     kind: "item",
     key: `${keyPrefix}-${action.pluginId}-${action.id}`,
-    icon: action.icon
-      ? createElement(resolvePluginIcon(action.icon), { className: "mr-2 h-4 w-4" })
-      : undefined,
+    icon: action.icon,
     label: action.label,
     disabled,
     onSelect: () => {

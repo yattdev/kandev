@@ -1,15 +1,10 @@
 "use client";
 
-import { CardContent } from "@kandev/ui/card";
+import { CardContent, CardHeader, CardTitle, CardDescription } from "@kandev/ui/card";
+import { Label } from "@kandev/ui/label";
 import { Textarea } from "@kandev/ui/textarea";
 import { SettingsCard } from "@/components/settings/settings-card";
 import { useTranslation } from "react-i18next";
-import { SettingsCardHeader } from "@/components/settings/settings-card-header";
-import {
-  SETTINGS_TYPOGRAPHY,
-  SettingsErrorText,
-  SettingsFieldLabel,
-} from "@/components/settings/settings-typography";
 
 function parseMcpPolicyJson(currentPolicy: string | undefined): Record<string, unknown> {
   try {
@@ -75,24 +70,17 @@ export function McpPolicyCard({
 
   return (
     <SettingsCard isDirty={isDirty} discoveryTargetId={discoveryTargetId}>
-      <SettingsCardHeader
-        title={
-          <span className="flex items-center gap-2">
-            {t("executors:mcpPolicy")}
-            <span
-              className={
-                "rounded-full border border-muted-foreground/30 px-2 py-0.5 uppercase tracking-wide " +
-                SETTINGS_TYPOGRAPHY.meta
-              }
-            >
-              {t("executors:advanced")}
-            </span>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          {t("executors:mcpPolicy")}
+          <span className="rounded-full border border-muted-foreground/30 px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+            {t("executors:advanced")}
           </span>
-        }
-        description={t("executors:mcpPolicyOverridesForProfile")}
-      />
+        </CardTitle>
+        <CardDescription>{t("executors:mcpPolicyOverridesForProfile")}</CardDescription>
+      </CardHeader>
       <CardContent className="space-y-2">
-        <SettingsFieldLabel htmlFor="mcp-policy">{t("executors:mcpPolicyJson")}</SettingsFieldLabel>
+        <Label htmlFor="mcp-policy">{t("executors:mcpPolicyJson")}</Label>
         <Textarea
           id="mcp-policy"
           value={mcpPolicy}
@@ -101,7 +89,7 @@ export function McpPolicyCard({
           rows={8}
           data-settings-dirty={isDirty}
         />
-        {mcpPolicyErrorKey && <SettingsErrorText>{t(mcpPolicyErrorKey)}</SettingsErrorText>}
+        {mcpPolicyErrorKey && <p className="text-xs text-destructive">{t(mcpPolicyErrorKey)}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs font-medium text-muted-foreground">{t("executors:quickPresets")}</p>
           <McpPresetButton

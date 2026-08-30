@@ -12,17 +12,16 @@ import {
   type DiscoveredFile,
 } from "@/lib/api/domains/debug-api";
 import { IconChevronDown, IconChevronRight, IconRefresh } from "@tabler/icons-react";
-import { useTranslation } from "react-i18next";
 
 type ToolFilter = "all" | "tool_edit" | "tool_read" | "tool_execute" | "tool_call";
 type ViewMode = "fixtures" | "events";
 
-const TOOL_TABS: { value: ToolFilter; labelKey: string }[] = [
-  { value: "all", labelKey: "common:all" },
-  { value: "tool_edit", labelKey: "common:edit" },
-  { value: "tool_read", labelKey: "common:read" },
-  { value: "tool_execute", labelKey: "common:execute" },
-  { value: "tool_call", labelKey: "common:call" },
+const TOOL_TABS: { value: ToolFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "tool_edit", label: "Edit" },
+  { value: "tool_read", label: "Read" },
+  { value: "tool_execute", label: "Execute" },
+  { value: "tool_call", label: "Call" },
 ];
 
 function fixtureToMessage(fixture: NormalizedFixture, index: number): Message {
@@ -57,7 +56,6 @@ function fixtureToMessage(fixture: NormalizedFixture, index: number): Message {
 // --- Hooks ---
 
 function useAgentMessages() {
-  const { t } = useTranslation("common");
   const [viewMode, setViewMode] = useState<ViewMode>("events");
   const [fixtureFiles, setFixtureFiles] = useState<DiscoveredFile[]>([]);
   const [selectedFixtureFile, setSelectedFixtureFile] = useState<string>("");
@@ -85,13 +83,14 @@ function useAgentMessages() {
           setSelectedFixtureFile(fixtureFilesData[0].path);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : t("common:demoFailedToLoadFiles"));
+        setError(err instanceof Error ? err.message : "Failed to load files");
       } finally {
         setLoading(false);
       }
     }
     loadFiles();
-  }, [selectedEventFile, selectedFixtureFile, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadFixtures = useCallback(async () => {
     if (!selectedFixtureFile) return;
@@ -101,11 +100,11 @@ function useAgentMessages() {
       const data = await fetchNormalizedMessages(selectedFixtureFile);
       setFixtures(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("common:demoFailedToLoadFixtures"));
+      setError(err instanceof Error ? err.message : "Failed to load fixtures");
     } finally {
       setLoading(false);
     }
-  }, [selectedFixtureFile, t]);
+  }, [selectedFixtureFile]);
 
   const loadMessages = useCallback(async () => {
     if (!selectedEventFile) return;
@@ -115,11 +114,11 @@ function useAgentMessages() {
       const data = await fetchNormalizedEventsAsMessages(selectedEventFile);
       setMessages(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("common:demoFailedToLoadMessages"));
+      setError(err instanceof Error ? err.message : "Failed to load messages");
     } finally {
       setLoading(false);
     }
-  }, [selectedEventFile, t]);
+  }, [selectedEventFile]);
 
   useEffect(() => {
     if (viewMode === "fixtures" && selectedFixtureFile) {
@@ -193,7 +192,6 @@ function JsonPanel({
 }
 
 function FixtureCard({ fixture, index }: { fixture: NormalizedFixture; index: number }) {
-  const { t } = useTranslation("common");
   const message = fixtureToMessage(fixture, index);
 
   return (
@@ -210,15 +208,13 @@ function FixtureCard({ fixture, index }: { fixture: NormalizedFixture; index: nu
         </div>
       </div>
       <div className="p-4 border-b">
-        <div className="text-xs text-muted-foreground mb-2 font-medium">
-          {t("common:demoRenderedOutput")}
-        </div>
+        <div className="text-xs text-muted-foreground mb-2 font-medium">Rendered Output:</div>
         <MessageRenderer comment={message} isTaskDescription={false} taskId="demo-task" />
       </div>
       <div className="p-4 space-y-2">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <JsonPanel title={t("common:demoRawInput")} data={fixture.input} />
-          <JsonPanel title={t("common:demoNormalizedPayload")} data={fixture.payload} />
+          <JsonPanel title="Raw Input" data={fixture.input} />
+          <JsonPanel title="Normalized Payload" data={fixture.payload} />
         </div>
       </div>
     </div>
@@ -226,7 +222,6 @@ function FixtureCard({ fixture, index }: { fixture: NormalizedFixture; index: nu
 }
 
 function MessageCard({ message }: { message: Message }) {
-  const { t } = useTranslation("common");
   const toolName = message.metadata?.tool_name as string | undefined;
   const status = message.metadata?.status as string | undefined;
 
@@ -246,9 +241,7 @@ function MessageCard({ message }: { message: Message }) {
         </div>
       </div>
       <div className="p-4 border-b">
-        <div className="text-xs text-muted-foreground mb-2 font-medium">
-          {t("common:demoRenderedOutput")}
-        </div>
+        <div className="text-xs text-muted-foreground mb-2 font-medium">Rendered Output:</div>
         <MessageRenderer
           comment={message}
           isTaskDescription={false}
@@ -256,7 +249,7 @@ function MessageCard({ message }: { message: Message }) {
         />
       </div>
       <div className="p-4">
-        <JsonPanel title={t("common:demoMessageData")} data={message} />
+        <JsonPanel title="Message Data" data={message} />
       </div>
     </div>
   );
@@ -269,7 +262,6 @@ function ViewModeTabs({
   viewMode: ViewMode;
   setViewMode: (v: ViewMode) => void;
 }) {
-  const { t } = useTranslation("common");
   return (
     <div className="mb-6">
       <div className="flex gap-1 p-1 bg-muted/30 rounded-lg w-fit">
@@ -283,7 +275,7 @@ function ViewModeTabs({
                 : "hover:bg-muted/50 text-muted-foreground"
             }`}
           >
-            {t(mode === "events" ? "common:demoNormalizedEvents" : "common:demoTestFixtures")}
+            {mode === "events" ? "Normalized Events" : "Test Fixtures"}
           </button>
         ))}
       </div>
@@ -306,35 +298,28 @@ function FiltersBar({
   toolFilter: ToolFilter;
   setToolFilter: (v: ToolFilter) => void;
 }) {
-  const { t } = useTranslation("common");
   return (
     <div className="mb-6 space-y-4">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-muted-foreground">
-          {t(viewMode === "events" ? "common:demoEventFile" : "common:demoFixtureFile")}
+          {viewMode === "events" ? "Event File:" : "Fixture File:"}
         </span>
         <select
           value={selectedFile}
           onChange={(e) => setSelectedFile(e.target.value)}
           className="px-3 py-1.5 text-sm rounded-md border bg-background hover:bg-muted/50 transition-colors min-w-[300px]"
         >
-          {currentFiles.length === 0 && <option value="">{t("common:demoNoFilesFound")}</option>}
+          {currentFiles.length === 0 && <option value="">No files found</option>}
           {currentFiles.map((file) => (
             <option key={file.path} value={file.path}>
-              {t("common:demoFileOption", {
-                protocol: file.protocol,
-                agent: file.agent || t("common:unknown"),
-                count: file.message_count,
-              })}
+              {file.protocol} - {file.agent || "unknown"} ({file.message_count} messages)
             </option>
           ))}
         </select>
       </div>
       {viewMode === "fixtures" && (
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-muted-foreground">
-            {t("common:demoToolType")}
-          </span>
+          <span className="text-sm font-medium text-muted-foreground">Tool Type:</span>
           <div className="flex gap-1">
             {TOOL_TABS.map((tab) => (
               <button
@@ -346,7 +331,7 @@ function FiltersBar({
                     : "hover:bg-muted/50"
                 }`}
               >
-                {t(tab.labelKey)}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -371,7 +356,6 @@ function ContentArea({
   filteredFixtures: NormalizedFixture[];
   messages: Message[];
 }) {
-  const { t } = useTranslation("common");
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -383,11 +367,7 @@ function ContentArea({
   if (error) {
     return (
       <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-        <div className="font-medium">
-          {t("common:demoErrorLoading", {
-            mode: t(viewMode === "events" ? "common:demoEvents" : "common:demoFixtures"),
-          })}
-        </div>
+        <div className="font-medium">Error loading {viewMode}</div>
         <div className="text-sm">{error}</div>
       </div>
     );
@@ -396,7 +376,9 @@ function ContentArea({
   if (itemCount === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        {t(viewMode === "events" ? "common:demoNoNormalizedEvents" : "common:demoNoFixtures")}
+        {viewMode === "events"
+          ? "No normalized event files found. Run an agent with KANDEV_DEBUG_AGENT_MESSAGES=1 to generate event logs."
+          : "No fixtures found. Select a fixture file from the dropdown above."}
       </div>
     );
   }
@@ -423,7 +405,6 @@ function ContentArea({
 // --- Page ---
 
 export default function AgentMessagesPage() {
-  const { t } = useTranslation("common");
   const data = useAgentMessages();
 
   return (
@@ -431,17 +412,20 @@ export default function AgentMessagesPage() {
       <div className="max-w-5xl mx-auto">
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="text-2xl font-bold">{t("common:demoAgentMessagesQa")}</h1>
+            <h1 className="text-2xl font-bold">Agent Messages QA</h1>
             <button
               onClick={data.loadContent}
               disabled={data.loading || !data.selectedFile}
               className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border hover:bg-muted/50 disabled:opacity-50 transition-colors"
             >
               <IconRefresh className={`h-4 w-4 ${data.loading ? "animate-spin" : ""}`} />
-              {t("refresh")}
+              Refresh
             </button>
           </div>
-          <p className="text-muted-foreground">{t("common:demoAgentMessagesDescription")}</p>
+          <p className="text-muted-foreground">
+            Visual inspection of agent message normalization. Each card shows the rendered output
+            alongside raw JSON.
+          </p>
         </div>
         <ViewModeTabs viewMode={data.viewMode} setViewMode={data.setViewMode} />
         <FiltersBar
@@ -453,15 +437,8 @@ export default function AgentMessagesPage() {
           setToolFilter={data.setToolFilter}
         />
         <div className="mb-6 text-sm text-muted-foreground">
-          {t(
-            data.viewMode === "events"
-              ? "common:demoShowingMessages"
-              : "common:demoShowingFixtures",
-            {
-              count: data.itemCount,
-              total: data.totalCount,
-            },
-          )}
+          Showing {data.itemCount} of {data.totalCount}{" "}
+          {data.viewMode === "events" ? "messages" : "fixtures"}
         </div>
         <ContentArea
           viewMode={data.viewMode}

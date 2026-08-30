@@ -89,17 +89,11 @@ const createTaskRetryMock = vi.fn(async (buildPayload: (consented: string[]) => 
   return { id: TASK_ID, session_id: "session-1" };
 });
 vi.mock("@/components/task-create-dialog-fresh-branch-consent", () => ({
-  useFreshBranchConsent: (options: {
-    createTask?: (payload: unknown) => Promise<{ id: string; session_id?: string }>;
-  }) => ({
+  useFreshBranchConsent: () => ({
     pendingDiscard: null,
     ensureFreshBranchConsent: vi.fn(async () => []),
-    createTaskWithFreshBranchRetry: (...args: unknown[]) => {
-      const buildPayload = args[0] as (consented: string[]) => unknown;
-      return options.createTask
-        ? options.createTask(buildPayload([]))
-        : createTaskRetryMock(buildPayload);
-    },
+    createTaskWithFreshBranchRetry: (...args: unknown[]) =>
+      createTaskRetryMock(args[0] as (consented: string[]) => unknown),
   }),
 }));
 
@@ -125,7 +119,6 @@ function makeDeps(overrides: Partial<SubmitHandlersDeps>): SubmitHandlersDeps {
   return {
     isSessionMode: false,
     isEditMode: false,
-    autopilot: false,
     isPassthroughProfile: false,
     taskName: "My CLI task",
     workspaceId: "ws-1",
@@ -140,7 +133,6 @@ function makeDeps(overrides: Partial<SubmitHandlersDeps>): SubmitHandlersDeps {
     prInfoByUrl: {
       info: () => undefined,
       loading: () => false,
-      settled: () => true,
       error: () => undefined,
       ensure: () => undefined,
       clear: () => undefined,
@@ -296,28 +288,6 @@ describe("useTaskSubmitHandlers — started task edits", () => {
 });
 
 describe("useTaskSubmitHandlers — handleCreateSubmit (CLI-mode parity)", () => {
-  it("uses the create-mode transport override", async () => {
-    const createTask = vi.fn().mockResolvedValue({ id: TASK_ID, session_id: "session-plugin" });
-    const deps = makeDeps({
-      createTask,
-      descriptionInputRef: makeRef("inspect the pull request"),
-    });
-    const { result } = renderHook(() => useTaskSubmitHandlers(deps));
-
-    await act(async () => {
-      await result.current.handleSubmit({ preventDefault: () => {} } as never);
-    });
-
-    expect(createTask).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workflow_step_id: "step-1",
-        agent_profile_id: "agent-1",
-        executor_id: "exec-1",
-      }),
-    );
-    expect(createTaskRetryMock).not.toHaveBeenCalled();
-  });
-
   it("skips create when prompt is empty even with cli_passthrough=true (prompt is now required)", async () => {
     const deps = makeDeps({
       isPassthroughProfile: true,

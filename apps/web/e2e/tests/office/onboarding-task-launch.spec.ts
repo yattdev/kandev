@@ -1,7 +1,6 @@
 import { type Page } from "@playwright/test";
 import { test as base, expect } from "../../fixtures/test-base";
 import { OfficeApiClient } from "../../helpers/office-api-client";
-import { dwell } from "../../helpers/causal-waits";
 
 /**
  * Regression test: onboarding with a task title must launch the agent
@@ -91,11 +90,7 @@ test.describe("Onboarding task launch", () => {
         return;
       }
 
-      await dwell(
-        1_000,
-        "poll-interval",
-        "sampling interval for the loop above, which asserts an invariant on every iteration (the session must never reach FAILED or CANCELLED before launch); expect.poll would drop that per-iteration guard",
-      );
+      await new Promise((r) => setTimeout(r, 1_000));
     }
 
     expect(

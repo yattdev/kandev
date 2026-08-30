@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/kandev/kandev/internal/agent/agents"
 	agentdto "github.com/kandev/kandev/internal/agent/dto"
@@ -261,6 +260,7 @@ type mockRepository struct {
 	executorsRunning     map[string]*models.ExecutorRunning
 	taskEnvironments     map[string]*models.TaskEnvironment
 	taskEnvironmentRepos map[string][]*models.TaskEnvironmentRepo // env_id → rows
+	sessionWorktrees     []*models.TaskSessionWorktree
 
 	// Optional hook to inject behavior into GetTaskSession (e.g. simulate a
 	// transient DB error); if nil, the default map lookup is used.
@@ -444,7 +444,7 @@ func cloneMockTaskSession(session *models.TaskSession) *models.TaskSession {
 	clone.EnvironmentSnapshot = cloneMockSessionMap(session.EnvironmentSnapshot)
 	clone.RepositorySnapshot = cloneMockSessionMap(session.RepositorySnapshot)
 	if session.Worktrees != nil {
-		clone.Worktrees = make([]*models.TaskEnvironmentRepo, len(session.Worktrees))
+		clone.Worktrees = make([]*models.TaskSessionWorktree, len(session.Worktrees))
 		for i, worktree := range session.Worktrees {
 			if worktree == nil {
 				continue
@@ -555,6 +555,11 @@ func (m *mockRepository) GetExecutor(ctx context.Context, id string) (*models.Ex
 }
 
 func (m *mockRepository) UpsertExecutorRunning(ctx context.Context, running *models.ExecutorRunning) error {
+	return nil
+}
+
+func (m *mockRepository) CreateTaskSessionWorktree(_ context.Context, worktree *models.TaskSessionWorktree) error {
+	m.sessionWorktrees = append(m.sessionWorktrees, worktree)
 	return nil
 }
 
@@ -801,15 +806,7 @@ func (m *mockRepository) GetActiveTurnBySessionID(ctx context.Context, sessionID
 	return nil, nil
 }
 func (m *mockRepository) UpdateTurn(ctx context.Context, turn *models.Turn) error { return nil }
-func (m *mockRepository) PatchTurnMetadata(
-	context.Context,
-	string,
-	string,
-	map[string]interface{},
-) (bool, time.Time, error) {
-	return false, time.Time{}, nil
-}
-func (m *mockRepository) CompleteTurn(ctx context.Context, id string) error { return nil }
+func (m *mockRepository) CompleteTurn(ctx context.Context, id string) error       { return nil }
 func (m *mockRepository) CompletePendingToolCallsForTurn(ctx context.Context, turnID string) (int64, error) {
 	return 0, nil
 }
@@ -928,21 +925,21 @@ func (m *mockRepository) GetLastAgentMessage(_ context.Context, _ string) (strin
 }
 
 // Task Session Worktree operations
-func (m *mockRepository) ListTaskSessionWorktrees(ctx context.Context, sessionID string) ([]*models.TaskEnvironmentRepo, error) {
-	if m.taskEnvironmentRepos == nil {
-		return nil, nil
-	}
-	// Resolve session → environment, then return that environment's repos.
-	for _, session := range m.sessions {
-		if session == nil || session.ID != sessionID {
-			continue
+func (m *mockRepository) ListTaskSessionWorktrees(ctx context.Context, sessionID string) ([]*models.TaskSessionWorktree, error) {
+	var out []*models.TaskSessionWorktree
+	for _, wt := range m.sessionWorktrees {
+		if wt.SessionID == sessionID {
+			out = append(out, wt)
 		}
-		return m.taskEnvironmentRepos[session.TaskEnvironmentID], nil
 	}
-	return nil, nil
+	return out, nil
 }
-func (m *mockRepository) ListWorktreesBySessionIDs(_ context.Context, _ []string) (map[string][]*models.TaskEnvironmentRepo, error) {
-	return make(map[string][]*models.TaskEnvironmentRepo), nil
+func (m *mockRepository) ListWorktreesBySessionIDs(_ context.Context, _ []string) (map[string][]*models.TaskSessionWorktree, error) {
+	return make(map[string][]*models.TaskSessionWorktree), nil
+}
+func (m *mockRepository) DeleteTaskSessionWorktree(ctx context.Context, id string) error { return nil }
+func (m *mockRepository) DeleteTaskSessionWorktreesBySession(ctx context.Context, sessionID string) error {
+	return nil
 }
 
 // Git Snapshot operations
@@ -963,8 +960,8 @@ func (m *mockRepository) GetGitSnapshotsBySession(ctx context.Context, sessionID
 }
 
 // Session Commit operations
-func (m *mockRepository) CreateSessionCommit(ctx context.Context, commit *models.SessionCommit) (bool, error) {
-	return true, nil
+func (m *mockRepository) CreateSessionCommit(ctx context.Context, commit *models.SessionCommit) error {
+	return nil
 }
 func (m *mockRepository) GetSessionCommits(ctx context.Context, sessionID string) ([]*models.SessionCommit, error) {
 	return nil, nil
@@ -1003,7 +1000,7 @@ func (m *mockRepository) ListRepositoryScripts(ctx context.Context, repositoryID
 func (m *mockRepository) ListScriptsByRepositoryIDs(_ context.Context, _ []string) (map[string][]*models.RepositoryScript, error) {
 	return make(map[string][]*models.RepositoryScript), nil
 }
-func (m *mockRepository) GetRepositoryByProviderIdentity(_ context.Context, _ models.ProviderRepositoryIdentity) (*models.Repository, error) {
+func (m *mockRepository) GetRepositoryByProviderInfo(_ context.Context, _, _, _, _, _ string) (*models.Repository, error) {
 	return nil, nil
 }
 func (m *mockRepository) GetRepositoryByLocalPath(_ context.Context, _, _ string) (*models.Repository, error) {

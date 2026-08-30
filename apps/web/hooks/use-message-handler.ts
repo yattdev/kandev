@@ -24,7 +24,6 @@ import {
   deriveSessionInputMode,
   type SessionInputMode,
 } from "./domains/session/session-input-mode";
-import { t } from "@/lib/i18n";
 
 function buildDocumentContext(
   activeDocument: ActiveDocument | null,
@@ -52,7 +51,6 @@ function buildDocumentContext(
     return context;
   }
 
-  // i18n-exempt: agent-facing prompt sent verbatim to the model, never rendered.
   return `\n\n<kandev-system>\nACTIVE DOCUMENT: The user is editing "${activeDocument.name}" (${activeDocument.path}) side-by-side with this chat.\nRead this file to understand the context before responding.\n</kandev-system>`;
 }
 
@@ -63,7 +61,7 @@ function resolveStepTitle(stepId: string, state: AppState): string {
     const found = (snap.steps ?? []).find((s) => s.id === stepId);
     if (found) return found.title;
   }
-  return t("common:step");
+  return "Step";
 }
 
 // Strips characters that could break out of the <kandev-system> block when
@@ -294,8 +292,8 @@ function requireSessionInputMode(state: AppState, selectedSessionId: string): Se
     // nothing session-specific to say.
     const message =
       selectedSession && TERMINAL_SESSION_STATES.has(selectedSession.state)
-        ? t("task:sessionEndedCreateNew")
-        : t("task:sessionNotAvailableForInput");
+        ? "Session has ended. Please create a new session to continue."
+        : "The selected session is not available for input.";
     throw new MessageSendError("session-unavailable", message);
   }
   return inputMode;

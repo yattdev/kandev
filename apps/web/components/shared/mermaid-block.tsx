@@ -61,7 +61,6 @@ function useMermaidRender(
   resolvedTheme: string | undefined,
   toast: ToastFn,
   taskId: string | null,
-  errorTitle: string,
 ) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +105,7 @@ function useMermaidRender(
           // screen — the error banner is also suppressed in that case, so a
           // toast here would surface a failure the user never sees in the UI.
           if (svgRef.current === null) {
-            showMermaidErrorToast(toast, taskId, err.message, errorTitle);
+            showMermaidErrorToast(toast, taskId, err.message);
           }
         });
     }, RENDER_DEBOUNCE_MS);
@@ -115,7 +114,7 @@ function useMermaidRender(
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [code, errorTitle, resolvedTheme, taskId, toast]);
+  }, [code, resolvedTheme, taskId, toast]);
 
   return { svg, error };
 }
@@ -129,13 +128,7 @@ export function MermaidBlock({ code, taskId }: MermaidBlockProps) {
   const [showCode, setShowCode] = useState(false);
   const { resolvedTheme } = useTheme();
   const { toast } = useToast();
-  const { svg, error } = useMermaidRender(
-    code,
-    resolvedTheme,
-    toast,
-    taskId ?? null,
-    t("common:failedToRenderDiagram"),
-  );
+  const { svg, error } = useMermaidRender(code, resolvedTheme, toast, taskId ?? null);
   const viewportWidth = useMermaidViewportWidth(scrollRegionElement);
   const { scale, zoomIn, zoomOut, zoomReset, resetAutoScale } = useMermaidScale(
     svgSize,

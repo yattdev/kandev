@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@kandev/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@kandev/ui/collapsible";
 import { Separator } from "@kandev/ui/separator";
 import { SettingsSection } from "@/components/settings/settings-section";
-import { SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/standalone";
+import { STANDALONE_SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/standalone";
 import { getBackendConfig } from "@/lib/config";
 import { copyToClipboard } from "@/lib/utils/copy-to-clipboard";
 import {
@@ -67,13 +67,13 @@ export function ExternalMcpSettings() {
       <Separator />
 
       <SettingsSection
-        discoveryTargetId={SETTINGS_TARGETS.externalMcpEndpoints}
+        discoveryTargetId={STANDALONE_SETTINGS_TARGETS.externalMcpEndpoints}
         icon={<IconPlugConnected className="h-5 w-5" />}
         title={t("settings:externalMcpEndpoints")}
         // `localhost` is a hostname the user types, not copy. Interpolated so
         // the pseudo-locale leaves it intact — baked into the message it renders
         // as `ĺōćàĺĥōśţ`, a dead pointer to something the reader must reproduce
-        // verbatim. The scheme and host are passed as values so a translator
+        // verbatim. Same reasoning as `voiceUnavailableInsecure`, which already
         // passes its scheme and host as values.
         description={t("settings:externalMcpEndpointsDescription", {
           localhostHost: "localhost",
@@ -153,7 +153,7 @@ function ToolsPreview() {
                 <li key={tool.name} className="flex gap-2 text-xs">
                   <code className="font-mono text-foreground shrink-0">{tool.name}</code>
                   <span className="text-muted-foreground">
-                    : {t(tool.descriptionKey, tool.descriptionValues)}
+                    &mdash; {t(tool.descriptionKey, tool.descriptionValues)}
                   </span>
                 </li>
               ))}
@@ -171,7 +171,6 @@ function ToolsPreview() {
  * locale — the surrounding sentence is the only copy, and it interpolates them
  * so the pseudo-locale cannot turn them into dead pointers.
  */
-// i18n-exempt: third-party product names.
 const SNIPPET_CARDS: Array<{
   title: string;
   build: (streamableUrl: string) => string;
@@ -190,7 +189,6 @@ const SNIPPET_CARDS: Array<{
     build: buildClaudeCodeConfig,
     buildCli: buildClaudeCodeCliCommand,
     cliTarget: "~/.claude.json",
-    // i18n-exempt: third-party product names.
   },
   { title: "Cursor", path: "~/.cursor/mcp.json", build: buildCursorConfig },
   {
@@ -200,7 +198,6 @@ const SNIPPET_CARDS: Array<{
     buildCli: buildCodexCliCommand,
     cliTarget: "~/.codex/config.toml",
   },
-  // i18n-exempt: third-party product names.
   {
     title: "Auggie CLI",
     path: "~/.augment/settings.json",
@@ -216,7 +213,6 @@ const SNIPPET_CARDS: Array<{
       globalPath: "~/.config/opencode/opencode.json",
     },
     build: buildOpenCodeConfig,
-    // i18n-exempt: third-party product names.
   },
   { title: "GitHub Copilot CLI", path: "~/.copilot/mcp-config.json", build: buildCopilotCliConfig },
 ];
@@ -245,7 +241,7 @@ function SnippetsSection({
 
   return (
     <SettingsSection
-      discoveryTargetId={SETTINGS_TARGETS.externalMcpSnippets}
+      discoveryTargetId={STANDALONE_SETTINGS_TARGETS.externalMcpSnippets}
       icon={<IconCode className="h-5 w-5" />}
       title={t("settings:externalMcpSnippets")}
       description={t("settings:externalMcpSnippetsDescription")}

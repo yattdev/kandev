@@ -2,7 +2,6 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { processFile, type FileDiffMetadata } from "@pierre/diffs";
 import { getWebSocketClient } from "@/lib/ws/connection";
 import { requestFileContent, requestFileContentAtRef } from "@/lib/ws/workspace-files";
-import { t } from "@/lib/i18n";
 
 type UseExpandableDiffOptions = {
   sessionId: string | undefined;
@@ -223,7 +222,7 @@ export function useExpandableDiff({
       );
       if (version === requestVersionRef.current) setLoadedContent(content);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : t("task:failedToLoadFileContent");
+      const msg = err instanceof Error ? err.message : "Failed to load file content";
       console.error("[useExpandableDiff]", msg);
       if (version === requestVersionRef.current) setError(msg);
     } finally {

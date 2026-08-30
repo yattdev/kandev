@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 
 	"github.com/kandev/kandev/internal/task/models"
 )
@@ -29,30 +28,24 @@ func (r *Repository) CreateTaskEnvironment(ctx context.Context, env *models.Task
 	env.CreatedAt = now
 	env.UpdatedAt = now
 
-	tx, err := r.db.BeginTxx(ctx, nil)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Serialize environment creation against the task cleanup barrier so a
-	// worktree admitted after inventory capture cannot be missed.
-	if err := r.taskCleanupBarrierLocked(ctx, tx, env.TaskID); err != nil {
-		return err
-	}
-
 	if _, err := tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_environments (
-			id, task_id, executor_type, executor_id, executor_profile_id,
+			id, task_id, repository_id, executor_type, executor_id, executor_profile_id,
 			control_port, status,
-			workspace_path,
+			worktree_id, worktree_path, worktree_branch, workspace_path,
 			container_id, sandbox_id, task_dir_name,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`),
-		env.ID, env.TaskID, env.ExecutorType, env.ExecutorID, env.ExecutorProfileID,
+		env.ID, env.TaskID, env.RepositoryID, env.ExecutorType, env.ExecutorID, env.ExecutorProfileID,
 		env.ControlPort, string(env.Status),
-		env.WorkspacePath,
+		env.WorktreeID, env.WorktreePath, env.WorktreeBranch, env.WorkspacePath,
 		env.ContainerID, env.SandboxID, env.TaskDirName,
 		env.CreatedAt, env.UpdatedAt,
 	); err != nil {
@@ -75,16 +68,16 @@ func (r *Repository) GetTaskEnvironment(ctx context.Context, id string) (*models
 	var status string
 
 	err := r.ro.QueryRowContext(ctx, r.ro.Rebind(`
-		SELECT id, task_id, executor_type, executor_id, executor_profile_id,
+		SELECT id, task_id, repository_id, executor_type, executor_id, executor_profile_id,
 			control_port, status,
-			workspace_path,
+			worktree_id, worktree_path, worktree_branch, workspace_path,
 			container_id, sandbox_id, COALESCE(task_dir_name, ''),
 			created_at, updated_at
 		FROM task_environments WHERE id = ?
 	`), id).Scan(
-		&env.ID, &env.TaskID, &env.ExecutorType, &env.ExecutorID, &env.ExecutorProfileID,
+		&env.ID, &env.TaskID, &env.RepositoryID, &env.ExecutorType, &env.ExecutorID, &env.ExecutorProfileID,
 		&env.ControlPort, &status,
-		&env.WorkspacePath,
+		&env.WorktreeID, &env.WorktreePath, &env.WorktreeBranch, &env.WorkspacePath,
 		&env.ContainerID, &env.SandboxID, &env.TaskDirName,
 		&env.CreatedAt, &env.UpdatedAt,
 	)
@@ -111,16 +104,16 @@ func (r *Repository) GetTaskEnvironmentByTaskID(ctx context.Context, taskID stri
 	var status string
 
 	err := r.ro.QueryRowContext(ctx, r.ro.Rebind(`
-		SELECT id, task_id, executor_type, executor_id, executor_profile_id,
+		SELECT id, task_id, repository_id, executor_type, executor_id, executor_profile_id,
 			control_port, status,
-			workspace_path,
+			worktree_id, worktree_path, worktree_branch, workspace_path,
 			container_id, sandbox_id, COALESCE(task_dir_name, ''),
 			created_at, updated_at
 		FROM task_environments WHERE task_id = ? ORDER BY created_at DESC LIMIT 1
 	`), taskID).Scan(
-		&env.ID, &env.TaskID, &env.ExecutorType, &env.ExecutorID, &env.ExecutorProfileID,
+		&env.ID, &env.TaskID, &env.RepositoryID, &env.ExecutorType, &env.ExecutorID, &env.ExecutorProfileID,
 		&env.ControlPort, &status,
-		&env.WorkspacePath,
+		&env.WorktreeID, &env.WorktreePath, &env.WorktreeBranch, &env.WorkspacePath,
 		&env.ContainerID, &env.SandboxID, &env.TaskDirName,
 		&env.CreatedAt, &env.UpdatedAt,
 	)
@@ -153,16 +146,16 @@ func (r *Repository) UpdateTaskEnvironment(ctx context.Context, env *models.Task
 
 	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_environments SET
-			executor_type = ?, executor_id = ?, executor_profile_id = ?,
+			repository_id = ?, executor_type = ?, executor_id = ?, executor_profile_id = ?,
 			control_port = ?, status = ?,
-			workspace_path = ?,
+			worktree_id = ?, worktree_path = ?, worktree_branch = ?, workspace_path = ?,
 			container_id = ?, sandbox_id = ?, task_dir_name = ?,
 			updated_at = ?
 		WHERE id = ?
 	`),
-		env.ExecutorType, env.ExecutorID, env.ExecutorProfileID,
+		env.RepositoryID, env.ExecutorType, env.ExecutorID, env.ExecutorProfileID,
 		env.ControlPort, string(env.Status),
-		env.WorkspacePath,
+		env.WorktreeID, env.WorktreePath, env.WorktreeBranch, env.WorkspacePath,
 		env.ContainerID, env.SandboxID, env.TaskDirName,
 		env.UpdatedAt,
 		env.ID,
@@ -218,9 +211,7 @@ func (r *Repository) DeleteTaskEnvironmentsByTask(ctx context.Context, taskID st
 	return err
 }
 
-// CreateTaskEnvironmentRepo inserts a single per-repo environment row. The
-// owning task is resolved through the environment and serialized against the
-// task cleanup barrier before the insert commits.
+// CreateTaskEnvironmentRepo inserts a single per-repo environment row.
 func (r *Repository) CreateTaskEnvironmentRepo(ctx context.Context, repo *models.TaskEnvironmentRepo) error {
 	if repo.TaskEnvironmentID == "" {
 		return fmt.Errorf("task_environment_id is required")
@@ -228,49 +219,29 @@ func (r *Repository) CreateTaskEnvironmentRepo(ctx context.Context, repo *models
 	if repo.RepositoryID == "" {
 		return fmt.Errorf("repository_id is required")
 	}
-	tx, err := r.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var taskID string
-	if err := tx.QueryRowContext(ctx, r.db.Rebind(`
-		SELECT task_id FROM task_environments WHERE id = ?`), repo.TaskEnvironmentID).Scan(&taskID); err != nil {
-		return fmt.Errorf("resolve environment owner %s: %w", repo.TaskEnvironmentID, err)
-	}
-	if err := r.taskCleanupBarrierLocked(ctx, tx, taskID); err != nil {
-		return err
-	}
-
 	if repo.ID == "" {
 		repo.ID = uuid.New().String()
 	}
 	now := time.Now().UTC()
 	repo.CreatedAt = now
 	repo.UpdatedAt = now
-	if repo.Status == "" {
-		repo.Status = worktreeRepoStatusActive
-	}
 
-	if _, err := tx.ExecContext(ctx, r.db.Rebind(`
+	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_environment_repos (
 			id, task_environment_id, repository_id, branch_slug,
 			worktree_id, worktree_path, worktree_branch,
-			position, error_message, status, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			position, error_message, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`),
 		repo.ID, repo.TaskEnvironmentID, repo.RepositoryID, repo.BranchSlug,
 		repo.WorktreeID, repo.WorktreePath, repo.WorktreeBranch,
-		repo.Position, repo.ErrorMessage, repo.Status, repo.CreatedAt, repo.UpdatedAt,
-	); err != nil {
-		return err
-	}
-	return tx.Commit()
+		repo.Position, repo.ErrorMessage, repo.CreatedAt, repo.UpdatedAt,
+	)
+	return err
 }
 
 // insertTaskEnvironmentRepoTx is the in-transaction variant of CreateTaskEnvironmentRepo.
-func (r *Repository) insertTaskEnvironmentRepoTx(ctx context.Context, tx *sqlx.Tx, repo *models.TaskEnvironmentRepo) error {
+func (r *Repository) insertTaskEnvironmentRepoTx(ctx context.Context, tx *sql.Tx, repo *models.TaskEnvironmentRepo) error {
 	if repo.RepositoryID == "" {
 		return fmt.Errorf("repository_id is required")
 	}
@@ -280,20 +251,17 @@ func (r *Repository) insertTaskEnvironmentRepoTx(ctx context.Context, tx *sqlx.T
 	now := time.Now().UTC()
 	repo.CreatedAt = now
 	repo.UpdatedAt = now
-	if repo.Status == "" {
-		repo.Status = worktreeRepoStatusActive
-	}
 
 	_, err := tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_environment_repos (
 			id, task_environment_id, repository_id, branch_slug,
 			worktree_id, worktree_path, worktree_branch,
-			position, error_message, status, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			position, error_message, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`),
 		repo.ID, repo.TaskEnvironmentID, repo.RepositoryID, repo.BranchSlug,
 		repo.WorktreeID, repo.WorktreePath, repo.WorktreeBranch,
-		repo.Position, repo.ErrorMessage, repo.Status, repo.CreatedAt, repo.UpdatedAt,
+		repo.Position, repo.ErrorMessage, repo.CreatedAt, repo.UpdatedAt,
 	)
 	return err
 }
@@ -304,8 +272,7 @@ func (r *Repository) ListTaskEnvironmentRepos(ctx context.Context, envID string)
 		SELECT id, task_environment_id, repository_id,
 			COALESCE(branch_slug, ''),
 			worktree_id, worktree_path, worktree_branch,
-			position, error_message, COALESCE(status, ''),
-			created_at, updated_at, merged_at, deleted_at
+			position, error_message, created_at, updated_at
 		FROM task_environment_repos
 		WHERE task_environment_id = ?
 		ORDER BY position ASC, created_at ASC
@@ -318,23 +285,13 @@ func (r *Repository) ListTaskEnvironmentRepos(ctx context.Context, envID string)
 	var out []*models.TaskEnvironmentRepo
 	for rows.Next() {
 		repo := &models.TaskEnvironmentRepo{}
-		var mergedAt, deletedAt sql.NullTime
 		if err := rows.Scan(
 			&repo.ID, &repo.TaskEnvironmentID, &repo.RepositoryID,
 			&repo.BranchSlug,
 			&repo.WorktreeID, &repo.WorktreePath, &repo.WorktreeBranch,
-			&repo.Position, &repo.ErrorMessage, &repo.Status,
-			&repo.CreatedAt, &repo.UpdatedAt, &mergedAt, &deletedAt,
+			&repo.Position, &repo.ErrorMessage, &repo.CreatedAt, &repo.UpdatedAt,
 		); err != nil {
 			return nil, err
-		}
-		if mergedAt.Valid {
-			t := mergedAt.Time
-			repo.MergedAt = &t
-		}
-		if deletedAt.Valid {
-			t := deletedAt.Time
-			repo.DeletedAt = &t
 		}
 		out = append(out, repo)
 	}
@@ -349,13 +306,11 @@ func (r *Repository) UpdateTaskEnvironmentRepo(ctx context.Context, repo *models
 		UPDATE task_environment_repos SET
 			branch_slug = ?,
 			worktree_id = ?, worktree_path = ?, worktree_branch = ?,
-			position = ?, error_message = ?, status = ?,
-			merged_at = ?, deleted_at = ?, updated_at = ?
+			position = ?, error_message = ?, updated_at = ?
 		WHERE id = ?
 	`),
 		repo.BranchSlug, repo.WorktreeID, repo.WorktreePath, repo.WorktreeBranch,
-		repo.Position, repo.ErrorMessage, repo.Status,
-		repo.MergedAt, repo.DeletedAt, repo.UpdatedAt,
+		repo.Position, repo.ErrorMessage, repo.UpdatedAt,
 		repo.ID,
 	)
 	if err != nil {

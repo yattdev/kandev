@@ -49,8 +49,6 @@ func (r *sqliteRepository) initSchema() error {
 			prompt TEXT NOT NULL,
 			agent_id TEXT NOT NULL DEFAULT 'claude-acp',
 			model TEXT NOT NULL DEFAULT '',
-			agent_profile_id TEXT NOT NULL DEFAULT '',
-			profile_binding_state TEXT NOT NULL DEFAULT 'explicit',
 			builtin INTEGER NOT NULL DEFAULT 0,
 			enabled INTEGER NOT NULL DEFAULT 1,
 			created_at TIMESTAMP NOT NULL,
@@ -64,7 +62,6 @@ func (r *sqliteRepository) initSchema() error {
 			resolved_prompt TEXT NOT NULL DEFAULT '',
 			response TEXT NOT NULL DEFAULT '',
 			model TEXT NOT NULL DEFAULT '',
-			agent_profile_id TEXT NOT NULL DEFAULT '',
 			prompt_tokens INTEGER NOT NULL DEFAULT 0,
 			response_tokens INTEGER NOT NULL DEFAULT 0,
 			duration_ms INTEGER NOT NULL DEFAULT 0,
@@ -85,9 +82,6 @@ func (r *sqliteRepository) initSchema() error {
 
 	// Add enabled column if it doesn't exist (migration for existing DBs)
 	_, _ = r.db.Exec(`ALTER TABLE utility_agents ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`)
-	_, _ = r.db.Exec(`ALTER TABLE utility_agents ADD COLUMN agent_profile_id TEXT NOT NULL DEFAULT ''`)
-	_, _ = r.db.Exec(`ALTER TABLE utility_agents ADD COLUMN profile_binding_state TEXT NOT NULL DEFAULT 'explicit'`)
-	_, _ = r.db.Exec(`ALTER TABLE utility_agent_calls ADD COLUMN agent_profile_id TEXT NOT NULL DEFAULT ''`)
 
 	// Heal pre-existing custom agents that were created with enabled=0 due
 	// to a bug in CreateAgent (the Enabled field on the model defaulted to
@@ -164,7 +158,7 @@ func (r *sqliteRepository) Close() error {
 
 func (r *sqliteRepository) ListAgents(ctx context.Context) ([]*models.UtilityAgent, error) {
 	rows, err := r.ro.QueryContext(ctx, `
-		SELECT id, name, description, prompt, agent_id, model, agent_profile_id, profile_binding_state, builtin, enabled, created_at, updated_at
+		SELECT id, name, description, prompt, agent_id, model, builtin, enabled, created_at, updated_at
 		FROM utility_agents
 		ORDER BY builtin DESC, name ASC
 	`)
@@ -183,7 +177,7 @@ func (r *sqliteRepository) scanAgentRows(rows *sql.Rows) ([]*models.UtilityAgent
 		var builtinInt, enabledInt int
 		if err := rows.Scan(
 			&agent.ID, &agent.Name, &agent.Description, &agent.Prompt,
-			&agent.AgentID, &agent.Model, &agent.AgentProfileID, &agent.ProfileBindingState, &builtinInt, &enabledInt,
+			&agent.AgentID, &agent.Model, &builtinInt, &enabledInt,
 			&agent.CreatedAt, &agent.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -197,7 +191,7 @@ func (r *sqliteRepository) scanAgentRows(rows *sql.Rows) ([]*models.UtilityAgent
 
 func (r *sqliteRepository) GetAgentByID(ctx context.Context, id string) (*models.UtilityAgent, error) {
 	row := r.ro.QueryRowContext(ctx, r.ro.Rebind(`
-		SELECT id, name, description, prompt, agent_id, model, agent_profile_id, profile_binding_state, builtin, enabled, created_at, updated_at
+		SELECT id, name, description, prompt, agent_id, model, builtin, enabled, created_at, updated_at
 		FROM utility_agents WHERE id = ?
 	`), id)
 	return r.scanAgentRow(row)
@@ -205,7 +199,7 @@ func (r *sqliteRepository) GetAgentByID(ctx context.Context, id string) (*models
 
 func (r *sqliteRepository) GetAgentByName(ctx context.Context, name string) (*models.UtilityAgent, error) {
 	row := r.ro.QueryRowContext(ctx, r.ro.Rebind(`
-		SELECT id, name, description, prompt, agent_id, model, agent_profile_id, profile_binding_state, builtin, enabled, created_at, updated_at
+		SELECT id, name, description, prompt, agent_id, model, builtin, enabled, created_at, updated_at
 		FROM utility_agents WHERE name = ?
 	`), name)
 	return r.scanAgentRow(row)
@@ -216,7 +210,7 @@ func (r *sqliteRepository) scanAgentRow(row *sql.Row) (*models.UtilityAgent, err
 	var builtinInt, enabledInt int
 	if err := row.Scan(
 		&agent.ID, &agent.Name, &agent.Description, &agent.Prompt,
-		&agent.AgentID, &agent.Model, &agent.AgentProfileID, &agent.ProfileBindingState, &builtinInt, &enabledInt,
+		&agent.AgentID, &agent.Model, &builtinInt, &enabledInt,
 		&agent.CreatedAt, &agent.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -248,10 +242,10 @@ func (r *sqliteRepository) CreateAgent(ctx context.Context, agent *models.Utilit
 	}
 
 	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
-		INSERT INTO utility_agents (id, name, description, prompt, agent_id, model, agent_profile_id, profile_binding_state, builtin, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO utility_agents (id, name, description, prompt, agent_id, model, builtin, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`), agent.ID, agent.Name, agent.Description, agent.Prompt, agent.AgentID, agent.Model,
-		agent.AgentProfileID, agent.ProfileBindingState, builtinInt, enabledInt, agent.CreatedAt, agent.UpdatedAt)
+		builtinInt, enabledInt, agent.CreatedAt, agent.UpdatedAt)
 	return err
 }
 
@@ -271,26 +265,10 @@ func (r *sqliteRepository) UpdateAgent(ctx context.Context, agent *models.Utilit
 
 	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
 		UPDATE utility_agents
-		SET name = ?, description = ?, prompt = ?, agent_id = ?, model = ?, agent_profile_id = ?, profile_binding_state = ?, enabled = ?, updated_at = ?
+		SET name = ?, description = ?, prompt = ?, agent_id = ?, model = ?, enabled = ?, updated_at = ?
 		WHERE id = ?
-	`), agent.Name, agent.Description, agent.Prompt, agent.AgentID, agent.Model, agent.AgentProfileID, agent.ProfileBindingState, enabledInt, agent.UpdatedAt, agent.ID)
+	`), agent.Name, agent.Description, agent.Prompt, agent.AgentID, agent.Model, enabledInt, agent.UpdatedAt, agent.ID)
 	return err
-}
-
-func (r *sqliteRepository) NormalizeEmptyBuiltinBinding(ctx context.Context, id string) (bool, error) {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
-		UPDATE utility_agents
-		SET profile_binding_state = ?, updated_at = ?
-		WHERE id = ? AND builtin = 1 AND agent_profile_id = '' AND profile_binding_state = ?
-	`), models.ProfileBindingInherit, time.Now().UTC(), id, models.ProfileBindingUnconfigured)
-	if err != nil {
-		return false, err
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	return rows == 1, nil
 }
 
 func (r *sqliteRepository) DeleteAgent(ctx context.Context, id string) error {
@@ -303,7 +281,7 @@ func (r *sqliteRepository) ListCalls(ctx context.Context, utilityID string, limi
 		limit = 50
 	}
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
-		SELECT id, utility_id, session_id, resolved_prompt, response, model, agent_profile_id, prompt_tokens, response_tokens, duration_ms, status, error_message, created_at, completed_at
+		SELECT id, utility_id, session_id, resolved_prompt, response, model, prompt_tokens, response_tokens, duration_ms, status, error_message, created_at, completed_at
 		FROM utility_agent_calls
 		WHERE utility_id = ?
 		ORDER BY created_at DESC
@@ -323,7 +301,7 @@ func (r *sqliteRepository) scanCallRows(rows *sql.Rows) ([]*models.UtilityAgentC
 		call := &models.UtilityAgentCall{}
 		if err := rows.Scan(
 			&call.ID, &call.UtilityID, &call.SessionID, &call.ResolvedPrompt, &call.Response,
-			&call.Model, &call.AgentProfileID, &call.PromptTokens, &call.ResponseTokens, &call.DurationMs,
+			&call.Model, &call.PromptTokens, &call.ResponseTokens, &call.DurationMs,
 			&call.Status, &call.ErrorMessage, &call.CreatedAt, &call.CompletedAt,
 		); err != nil {
 			return nil, err
@@ -335,13 +313,13 @@ func (r *sqliteRepository) scanCallRows(rows *sql.Rows) ([]*models.UtilityAgentC
 
 func (r *sqliteRepository) GetCallByID(ctx context.Context, id string) (*models.UtilityAgentCall, error) {
 	row := r.ro.QueryRowContext(ctx, r.ro.Rebind(`
-		SELECT id, utility_id, session_id, resolved_prompt, response, model, agent_profile_id, prompt_tokens, response_tokens, duration_ms, status, error_message, created_at, completed_at
+		SELECT id, utility_id, session_id, resolved_prompt, response, model, prompt_tokens, response_tokens, duration_ms, status, error_message, created_at, completed_at
 		FROM utility_agent_calls WHERE id = ?
 	`), id)
 	call := &models.UtilityAgentCall{}
 	if err := row.Scan(
 		&call.ID, &call.UtilityID, &call.SessionID, &call.ResolvedPrompt, &call.Response,
-		&call.Model, &call.AgentProfileID, &call.PromptTokens, &call.ResponseTokens, &call.DurationMs,
+		&call.Model, &call.PromptTokens, &call.ResponseTokens, &call.DurationMs,
 		&call.Status, &call.ErrorMessage, &call.CreatedAt, &call.CompletedAt,
 	); err != nil {
 		return nil, err
@@ -361,10 +339,10 @@ func (r *sqliteRepository) CreateCall(ctx context.Context, call *models.UtilityA
 	}
 
 	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
-		INSERT INTO utility_agent_calls (id, utility_id, session_id, resolved_prompt, response, model, agent_profile_id, prompt_tokens, response_tokens, duration_ms, status, error_message, created_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO utility_agent_calls (id, utility_id, session_id, resolved_prompt, response, model, prompt_tokens, response_tokens, duration_ms, status, error_message, created_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`), call.ID, call.UtilityID, call.SessionID, call.ResolvedPrompt, call.Response,
-		call.Model, call.AgentProfileID, call.PromptTokens, call.ResponseTokens, call.DurationMs,
+		call.Model, call.PromptTokens, call.ResponseTokens, call.DurationMs,
 		call.Status, call.ErrorMessage, call.CreatedAt, call.CompletedAt)
 	return err
 }
@@ -375,9 +353,9 @@ func (r *sqliteRepository) UpdateCall(ctx context.Context, call *models.UtilityA
 	}
 	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
 		UPDATE utility_agent_calls
-		SET response = ?, model = ?, agent_profile_id = ?, prompt_tokens = ?, response_tokens = ?, duration_ms = ?, status = ?, error_message = ?, completed_at = ?
+		SET response = ?, model = ?, prompt_tokens = ?, response_tokens = ?, duration_ms = ?, status = ?, error_message = ?, completed_at = ?
 		WHERE id = ?
-	`), call.Response, call.Model, call.AgentProfileID, call.PromptTokens, call.ResponseTokens, call.DurationMs,
+	`), call.Response, call.Model, call.PromptTokens, call.ResponseTokens, call.DurationMs,
 		call.Status, call.ErrorMessage, call.CompletedAt, call.ID)
 	return err
 }

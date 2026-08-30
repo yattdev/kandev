@@ -83,11 +83,6 @@ Choose a workspace mode:
 
 The context choices are **Blank**, **Copy initial prompt**, and, when a utility agent is configured, **Summarize session**. Context supplies background; it does not create a shared conversation. Attachments and prompt enhancement are also available.
 
-The subtask dialog includes an optional **Autopilot** switch. Use the info control
-beside it for help: the child works independently and asks its parent only when a
-critical decision blocks progress. The top-level task dialog does not show this
-switch; use `create_task_kandev` when you need an autopilot root task.
-
 The subtask dialog currently does not enforce agent/executor credential compatibility. For an isolated multi-repository subtask, choose **Worktree**, **Local Docker**, **SSH**, or **Sprites**; Local/Local PC creation remains gated and Remote Docker is not implemented. For every subtask, choose an agent profile configured on the inherited or selected executor; otherwise creation can succeed while agent launch or repository materialization fails.
 
 Regular Kanban allows one subtask level: a root task can have children, but a child cannot have another child. Split further work into sibling subtasks, additional sessions, or a separate top-level task. Arbitrary-depth trees belong to the in-progress Office surface.
@@ -103,7 +98,6 @@ Detaching changes task hierarchy only. An inherited workspace remains shared wit
 Call `create_task_kandev` with `parent_id: "self"`. `workspace_mode` defaults to `inherit_parent`; set it to `new_workspace` for isolated materialization.
 
 - `start_agent` defaults to `true`. Supply a detailed `prompt` when it is true; if omitted, Kandev still starts the agent without task-specific instructions. Set it to `false` for a placeholder task.
-- `autopilot` defaults to `false`. Set it to `true` to start an autonomous task. This choice is immutable and is not inherited by subtasks. An autopilot child receives `ask_parent_question_kandev` instead of `ask_user_question_kandev`; an autopilot root receives neither question tool. See [Agent Communication](agent-communication.md#autopilot-parent-questions) for the answer protocol.
 - The tool inherits the parent workspace, workflow, profile, executor, repositories, and base branches unless overridden.
 - Inherited repository attachments deliberately do not copy an explicit checkout branch.
 - An explicit same-repository child uses the inherited base branch. An explicit cross-repository child defaults to that repository's default branch unless `base_branch` is supplied.
@@ -126,9 +120,7 @@ For predictable top-level creation, pass `repository_url`, `repository_id`, or `
 | Created but not started     | Starts the session with the message.      |
 | Failed or cancelled         | Returns an error.                         |
 
-The default delivery mode is queued. Each session accepts 10 queued messages by default. An admin can change the install-wide limit under **Settings > Task Behavior > Message Queue**; `0` means unlimited. The saved value applies immediately to new admissions without removing messages already waiting. `KANDEV_QUEUE_MAX_PER_SESSION` has higher precedence, locks only the capacity field, and requires a restart when changed; zero or a negative value means unlimited. Only one queued message drains per agent turn. When the cap is reached, the sender receives a structured `queue_full` error and should retry after space becomes available.
-
-**Automatically merge consecutive messages** is enabled by default on the same settings card. After capacity admission succeeds, a new message may fold into the immediately preceding pending entry when both have the same strict source and compatible task, model, mode, metadata, attachments, and references. Otherwise it remains a separate FIFO entry. The earlier entry survives, so a successful admission may return an older queue-entry ID. The switch affects only later admissions and never sweeps rows already waiting. It is independent from **Enable queued message merging**, which controls the manual **Merge with above** action.
+The default delivery mode is queued. Each session accepts 10 queued messages by default. An admin can change the install-wide limit under **Settings > General > Message Queue**; `0` means unlimited. The saved value applies immediately to new admissions without removing messages already waiting. `KANDEV_QUEUE_MAX_PER_SESSION` has higher precedence, locks the UI field, and requires a restart when changed; zero or a negative value means unlimited. Only one queued message drains per agent turn. When the cap is reached, the sender receives a structured `queue_full` error and should retry after space becomes available.
 
 In the task workbench, expand the queue chip to manage pending messages. Every visible pending row has **Remove**, whether it came from a user, another agent, workflow automation, or a server action. **Clear all** removes all visible pending rows in that session and releases their capacity. After removal, merge, or drain, displayed positions compact to `#1` through `#N` while FIFO order stays unchanged. Provenance still matters for editing and merging: only user-origin content can be edited. A row already reserved for delivery is hidden from the panel and cannot be cancelled there.
 
@@ -159,19 +151,16 @@ After at least one accepted stop, Kandev attempts to move a regular, unarchived,
 
 Stopping preserves the task record, worktrees, environments, commits, descendants, and existing queued messages. It sends no prompt, creates no replacement turn, and does not create a durable pause: a later user or workflow action can start the task again.
 
-A cancelled session is terminal, so `message_task_kandev` cannot restart the child through it. To put a stopped child back to work, call `spawn_session_kandev` with the new prompt: it creates a fresh session on the same task and workspace, preserving the worktree and history.
-
 Additional messaging boundaries:
 
 - A task cannot message its own primary session through the default route, and a session cannot message itself.
-- The default route targets the primary session, falling back to the newest session that can still take a message when the primary is cancelled or failed. A session named by `session_id` is never redirected.
 - Normal targeted messages can cross workspaces when the sender has the exact task ID. Session spawning cannot.
 - Sender metadata and content become part of the target conversation. Do not send secrets.
 - Use bounded requests with the repository, branch, expected result, and reply target instead of treating messages as shared memory.
 
 Use `get_task_conversation_kandev` to read a primary or explicit session conversation. It supports limits, before/after cursors, ascending or descending order, and message-type filters. When a task has more than one session, use `list_task_sessions_kandev` to list them (newest first, flagging the primary and your own) and pass the `session_id` you want. Use `list_related_tasks_kandev` for the current or another same-workspace task to list its parent, direct children, siblings, stored blocker relationships, and associated GitHub pull requests.
 
-Replies close the loop: the receiving agent calls `message_task_kandev` back with the originating task's ID, turning a one-way notification into a genuine bidirectional conversation. This enables multi-turn negotiations between agents, for example, agreeing on an API contract before both sides implement. See [Agent Communication](agent-communication.md) for delivery semantics, discovery patterns, and a worked negotiation example.
+Replies close the loop: the receiving agent calls `message_task_kandev` back with the originating task's ID, turning a one-way notification into a genuine bidirectional conversation. This enables multi-turn negotiations between agents — for example, agreeing on an API contract before both sides implement. See [Agent Communication](agent-communication.md) for delivery semantics, discovery patterns, and a worked negotiation example.
 
 ## Wait for child tasks
 
@@ -226,11 +215,9 @@ record may not carry over. This intentional restart is not reported as an agent 
 
 That host rebind stops open task terminals, dev servers, the task editor server, and other
 agentctl-managed workspace processes. Save unsaved work first, then reopen or restart those
-processes after attachment. Local Docker, SSH, and Sprites clone the new repository independently
-in every live executor workspace. Kandev pauses the agent, verifies the exact task-owned checkout
-set, then restores the agent with the expanded workspace. If that verification or restoration fails,
-the attachment is rejected and the prior session is restored; if it cannot be restored safely, the
-session remains stopped and asks you to start a new one.
+processes after attachment. Local Docker, SSH, and Sprites instead clone the new repository under
+the current remote workspace and rescan it without changing the agent CWD or restarting the agent
+and workspace processes.
 
 Task agents can call `add_workspace_sources_kandev` with the same mixed batch; `task_id` defaults to the current task, and the operation remains idle-only. `add_branch_to_task_kandev` is the Worktree-only legacy one-repository/branch path and may run during an active turn: it creates a sibling worktree under the task directory, promotes the Files root to that parent, and rescans without restarting the agent, terminals, or workspace processes. Its `worktree_path` is the exact new location, `task_workspace_path` is the Files root, and `agent_cwd_changed` is always `false`; the agent's current directory stays unchanged.
 

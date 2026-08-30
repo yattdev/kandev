@@ -72,60 +72,18 @@ Kandev fails closed before provisioning when a repository binding is missing, de
 
 SSH has an additional forwarding boundary. Remote agent and terminal instances receive the managed credential allowlist plus the repository keys explicitly approved by these bindings. Arbitrary host, request, or unrelated executor-profile variables are not forwarded to the remote process.
 
-### Portable agent configuration
-
-Local Docker, SSH, and Sprites profiles can copy selected agent configuration
-bundles. Open an agent row in the remote credentials settings to choose that
-agent's authentication files and configuration bundles independently.
-Kandev owns the allowlist. You cannot enter an arbitrary host path or copy a
-complete agent home.
-
-Kandev copies each selected file without changes. A file can contain secrets,
-environment values, hooks, commands, model settings, permissions, MCP servers,
-endpoints, or host paths that do not work in the executor. A fresh provision or
-**Reset Environment** can replace the target file. A warm resume keeps the
-existing executor file and does not read the host again.
-
-Each file is limited to 1 MiB and each launch is limited to 4 MiB. Kandev
-writes copied files with owner-only mode `0600`. Missing, unreadable, invalid,
-or oversized optional files produce a preparation warning and do not stop the
-launch. File contents are not returned by the API or stored in the profile.
-
-SSH writes below the configured remote user's home. If that account is shared,
-the copied configuration can affect other processes that use the same account.
-Review the selected bundles before saving the profile.
-
-### Model selection in remote executors
-
-The host model probe helps edit a profile, but it is not the launch authority.
-At launch, the selected executor's advertised ACP catalog decides whether
-Kandev sends the saved model. If the executor does not advertise that model,
-Kandev sends no request for it. It uses an advertised fallback only when one
-exists; otherwise the agent uses its current or default model.
-
-Kandev writes one warning to task chat when this happens. The warning can list
-the requested model, effective model, agent, executor, and executor profile.
-It also tells you to check executor credentials, copied agent configuration,
-and the agent version. Kandev does not rewrite the saved profile model.
-Portable configuration can improve parity, but it does not guarantee equal
-host and executor model catalogs.
-
 ### Script behavior is runtime-specific
 
 Do not treat the two script fields as universal hooks:
 
 | Runtime          | Prepare script                                                                                                        | Profile cleanup script                                                                                                                                                                                                                                                  |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local / Worktree | Runs on the host during preparation, with the common `KANDEV_TASK_PREPARATION_TIMEOUT` limit (`10m` by default). A failure is shown but is non-fatal, so the agent can still start for diagnosis. | Not executed by the executor runtime. Repository-level worktree cleanup is a separate repository setting.                                                                                                                                                               |
-| Local Docker     | Runs inside the container before `agentctl`, with the common preparation limit. Failure is logged but `agentctl` still starts.                           | Not executed.                                                                                                                                                                                                                                                           |
-| Sprites          | Runs inside a newly created sandbox, with the common preparation limit. Failure aborts the launch and destroys that new sandbox.                         | Runs, with a 60-second limit, only when a live execution is stopped with a task/session archived or deleted reason; failure does not prevent the subsequent destroy attempt. Plain Stop, **Reset Environment**, and profile-page direct destroy do not run this script. |
-| SSH              | Runs on the target before `agentctl`, with the common preparation limit. An empty profile script uses the SSH default, which materializes the primary repository at the task-workspace root, reuses a matching checkout, runs repository setup, and selects the Kandev branch. A non-zero exit, timeout, missing checkout, or conflicting origin aborts the launch. | Runs on the target, with a 60-second limit, only for task/session archive or delete stops. Failure is logged but does not prevent controller teardown. Plain Stop and backend restart preserve the task workspace and skip cleanup. |
+| Local / Worktree | Runs on the host during preparation. A failure is shown but is non-fatal, so the agent can still start for diagnosis. | Not executed by the executor runtime. Repository-level worktree cleanup is a separate repository setting.                                                                                                                                                               |
+| Local Docker     | Runs inside the container before `agentctl`. Failure is logged but `agentctl` still starts.                           | Not executed.                                                                                                                                                                                                                                                           |
+| Sprites          | Runs inside a newly created sandbox. Failure aborts the launch and destroys that new sandbox.                         | Runs, with a 60-second limit, only when a live execution is stopped with a task/session archived or deleted reason; failure does not prevent the subsequent destroy attempt. Plain Stop, **Reset Environment**, and profile-page direct destroy do not run this script. |
+| SSH              | Runs on the target before `agentctl`. An empty profile script uses the SSH default, which materializes the primary repository at the task-workspace root, reuses a matching checkout, runs repository setup, and selects the Kandev branch. A non-zero exit, timeout, missing checkout, or conflicting origin aborts the launch. | Runs on the target, with a 60-second limit, only for task/session archive or delete stops. Failure is logged but does not prevent controller teardown. Plain Stop and backend restart preserve the task workspace and skip cleanup. |
 
 Keep working prepare scripts noninteractive and idempotent. Kandev resolves supported placeholders and appends its managed branch checkout for Docker, Sprites, and SSH after the user script. A profile cleanup script must never remove paths outside the environment it owns.
-
-The common preparation limit is configured through
-`KANDEV_TASK_PREPARATION_TIMEOUT`; see [Configuration](./configuration.md#setup-and-launch-timing)
-for duration syntax, fallback behavior, and the derived launch-phase limit.
 
 Two current preparation exceptions are easy to miss:
 
@@ -201,10 +159,6 @@ An idle, non-archived repository-backed task can add sources from its **Files** 
 
 Every repository row records a base branch. Worktree, Docker, SSH, and Sprites may also materialize an existing checkout branch for repository rows. Local/Local PC always uses the repository's current checkout and does not offer or perform a branch switch.
 
-For clone-based Docker, SSH, and Sprites tasks, Kandev validates the executor's own checkout before configuring a mutable agent session. Git metadata access is limited to the attested task checkout and its materialized repository siblings; Kandev never uses a host checkout path to authorize a remote executor. When an idle task adds a repository, Kandev revalidates the complete checkout set and safely refreshes the running agent before the new repository is usable. A failed checkout, metadata validation, or refresh leaves the previous session and source set intact.
-
-When an ACP agent advertises support for additional workspace directories, Kandev passes only the canonical repository siblings already attached to that task. If an attached sibling requires that capability and the agent does not advertise it, session creation fails with an explicit recovery error; Kandev never silently widens or narrows the authorized scope.
-
 Arbitrary folders are supported only on **Worktree** and **Local/Local PC**. They remain live host paths; Kandev links them into its task workspace and never copies, moves, or deletes their contents. Docker and remote executors do not offer folders and reject a forged folder request. Remote Docker remains unavailable because its runtime is not implemented.
 
 Source batches are atomic: if validation, cloning, or runtime adoption fails, Kandev removes the new records and Kandev-owned entries while preserving existing task contents. Persisted attachments are reapplied after reload, relaunch, or **Reset Environment**; a previously attached folder that later disappears is reported instead of silently skipped. See [Tasks and workflows](tasks-and-workflows.md#add-sources-to-an-existing-task).
@@ -236,7 +190,7 @@ At launch Kandev:
 3. bind-mounts a released Linux `agentctl` helper read-only at `/usr/local/bin/agentctl`;
 4. publishes control and agent ports to random ports on Docker-host loopback;
 5. runs the resolved prepare script, which normally clones attached repositories into `/workspace` and checks out the Kandev branch;
-6. normally starts `agentctl` even if prepare fails, so the host can surface the failure. Clone-policy launches are stricter: a failed clone or checkout attestation stops before an agent can be configured.
+6. starts `agentctl` even if prepare failed, then creates the agent instance.
 
 The repository workspace itself is not a normal host bind mount. For a local filesystem clone URL, Kandev temporarily mounts that local clone source read-only so the in-container `git clone` can read it. Images need the selected agent's dependencies; they do not need to contain `agentctl`.
 
@@ -326,7 +280,7 @@ Run **Test Connection**, independently verify the observed SHA256 host fingerpri
 
 The profile editor exposes remote shell and agent-readiness checks. Backend/API configuration also recognizes `ssh_workdir_root` (default `~/.kandev`) and `ssh_shell`; the current profile UI exposes `ssh_shell` but not a workdir-root field.
 
-The remote-auth card is built from the currently enabled agents. Depending on an agent's declared methods, it can copy selected local credential files, resolve a stored secret into that agent's authentication environment variable, or run an agent-specific setup script on the remote host. GitHub can use an explicitly selected `GITHUB_TOKEN` secret as an unmanaged profile override; Kandev does not copy the host-active `gh` token. These transfers write sensitive material under the remote user's home and are best-effort, verify authentication on the remote after saving. Although the profile editor also stores Git name/email controls for SSH, the current SSH runtime does not apply them; configure Git identity on the remote host yourself.
+The remote-auth card is built from the currently enabled agents. Depending on an agent's declared methods, it can copy selected local credential files, resolve a stored secret into that agent's authentication environment variable, or run an agent-specific setup script on the remote host. GitHub can use an explicitly selected `GITHUB_TOKEN` secret as an unmanaged profile override; Kandev does not copy the host-active `gh` token. These transfers write sensitive material under the remote user's home and are best-effort—verify authentication on the remote after saving. Although the profile editor also stores Git name/email controls for SSH, the current SSH runtime does not apply them; configure Git identity on the remote host yourself.
 
 </details>
 

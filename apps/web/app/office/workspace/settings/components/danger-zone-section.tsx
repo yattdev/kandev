@@ -21,8 +21,10 @@ import {
   type WorkspaceDeletionSummary,
 } from "@/lib/api/domains/office-api";
 import type { WorkspaceState } from "@/lib/state/slices/workspace/types";
-import { isOfficeWorkspace } from "@/lib/state/slices/workspace/selectors";
-import { workspaceHomeHref } from "@/lib/navigation/workspace-home";
+import {
+  isOfficeWorkspace,
+  workspaceHomeHref,
+} from "@/components/app-sidebar/app-sidebar-workspace-navigation";
 import { useTranslation } from "react-i18next";
 
 type Workspace = WorkspaceState["items"][number];

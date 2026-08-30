@@ -1,6 +1,5 @@
 import { panel as knownPanel } from "./constants";
 import type { LayoutColumn, LayoutGroup, LayoutNode, LayoutPanel, LayoutState } from "./types";
-import { t } from "@/lib/i18n";
 
 const SESSION_PANEL_PREFIX = "session:";
 const CHAT_COMPONENT = "chat";
@@ -17,7 +16,7 @@ function sessionPanel(sessionId: string): LayoutPanel {
   return {
     id: `${SESSION_PANEL_PREFIX}${sessionId}`,
     component: CHAT_COMPONENT,
-    title: t("common:agent"),
+    title: "Agent",
     tabComponent: "sessionTab",
     params: { sessionId },
   };

@@ -20,7 +20,6 @@ function buildTaskRowProps(props: TaskSwitcherProps): TaskRowBaseProps {
     stepsByWorkflowId: props.stepsByWorkflowId,
     activeTaskId: props.activeTaskId,
     selectedTaskId: props.selectedTaskId,
-    showActivityTime: props.showActivityTime,
     onSelectTask: props.onSelectTask,
     onEditTask: props.onEditTask,
     onRenameTask: props.onRenameTask,
@@ -118,12 +117,7 @@ export const TaskSwitcher = memo(function TaskSwitcher(props: TaskSwitcherProps)
     return (
       <>
         {loadErrorNotice}
-        <div
-          data-slot="task-switcher-empty-state"
-          className="px-3 py-3 text-xs text-muted-foreground"
-        >
-          {t("sidebar:noTasksYet")}
-        </div>
+        <div className="px-3 py-3 text-xs text-muted-foreground">{t("sidebar:noTasksYet")}</div>
       </>
     );
   }

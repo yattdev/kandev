@@ -1,5 +1,4 @@
 import type { TaskSessionState, TaskState } from "@/lib/types/http";
-import { t } from "@/lib/i18n";
 
 export const RECENT_TASKS_STORAGE_KEY = "kandev.recentTasks.v1";
 export const RECENT_TASKS_CHANGED_EVENT = "kandev:recent-tasks-changed";
@@ -34,7 +33,7 @@ function normalizeEntry(value: unknown): RecentTaskEntry | null {
   if (!isRecord(value)) return null;
   const taskId = optionalString(value.taskId);
   if (!taskId) return null;
-  const title = optionalString(value.title) ?? t("common:untitledTask");
+  const title = optionalString(value.title) ?? "Untitled task";
   const visitedAt = optionalString(value.visitedAt) ?? new Date(0).toISOString();
 
   return {

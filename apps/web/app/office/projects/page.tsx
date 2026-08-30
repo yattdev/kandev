@@ -14,5 +14,5 @@ export default async function ProjectsPage() {
     projects = res.projects ?? [];
   }
 
-  return <ProjectsPageClient initialProjects={projects} initialWorkspaceId={workspaceId} />;
+  return <ProjectsPageClient initialProjects={projects} />;
 }

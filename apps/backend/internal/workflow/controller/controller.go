@@ -103,7 +103,6 @@ type CreateStepRequest struct {
 	Name                       string             `json:"name"`
 	Position                   int                `json:"position"`
 	Color                      string             `json:"color"`
-	StageType                  *models.StageType  `json:"stage_type,omitempty"`
 	Prompt                     string             `json:"prompt,omitempty"`
 	Events                     *models.StepEvents `json:"events,omitempty"`
 	AllowManualMove            bool               `json:"allow_manual_move"`
@@ -130,9 +129,6 @@ func (c *Controller) CreateStep(ctx context.Context, req CreateStepRequest) (*Ge
 	}
 	if req.Events != nil {
 		step.Events = *req.Events
-	}
-	if req.StageType != nil {
-		step.StageType = *req.StageType
 	}
 	if req.IsStartStep != nil {
 		step.IsStartStep = *req.IsStartStep
@@ -173,7 +169,6 @@ type UpdateStepRequest struct {
 	Name                       *string            `json:"name,omitempty"`
 	Position                   *int               `json:"position,omitempty"`
 	Color                      *string            `json:"color,omitempty"`
-	StageType                  *models.StageType  `json:"stage_type,omitempty"`
 	Prompt                     *string            `json:"prompt,omitempty"`
 	Events                     *models.StepEvents `json:"events,omitempty"`
 	AllowManualMove            *bool              `json:"allow_manual_move,omitempty"`
@@ -210,9 +205,6 @@ func (c *Controller) UpdateStep(ctx context.Context, req UpdateStepRequest) (*Ge
 	}
 	if req.Events != nil {
 		step.Events = *req.Events
-	}
-	if req.StageType != nil {
-		step.StageType = *req.StageType
 	}
 	if req.AllowManualMove != nil {
 		step.AllowManualMove = *req.AllowManualMove

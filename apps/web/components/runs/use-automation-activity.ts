@@ -7,7 +7,6 @@ import {
   listAutomationRuns,
 } from "@/lib/api/domains/automation-api";
 import type { Automation, AutomationRun, AutomationSummary } from "@/lib/types/automation";
-import { t } from "@/lib/i18n";
 
 /**
  * The detail view reads one automation's history. It is a reading surface, not
@@ -81,7 +80,7 @@ export function useAutomationActivity(automationId: string) {
       .catch((err: unknown) => {
         if (requestRef.current !== requestId) return;
         setLoaded({ automationId, automation: null, runs: EMPTY_RUNS, openRuns: 0 });
-        setError(err instanceof Error ? err.message : t("automations:failedToLoadThisAutomation"));
+        setError(err instanceof Error ? err.message : "Failed to load this automation");
       })
       .finally(() => {
         if (requestRef.current !== requestId) return;

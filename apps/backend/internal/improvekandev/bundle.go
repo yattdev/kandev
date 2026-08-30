@@ -4,7 +4,6 @@
 package improvekandev
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,16 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/kandev/kandev/internal/system/storage"
-	"github.com/kandev/kandev/internal/system/storage/tempartifacts"
 )
 
 const (
 	bundlePrefix       = "kandev-improve-"
 	ownerMarkerName    = ".kandev-owner.json"
 	diagnosticFileName = "diagnostic-bundle.zip"
-	bundleLeaseAge     = 24 * time.Hour
+	staleBundleAge     = 24 * time.Hour
 )
 
 type ownerMarker struct {
@@ -54,27 +50,40 @@ func createBundleDir(owner string) (string, error) {
 	return dir, nil
 }
 
-func createBundleDirWithRegistry(
-	ctx context.Context,
-	owner string,
-	registry *tempartifacts.Registry,
-) (string, error) {
-	dir, err := createBundleDir(owner)
+// CleanupStaleBundles removes old server-owned improve-kandev context
+// directories. Fresh directories are preserved for in-flight task creation.
+func CleanupStaleBundles(onError func(path string, err error)) {
+	cleanupStaleBundlesIn(os.TempDir(), staleBundleAge, onError)
+}
+
+func cleanupStaleBundlesIn(tempDir string, maxAge time.Duration, onError func(path string, err error)) {
+	entries, err := os.ReadDir(tempDir)
 	if err != nil {
-		return "", err
+		if onError != nil {
+			onError(tempDir, err)
+		}
+		return
 	}
-	lease, err := registry.RegisterExisting(
-		ctx, storage.TemporaryArtifactKindImproveBundle, dir, nil,
-	)
-	if err != nil {
-		_ = os.RemoveAll(dir)
-		return "", err
+	cutoff := time.Now().Add(-maxAge)
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), bundlePrefix) {
+			continue
+		}
+		path := filepath.Join(tempDir, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			if onError != nil {
+				onError(path, err)
+			}
+			continue
+		}
+		if info.ModTime().After(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(path); err != nil && onError != nil {
+			onError(path, err)
+		}
 	}
-	if err := lease.Close(ctx); err != nil {
-		_ = lease.Remove(context.Background())
-		return "", fmt.Errorf("close improve bundle artifact lease: %w", err)
-	}
-	return dir, nil
 }
 
 // validateBundleDir accepts only a server-created temp directory whose

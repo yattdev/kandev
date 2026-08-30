@@ -3,7 +3,6 @@
 import { CardContent } from "@kandev/ui/card";
 import { Separator } from "@kandev/ui/separator";
 import { SettingsCard } from "@/components/settings/settings-card";
-import { SettingsPageHeader } from "@/components/settings/settings-typography";
 import {
   SettingsSaveDirtyScope,
   useSettingsSaveContributor,
@@ -13,14 +12,6 @@ import {
 type SettingsPageTemplateProps = {
   title: string;
   description?: string;
-  /**
-   * Replaces the default title/description block. For a page that is a *section*
-   * of a larger one rather than a page in its own right — the workspace Secrets
-   * tab, which heads itself like its five sibling tabs instead of like a
-   * top-level settings page. `title` is still required: it names the save
-   * contributor.
-   */
-  header?: React.ReactNode;
   isDirty: boolean;
   cardIsDirty?: boolean;
   saveStatus: "idle" | "loading" | "success" | "error";
@@ -31,7 +22,6 @@ type SettingsPageTemplateProps = {
   invalidReason?: string;
   onDiscard?: () => void;
   showSaveButton?: boolean;
-  showPageChrome?: boolean;
   children: React.ReactNode;
   deleteSection?: React.ReactNode;
 };
@@ -39,7 +29,6 @@ type SettingsPageTemplateProps = {
 export function SettingsPageTemplate({
   title,
   description,
-  header,
   isDirty,
   cardIsDirty = isDirty,
   onSave,
@@ -49,7 +38,6 @@ export function SettingsPageTemplate({
   invalidReason,
   onDiscard,
   showSaveButton = true,
-  showPageChrome = true,
   children,
   deleteSection,
 }: SettingsPageTemplateProps) {
@@ -67,9 +55,14 @@ export function SettingsPageTemplate({
 
   return (
     <div className="space-y-8">
-      {showPageChrome && (header ?? <SettingsPageHeader title={title} description={description} />)}
+      <div>
+        <div>
+          <h2 className="text-2xl font-bold">{title}</h2>
+          {description && <p className="text-sm text-muted-foreground mt-1">{description}</p>}
+        </div>
+      </div>
 
-      {showPageChrome && <Separator />}
+      <Separator />
 
       <SettingsSaveDirtyScope>
         {(nestedIsDirty) => (

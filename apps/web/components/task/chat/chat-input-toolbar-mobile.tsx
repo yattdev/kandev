@@ -7,16 +7,20 @@ import { ModeSelector } from "@/components/task/mode-selector";
 import { SessionsDropdown } from "@/components/task/sessions-dropdown";
 import { TokenUsageDisplay } from "@/components/task/chat/token-usage-display";
 import { EnhancePromptButton } from "@/components/enhance-prompt-button";
+import { VoiceInputButton } from "./voice-input-button";
 import { ChatInputPluginActions } from "./chat-input-plugin-actions";
 import { ContextPopover } from "./context-popover";
 import { ImplementPlanButton } from "./implement-plan-button";
 import { ResetContextButton } from "./reset-context-button";
-import { AttachFilesButton, PlanToggleButton, SubmitButton } from "./chat-input-toolbar-primitives";
-import { McpIndicator } from "./mcp-explorer/mcp-indicator";
+import {
+  AttachFilesButton,
+  McpIndicator,
+  PlanToggleButton,
+  SubmitButton,
+} from "./chat-input-toolbar-primitives";
 import type { ContextFile } from "@/lib/state/context-files-store";
 import type { SHORTCUTS } from "@/lib/keyboard/constants";
 import type { MCPAttachmentHistory } from "@/lib/state/slices/session-runtime/types";
-import type { PluginComposerCapability } from "@/lib/plugins/types";
 import { t } from "@/lib/i18n";
 
 type MobileToolbarProps = {
@@ -51,8 +55,8 @@ type MobileToolbarProps = {
   onCancel: () => void | Promise<void>;
   onSubmit: () => void;
   submitShortcut: (typeof SHORTCUTS)[keyof typeof SHORTCUTS];
-  composerCapability?: PluginComposerCapability;
-  composerSurface?: "task-chat" | "quick-chat";
+  onVoiceTranscript?: (text: string) => void;
+  onVoiceAutoSend?: () => void;
 };
 
 function mobileContextButton(contextCount: number) {
@@ -173,12 +177,13 @@ export function MobileChatInputToolbar(props: MobileToolbarProps) {
             sessionId={props.sessionId}
             taskId={props.taskId}
             taskTitle={props.taskTitle}
-            surface={props.composerSurface ?? (props.taskId ? "task-chat" : "quick-chat")}
-            presentation="mobile"
+          />
+        )}
+        {props.onVoiceTranscript && (
+          <VoiceInputButton
+            onTranscript={props.onVoiceTranscript}
+            onAutoSend={props.onVoiceAutoSend}
             disabled={props.isDisabled}
-            submittable={!props.isDisabled && props.hasContent}
-            disabledReason={props.submitDisabledReason}
-            composer={props.composerCapability}
           />
         )}
         <SubmitButton

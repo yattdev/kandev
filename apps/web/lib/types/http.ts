@@ -28,7 +28,6 @@ export type {
   TaskCreateLastUsedApi,
   AppStatusBarOrderApi,
   LspStatusLocation,
-  LastSeenDisplay,
   MCPTaskAgentProfileDefault,
   StartupPage,
   UserSettings,
@@ -73,8 +72,6 @@ export type TaskState =
   | "COMPLETED"
   | "FAILED"
   | "CANCELLED";
-
-export type TaskPriority = "critical" | "high" | "medium" | "low";
 
 // Workflow Review Status
 export type WorkflowReviewStatus = "pending" | "approved" | "changes_requested" | "rejected";
@@ -189,11 +186,6 @@ export type TaskSessionState =
 
 export type TaskPendingAction = "clarification" | "permission";
 
-export type TaskPendingActionRevision = {
-  epoch: string;
-  sequence: number;
-};
-
 /**
  * Fine-grained busy substate of a session (see ADR-0049). Distinguishes
  * a foreground turn that is actively generating from one that is idle, held open
@@ -254,7 +246,6 @@ export type Repository = {
   provider: string;
   provider_repo_id: string;
   provider_host?: string;
-  provider_scope?: string;
   provider_owner: string;
   provider_name: string;
   /** Canonical credential-free clone URL for provider-backed repositories. */
@@ -282,29 +273,6 @@ export type Repository = {
 export type RepositorySecretBinding = {
   key: string;
   secret_id: string;
-};
-
-/**
- * A named, reusable group of workspace repositories. Applying one fills the
- * task-creation repository picker in a single action.
- *
- * A set deliberately carries no branch: branch choice belongs to the task, and
- * the picker's existing per-row defaulting fills it after a set is applied.
- */
-export type RepositorySet = {
-  id: string;
-  workspace_id: WorkspaceId;
-  name: string;
-  description: string;
-  /** Membership in apply order. Always an array, never null. */
-  repositories: RepositorySetItem[];
-  created_at: string;
-  updated_at: string;
-};
-
-export type RepositorySetItem = {
-  repository_id: RepositoryId;
-  position: number;
 };
 
 export type RepositoryScript = {
@@ -362,10 +330,8 @@ export type Task = ActiveSubagentCountFields & {
   position: number;
   title: string;
   description: string;
-  /** True when the task was created in autopilot mode. Immutable after creation. */
-  autopilot?: boolean;
   state: TaskState;
-  priority: TaskPriority;
+  priority: number;
   wip_admitted?: boolean;
   queued_for_step_id?: string;
   queued_at?: string | null;
@@ -406,8 +372,6 @@ export type Task = ActiveSubagentCountFields & {
   // isFromOfficeProjection in the Go task repo for the canonical rule.
   is_from_office?: boolean;
   status_summary?: TaskStatusSummary | null;
-  /** Explicitly clears a cached status summary. Omission keeps partial-response semantics. */
-  status_summary_invalidated?: boolean;
 };
 
 // Task origin values mirror models.TaskOrigin* constants in the Go backend.
@@ -499,8 +463,6 @@ export type TaskSession = ActiveSubagentCountFields & {
   supports_steering?: boolean;
   /** Compact pending-input projection used when this session's messages are unloaded. */
   pending_action?: TaskPendingAction | null;
-  /** Cross-channel logical clock for pending_action snapshots. */
-  pending_action_revision?: TaskPendingActionRevision;
   error_message?: string;
   metadata?: Record<string, unknown> | null;
   agent_profile_snapshot?: Record<string, unknown> | null;
@@ -603,11 +565,6 @@ export type ListWorkflowsResponse = {
 
 export type ListTasksResponse = {
   tasks: Task[];
-  total: number;
-};
-
-export type ListRepositorySetsResponse = {
-  repository_sets: RepositorySet[];
   total: number;
 };
 

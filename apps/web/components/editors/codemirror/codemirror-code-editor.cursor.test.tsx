@@ -11,7 +11,6 @@ import {
 } from "@/hooks/file-editor-cursor";
 
 const editorHarness = vi.hoisted(() => ({
-  extensions: [] as unknown[],
   onCreateEditor: null as ((view: unknown) => void) | null,
 }));
 const getMonacoInstance = vi.hoisted(() => vi.fn());
@@ -21,14 +20,7 @@ vi.mock("@/components/editors/monaco/monaco-init", () => ({
 }));
 
 vi.mock("@uiw/react-codemirror", () => ({
-  default: ({
-    extensions,
-    onCreateEditor,
-  }: {
-    extensions: unknown[];
-    onCreateEditor: (view: unknown) => void;
-  }) => {
-    editorHarness.extensions = extensions;
+  default: ({ onCreateEditor }: { onCreateEditor: (view: unknown) => void }) => {
     editorHarness.onCreateEditor = onCreateEditor;
     return <div data-testid="codemirror" />;
   },
@@ -58,7 +50,6 @@ vi.mock("@/components/editors/external-vcs-file-link", () => ({
 }));
 
 import { CodeMirrorCodeEditor } from "./codemirror-code-editor";
-import { codeMirrorCursorFlashExtension } from "./codemirror-cursor-navigation";
 
 const FILE_PATH = "src/app.ts";
 const FRONTEND_REPO = "frontend";
@@ -110,12 +101,6 @@ afterEach(() => {
 });
 
 describe("CodeMirrorCodeEditor pending cursor navigation", () => {
-  it("installs the shared cursor-flash extension", () => {
-    renderEditor();
-
-    expect(editorHarness.extensions).toContain(codeMirrorCursorFlashExtension);
-  });
-
   it("reveals the pending 1-based line and column for its repository", () => {
     setPendingCursorPosition(FILE_PATH, 2, 3, FRONTEND_REPO);
     const view = createEditorView();

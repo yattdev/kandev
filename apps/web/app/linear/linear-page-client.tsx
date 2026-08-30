@@ -16,7 +16,7 @@ import {
   PaginationPrevious,
 } from "@kandev/ui/pagination";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@kandev/ui/select";
-import { PageShell } from "@/components/page-shell";
+import { PageTopbar } from "@/components/page-topbar";
 import { useLinearAvailable } from "@/hooks/domains/linear/use-linear-availability";
 import {
   formatRelative,
@@ -297,11 +297,12 @@ function PaginationBar({
   );
 }
 
-function LinearFrame({ children }: { children: React.ReactNode }) {
+function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <PageShell title="Linear" icon={<IconHexagon className="h-4 w-4" />} scroll="none">
+    <div className="flex flex-col h-full">
+      <PageTopbar title="Linear" icon={<IconHexagon className="h-4 w-4" />} />
       {children}
-    </PageShell>
+    </div>
   );
 }
 
@@ -383,28 +384,28 @@ export function LinearPageClient({ workspaceId, workflows, steps }: LinearPageCl
 
   if (!workspaceId) {
     return (
-      <LinearFrame>
+      <PageShell>
         <NotConfiguredNotice />
-      </LinearFrame>
+      </PageShell>
     );
   }
   if (loaded && !configured) {
     return (
-      <LinearFrame>
+      <PageShell>
         <NotConfiguredNotice />
-      </LinearFrame>
+      </PageShell>
     );
   }
   if (!available && loaded && configured) {
     return (
-      <LinearFrame>
+      <PageShell>
         <DisabledNotice />
-      </LinearFrame>
+      </PageShell>
     );
   }
 
   return (
-    <LinearFrame>
+    <PageShell>
       <FilterControls
         query={query}
         setQuery={setQuery}
@@ -443,6 +444,6 @@ export function LinearPageClient({ workspaceId, workflows, steps }: LinearPageCl
         issue={launchIssue}
         onClose={() => setLaunchIssue(null)}
       />
-    </LinearFrame>
+    </PageShell>
   );
 }

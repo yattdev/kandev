@@ -1,5 +1,4 @@
 import { useEffect, useCallback, useState, useRef } from "react";
-import { useTranslation } from "react-i18next";
 import { useAppStore, useAppStoreApi } from "@/components/state-provider";
 import {
   getTaskPlan,
@@ -21,7 +20,6 @@ const EMPTY_REVISIONS: readonly TaskPlanRevision[] = Object.freeze([]);
  * @param options.visible - When true, refetches the plan (use for tab visibility)
  */
 export function useTaskPlan(taskId: string | null, options?: { visible?: boolean }) {
-  const { t } = useTranslation("task");
   const { visible = true } = options ?? {};
   const prevVisibleRef = useRef(visible);
   const plan = useAppStore((state) => (taskId ? state.taskPlans.byTaskId[taskId] : undefined));
@@ -54,12 +52,13 @@ export function useTaskPlan(taskId: string | null, options?: { visible?: boolean
       markTaskPlanSeen(taskId);
     } catch (err) {
       console.error("Failed to fetch task plan:", err);
-      setError(err instanceof Error ? err.message : t("task:failedToFetchPlan"));
+      setError(err instanceof Error ? err.message : "Failed to fetch plan");
     } finally {
       setTaskPlanLoading(taskId, false);
     }
-  }, [taskId, setTaskPlan, setTaskPlanLoading, markTaskPlanSeen, t]);
+  }, [taskId, setTaskPlan, setTaskPlanLoading, markTaskPlanSeen]);
 
+  // Fetch plan on mount or when taskId changes
   useEffect(() => {
     if (connectionStatus !== "connected") return;
     if (taskId && !isLoaded && !isLoading) {
@@ -70,10 +69,11 @@ export function useTaskPlan(taskId: string | null, options?: { visible?: boolean
   // Refetch when becoming visible (e.g., tab switch)
   useEffect(() => {
     const wasHidden = !prevVisibleRef.current;
+    const isNowVisible = visible;
     prevVisibleRef.current = visible;
 
     // Only refetch when transitioning from hidden to visible
-    if (wasHidden && visible && connectionStatus === "connected" && taskId) {
+    if (wasHidden && isNowVisible && connectionStatus === "connected" && taskId) {
       fetchPlan();
     }
   }, [visible, connectionStatus, taskId, fetchPlan]);
@@ -97,13 +97,13 @@ export function useTaskPlan(taskId: string | null, options?: { visible?: boolean
         return savedPlan;
       } catch (err) {
         console.error("Failed to save task plan:", err);
-        setError(err instanceof Error ? err.message : t("task:failedToSavePlan"));
+        setError(err instanceof Error ? err.message : "Failed to save plan");
         return null;
       } finally {
         setTaskPlanSaving(taskId, false);
       }
     },
-    [taskId, plan, setTaskPlan, setTaskPlanSaving, t],
+    [taskId, plan, setTaskPlan, setTaskPlanSaving],
   );
 
   const removePlan = useCallback(async (): Promise<boolean> => {
@@ -117,12 +117,12 @@ export function useTaskPlan(taskId: string | null, options?: { visible?: boolean
       return true;
     } catch (err) {
       console.error("Failed to delete task plan:", err);
-      setError(err instanceof Error ? err.message : t("task:failedToDeletePlan"));
+      setError(err instanceof Error ? err.message : "Failed to delete plan");
       return false;
     } finally {
       setTaskPlanSaving(taskId, false);
     }
-  }, [taskId, setTaskPlan, setTaskPlanSaving, t]);
+  }, [taskId, setTaskPlan, setTaskPlanSaving]);
 
   const revisionsBundle = useTaskPlanRevisions(taskId, setTaskPlanSaving, setError);
 
@@ -148,7 +148,6 @@ function useTaskPlanRevisions(
   setTaskPlanSaving: (taskId: string, saving: boolean) => void,
   setError: (err: string | null) => void,
 ) {
-  const { t } = useTranslation("task");
   const revisions = useAppStore((state) =>
     taskId ? (state.taskPlans.revisionsByTaskId[taskId] ?? EMPTY_REVISIONS) : EMPTY_REVISIONS,
   ) as TaskPlanRevision[];
@@ -172,11 +171,11 @@ function useTaskPlanRevisions(
       setPlanRevisions(taskId, list);
     } catch (err) {
       console.error("Failed to load plan revisions:", err);
-      setError(err instanceof Error ? err.message : t("task:failedToLoadPlanRevisions"));
+      setError(err instanceof Error ? err.message : "Failed to load revisions");
     } finally {
       setPlanRevisionsLoading(taskId, false);
     }
-  }, [taskId, setPlanRevisions, setPlanRevisionsLoading, setError, t]);
+  }, [taskId, setPlanRevisions, setPlanRevisionsLoading, setError]);
 
   // Load revisions once on mount — events may have fired before the WS connected.
   useEffect(() => {
@@ -212,13 +211,13 @@ function useTaskPlanRevisions(
         return await revertPlanRevision(taskId, revisionId, authorName);
       } catch (err) {
         console.error("Failed to revert plan:", err);
-        setError(err instanceof Error ? err.message : t("task:failedToRevertPlan"));
+        setError(err instanceof Error ? err.message : "Failed to revert plan");
         return null;
       } finally {
         setTaskPlanSaving(taskId, false);
       }
     },
-    [taskId, setTaskPlanSaving, setError, t],
+    [taskId, setTaskPlanSaving, setError],
   );
 
   return {

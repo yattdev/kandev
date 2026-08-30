@@ -3,14 +3,12 @@ import type { TaskSessionState, TaskState } from "@/lib/types/http";
 import type { TaskStatusSummary } from "@/lib/types/task-status-summary";
 import { statusSummaryActiveErrorPreview } from "@/lib/task-status-summary";
 import { workflowStepTitle } from "./task-session-sidebar-aggregate";
-import type { WipQueueStatus } from "@/lib/kanban/wip-queue";
 
 type SidebarItemContext = {
   repositorySlugById: Map<string, string | undefined>;
   titleById: Map<string, string>;
   workflowNameById: Map<string, string>;
   stepTitleById: Map<string, string>;
-  wipQueueByTaskId?: Map<string, WipQueueStatus>;
   acknowledgedAgentErrors?: Record<string, string>;
   dismissedAgentErrors?: Record<string, string>;
 };
@@ -68,13 +66,6 @@ function issueInfoForTask(task: KanbanState["tasks"][number]) {
   return { url: task.issueUrl, number: task.issueNumber };
 }
 
-function sidebarLastActivityAt(
-  summary: TaskStatusSummary | null | undefined,
-  task: KanbanState["tasks"][number],
-) {
-  return summary?.last_activity_at ?? task.updatedAt ?? task.createdAt;
-}
-
 function sidebarSessionStatus(
   summary: TaskStatusSummary | null | undefined,
   task: KanbanState["tasks"][number],
@@ -92,7 +83,6 @@ function sidebarSessionStatus(
     foregroundActivity: hasSummary ? summary?.foreground_activity : task.foregroundActivity,
     primarySessionId: hasSummary ? (primarySession?.id ?? null) : (task.primarySessionId ?? null),
     updatedAt: hasSummary ? summary?.updated_at : (task.updatedAt ?? task.createdAt),
-    lastActivityAt: sidebarLastActivityAt(summary, task),
   };
 }
 
@@ -119,7 +109,6 @@ function sidebarStatus(
     prInfo: summaryPRInfo(summary),
     issueInfo: issueInfoForTask(task),
     queuedCount: summary?.queued_prompt_count,
-    wipQueue: context.wipQueueByTaskId?.get(task.id),
   };
 }
 
@@ -133,7 +122,6 @@ export function buildSidebarItem(
   return {
     id: task.id,
     title: task.title,
-    autopilot: task.autopilot,
     state: task.state as TaskState | undefined,
     interrupted: task.interrupted,
     ...status,
@@ -150,7 +138,6 @@ export function buildSidebarItem(
     parentTaskTitle: task.parentTaskId ? context.titleById.get(task.parentTaskId) : undefined,
     parentTaskId: task.parentTaskId ?? undefined,
     workspaceMode: task.workspaceMode,
-    repositoryLinks: task.repositories,
     isPRReview: task.isPRReview ?? false,
     isIssueWatch: task.isIssueWatch ?? false,
   };

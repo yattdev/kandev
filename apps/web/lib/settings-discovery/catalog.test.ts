@@ -7,26 +7,6 @@ import { SETTINGS_DISCOVERY_DEFINITIONS, SETTINGS_DISCOVERY_ROUTE_EXCLUSIONS } f
 import { resolveSettingsDiscovery } from "./resolve";
 
 const GITHUB_CONNECTION_ID = "integration-github-connection";
-const STABLE_CONTROL_IDS = [
-  "appearance-color-theme",
-  "appearance-startup-page",
-  "appearance-display-language",
-  "terminal-preferred-shell",
-  "notifications-desktop",
-  "notifications-sound",
-  "keyboard-submit-shortcut",
-  "keyboard-command-shortcuts",
-  "task-actions-agent-profile",
-  "task-actions-archive-confirmation",
-  "task-actions-transcript-navigation",
-  "layouts-profiles",
-  "sprites-connection",
-  "sprites-instances",
-  "utility-default-model",
-  "utility-actions",
-  "external-mcp-endpoints",
-  "external-mcp-snippets",
-] as const;
 
 const translate = (key: string) =>
   (
@@ -64,26 +44,40 @@ describe("settings discovery catalog invariants", () => {
   it("indexes stable controls across general and standalone settings", () => {
     const ids = SETTINGS_DISCOVERY_DEFINITIONS.map((entry) => entry.id);
 
-    expect(ids).toEqual(expect.arrayContaining([...STABLE_CONTROL_IDS]));
-  });
-
-  it("no longer indexes the removed core Voice Mode controls", () => {
-    // Voice Mode moved to a plugin; its settings live on the plugin's own
-    // page and must not reappear in the core discovery catalog.
-    expect(SETTINGS_DISCOVERY_DEFINITIONS.filter((entry) => entry.id.startsWith("voice"))).toEqual(
-      [],
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "appearance-color-theme",
+        "appearance-startup-page",
+        "appearance-display-language",
+        "terminal-preferred-shell",
+        "notifications-desktop",
+        "notifications-sound",
+        "keyboard-submit-shortcut",
+        "keyboard-command-shortcuts",
+        "task-actions-agent-profile",
+        "task-actions-archive-confirmation",
+        "task-actions-transcript-navigation",
+        "layouts-profiles",
+        "sprites-connection",
+        "sprites-instances",
+        "voice-enable",
+        "voice-engine",
+        "voice-behavior",
+        "utility-default-model",
+        "utility-actions",
+        "external-mcp-endpoints",
+        "external-mcp-snippets",
+      ]),
     );
   });
 
-  it("indexes stable system and account sections", () => {
+  it("indexes stable integration, system, and account sections", () => {
     const ids = SETTINGS_DISCOVERY_DEFINITIONS.map((entry) => entry.id);
 
     expect(ids).toEqual(
       expect.arrayContaining([
-        "system-database",
-        "system-backups",
-        "system-logs",
-        "system-licenses",
+        GITHUB_CONNECTION_ID,
+        "integration-jira-connection",
         "system-storage-actions",
         "system-storage-schedule",
         "system-storage-workspaces",
@@ -94,8 +88,6 @@ describe("settings discovery catalog invariants", () => {
         "account-sessions",
       ]),
     );
-    // Integrations are workspace-scoped: never in the static catalog.
-    expect(ids.some((id) => id.startsWith("integration-"))).toBe(false);
   });
 
   it("has no parent cycles", () => {
@@ -171,7 +163,7 @@ describe("resolveSettingsDiscovery dynamic entries", () => {
     });
 
     expect(resolved.find((entry) => entry.id === "workspace:workspace / one")?.href).toBe(
-      "/settings/workspaces/workspace%20%2F%20one",
+      "/settings/workspace/workspace%20%2F%20one",
     );
     expect(resolved.find((entry) => entry.id === "agent-profile:profile / one")?.href).toBe(
       "/settings/agents/Claude%20Code/profiles/profile%20%2F%20one",
@@ -180,7 +172,7 @@ describe("resolveSettingsDiscovery dynamic entries", () => {
       "/settings/executors/executor%20%2F%20one",
     );
     expect(resolved.find((entry) => entry.id === "workspace:workspace / one:name")?.href).toBe(
-      "/settings/workspaces/workspace%20%2F%20one#setting-workspace-workspace%20%2F%20one-name",
+      "/settings/workspace/workspace%20%2F%20one#setting-workspace-workspace%20%2F%20one-name",
     );
     expect(
       resolved.find((entry) => entry.id === "agent-profile:profile / one:environment-variables")
@@ -233,11 +225,10 @@ describe("resolveSettingsDiscovery visibility", () => {
       executors: [],
     });
 
-    expect(hidden.some((entry) => entry.id === "account-security")).toBe(false);
+    expect(hidden.some((entry) => entry.groupId === "account")).toBe(false);
     expect(hidden.some((entry) => entry.id === "system-users")).toBe(false);
     expect(hidden.some((entry) => entry.id === GITHUB_CONNECTION_ID)).toBe(false);
-    expect(visible.some((entry) => entry.id === "account-security")).toBe(true);
-    expect(visible.some((entry) => entry.id === "account-tokens")).toBe(true);
+    expect(visible.some((entry) => entry.groupId === "account")).toBe(true);
     expect(visible.some((entry) => entry.id === "system-users")).toBe(true);
   });
 
@@ -259,16 +250,7 @@ describe("resolveSettingsDiscovery visibility", () => {
       executors: [],
     });
 
-    expect(
-      withoutWorkspace.some((entry) => entry.id.endsWith("integration-github-connection")),
-    ).toBe(false);
-    const connection = withWorkspace.find((entry) =>
-      entry.id.endsWith("integration-github-connection"),
-    );
-    expect(connection?.href).toBe(
-      "/settings/workspaces/workspace-1/integrations/github#setting-integration-github-connection",
-    );
-    // Per-workspace results carry the workspace name as their path prefix.
-    expect(connection?.breadcrumb[1]).toBe("Main");
+    expect(withoutWorkspace.some((entry) => entry.id === GITHUB_CONNECTION_ID)).toBe(false);
+    expect(withWorkspace.some((entry) => entry.id === GITHUB_CONNECTION_ID)).toBe(true);
   });
 });

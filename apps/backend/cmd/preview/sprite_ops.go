@@ -182,7 +182,6 @@ cd /app
 export KANDEV_HOME_DIR=/data
 export KANDEV_DOCKER_ENABLED=false
 export KANDEV_LOG_LEVEL=info
-export KANDEV_WEB_TITLE_PREFIX=Preview
 export KANDEV_WEB_DIST_DIR=/app/apps/web/dist
 # Preview mode: keep the mock agent while loading the built-in agent catalogue
 # so Settings can show agents that are available to install.

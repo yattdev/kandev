@@ -39,7 +39,6 @@ function renderWithTasks(ui: ReactNode, tasks: SeedTask[], confirmTaskArchive = 
           steps: [],
           tasks: tasks.map((t) => ({
             id: t.id,
-            workflowId: "wf-1",
             workflowStepId: "step-1",
             title: t.id,
             position: 0,

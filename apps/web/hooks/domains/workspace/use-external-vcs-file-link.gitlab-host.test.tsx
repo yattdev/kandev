@@ -84,7 +84,6 @@ function wrapper(repository: Repository, mr: TaskMR) {
       tasks: [
         {
           id: TASK_ID,
-          workflowId: "wf-1",
           workflowStepId: "step-1",
           title: "External links",
           position: 0,

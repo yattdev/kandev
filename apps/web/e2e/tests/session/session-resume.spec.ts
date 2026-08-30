@@ -4,7 +4,6 @@ import path from "node:path";
 
 import { test, expect } from "../../fixtures/test-base";
 import type { ApiClient } from "../../helpers/api-client";
-import { waitForSessionState } from "../../helpers/session";
 import { KanbanPage } from "../../pages/kanban-page";
 import { SessionPage } from "../../pages/session-page";
 import type { Page } from "@playwright/test";
@@ -128,7 +127,7 @@ test.describe("Task status during resume", () => {
 
     // 1. Create task and start agent — after the turn completes the workflow
     //    advances it from "Running" to "Turn Finished".
-    const task = await apiClient.createTaskWithAgent(
+    await apiClient.createTaskWithAgent(
       seedData.workspaceId,
       "Status Stable Task",
       seedData.agentProfileId,
@@ -139,8 +138,6 @@ test.describe("Task status during resume", () => {
         repository_ids: [seedData.repositoryId],
       },
     );
-    const sessionId = task.session_id;
-    if (!sessionId) throw new Error("createTaskWithAgent did not return a session_id");
 
     // 2. Navigate to the session and wait for the agent to finish its first turn
     const session = await openTaskSession(testPage, "Status Stable Task");
@@ -148,23 +145,10 @@ test.describe("Task status during resume", () => {
       timeout: 30_000,
     });
     await session.waitForChatIdle({ timeout: 15_000 });
-    await waitForSessionState(apiClient, {
-      taskId: task.id,
-      sessionId,
-      expectedState: "WAITING_FOR_INPUT",
-      message: "Initial session did not settle before the Turn Finished assertion",
-      timeout: 30_000,
-    });
-    await expect
-      .poll(async () => (await apiClient.getTask(task.id)).state, {
-        timeout: 30_000,
-        message: "Initial task did not advance to REVIEW before the Turn Finished assertion",
-      })
-      .toBe("REVIEW");
 
     // 3. Confirm the task moved to the "Turn Finished" section after the turn completed
     await expect(session.taskInSection("Status Stable Task", "Turn Finished")).toBeVisible({
-      timeout: 30_000,
+      timeout: 15_000,
     });
 
     // 4. Restart the backend
@@ -176,12 +160,6 @@ test.describe("Task status during resume", () => {
 
     // 6. Immediately after reload, the task must still be in "Turn Finished" — not
     //    regressed to "Backlog" or "Running" due to resume lifecycle.
-    await expect
-      .poll(async () => (await apiClient.getTask(task.id)).state, {
-        timeout: 30_000,
-        message: "Task state regressed while reloading before auto-resume",
-      })
-      .toBe("REVIEW");
     await expect(session.taskInSection("Status Stable Task", "Turn Finished")).toBeVisible({
       timeout: 30_000,
     });
@@ -194,28 +172,10 @@ test.describe("Task status during resume", () => {
 
     // 7. Wait for auto-resume to complete (agent relaunches and becomes idle)
     await session.waitForChatIdle({ timeout: 60_000 });
-    // The idle composer can briefly survive the reload before auto-resume starts.
-    // The durable boot message proves that the resumed agent actually relaunched.
-    await expect(session.chat.getByText("Resumed agent Mock", { exact: false })).toBeVisible({
-      timeout: 15_000,
-    });
-    await waitForSessionState(apiClient, {
-      taskId: task.id,
-      sessionId,
-      expectedState: "WAITING_FOR_INPUT",
-      message: "Resumed session did not settle before the final Turn Finished assertion",
-      timeout: 30_000,
-    });
 
     // 8. After resume completes, the task must still be in "Turn Finished"
-    await expect
-      .poll(async () => (await apiClient.getTask(task.id)).state, {
-        timeout: 30_000,
-        message: "Task state regressed after auto-resume",
-      })
-      .toBe("REVIEW");
     await expect(session.taskInSection("Status Stable Task", "Turn Finished")).toBeVisible({
-      timeout: 30_000,
+      timeout: 15_000,
     });
   });
 });

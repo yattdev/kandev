@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,35 +66,6 @@ func seedTaskAndSession(t *testing.T, repo *sqliterepo.Repository, taskID, sessi
 	}
 	if err := repo.CreateTaskSession(ctx, session); err != nil {
 		t.Fatalf("failed to create session: %v", err)
-	}
-}
-
-func TestStartSessionForWorkflowStepRejectsProfileMismatchBeforePrompt(t *testing.T) {
-	ctx := context.Background()
-	repo := setupTestRepo(t)
-	seedSession(t, repo, "t1", "s1", "step1")
-
-	session, err := repo.GetTaskSession(ctx, "s1")
-	if err != nil {
-		t.Fatalf("get session: %v", err)
-	}
-	session.AgentProfileID = "profile-a"
-	session.State = models.TaskSessionStateWaitingForInput
-	if err := repo.UpdateTaskSession(ctx, session); err != nil {
-		t.Fatalf("update session: %v", err)
-	}
-
-	stepGetter := newMockStepGetter()
-	stepGetter.steps["step2"] = &wfmodels.WorkflowStep{
-		ID:             "step2",
-		WorkflowID:     "wf1",
-		AgentProfileID: "profile-b",
-	}
-	svc := createTestService(repo, stepGetter, newMockTaskRepo())
-
-	err = svc.StartSessionForWorkflowStep(ctx, "t1", "s1", "step2")
-	if err == nil || !strings.Contains(err.Error(), "profile mismatch") {
-		t.Fatalf("StartSessionForWorkflowStep error = %v, want profile mismatch", err)
 	}
 }
 
@@ -684,91 +654,6 @@ func TestPromptTask_ExecutionNotFoundRevertsStateAndBroadcasts(t *testing.T) {
 	if !sawRevert {
 		t.Fatalf("expected TaskSessionStateChanged RUNNING→WAITING_FOR_INPUT broadcast after prompt failure, got events: %+v", eb.events)
 	}
-}
-
-func TestAcceptedReservedPromptFailureDoesNotStartFreshExecution(t *testing.T) {
-	ctx := context.Background()
-	repo := setupTestRepo(t)
-	seedTaskAndSession(t, repo, "task1", "session1", models.TaskSessionStateWaitingForInput)
-	session, err := repo.GetTaskSession(ctx, "session1")
-	require.NoError(t, err)
-	session.AgentProfileID = "profile1"
-	require.NoError(t, repo.UpdateTaskSession(ctx, session))
-
-	var launchCalls atomic.Int32
-	agentMgr := &mockAgentManager{
-		launchAgentFunc: func(context.Context, *executor.LaunchAgentRequest) (*executor.LaunchAgentResponse, error) {
-			launchCalls.Add(1)
-			return nil, errors.New("unexpected fresh launch")
-		},
-	}
-	taskRepo := newMockTaskRepo()
-	taskRepo.tasks["task1"] = &v1.Task{ID: "task1", Title: "Task", State: v1.TaskStateInProgress}
-	svc := createTestServiceWithScheduler(repo, newMockStepGetter(), taskRepo, agentMgr)
-
-	_, err = svc.finishPromptDispatchFailure(
-		ctx,
-		"task1",
-		"session1",
-		"answer",
-		false,
-		true,
-		nil,
-		promptClaimRollback{
-			previousSessionState: models.TaskSessionStateWaitingForInput,
-			turnID:               "turn-reserved",
-			createdTurn:          true,
-			reservedTurn: &models.Turn{
-				ID: "turn-reserved", TaskID: "task1", TaskSessionID: "session1",
-			},
-		},
-		promptTaskOptions{},
-		fmt.Errorf("accepted transport failure: %w", executor.ErrExecutionNotFound),
-		nil,
-		true,
-		nil,
-	)
-	require.ErrorIs(t, err, executor.ErrExecutionNotFound)
-	require.Zero(t, launchCalls.Load(), "accepted prompt must not start duplicate execution")
-}
-
-func TestAcceptedOrdinaryPromptFailureDoesNotStartFreshExecution(t *testing.T) {
-	ctx := context.Background()
-	repo := setupTestRepo(t)
-	seedTaskAndSession(t, repo, "task1", "session1", models.TaskSessionStateWaitingForInput)
-	session, err := repo.GetTaskSession(ctx, "session1")
-	require.NoError(t, err)
-	session.AgentProfileID = "profile1"
-	require.NoError(t, repo.UpdateTaskSession(ctx, session))
-
-	var launchCalls atomic.Int32
-	agentMgr := &mockAgentManager{
-		launchAgentFunc: func(context.Context, *executor.LaunchAgentRequest) (*executor.LaunchAgentResponse, error) {
-			launchCalls.Add(1)
-			return nil, errors.New("unexpected fresh launch")
-		},
-	}
-	taskRepo := newMockTaskRepo()
-	taskRepo.tasks["task1"] = &v1.Task{ID: "task1", Title: "Task", State: v1.TaskStateInProgress}
-	svc := createTestServiceWithScheduler(repo, newMockStepGetter(), taskRepo, agentMgr)
-
-	_, err = svc.finishPromptDispatchFailure(
-		ctx,
-		"task1",
-		"session1",
-		"answer",
-		false,
-		true,
-		nil,
-		promptClaimRollback{previousSessionState: models.TaskSessionStateWaitingForInput},
-		promptTaskOptions{},
-		fmt.Errorf("accepted transport failure: %w", executor.ErrExecutionNotFound),
-		nil,
-		true,
-		nil,
-	)
-	require.ErrorIs(t, err, executor.ErrExecutionNotFound)
-	require.Zero(t, launchCalls.Load(), "accepted ordinary prompt must not start duplicate execution")
 }
 
 func TestPromptTask_PlanModeInjectsPrefix(t *testing.T) {
@@ -3054,7 +2939,7 @@ func TestQueueAndInterruptForPeerMessage_RacesClarificationTimeoutRecovery(t *te
 		snapshotTaken:   make(chan struct{}),
 	}
 	svc.turnService = turnSync
-	clarificationTurn, err := turnSync.StartTurn(ctx, "session1")
+	_, err := turnSync.StartTurn(ctx, "session1")
 	require.NoError(t, err)
 
 	// Clarification-timeout recovery claims the guard first and blocks
@@ -3063,7 +2948,7 @@ func TestQueueAndInterruptForPeerMessage_RacesClarificationTimeoutRecovery(t *te
 	var recovered bool
 	go func() {
 		recovered = svc.retryClarificationAfterCancel(ctx, clarificationAnsweredData{
-			TaskID: "task1", SessionID: "session1", ClarificationTurnID: clarificationTurn.ID,
+			TaskID: "task1", SessionID: "session1",
 		}, "the clarification answer", fmt.Errorf("wrap: %w", ErrAgentPromptInProgress))
 		close(recoveryDone)
 	}()
@@ -3174,13 +3059,13 @@ func TestClarificationRecovery_ReleasesGuardAfterRetryDispatch(t *testing.T) {
 		snapshotTaken:   make(chan struct{}),
 	}
 	svc.turnService = turnSync
-	clarificationTurn, err := turnSync.StartTurn(ctx, "session1")
+	_, err := turnSync.StartTurn(ctx, "session1")
 	require.NoError(t, err)
 
 	recoveryDone := make(chan bool, 1)
 	go func() {
 		recoveryDone <- svc.retryClarificationAfterCancel(ctx, clarificationAnsweredData{
-			TaskID: "task1", SessionID: "session1", ClarificationTurnID: clarificationTurn.ID,
+			TaskID: "task1", SessionID: "session1",
 		}, "clarification answer", fmt.Errorf("wrap: %w", ErrAgentPromptInProgress))
 	}()
 	<-retryAccepted
@@ -5929,16 +5814,15 @@ func TestGetTaskSessionStatus_UsesTaskEnvironmentBranchForDocker(t *testing.T) {
 
 	now := time.Now().UTC()
 	if err := repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
-		ID:            "env1",
-		TaskID:        "task1",
-		ExecutorType:  string(models.ExecutorTypeLocalDocker),
-		WorkspacePath: "/workspace",
-		Status:        models.TaskEnvironmentStatusReady,
-		Repos: []*models.TaskEnvironmentRepo{{
-			RepositoryID: "repo1", WorktreePath: "/workspace", WorktreeBranch: "feature/test-task-abc",
-		}},
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:             "env1",
+		TaskID:         "task1",
+		ExecutorType:   string(models.ExecutorTypeLocalDocker),
+		WorktreePath:   "/workspace",
+		WorktreeBranch: "feature/test-task-abc",
+		WorkspacePath:  "/workspace",
+		Status:         models.TaskEnvironmentStatusReady,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}); err != nil {
 		t.Fatalf("failed to create task environment: %v", err)
 	}
@@ -6832,20 +6716,14 @@ func TestGetTaskSessionStatus_NeedsWorkspaceRestore_TerminalWithWorktree(t *test
 
 	// Add worktree to session
 	now := time.Now().UTC()
-	if err := repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
-		ID: "env1", TaskID: "task1", ExecutorType: "worktree",
-		WorkspacePath: "/tmp", Status: models.TaskEnvironmentStatusReady,
-	}); err != nil {
-		t.Fatalf("CreateTaskEnvironment: %v", err)
-	}
-	if err := repo.CreateTaskEnvironmentRepo(ctx, &models.TaskEnvironmentRepo{
-		ID:                "wt1",
-		TaskEnvironmentID: "env1",
-		WorktreeID:        "wid1",
-		RepositoryID:      "repo1",
-		WorktreePath:      "/tmp/worktrees/session1",
-		WorktreeBranch:    "feature/test",
-		CreatedAt:         now,
+	if err := repo.CreateTaskSessionWorktree(ctx, &models.TaskSessionWorktree{
+		ID:             "wt1",
+		SessionID:      "session1",
+		WorktreeID:     "wid1",
+		RepositoryID:   "repo1",
+		WorktreePath:   "/tmp/worktrees/session1",
+		WorktreeBranch: "feature/test",
+		CreatedAt:      now,
 	}); err != nil {
 		t.Fatalf("failed to create worktree: %v", err)
 	}

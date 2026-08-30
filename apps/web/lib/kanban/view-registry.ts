@@ -35,8 +35,7 @@ export type MobileWorkflowNavigation = {
 export type ViewRegistryEntry = {
   id: string;
   storedValue: string;
-  /** Catalog key; resolved wherever the entry is labelled. */
-  labelKey: string;
+  label: string;
   icon: ComponentType<{ className?: string }>;
   component: ComponentType<ViewContentProps>;
   enabled: boolean;
@@ -46,7 +45,7 @@ export const VIEW_REGISTRY: ViewRegistryEntry[] = [
   {
     id: "kanban",
     storedValue: "",
-    labelKey: "kanban:kanban",
+    label: "Kanban",
     icon: IconLayoutColumns,
     component: SwimlaneKanbanContent as ComponentType<ViewContentProps>,
     enabled: true,
@@ -54,7 +53,7 @@ export const VIEW_REGISTRY: ViewRegistryEntry[] = [
   {
     id: "graph2",
     storedValue: "graph2",
-    labelKey: "kanban:pipeline",
+    label: "Pipeline",
     icon: IconTimeline,
     component: SwimlaneGraph2Content as ComponentType<ViewContentProps>,
     enabled: true,

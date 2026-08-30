@@ -19,7 +19,6 @@ export function makeStore(initial: Partial<AppState> = {}) {
       activeSessionId: null,
       pinnedSessionId: null,
       lastSessionByTaskId: {},
-      resumeSkippedSessionIds: {},
     },
     taskSessionsByTask: { itemsByTaskId: {}, loadedByTaskId: {}, loadingByTaskId: {} },
     environmentIdBySessionId: {},
@@ -27,7 +26,6 @@ export function makeStore(initial: Partial<AppState> = {}) {
       state = {
         ...state,
         tasks: {
-          ...state.tasks,
           activeTaskId: taskId,
           activeSessionId: sessionId,
           pinnedSessionId: sessionId,

@@ -16,12 +16,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAllocatePort_MultipleCalls(t *testing.T) {
+func TestAllocatePort(t *testing.T) {
+	port, err := allocatePort()
+	require.NoError(t, err)
+	assert.Greater(t, port, 0)
+	assert.Less(t, port, 65536)
+}
+
+func TestAllocatePort_Unique(t *testing.T) {
+	ports := make(map[int]bool)
 	for i := 0; i < 5; i++ {
 		port, err := allocatePort()
 		require.NoError(t, err)
-		assert.Greater(t, port, 0)
-		assert.Less(t, port, 65536)
+		assert.False(t, ports[port], "port %d allocated twice", port)
+		ports[port] = true
 	}
 }
 

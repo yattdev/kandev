@@ -26,7 +26,6 @@ import type { KanbanState } from "@/lib/state/slices/kanban/types";
 import { useTaskPendingInput } from "@/hooks/use-task-pending-input";
 import { compareTasksByCreatedDesc } from "@/lib/kanban/task-order";
 import { useTranslation } from "react-i18next";
-import { t } from "@/lib/i18n";
 
 export type SwimlaneGraphContentProps = {
   workflowId: string;
@@ -147,15 +146,7 @@ type SwimlaneGraphDndOptions = {
   onMoveError?: (error: MoveTaskError) => void;
 };
 
-/**
- * Optimistically moves a task, rolling the snapshot back and reporting a message
- * when the backend refuses.
- *
- * Exported for tests: the localized fallback on the non-`Error` branch is the
- * kind of copy no rendering test reaches, since it is handed to `onMoveError`
- * rather than to the DOM.
- */
-export async function moveTaskAcrossSwimlaneSteps({
+async function moveTaskAcrossSwimlaneSteps({
   task,
   taskId,
   targetColumnId,
@@ -208,7 +199,7 @@ export async function moveTaskAcrossSwimlaneSteps({
         .getState()
         .setWorkflowSnapshot(workflowId, { ...currentSnapshot, tasks: originalTasks });
     }
-    const message = error instanceof Error ? error.message : t("task:failedToMoveTask");
+    const message = error instanceof Error ? error.message : "Failed to move task";
     onMoveError?.({ message, taskId, sessionId: task.primarySessionId ?? null });
   }
 }

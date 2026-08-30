@@ -121,7 +121,6 @@ export function buildCreatePayload(
   repositoryIds: string[],
   pending: PendingTrigger[],
 ): CreateAutomationRequest {
-  // i18n-exempt: persisted automation name. See the comment below.
   return {
     workspace_id: workspaceId,
     // Persisted as the automation's name — user data, so it stays English

@@ -637,10 +637,11 @@ func TestCleanupTaskResources_SkipsBorrowedInheritedWorktree(t *testing.T) {
 	ctx := context.Background()
 	seedParentChildWorkspace(t, repo, "ws-inherited", "wf-inherited", "parent-task", "child-task")
 	if err := repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
-		ID:     "env-parent",
-		TaskID: "parent-task",
-		Status: models.TaskEnvironmentStatusReady,
-		Repos:  []*models.TaskEnvironmentRepo{{RepositoryID: "repo-parent", WorktreeID: "wt-parent", WorktreePath: "/tmp/parent-worktree"}},
+		ID:           "env-parent",
+		TaskID:       "parent-task",
+		WorktreeID:   "wt-parent",
+		WorktreePath: "/tmp/parent-worktree",
+		Status:       models.TaskEnvironmentStatusReady,
 	}); err != nil {
 		t.Fatalf("create parent environment: %v", err)
 	}
@@ -705,10 +706,11 @@ func TestCleanupTaskResources_PreservesOwnedEnvironmentWithActiveInheritedChild(
 	ctx := context.Background()
 	seedParentChildWorkspace(t, repo, "ws-shared", "wf-shared", "parent-task", "child-task")
 	if err := repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
-		ID:     "env-parent",
-		TaskID: "parent-task",
-		Status: models.TaskEnvironmentStatusReady,
-		Repos:  []*models.TaskEnvironmentRepo{{RepositoryID: "repo-parent", WorktreeID: "wt-parent", WorktreePath: "/tmp/parent-worktree"}},
+		ID:           "env-parent",
+		TaskID:       "parent-task",
+		WorktreeID:   "wt-parent",
+		WorktreePath: "/tmp/parent-worktree",
+		Status:       models.TaskEnvironmentStatusReady,
 	}); err != nil {
 		t.Fatalf("create parent environment: %v", err)
 	}
@@ -760,10 +762,11 @@ func TestDeleteTask_TransfersBorrowedEnvironmentBeforeDeletingOwner(t *testing.T
 	ctx := context.Background()
 	seedParentChildWorkspace(t, repo, "ws-transfer", "wf-transfer", "parent-task", "child-task")
 	if err := repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
-		ID:     "env-parent",
-		TaskID: "parent-task",
-		Status: models.TaskEnvironmentStatusReady,
-		Repos:  []*models.TaskEnvironmentRepo{{RepositoryID: "repo-parent", WorktreeID: "wt-parent", WorktreePath: "/tmp/parent-worktree"}},
+		ID:           "env-parent",
+		TaskID:       "parent-task",
+		WorktreeID:   "wt-parent",
+		WorktreePath: "/tmp/parent-worktree",
+		Status:       models.TaskEnvironmentStatusReady,
 	}); err != nil {
 		t.Fatalf("create parent environment: %v", err)
 	}
@@ -795,10 +798,11 @@ func TestCleanupTaskResources_TransfersBorrowedEnvironmentBeforeCascadeDelete(t 
 	ctx := context.Background()
 	seedParentChildWorkspace(t, repo, "ws-cascade-transfer", "wf-cascade-transfer", "parent-task", "child-task")
 	if err := repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
-		ID:     "env-parent",
-		TaskID: "parent-task",
-		Status: models.TaskEnvironmentStatusReady,
-		Repos:  []*models.TaskEnvironmentRepo{{RepositoryID: "repo-parent", WorktreeID: "wt-parent", WorktreePath: "/tmp/parent-worktree"}},
+		ID:           "env-parent",
+		TaskID:       "parent-task",
+		WorktreeID:   "wt-parent",
+		WorktreePath: "/tmp/parent-worktree",
+		Status:       models.TaskEnvironmentStatusReady,
 	}); err != nil {
 		t.Fatalf("create parent environment: %v", err)
 	}

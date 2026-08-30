@@ -12,7 +12,6 @@ import {
 import { calculateHash, generateUnifiedDiff } from "@/lib/utils/file-diff";
 import { requestFileContent, updateFileContent, deleteFile } from "@/lib/ws/workspace-files";
 import { useToast } from "@/components/toast-provider";
-import { t } from "@/lib/i18n";
 import { getFileTabKey } from "./task-center-panel-file-tabs";
 import { lspClientManager } from "@/lib/lsp/lsp-client-manager";
 
@@ -236,15 +235,16 @@ export function useFileSaveDelete({
           );
         } else {
           toast({
-            title: t("editors:saveFailed"),
-            description: response.error || t("editors:failedToSaveFile"),
+            title: "Save failed",
+            description: response.error || "Failed to save file",
             variant: "error",
           });
         }
       } catch (error) {
         toast({
-          title: t("editors:saveFailed"),
-          description: error instanceof Error ? error.message : t("editors:errorWhileSavingFile"),
+          title: "Save failed",
+          description:
+            error instanceof Error ? error.message : "An error occurred while saving the file",
           variant: "error",
         });
       } finally {
@@ -268,15 +268,16 @@ export function useFileSaveDelete({
           handleCloseFileTab(getFileTabKey({ path, repo }));
         } else {
           toast({
-            title: t("editors:deleteFailed"),
-            description: response.error || t("editors:failedToDeleteFile"),
+            title: "Delete failed",
+            description: response.error || "Failed to delete file",
             variant: "error",
           });
         }
       } catch (error) {
         toast({
-          title: t("editors:deleteFailed"),
-          description: error instanceof Error ? error.message : t("editors:errorWhileDeletingFile"),
+          title: "Delete failed",
+          description:
+            error instanceof Error ? error.message : "An error occurred while deleting the file",
           variant: "error",
         });
       }

@@ -52,7 +52,7 @@ func Decide(context ExecutionContext, e *Error, now time.Time) RecoveryDecision 
 
 func isShortRetryable(e *Error, now time.Time) bool {
 	switch e.Code {
-	case CodeNetworkUnavailable, CodeProviderUnavailable, CodeProviderOverloaded, CodeModelCapacity, CodeAgentTransportLost:
+	case CodeNetworkUnavailable, CodeProviderUnavailable, CodeProviderOverloaded, CodeModelCapacity:
 		return e.Confidence == ConfHigh || e.Confidence == ConfMedium
 	case CodeRateLimited:
 		if e.ResetHint == nil || e.ResetHint.IsZero() {

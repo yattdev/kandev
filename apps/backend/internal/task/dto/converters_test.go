@@ -62,24 +62,6 @@ func TestFromTaskSerializesWorkspaceFolders(t *testing.T) {
 	}
 }
 
-func TestFromTaskSerializesAutopilot(t *testing.T) {
-	got := FromTask(&models.Task{ID: "task-autopilot", Autopilot: true})
-	if !got.Autopilot {
-		t.Fatal("Autopilot = false, want true")
-	}
-	payload, err := json.Marshal(got)
-	if err != nil {
-		t.Fatalf("marshal task DTO: %v", err)
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(payload, &fields); err != nil {
-		t.Fatalf("decode task DTO: %v", err)
-	}
-	if raw, ok := fields["autopilot"]; !ok || string(raw) != "true" {
-		t.Fatalf("autopilot field = %s, want true", raw)
-	}
-}
-
 func TestFromWorkflowStep_PreservesWIPFields(t *testing.T) {
 	step := &wfmodels.WorkflowStep{
 		ID:             "step-1",
@@ -123,7 +105,7 @@ func TestFromTaskSession_IncludesAllWorktrees(t *testing.T) {
 		ID:            "session-1",
 		TaskID:        "task-1",
 		WorkspacePath: "/task-root",
-		Worktrees: []*models.TaskEnvironmentRepo{
+		Worktrees: []*models.TaskSessionWorktree{
 			{ID: "assoc-1", WorktreeID: "wt-1", RepositoryID: "repo-a", WorktreePath: "/x/a"},
 			{ID: "assoc-2", WorktreeID: "wt-2", RepositoryID: "repo-b", WorktreePath: "/x/b"},
 		},
@@ -144,11 +126,8 @@ func TestFromTaskSession_IncludesAllWorktrees(t *testing.T) {
 	if len(summary.Worktrees) != 2 {
 		t.Fatalf("FromTaskSessionSummary Worktrees len = %d, want 2", len(summary.Worktrees))
 	}
-	if summary.Worktrees[1]["worktree_id"] != "wt-2" {
-		t.Fatalf("second worktree id = %v, want wt-2", summary.Worktrees[1]["worktree_id"])
-	}
-	if summary.Worktrees[0]["session_id"] != "session-1" {
-		t.Fatalf("worktree session_id = %v, want session-1 (stable wire shape)", summary.Worktrees[0]["session_id"])
+	if summary.Worktrees[1].WorktreeID != "wt-2" {
+		t.Fatalf("second worktree id = %q, want wt-2", summary.Worktrees[1].WorktreeID)
 	}
 	if summary.WorkspacePath != "/task-root" {
 		t.Fatalf("summary WorkspacePath = %q, want /task-root", summary.WorkspacePath)
@@ -198,36 +177,5 @@ func TestTaskToAPI_DerivesInterruptedFromMetadata(t *testing.T) {
 	unmarked := (&models.Task{ID: "t1", CreatedAt: now, UpdatedAt: now}).ToAPI()
 	if unmarked.Interrupted {
 		t.Fatal("ToAPI Interrupted = true, want false when interrupted_at metadata is absent")
-	}
-}
-
-func TestFromTurnPreservesSubsecondOrderingPrecision(t *testing.T) {
-	base := time.Date(2026, time.August, 15, 12, 0, 0, 100000000, time.UTC)
-	completedAt := base.Add(3 * time.Nanosecond)
-	got := FromTurn(&models.Turn{
-		ID:          "turn-nano",
-		StartedAt:   base,
-		CompletedAt: &completedAt,
-		CreatedAt:   base.Add(time.Nanosecond),
-		UpdatedAt:   base.Add(2 * time.Nanosecond),
-	})
-
-	if got.StartedAt != "2026-08-15T12:00:00.100000000Z" {
-		t.Fatalf("StartedAt = %q, want nanosecond precision", got.StartedAt)
-	}
-	if got.CreatedAt != "2026-08-15T12:00:00.100000001Z" {
-		t.Fatalf("CreatedAt = %q, want nanosecond precision", got.CreatedAt)
-	}
-	if got.UpdatedAt != "2026-08-15T12:00:00.100000002Z" {
-		t.Fatalf("UpdatedAt = %q, want nanosecond precision", got.UpdatedAt)
-	}
-	if got.CompletedAt == nil || *got.CompletedAt != "2026-08-15T12:00:00.100000003Z" {
-		t.Fatalf("CompletedAt = %v, want nanosecond precision", got.CompletedAt)
-	}
-	if got.StartedAt >= got.CreatedAt || got.CreatedAt >= got.UpdatedAt || got.UpdatedAt >= *got.CompletedAt {
-		t.Fatalf("turn timestamps are not lexically chronological: %+v", got)
-	}
-	if _, err := time.Parse(time.RFC3339, got.StartedAt); err != nil {
-		t.Fatalf("time.Parse(RFC3339, StartedAt): %v", err)
 	}
 }

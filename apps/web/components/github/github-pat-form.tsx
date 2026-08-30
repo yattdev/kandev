@@ -6,7 +6,6 @@ import { Button } from "@kandev/ui/button";
 import { Input } from "@kandev/ui/input";
 import { Label } from "@kandev/ui/label";
 import { useTranslation } from "react-i18next";
-import { settingsCredentialClassName } from "@/components/settings/settings-control";
 
 export function GitHubPATForm({
   workspaceId,
@@ -42,7 +41,7 @@ export function GitHubPATForm({
             placeholder="ghp_xxxxxxxxxxxx"
             autoComplete="off"
             disabled={disabled}
-            className={settingsCredentialClassName("h-11 pr-11")}
+            className="h-11 pr-11 font-mono"
           />
           <Button
             type="button"

@@ -1,9 +1,9 @@
 import type { WorkspaceId } from "./ids";
+import type { VoiceModeSettings } from "./http-voice";
 
 export type MCPTaskAgentProfileDefault = "current_task" | "workspace_default";
 export type StartupPage = "task_overview" | "last_task";
 export type LspStatusLocation = "toolbar" | "status_bar";
-export type LastSeenDisplay = "absolute" | "relative";
 
 export type SavedLayout = {
   id: string;
@@ -68,10 +68,8 @@ export type UserSettings = {
   show_scroll_to_start?: boolean;
   show_transcript_auto_scroll_control?: boolean;
   show_todo_list_panel?: boolean;
-  show_todo_list_panel_only_when_not_empty?: boolean;
   review_auto_mark_on_scroll?: boolean;
   confirm_task_archive?: boolean;
-  prevent_auto_start_agent_on_open?: boolean;
   unread_divider?: boolean;
   agent_generated_task_titles?: boolean;
   mcp_task_agent_profile_default?: MCPTaskAgentProfileDefault;
@@ -95,18 +93,14 @@ export type UserSettings = {
   azure_devops_browse_preferences?: unknown;
   default_utility_agent_id?: string;
   default_utility_model?: string;
-  default_utility_agent_profile_id?: string;
   keyboard_shortcuts?: Record<string, { key: string; modifiers?: Record<string, boolean> }>;
   terminal_link_behavior?: string;
   terminal_font_family?: string;
   terminal_font_size?: number;
   changes_panel_layout?: "flat" | "tree";
-  last_seen_display?: LastSeenDisplay;
   system_metrics_display?: { show_in_topbar?: boolean; simplified?: boolean };
-  app_status_bar_enabled?: boolean;
   app_status_bar_order?: AppStatusBarOrderApi;
-  kanban_hidden_step_ids?: Record<string, string[]>;
-  revision?: number;
+  voice_mode?: VoiceModeSettings;
   updated_at: string;
 };
 
@@ -133,10 +127,8 @@ export type UserSettingsUpdatePayload = {
   show_scroll_to_start?: boolean;
   show_transcript_auto_scroll_control?: boolean;
   show_todo_list_panel?: boolean;
-  show_todo_list_panel_only_when_not_empty?: boolean;
   review_auto_mark_on_scroll?: boolean;
   confirm_task_archive?: boolean;
-  prevent_auto_start_agent_on_open?: boolean;
   unread_divider?: boolean;
   agent_generated_task_titles?: boolean;
   mcp_task_agent_profile_default?: MCPTaskAgentProfileDefault;
@@ -160,15 +152,12 @@ export type UserSettingsUpdatePayload = {
   azure_devops_browse_preferences?: object | null;
   default_utility_agent_id?: string;
   default_utility_model?: string;
-  default_utility_agent_profile_id?: string;
   keyboard_shortcuts?: Record<string, { key: string; modifiers?: Record<string, boolean> }>;
   terminal_link_behavior?: "new_tab" | "browser_panel";
   terminal_font_family?: string;
   terminal_font_size?: number;
   changes_panel_layout?: "flat" | "tree";
-  last_seen_display?: LastSeenDisplay;
   system_metrics_display?: { show_in_topbar?: boolean; simplified?: boolean };
-  app_status_bar_enabled?: boolean;
   app_status_bar_order?: AppStatusBarOrderApi;
-  kanban_hidden_step_ids?: Record<string, string[]>;
+  voice_mode?: VoiceModeSettings;
 };

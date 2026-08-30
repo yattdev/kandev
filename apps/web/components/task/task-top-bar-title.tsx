@@ -6,7 +6,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage } from "@kan
 import { Tooltip, TooltipContent, TooltipTrigger } from "@kandev/ui/tooltip";
 import { Input } from "@kandev/ui/input";
 import { useTaskActions } from "@/hooks/use-task-actions";
-import { useTaskTitleSelectionRestore } from "@/hooks/use-task-title-selection-restore";
+import { clampTaskTitleInput } from "@/lib/task-title";
 
 type TaskTopBarTitleProps = {
   taskId?: string | null;
@@ -19,7 +19,6 @@ export function TaskTopBarTitle({ taskId, taskTitle, isArchived }: TaskTopBarTit
   const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const { inputRef, clampChange } = useTaskTitleSelectionRestore(draft);
   const titleRef = useRef<HTMLSpanElement>(null);
   const restoreFocusRef = useRef(false);
   const canRename = Boolean(taskId) && !isArchived;
@@ -81,12 +80,11 @@ export function TaskTopBarTitle({ taskId, taskTitle, isArchived }: TaskTopBarTit
   if (isEditing) {
     return (
       <Input
-        ref={inputRef}
         data-testid="task-title-rename-input"
         aria-label={t("task:taskTitle")}
         autoFocus
         value={draft}
-        onChange={(e) => setDraft(clampChange(e))}
+        onChange={(e) => setDraft(clampTaskTitleInput(e.target.value))}
         onFocus={(e) => e.target.select()}
         onBlur={handleCancel}
         onKeyDown={handleKeyDown}

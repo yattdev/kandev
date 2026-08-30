@@ -63,7 +63,9 @@ func newAutoInjectExecution(description string) *AgentExecution {
 		PassthroughProcessID: "proc-abc",
 	}
 	if description != "" {
-		exec.setMetadataValue("task_description", description)
+		exec.Metadata = map[string]interface{}{
+			"task_description": description,
+		}
 	}
 	return exec
 }

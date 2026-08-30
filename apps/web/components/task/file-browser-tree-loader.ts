@@ -9,7 +9,6 @@ import {
   removeFailedExpansions,
 } from "./file-browser-restore";
 import type { LoadState } from "./file-browser-hooks";
-import { t } from "@/lib/i18n";
 
 const debugLoad = createDebugLogger("file-browser:load");
 const MAX_RETRY_ATTEMPTS = 4;
@@ -71,7 +70,7 @@ function scheduleRetry({
   retry: () => void;
 }) {
   if (!isCurrentLoad()) return;
-  const message = error instanceof Error ? error.message : t("task:failedToLoadFileTree");
+  const message = error instanceof Error ? error.message : "Failed to load file tree";
   setLoadError(message);
   if (retryAttemptRef.current >= MAX_RETRY_ATTEMPTS) {
     setLoadState("manual");

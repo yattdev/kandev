@@ -26,7 +26,7 @@ import {
 import { SettingsFields } from "./linear-issue-watch-fields";
 import { FilterFields, SelectField } from "./linear-issue-watch-filter-fields";
 import { linearIssueWatchPlaceholders } from "./linear-issue-watch-placeholders";
-import { STEP_DEFAULT, resolveProfileId } from "@/lib/watcher-profile-default";
+import { STEP_DEFAULT, STEP_DEFAULT_LABEL, resolveProfileId } from "@/lib/watcher-profile-default";
 import { WatcherRepositoryFields } from "@/components/watcher-repository-fields";
 import { clearWorkspaceScopedForm } from "@/lib/watcher-repository-default";
 import {
@@ -159,7 +159,6 @@ function AutomationFields({
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
 }) {
   const { t } = useTranslation();
-  const stepDefaultLabel = t("common:useStepDefaultOption");
   const { workflows, agentProfiles, allExecutorProfiles } = useFormData(form.workspaceId);
   const { steps, loading: stepsLoading } = useWorkflowSteps(form.workflowId);
   return (
@@ -198,9 +197,9 @@ function AutomationFields({
           description={t("linear:fallsBackToStepDefault")}
           value={form.agentProfileId || STEP_DEFAULT}
           onChange={(v) => setForm((p) => ({ ...p, agentProfileId: resolveProfileId(v) }))}
-          placeholder={stepDefaultLabel}
+          placeholder={STEP_DEFAULT_LABEL}
           items={[
-            { id: STEP_DEFAULT, label: stepDefaultLabel },
+            { id: STEP_DEFAULT, label: STEP_DEFAULT_LABEL },
             ...agentProfiles.map((p) => ({
               id: p.id,
               label: p.label,
@@ -213,9 +212,9 @@ function AutomationFields({
           description={t("linear:fallsBackToStepDefault")}
           value={form.executorProfileId || STEP_DEFAULT}
           onChange={(v) => setForm((p) => ({ ...p, executorProfileId: resolveProfileId(v) }))}
-          placeholder={stepDefaultLabel}
+          placeholder={STEP_DEFAULT_LABEL}
           items={[
-            { id: STEP_DEFAULT, label: stepDefaultLabel },
+            { id: STEP_DEFAULT, label: STEP_DEFAULT_LABEL },
             ...allExecutorProfiles.map((p) => ({ id: p.id, label: p.name })),
           ]}
         />

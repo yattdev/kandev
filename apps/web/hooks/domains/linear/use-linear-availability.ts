@@ -22,7 +22,7 @@ export function useLinearAvailable(workspaceId?: string | null): boolean {
     [workspaceId],
   );
   return useIntegrationAvailable({
-    enabledState: useLinearEnabled(workspaceId),
+    useEnabled: useLinearEnabled,
     fetchConfig,
   });
 }

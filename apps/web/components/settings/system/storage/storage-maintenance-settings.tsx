@@ -20,7 +20,6 @@ import { StorageQuarantineCard } from "./storage-quarantine-card";
 import { StorageRunHistory } from "./storage-run-history";
 import { SettingsTarget } from "../../settings-target";
 import { SYSTEM_SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/system";
-import { TemporaryArtifactsDialog } from "./storage-confirmation-dialogs";
 
 function StorageJobButtonContent({
   job,
@@ -286,14 +285,12 @@ function StoragePrimarySections({
   draft,
   setDraft,
   savedSettings,
-  onRunTemporaryArtifacts,
 }: {
   controller: ReturnType<typeof useStorageMaintenance>;
   disabledReason?: string;
   draft: Settings | null;
   setDraft: (settings: Settings | null) => void;
   savedSettings: Settings | null;
-  onRunTemporaryArtifacts: () => void;
 }) {
   const controlsPending = policyPendingAction(controller.pendingAction);
   const policyLoading = controller.loading?.policy ?? !savedSettings;
@@ -312,7 +309,6 @@ function StoragePrimarySections({
         error={controller.sectionErrors?.overview}
         disabledReason={disabledReason}
         onRunGoCache={() => void controller.runNow(["go_cache"])}
-        onRunTemporaryArtifacts={onRunTemporaryArtifacts}
       />
       <StoragePolicyState loading={policyLoading} error={controller.sectionErrors?.policy} />
       {draft && savedSettings && capabilities && (
@@ -362,11 +358,9 @@ function StorageQuarantineSection({
 function StoragePageSections({
   controller,
   disabledReason,
-  onRunTemporaryArtifacts,
 }: {
   controller: ReturnType<typeof useStorageMaintenance>;
   disabledReason?: string;
-  onRunTemporaryArtifacts: () => void;
 }) {
   const { draft, setDraft, savedSettings } = useStoragePolicyDraft(controller);
   return (
@@ -377,7 +371,6 @@ function StoragePageSections({
         draft={draft}
         setDraft={setDraft}
         savedSettings={savedSettings}
-        onRunTemporaryArtifacts={onRunTemporaryArtifacts}
       />
       <StorageRunHistory
         runs={controller.runs}
@@ -397,7 +390,6 @@ export function StorageMaintenanceSettings() {
   const { t } = useTranslation();
   const controller = useStorageMaintenance();
   const actionDisabledReason = storageActionDisabledReason(t, controller.pendingAction);
-  const [temporaryCleanupOpen, setTemporaryCleanupOpen] = useState(false);
 
   return (
     <div className="min-w-0 space-y-6" data-testid="storage-settings-page">
@@ -405,19 +397,7 @@ export function StorageMaintenanceSettings() {
 
       <StorageActionFeedback controller={controller} />
 
-      <StoragePageSections
-        controller={controller}
-        disabledReason={actionDisabledReason}
-        onRunTemporaryArtifacts={() => setTemporaryCleanupOpen(true)}
-      />
-      <TemporaryArtifactsDialog
-        open={temporaryCleanupOpen}
-        onOpenChange={setTemporaryCleanupOpen}
-        onConfirm={() => {
-          setTemporaryCleanupOpen(false);
-          void controller.runNow(["temporary_artifacts"]);
-        }}
-      />
+      <StoragePageSections controller={controller} disabledReason={actionDisabledReason} />
     </div>
   );
 }

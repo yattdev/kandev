@@ -52,8 +52,6 @@ func (c *Controller) CreateAgent(ctx context.Context, req dto.CreateUtilityAgent
 		req.Prompt,
 		req.AgentID,
 		req.Model,
-		req.AgentProfileID,
-		req.ProfileBindingState,
 	)
 	if err != nil {
 		return nil, err
@@ -72,8 +70,6 @@ func (c *Controller) UpdateAgent(ctx context.Context, id string, req dto.UpdateU
 		req.Prompt,
 		req.AgentID,
 		req.Model,
-		req.AgentProfileID,
-		req.ProfileBindingState,
 		req.Enabled,
 	)
 	if err != nil {
@@ -116,8 +112,8 @@ func (c *Controller) PreparePromptRequest(ctx context.Context, req dto.ExecutePr
 }
 
 // CreateCall creates a call record for tracking.
-func (c *Controller) CreateCall(ctx context.Context, utilityID, sessionID, resolvedPrompt, model, profileID string) (string, error) {
-	call, err := c.svc.CreateCall(ctx, utilityID, sessionID, resolvedPrompt, model, profileID)
+func (c *Controller) CreateCall(ctx context.Context, utilityID, sessionID, resolvedPrompt, model string) (string, error) {
+	call, err := c.svc.CreateCall(ctx, utilityID, sessionID, resolvedPrompt, model)
 	if err != nil {
 		return "", err
 	}

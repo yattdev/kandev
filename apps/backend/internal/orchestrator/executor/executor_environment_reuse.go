@@ -47,6 +47,12 @@ func (e *Executor) reuseExistingEnvironment(ctx context.Context, req *LaunchAgen
 	if req.UseWorktree {
 		e.reuseExistingRepositoryWorktrees(ctx, req, env)
 	}
+	if req.WorktreeID == "" && env.WorktreeID != "" && req.UseWorktree && !hasBranchScopedEnvironmentWorktrees(env) {
+		req.WorktreeID = env.WorktreeID
+		e.logger.Info("reusing existing task environment worktree",
+			zap.String("task_id", req.TaskID),
+			zap.String("worktree_id", env.WorktreeID))
+	}
 
 	if env.ContainerID != "" || env.SandboxID != "" {
 		metadata := ensureLaunchMetadata(req)
@@ -60,11 +66,10 @@ func (e *Executor) reuseExistingEnvironment(ctx context.Context, req *LaunchAgen
 
 	// Forward the persisted feature branch so the in-sandbox prepare script
 	// can re-create or reuse it. Applies to every clone-based remote executor
-	// (the preparer is responsible for stamping the environment repository
-	// row's worktree_branch in the first place); the host-side worktree path
-	// uses req.WorktreeID instead.
-	if branch := environmentWorktreeBranch(env); branch != "" && isContainerizedExecutor(req.ExecutorType) {
-		ensureLaunchMetadata(req)[lifecycle.MetadataKeyWorktreeBranch] = branch
+	// (the preparer is responsible for stamping env.WorktreeBranch in the
+	// first place); the host-side worktree path uses req.WorktreeID instead.
+	if env.WorktreeBranch != "" && isContainerizedExecutor(req.ExecutorType) {
+		ensureLaunchMetadata(req)[lifecycle.MetadataKeyWorktreeBranch] = env.WorktreeBranch
 	}
 
 	if env.ID == "" {
@@ -210,7 +215,6 @@ func topLevelLaunchRepoSpec(req *LaunchAgentRequest) (RepoSpec, bool) {
 		WorktreeBranchTemplate: req.WorktreeBranchTemplate,
 		WorktreeBranchTicket:   req.WorktreeBranchTicket,
 		PullBeforeWorktree:     req.PullBeforeWorktree,
-		RemoteSyncHandled:      req.RemoteSyncHandled,
 		CopyFiles:              req.CopyFiles,
 		BranchIdentitySlug:     topLevelBranchIdentitySlug(req),
 	}, true
@@ -234,19 +238,20 @@ func launchRepoBranchIdentitySlug(spec RepoSpec) string {
 	return worktree.SanitizeBranchSlug(spec.BranchSlug)
 }
 
-// environmentWorktreeBranch returns the first non-empty worktree branch
-// recorded on the environment's repository rows.
-func environmentWorktreeBranch(env *models.TaskEnvironment) string {
-	for _, repo := range env.Repos {
-		if repo != nil && repo.WorktreeBranch != "" {
-			return repo.WorktreeBranch
-		}
-	}
-	return ""
-}
-
 func (e *Executor) environmentRepoWorktreeIDs(req *LaunchAgentRequest, env *models.TaskEnvironment) map[repositoryWorktreeKey]string {
 	result := make(map[repositoryWorktreeKey]string)
+	if env.WorktreeID != "" && !hasBranchScopedEnvironmentWorktrees(env) {
+		repoID := env.RepositoryID
+		if repoID == "" {
+			repoID = req.RepositoryID
+		}
+		if repoID != "" {
+			result[repositoryWorktreeKey{
+				repositoryID: repoID,
+				branchSlug:   "",
+			}] = env.WorktreeID
+		}
+	}
 	for _, repo := range env.Repos {
 		if repo.RepositoryID == "" || repo.WorktreeID == "" {
 			continue
@@ -269,9 +274,6 @@ func hasBranchScopedEnvironmentWorktrees(env *models.TaskEnvironment) bool {
 }
 
 func (e *Executor) latestSessionWorktreeIDsForEnvironment(ctx context.Context, taskID, envID string) map[repositoryWorktreeKey]string {
-	if e.repo == nil {
-		return nil
-	}
 	sessions, err := e.repo.ListTaskSessions(ctx, taskID)
 	if err != nil {
 		e.logger.Warn("failed to list sessions for per-repo worktree reuse",
@@ -309,7 +311,7 @@ func (e *Executor) latestSessionWorktreeIDsForEnvironment(ctx context.Context, t
 	return nil
 }
 
-func sessionWorktreeIDsByKey(worktrees []*models.TaskEnvironmentRepo) map[repositoryWorktreeKey]string {
+func sessionWorktreeIDsByKey(worktrees []*models.TaskSessionWorktree) map[repositoryWorktreeKey]string {
 	result := make(map[repositoryWorktreeKey]string, len(worktrees))
 	for _, wt := range worktrees {
 		if wt.RepositoryID == "" || wt.WorktreeID == "" {

@@ -4,13 +4,8 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 const mockRequest = vi.fn();
 const mockMergeMessages = vi.fn();
 const mockSetMessages = vi.fn();
-const mockListSessionTurns = vi.fn();
 const SESSION_ID = "sess-1";
 const MESSAGE_LIST = "message.list";
-
-vi.mock("@/lib/api/domains/session-api", () => ({
-  listSessionTurns: (...args: unknown[]) => mockListSessionTurns(...args),
-}));
 
 vi.mock("@/lib/ws/connection", () => ({
   getWebSocketClient: () => ({
@@ -24,19 +19,8 @@ vi.mock("@/components/state-provider", () => ({
   useAppStoreApi: () => ({
     getState: () => ({
       messages: { bySession: {} },
-      taskSessions: { items: { [SESSION_ID]: { state: "RUNNING" } } },
-      turns: {
-        bySession: {},
-        activeBySession: {},
-        loadedBySession: {},
-        reconcileEpochBySession: {},
-        settledBoundaryBySession: {},
-      },
       mergeMessages: mockMergeMessages,
       setMessages: mockSetMessages,
-      addTurn: vi.fn(),
-      markTurnsLoaded: vi.fn(),
-      reconcileActiveTurnAfterHydration: vi.fn(),
     }),
   }),
 }));
@@ -54,23 +38,11 @@ describe("useVisibilityBackfill", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequest.mockResolvedValue({ messages: [], has_more: false });
-    mockListSessionTurns.mockResolvedValue({ turns: [], total: 0 });
     store = {
       getState: () => ({
         messages: { bySession: {} },
-        taskSessions: { items: { [SESSION_ID]: { state: "RUNNING" } } },
-        turns: {
-          bySession: {},
-          activeBySession: {},
-          loadedBySession: {},
-          reconcileEpochBySession: {},
-          settledBoundaryBySession: {},
-        },
         mergeMessages: mockMergeMessages,
         setMessages: mockSetMessages,
-        addTurn: vi.fn(),
-        markTurnsLoaded: vi.fn(),
-        reconcileActiveTurnAfterHydration: vi.fn(),
       }),
     };
   });

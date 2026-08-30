@@ -25,15 +25,13 @@ async function createTaskAndWaitForDone(apiClient: ApiClient, seedData: SeedData
     },
   );
 
-  if (!task.session_id) throw new Error(`${title} task did not return a session id`);
   await expect
     .poll(
       async () => {
         const { sessions } = await apiClient.listTaskSessions(task.id);
-        const session = sessions.find((candidate) => candidate.id === task.session_id);
-        return DONE_STATES.includes(session?.state ?? "");
+        return DONE_STATES.includes(sessions[0]?.state ?? "");
       },
-      { timeout: 60_000, message: `Waiting for ${title} session to settle` },
+      { timeout: 30_000, message: `Waiting for ${title} session to settle` },
     )
     .toBe(true);
 

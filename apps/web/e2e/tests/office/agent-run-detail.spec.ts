@@ -1,5 +1,4 @@
 import { test, expect } from "../../fixtures/office-fixture";
-import { injectLatency } from "../../helpers/causal-waits";
 
 /**
  * E2E coverage for the per-agent paginated runs list and the run
@@ -103,10 +102,7 @@ test.describe("Office agent run detail", () => {
         await route.continue();
         return;
       }
-      await injectLatency(
-        800,
-        "slows the mocked paginated-runs response so the pending/loading UI stays observable; the delay is the stimulus under test, not a wait",
-      );
+      await new Promise((resolve) => setTimeout(resolve, 800));
       await route.continue();
     });
 

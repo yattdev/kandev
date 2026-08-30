@@ -92,23 +92,15 @@ func runManagedApp(ctx context.Context, cfg managedAppConfig) int {
 	supervisor := newSupervisorFn()
 	attachSignalsFn(supervisor)
 	shutdownDebugf("runManagedApp signal handler attached")
-	healthToken, err := launchHealthToken()
+	healthToken, err := newHealthToken()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[kandev] "+err.Error())
 		return 1
 	}
-	env := backendEnv(cfg.Ports, cfg.LogLevel, resolveConsoleLogLevel(cfg.Opts), cfg.Opts.Debug, healthToken, nil)
-	backend, dumpLogs, err := launchBackendFn(backendLaunchConfig{
-		Command:    cfg.Backend,
-		Args:       []string{"__backend"},
-		CWD:        cfg.BackendCWD,
-		Env:        env,
-		Quiet:      false,
-		Ports:      cfg.Ports,
-		Mode:       cfg.Mode,
-		HomeDir:    resolveHomeDir(),
-		Supervisor: supervisor,
-	})
+	env := backendEnv(cfg.Ports, cfg.LogLevel, resolveConsoleLogLevel(cfg.Opts), cfg.Opts.Debug, healthToken)
+	backend, dumpLogs, err := launchBackendFn(
+		cfg.Backend, []string{"__backend"}, cfg.BackendCWD, env, false, cfg.Ports, cfg.Mode, supervisor,
+	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[kandev] "+err.Error())
 		return 1
@@ -134,10 +126,6 @@ func runManagedApp(ctx context.Context, cfg managedAppConfig) int {
 func logStartup(header string, ports portConfig, dbPath, logLevel string) {
 	fmt.Println("[kandev] " + header)
 	fmt.Println("[kandev] url:", ports.BackendURL)
-	hosts := networkAddressesForBindHost(listHostNetworkAddresses(), os.Getenv("KANDEV_SERVER_HOST"))
-	for _, url := range networkURLsForPort(ports.BackendPort, hosts) {
-		fmt.Println("[kandev]   network:", url)
-	}
 	fmt.Println("[kandev] mcp:", ports.BackendURL+"/mcp")
 	if dbPath != "" {
 		fmt.Println("[kandev] db:", dbPath)
@@ -154,7 +142,7 @@ func openBrowser(url string) {
 	var cmd *exec.Cmd
 	switch {
 	case os.Getenv("OS") == "Windows_NT":
-		cmd = exec.Command(cmdExe, "/c", "start", "", url)
+		cmd = exec.Command("cmd.exe", "/c", "start", "", url)
 	case runtime.GOOS == "darwin":
 		cmd = exec.Command("open", url)
 	default:

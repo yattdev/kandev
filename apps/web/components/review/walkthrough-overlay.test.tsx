@@ -59,7 +59,6 @@ function renderOverlay({ followActiveTask = false } = {}) {
           activeSessionId: null,
           pinnedSessionId: null,
           lastSessionByTaskId: {},
-          resumeSkippedSessionIds: {},
         },
       }}
     >

@@ -49,22 +49,6 @@ func (r *StandaloneExecutor) HealthCheck(ctx context.Context) error {
 	return r.ctl.Health(ctx)
 }
 
-// PrepareGitMetadataProjection installs the narrow Codex session profile before
-// agentctl is created. A standalone host has no container mount boundary, so a
-// runtime that cannot render this agent-side policy must fail closed rather
-// than reproducing a writable checkout with a read-only external index.
-func (r *StandaloneExecutor) PrepareGitMetadataProjection(_ context.Context, req *ExecutorCreateRequest) error {
-	return prepareCodexGitMetadataPolicy(req)
-}
-
-// PrepareGitMetadataProjectionRebind installs the replacement profile while
-// the existing child is stopped. Unlike container mounts, the host policy is
-// part of agentctl's process configuration and can therefore be replaced
-// before the child restarts.
-func (r *StandaloneExecutor) PrepareGitMetadataProjectionRebind(_ context.Context, req *ExecutorCreateRequest) error {
-	return prepareCodexGitMetadataPolicy(req)
-}
-
 // SubprocessAdmission returns the admission snapshot from the host agentctl
 // control server for backend diagnostics.
 func (r *StandaloneExecutor) SubprocessAdmission(ctx context.Context) (subproc.Snapshot, error) {
@@ -116,22 +100,20 @@ func buildStandaloneCreateInstanceRequest(
 			req.AutoApprovePermissions,
 			req.AutoApprovePermissionsOverride,
 		),
-		AutoStart:                false,
-		McpServers:               req.McpServers,
-		SessionID:                req.SessionID,
-		TaskID:                   req.TaskID,
-		DisableAskQuestion:       disableAskQuestion,
-		AssumeMcpSse:             assumeMcpSse,
-		AssumeMcpHttp:            assumeMcpHttp,
-		McpMode:                  req.McpMode,
-		McpProviders:             req.McpProviders,
-		McpProfile:               req.McpProfile,
-		RequiresProcessKill:      requiresProcessKill,
-		StripEnv:                 stripEnv,
-		BaseBranches:             getMetadataStringMap(req.Metadata, MetadataKeyBaseBranches),
-		RemoteContributions:      req.RemoteContributions,
-		ContributionDestinations: req.ContributionDestinations,
-		WorkspaceSourceRoots:     req.WorkspaceSourceRoots,
+		AutoStart:            false,
+		McpServers:           req.McpServers,
+		SessionID:            req.SessionID,
+		TaskID:               req.TaskID,
+		DisableAskQuestion:   disableAskQuestion,
+		AssumeMcpSse:         assumeMcpSse,
+		AssumeMcpHttp:        assumeMcpHttp,
+		McpMode:              req.McpMode,
+		McpProviders:         req.McpProviders,
+		RequiresProcessKill:  requiresProcessKill,
+		StripEnv:             stripEnv,
+		BaseBranches:         getMetadataStringMap(req.Metadata, MetadataKeyBaseBranches),
+		RemoteContributions:  req.RemoteContributions,
+		WorkspaceSourceRoots: req.WorkspaceSourceRoots,
 	}
 }
 
@@ -154,7 +136,7 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 	if req.AgentConfig != nil {
 		agentType = req.AgentConfig.ID()
 	}
-	disableAskQuestion := !agents.SupportsInteractiveMCPTools(req.AgentConfig)
+	disableAskQuestion := agents.IsPassthroughOnly(req.AgentConfig)
 	assumeMcpSse := false
 	assumeMcpHttp := false
 	requiresProcessKill := false

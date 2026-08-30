@@ -1,5 +1,4 @@
 import { getWebSocketClient } from "@/lib/ws/connection";
-import type { TaskPriority } from "@/lib/types/http";
 
 export type SessionIntent =
   | "prepare"
@@ -24,13 +23,12 @@ export type LaunchSessionRequest = {
   intent?: SessionIntent;
   session_id?: string;
   agent_profile_id?: string;
-  profile_explicit?: boolean;
   executor_id?: string;
   executor_profile_id?: string;
   prompt?: string;
   plan_mode?: boolean;
   workflow_step_id?: string;
-  priority?: TaskPriority;
+  priority?: number;
   launch_workspace?: boolean;
   skip_message_record?: boolean;
   auto_start?: boolean;
@@ -42,7 +40,6 @@ export type LaunchSessionResponse = {
   task_id: string;
   session_id?: string;
   agent_execution_id?: string;
-  agent_profile_id?: string;
   state: string;
   worktree_path?: string;
   worktree_branch?: string;
@@ -78,17 +75,13 @@ export type EnsureSessionResponse = {
  */
 export async function ensureTaskSession(
   taskId: string,
-  opts?: { ensureExecution?: boolean; autoStart?: boolean; timeout?: number },
+  opts?: { ensureExecution?: boolean; timeout?: number },
 ): Promise<EnsureSessionResponse> {
   const client = getWebSocketClient();
   if (!client) throw new Error("WebSocket client not available");
   return client.request<EnsureSessionResponse>(
     "session.ensure",
-    {
-      task_id: taskId,
-      ensure_execution: opts?.ensureExecution,
-      ...(opts?.autoStart !== undefined ? { auto_start: opts.autoStart } : {}),
-    },
+    { task_id: taskId, ensure_execution: opts?.ensureExecution },
     opts?.timeout ?? 15_000,
   );
 }

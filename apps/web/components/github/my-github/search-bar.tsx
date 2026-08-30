@@ -27,7 +27,6 @@ export type PresetOption = {
 // them there after a locale switch. Localizing these needs a key/persisted-value
 // split in this module, the same open item as the built-in layout profile names.
 // `value`, `filter` and `group` are wire values and a GitHub search query.
-// i18n-exempt: persisted saved-search seed, and the query beside it is GitHub search syntax.
 export const PR_PRESETS: PresetOption[] = [
   {
     value: "review_requested",
@@ -66,7 +65,6 @@ export const PR_PRESETS: PresetOption[] = [
   },
 ];
 
-// i18n-exempt: persisted saved-search seed, and the query beside it is GitHub search syntax.
 export const ISSUE_PRESETS: PresetOption[] = [
   {
     value: "assigned",

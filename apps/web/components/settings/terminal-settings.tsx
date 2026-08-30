@@ -31,7 +31,7 @@ import {
   TERMINAL_FONT_FAMILY_TARGET,
   TERMINAL_FONT_SIZE_TARGET,
   TERMINAL_LINKS_TARGET,
-} from "@/lib/settings-discovery/catalog/preferences";
+} from "@/lib/settings-discovery/catalog/general";
 
 const CUSTOM_VALUE = "__custom__";
 /**
@@ -76,11 +76,10 @@ function FontGroupOptions() {
             </Badge>
           )}
         </SelectLabel>
-        {/* Preset labels are font family names - data, never translated. The
-            one entry naming no typeface carries `labelKey` instead. */}
+        {/* Preset labels are font family names — data, never translated. */}
         {(FONT_GROUPS[category] ?? []).map((preset) => (
           <SelectItem key={preset.value} value={preset.value}>
-            {preset.labelKey ? t(preset.labelKey) : preset.label}
+            {preset.label}
           </SelectItem>
         ))}
       </SelectGroup>

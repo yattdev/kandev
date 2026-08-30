@@ -37,40 +37,23 @@ type restartableBackend struct {
 	dumpLogs   func()
 }
 
-// backendLaunchConfig carries everything launchRestartableBackend needs. The
-// supervisor home directory is an explicit field, not an environment read:
-// dev roots it under <repoRoot>/.kandev-dev/supervisor/ while start/run pass
-// resolveHomeDir(), and resolving it internally would let an ambient
-// KANDEV_HOME_DIR (the parent backend's, inside a Kandev task workspace)
-// redirect the dev supervisor state.
-type backendLaunchConfig struct {
-	Command    string
-	Args       []string
-	CWD        string
-	Env        []string
-	Quiet      bool
-	Ports      portConfig
-	Mode       string
-	HomeDir    string
-	Supervisor *processSupervisor
-}
-
-func launchRestartableBackend(cfg backendLaunchConfig) (*restartableBackend, func(), error) {
-	supervisorEnv, socket, manifestPath, err := prepareSupervisorEnv(cfg.Env, cfg.HomeDir)
+func launchRestartableBackend(command string, args []string, cwd string, env []string, quiet bool, ports portConfig, mode string, supervisor *processSupervisor) (*restartableBackend, func(), error) {
+	homeDir := resolveHomeDir()
+	supervisorEnv, socket, manifestPath, err := prepareSupervisorEnv(env, homeDir)
 	if err != nil {
 		return nil, nil, err
 	}
-	manifest := buildManifest(cfg.Command, cfg.Args, cfg.CWD, supervisorEnv, cfg.HomeDir, cfg.Ports.BackendPort, cfg.Mode)
+	manifest := buildManifest(command, args, cwd, supervisorEnv, homeDir, ports.BackendPort, mode)
 	if err := writeManifest(manifest, manifestPath); err != nil {
 		return nil, nil, err
 	}
 	backend := &restartableBackend{
-		command:    cfg.Command,
-		args:       cfg.Args,
-		cwd:        cfg.CWD,
+		command:    command,
+		args:       args,
+		cwd:        cwd,
 		env:        supervisorEnv,
-		quiet:      cfg.Quiet,
-		supervisor: cfg.Supervisor,
+		quiet:      quiet,
+		supervisor: supervisor,
 		exitCh:     make(chan int, 1),
 	}
 	if err := backend.start(); err != nil {
@@ -193,7 +176,6 @@ func allowedSupervisorEnv(env []string) map[string]string {
 		"KANDEV_AGENT_STANDALONE_PORT": true,
 		"KANDEV_LOG_LEVEL":             true,
 		"KANDEV_CONSOLE_LOG_LEVEL":     true,
-		"KANDEV_WEB_TITLE_PREFIX":      true,
 		"KANDEV_DEBUG_DEV_MODE":        true,
 		"KANDEV_DEBUG_AGENT_MESSAGES":  true,
 		"KANDEV_DEBUG_PPROF_ENABLED":   true,

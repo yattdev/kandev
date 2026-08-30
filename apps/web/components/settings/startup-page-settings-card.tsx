@@ -6,7 +6,7 @@ import { Label } from "@kandev/ui/label";
 import { RadioGroup, RadioGroupItem } from "@kandev/ui/radio-group";
 import type { StartupPage } from "@/lib/types/http";
 import { SettingsCard } from "./settings-card";
-import { GENERAL_SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/preferences";
+import { GENERAL_SETTINGS_TARGETS } from "@/lib/settings-discovery/catalog/general";
 
 /**
  * Holds catalog KEYS, not copy. A module-scope table is evaluated once at import,

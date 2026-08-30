@@ -4,22 +4,23 @@ import { useEffect, useRef } from "react";
 import { useAppStore } from "@/components/state-provider";
 import { useToast } from "@/components/toast-provider";
 import type { TaskDeletionReason } from "@/lib/types/http";
-import { t } from "@/lib/i18n";
 
 // Exhaustive over TaskDeletionReason: adding or renaming a reason is a compile
 // error here until a matching message is provided.
-// Catalog keys, resolved in `describeReason`. Module scope, so a `t()` here
-// would pin the explanations to the boot locale.
-const REASON_MESSAGE_KEYS: Record<TaskDeletionReason, string> = {
-  pr_approved_by_user: "task:taskClosedPrApproved",
-  pr_merged_or_closed: "task:taskClosedPrMergedOrClosed",
-  issue_closed: "task:taskClosedIssueClosed",
+const REASON_MESSAGES: Record<TaskDeletionReason, string> = {
+  pr_approved_by_user:
+    "Its pull request was approved, so this review task was closed automatically.",
+  pr_merged_or_closed:
+    "Its pull request was merged or closed, so this review task was closed automatically.",
+  issue_closed: "Its issue was closed, so this task was closed automatically.",
 };
 
 /** Maps a backend deletion reason (an untyped wire string) to an explanation. */
 function describeReason(reason: string | undefined): string {
-  const key = reason && REASON_MESSAGE_KEYS[reason as TaskDeletionReason];
-  return t(key || "task:taskClosedAutomatically");
+  return (
+    (reason && REASON_MESSAGES[reason as TaskDeletionReason]) ??
+    "This task was closed automatically."
+  );
 }
 
 /**
@@ -40,9 +41,7 @@ export function useTaskDeletedToast() {
     }
     shownRef.current.add(notification.taskId);
     toast({
-      title: notification.title
-        ? t("task:taskTitledWasClosed", { title: notification.title })
-        : t("task:taskClosed"),
+      title: notification.title ? `"${notification.title}" was closed` : "Task closed",
       description: describeReason(notification.reason),
     });
     clearNotification(null);

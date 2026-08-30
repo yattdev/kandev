@@ -8,10 +8,10 @@ function item(overrides: Partial<ResolvedSettingsDiscoveryItem> = {}) {
     kind: "control" as const,
     label: "Terminal Font Size",
     aliases: ["text size"],
-    breadcrumb: ["Terminal & Editors"],
-    groupId: "preferences",
-    groupLabel: "Preferences",
-    href: "/settings/preferences/terminal-editors#setting-terminal-font-size",
+    breadcrumb: ["General", "Terminal"],
+    groupId: "general",
+    groupLabel: "General",
+    href: "/settings/general/terminal#setting-terminal-font-size",
     targetId: "setting-terminal-font-size",
     order: 31,
     ...overrides,
@@ -26,9 +26,9 @@ describe("buildSettingsDiscoveryCommands", () => {
       id: "setting:terminal-font-size",
       label: "Terminal Font Size",
       group: "Settings",
-      context: "Settings › Terminal & Editors",
+      context: "Settings › General › Terminal",
       searchOnly: true,
-      keywords: ["text size", "Terminal & Editors"],
+      keywords: ["text size", "General", "Terminal"],
     });
   });
 
@@ -45,14 +45,12 @@ describe("buildSettingsDiscoveryCommands", () => {
   });
 
   it("navigates to the catalog target", () => {
-    window.history.replaceState({}, "", "/settings/preferences/appearance");
+    window.history.replaceState({}, "", "/settings/general/appearance");
     const push = vi.fn();
     const [command] = buildSettingsDiscoveryCommands([item()], push, "Settings");
 
     command.action?.();
 
-    expect(push).toHaveBeenCalledWith(
-      "/settings/preferences/terminal-editors#setting-terminal-font-size",
-    );
+    expect(push).toHaveBeenCalledWith("/settings/general/terminal#setting-terminal-font-size");
   });
 });

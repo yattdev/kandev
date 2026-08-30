@@ -36,11 +36,9 @@ func TestReuseExistingEnvironment_NilEnv(t *testing.T) {
 
 func TestReuseExistingEnvironment_WorktreeReuse(t *testing.T) {
 	e := newEnvTestExecutor(t)
-	req := &LaunchAgentRequest{TaskID: "task-1", RepositoryID: "repo-1", UseWorktree: true}
+	req := &LaunchAgentRequest{TaskID: "task-1", UseWorktree: true}
 	env := &models.TaskEnvironment{
-		Repos: []*models.TaskEnvironmentRepo{
-			{RepositoryID: "repo-1", WorktreeID: "wt-1", BranchSlug: ""},
-		},
+		WorktreeID: "wt-1",
 	}
 
 	e.reuseExistingEnvironment(context.Background(), req, env)
@@ -97,6 +95,7 @@ func TestReuseExistingEnvironment_SkipsReuseOnExecutorTypeMismatch(t *testing.T)
 	env := &models.TaskEnvironment{
 		ExecutorType: "sprites",
 		ContainerID:  "container-abc",
+		WorktreeID:   "wt-1",
 	}
 
 	e.reuseExistingEnvironment(context.Background(), req, env)
@@ -115,7 +114,9 @@ func TestReuseExistingEnvironment_SkipsReuseOnExecutorTypeMismatch(t *testing.T)
 func TestReuseExistingEnvironment_WorktreeSkippedWhenNotRequested(t *testing.T) {
 	e := newEnvTestExecutor(t)
 	req := &LaunchAgentRequest{TaskID: "task-1", UseWorktree: false}
-	env := &models.TaskEnvironment{}
+	env := &models.TaskEnvironment{
+		WorktreeID: "wt-1",
+	}
 
 	e.reuseExistingEnvironment(context.Background(), req, env)
 
@@ -145,11 +146,9 @@ func TestReuseExistingEnvironment_DockerBranchReuse(t *testing.T) {
 	e := newEnvTestExecutor(t)
 	req := &LaunchAgentRequest{TaskID: "task-1", ExecutorType: "local_docker"}
 	env := &models.TaskEnvironment{
-		ExecutorType: "local_docker",
-		ContainerID:  "container-abc",
-		Repos: []*models.TaskEnvironmentRepo{
-			{WorktreeBranch: "feature/existing-task-abc"},
-		},
+		ExecutorType:   "local_docker",
+		ContainerID:    "container-abc",
+		WorktreeBranch: "feature/existing-task-abc",
 	}
 
 	e.reuseExistingEnvironment(context.Background(), req, env)
@@ -387,12 +386,10 @@ func TestReuseExistingEnvironment_SandboxReuse(t *testing.T) {
 
 func TestReuseExistingEnvironment_WorktreeAndContainer(t *testing.T) {
 	e := newEnvTestExecutor(t)
-	req := &LaunchAgentRequest{TaskID: "task-1", RepositoryID: "repo-1", UseWorktree: true}
+	req := &LaunchAgentRequest{TaskID: "task-1", UseWorktree: true}
 	env := &models.TaskEnvironment{
+		WorktreeID:  "wt-1",
 		ContainerID: "container-abc",
-		Repos: []*models.TaskEnvironmentRepo{
-			{RepositoryID: "repo-1", WorktreeID: "wt-1"},
-		},
 	}
 
 	e.reuseExistingEnvironment(context.Background(), req, env)

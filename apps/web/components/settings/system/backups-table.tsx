@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { Card, CardContent } from "@kandev/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@kandev/ui/card";
 import { Button } from "@kandev/ui/button";
 import { Badge } from "@kandev/ui/badge";
 import { Spinner } from "@kandev/ui/spinner";
@@ -16,12 +16,6 @@ import { formatBytes } from "@/lib/utils/format-bytes";
 import { JobProgressIndicator } from "./job-progress-indicator";
 import { RestoreDialog } from "./restore-dialog";
 import type { SnapshotInfo, SnapshotKind } from "@/lib/types/system";
-import { SettingsCardHeader } from "@/components/settings/settings-card-header";
-import {
-  SettingsErrorText,
-  SettingsFieldDescription,
-} from "@/components/settings/settings-typography";
-import { settingsActionClassName } from "@/components/settings/settings-control";
 
 const BACKUP_CREATE_TIMEOUT_MS = 15_000;
 const BACKUP_CREATE_POLL_MS = 250;
@@ -200,30 +194,30 @@ export function BackupsTable() {
 
   return (
     <Card data-testid="system-backups-card">
-      <SettingsCardHeader
-        title={
-          <span className="flex items-center gap-2">
-            <IconArchive className="h-4 w-4" /> {t("system:backupsTitle")}
-          </span>
-        }
-        actions={
-          <Button
-            size="sm"
-            disabled={creating}
-            onClick={() => void onCreate()}
-            className={settingsActionClassName("cursor-pointer")}
-            data-testid="system-backups-create"
-          >
-            {creating ? t("system:backupsCreating") : t("system:backupsCreate")}
-          </Button>
-        }
-      />
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle className="text-base flex items-center gap-2">
+          <IconArchive className="h-4 w-4" /> {t("system:backupsTitle")}
+        </CardTitle>
+        <Button
+          size="sm"
+          disabled={creating}
+          onClick={() => void onCreate()}
+          className="cursor-pointer"
+          data-testid="system-backups-create"
+        >
+          {creating ? t("system:backupsCreating") : t("system:backupsCreate")}
+        </Button>
+      </CardHeader>
       <CardContent className="space-y-4">
-        <SettingsFieldDescription data-testid="system-backups-help">
+        <p className="text-xs text-muted-foreground" data-testid="system-backups-help">
           {t("system:backupsHelp")}{" "}
           {t("system:backupsRetention", { count: BACKUP_RETENTION_COUNT })}
-        </SettingsFieldDescription>
-        {error && <SettingsErrorText data-testid="system-backups-error">{error}</SettingsErrorText>}
+        </p>
+        {error && (
+          <p className="text-xs text-destructive" data-testid="system-backups-error">
+            {error}
+          </p>
+        )}
         {!loaded && isLoading && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Spinner className="size-4" /> {t("system:backupsLoading")}

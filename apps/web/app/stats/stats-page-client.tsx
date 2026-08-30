@@ -2,15 +2,14 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@kandev/ui/card";
 import { Button } from "@kandev/ui/button";
-import { PageShell } from "@/components/page-shell";
+import { PageTopbar } from "@/components/page-topbar";
 import { ToggleGroup, ToggleGroupItem } from "@kandev/ui/toggle-group";
 import { useCallback, useMemo } from "react";
-import { useTranslation } from "react-i18next";
 import { useRouter, useSearchParams } from "@/lib/routing/client-router";
 import { IconChartBar } from "@tabler/icons-react";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import type {
-  ModelUsageDTO,
+  AgentUsageDTO,
   CompletedTaskActivityDTO,
   DailyActivityDTO,
   GitStatsDTO,
@@ -27,7 +26,7 @@ import {
 } from "./stats-sections";
 import {
   ActivityHeatmap,
-  ModelUsageList,
+  AgentUsageList,
   CompletedTasksChart,
   MostProductiveSummary,
 } from "./stats-charts";
@@ -59,6 +58,7 @@ import {
   type StatsSections,
   useStatsSections,
 } from "./stats-data";
+import { useTranslation } from "react-i18next";
 
 interface StatsPageClientProps {
   workspaceId?: string;
@@ -75,19 +75,16 @@ const RANGE_LABEL_KEYS: Record<RangeKey, string> = {
 function StatsEmptyState({ message }: { message: string }) {
   const { t } = useTranslation();
   return (
-    <PageShell
-      title={t("stats:statistics")}
-      icon={<IconChartBar className="h-4 w-4" />}
-      scroll="none"
-    >
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-background">
+    <div className="flex h-full min-h-0 w-full flex-col bg-background">
+      <PageTopbar title={t("stats:statistics")} icon={<IconChartBar className="h-4 w-4" />} />
+      <div className="flex-1 flex items-center justify-center">
         <p className="text-muted-foreground">{message}</p>
       </div>
-    </PageShell>
+    </div>
   );
 }
 
-type StatsShellProps = {
+type StatsHeaderProps = {
   global: GlobalStatsDTO | null;
   range: RangeKey;
   copied: boolean;
@@ -95,10 +92,9 @@ type StatsShellProps = {
   hasError: boolean;
   onRangeChange: (r: RangeKey) => void;
   onCopy: () => void;
-  children: React.ReactNode;
 };
 
-function StatsShell({
+function StatsHeader({
   global,
   range,
   copied,
@@ -106,15 +102,13 @@ function StatsShell({
   hasError,
   onRangeChange,
   onCopy,
-  children,
-}: StatsShellProps) {
+}: StatsHeaderProps) {
   const { t } = useTranslation();
   return (
-    <PageShell
+    <PageTopbar
       title={t("stats:statistics")}
       icon={<IconChartBar className="h-4 w-4" />}
       subtitle={getSubtitle(global, hasError)}
-      scroll="none"
       actions={
         <>
           <ToggleGroup
@@ -148,9 +142,7 @@ function StatsShell({
           </Button>
         </>
       }
-    >
-      {children}
-    </PageShell>
+    />
   );
 }
 
@@ -251,11 +243,11 @@ function CompletedPanel({ status }: { status: SectionStatus<CompletedTaskActivit
 
 function ActivityPanel({
   daily,
-  models,
+  agents,
   rangeLabel,
 }: {
   daily: SectionStatus<DailyActivityDTO[]>;
-  models: SectionStatus<ModelUsageDTO[]>;
+  agents: SectionStatus<AgentUsageDTO[]>;
   rangeLabel: string;
 }) {
   const { t } = useTranslation();
@@ -277,18 +269,18 @@ function ActivityPanel({
           </Card>
         ),
       })}
-      {renderSection(models, {
+      {renderSection(agents, {
         skeleton: <ActivitySkeleton />,
-        errorTitle: t("stats:topModels"),
+        errorTitle: t("stats:topAgents"),
         ready: (data) => (
           <Card className="rounded-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t("stats:topModels")}
+                {t("stats:topAgents")}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ModelUsageList modelUsage={data} />
+              <AgentUsageList agentUsage={data} />
             </CardContent>
           </Card>
         ),
@@ -378,13 +370,13 @@ function StatsContent({
   const { t } = useTranslation();
   const taskStatus = flattenTaskStats(sections.tasks);
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-background">
+    <div className="flex-1 overflow-auto">
       <div className="max-w-7xl mx-auto p-6">
         <div className="space-y-5">
           <OverviewPanel global={sections.global} git={sections.git} />
           <SectionDivider id="telemetry" label={t("stats:telemetry")} />
           <CompletedPanel status={sections.completed} />
-          <ActivityPanel daily={sections.daily} models={sections.models} rangeLabel={rangeLabel} />
+          <ActivityPanel daily={sections.daily} agents={sections.agents} rangeLabel={rangeLabel} />
           <RepositoryActivityPanel status={sections.repos} />
           <TopRepositoriesPanel status={sections.repos} />
           <RepoLeadersPanel status={sections.repos} />
@@ -442,32 +434,30 @@ export function StatsPageClient({ workspaceId, activeRange, initialError }: Stat
 
   if (initialError)
     return (
-      <PageShell
-        title={t("stats:statistics")}
-        icon={<IconChartBar className="h-4 w-4" />}
-        scroll="none"
-      >
-        <div className="flex min-h-0 flex-1 items-center justify-center bg-background">
+      <div className="flex h-full min-h-0 w-full flex-col bg-background">
+        <PageTopbar title={t("stats:statistics")} icon={<IconChartBar className="h-4 w-4" />} />
+        <div className="flex-1 flex items-center justify-center">
           <p className="text-destructive">
             {t("stats:errorLoadingStats", { error: initialError })}
           </p>
         </div>
-      </PageShell>
+      </div>
     );
   if (!workspaceId)
     return <StatsEmptyState message={t("stats:selectAWorkspaceToViewStatistics")} />;
 
   return (
-    <StatsShell
-      global={globalReady}
-      range={range}
-      copied={copied}
-      copyDisabled={!fullStats}
-      hasError={Boolean(fetchError)}
-      onRangeChange={handleRangeChange}
-      onCopy={handleCopyStats}
-    >
+    <div className="flex h-full min-h-0 w-full flex-col bg-background">
+      <StatsHeader
+        global={globalReady}
+        range={range}
+        copied={copied}
+        copyDisabled={!fullStats}
+        hasError={Boolean(fetchError)}
+        onRangeChange={handleRangeChange}
+        onCopy={handleCopyStats}
+      />
       <StatsContent sections={sections} rangeLabel={rangeLabelDisplay} workspaceId={workspaceId} />
-    </StatsShell>
+    </div>
   );
 }

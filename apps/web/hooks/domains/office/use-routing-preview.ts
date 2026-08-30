@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "@/components/state-provider";
 import { getRoutingPreview } from "@/lib/api/domains/office-extended-api";
 import type { AgentRoutePreview } from "@/lib/state/slices/office/types";
-import { t } from "@/lib/i18n";
 
 export type UseRoutingPreviewResult = {
   agents: AgentRoutePreview[];
@@ -35,7 +34,7 @@ export function useRoutingPreview(workspaceName: string | null): UseRoutingPrevi
       setRoutingPreview(workspaceName, res.agents ?? []);
       setFetched(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("office:failedToLoadRoutingPreview"));
+      setError(e instanceof Error ? e.message : "Failed to load routing preview");
     } finally {
       setIsLoading(false);
     }

@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { t as translate } from "@/lib/i18n";
 import { Badge } from "@kandev/ui/badge";
 import { Button } from "@kandev/ui/button";
-import { CardContent } from "@kandev/ui/card";
+import { CardContent, CardDescription, CardHeader, CardTitle } from "@kandev/ui/card";
 import {
   IconCheck,
   IconLoader2,
@@ -20,8 +20,6 @@ import {
 import { testSSHConnection } from "@/lib/api/domains/ssh-api";
 import { FingerprintTrustBlock } from "@/components/settings/ssh-fingerprint-trust-block";
 import { SettingsCard } from "@/components/settings/settings-card";
-import { SettingsCardHeader } from "@/components/settings/settings-card-header";
-import { settingsActionClassName } from "@/components/settings/settings-control";
 import { SSHConnectionForm } from "@/components/settings/ssh-connection-form";
 import {
   SettingsSaveCancelledError,
@@ -278,16 +276,18 @@ export function SSHConnectionCard(props: SSHConnectionCardProps) {
   const c = useSSHConnection(props);
   return (
     <SettingsCard isDirty={c.isDirty} data-testid="ssh-connection-card">
-      <SettingsCardHeader
-        title={
-          <span className="flex items-center gap-2">
-            <IconTerminal2 className="h-5 w-5" />
-            {t("executors:connection")}
-          </span>
-        }
-        description={t("executors:sshConnectionDescription")}
-        actions={<ConnectionBadge fingerprint={c.form.host_fingerprint} />}
-      />
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <IconTerminal2 className="h-5 w-5" />
+              {t("executors:connection")}
+            </CardTitle>
+            <CardDescription>{t("executors:sshConnectionDescription")}</CardDescription>
+          </div>
+          <ConnectionBadge fingerprint={c.form.host_fingerprint} />
+        </div>
+      </CardHeader>
       <CardContent className="space-y-4">
         <SSHConnectionForm form={c.form} baseline={c.baseline} onChange={c.update} />
         {c.form.host_fingerprint && <PinnedFingerprintRow fingerprint={c.form.host_fingerprint} />}
@@ -357,14 +357,14 @@ function SSHConnectionActions({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-2 md:flex-row md:items-center">
+    <div className="flex items-center gap-3">
       <Button
         variant="outline"
         size="sm"
         onClick={onTest}
         disabled={!canTest}
         data-testid="ssh-test-button"
-        className={settingsActionClassName("cursor-pointer")}
+        className="cursor-pointer"
       >
         {testing ? (
           <IconLoader2 className="mr-1.5 h-4 w-4 animate-spin" />
@@ -379,7 +379,7 @@ function SSHConnectionActions({
           onClick={onSave}
           disabled={!canSave}
           data-testid="ssh-save-button"
-          className={settingsActionClassName("cursor-pointer")}
+          className="cursor-pointer"
         >
           {saving ? <IconLoader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
           {t("executors:save")}

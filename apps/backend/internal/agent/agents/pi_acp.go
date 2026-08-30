@@ -16,11 +16,7 @@ var piACPLogoLight []byte
 //go:embed logos/pi_acp_dark.svg
 var piACPLogoDark []byte
 
-const (
-	piACPPkg = "pi-acp"
-	piCLIBin = "pi"
-	piCLIPkg = "@earendil-works/pi-coding-agent"
-)
+const piACPPkg = "pi-acp"
 
 var (
 	_ Agent            = (*PiACP)(nil)
@@ -41,7 +37,7 @@ func NewPiACP() *PiACP {
 				Supported:      true,
 				Label:          "CLI Passthrough",
 				Description:    "Show terminal directly instead of chat interface",
-				PassthroughCmd: NewCommand(piCLIBin),
+				PassthroughCmd: NewCommand("npx", "-y", piACPPkg),
 				ModelFlag:      NewParam("--model", "{model}"),
 				IdleTimeout:    3 * time.Second,
 				BufferMaxBytes: DefaultBufferMaxBytes,
@@ -68,11 +64,13 @@ func (a *PiACP) Logo(v LogoVariant) []byte {
 }
 
 func (a *PiACP) IsInstalled(ctx context.Context) (*DiscoveryResult, error) {
-	// The Pi package publishes the short `pi` binary used by passthrough. A
-	// non-interactive version check is a best-effort filter for unrelated tools
-	// with the same name; it does not prove package identity. The separate ACP
-	// probe validates the structured `npx -y pi-acp` surface, not this binary.
-	result, err := Detect(ctx, WithCommandCheck(piCLIBin, "--version"))
+	// "pi" is short and could in theory collide with unrelated tooling, but
+	// the pi-mono coding agent (https://github.com/badlogic/pi-mono) ships
+	// its CLI as `pi`, and a kandev user with `pi` on PATH is overwhelmingly
+	// likely to be the pi coding-agent installation we're targeting.
+	// Checking `pi-acp` first lets a dedicated wrapper take precedence
+	// when both are present.
+	result, err := Detect(ctx, WithCommand("pi-acp"), WithCommand("pi"))
 	if err != nil {
 		return result, err
 	}
@@ -113,7 +111,7 @@ func (a *PiACP) Runtime() *RuntimeConfig {
 func (a *PiACP) RemoteAuth() *RemoteAuth { return nil }
 
 func (a *PiACP) InstallScript() string {
-	return "npm install -g --ignore-scripts " + piCLIPkg
+	return "npm install -g " + piACPPkg
 }
 
 func (a *PiACP) PermissionSettings() map[string]PermissionSetting {

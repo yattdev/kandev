@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { StateProvider } from "@/components/state-provider";
 import { ChatMessage } from "./chat-message";
 import { entityReferenceMarkdown } from "@/lib/entity-references/message-references";
 import type { EntityReference } from "@/lib/types/entity-reference";
-import { activateLocale } from "@/lib/i18n";
 import {
   sessionId as toSessionId,
   taskId as toTaskId,
@@ -32,7 +31,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Builds a user Message with default test fields, merged with the given overrides. */
 function userMessage(overrides: Partial<Message>): Message {
   return {
     id: "msg-1",
@@ -46,7 +44,6 @@ function userMessage(overrides: Partial<Message>): Message {
   };
 }
 
-/** Builds a non-builtin CustomPrompt named after the given name. */
 function customPrompt(name: string): CustomPrompt {
   return {
     id: `prompt-${name}`,
@@ -58,7 +55,6 @@ function customPrompt(name: string): CustomPrompt {
   };
 }
 
-/** Builds a Jira issue EntityReference with default fields, merged with the given overrides. */
 function issueReference(overrides: Partial<EntityReference> = {}): EntityReference {
   return {
     version: 1,
@@ -74,9 +70,7 @@ function issueReference(overrides: Partial<EntityReference> = {}): EntityReferen
   };
 }
 
-/** Returns a StateProvider wrapper seeding the given kanban tasks and saved prompts. */
 function wrapper(tasks: Array<{ id: string; title: string }> = [], prompts: CustomPrompt[] = []) {
-  /** Renders children inside a StateProvider preloaded with the wrapper's tasks and prompts. */
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <StateProvider
@@ -90,7 +84,7 @@ function wrapper(tasks: Array<{ id: string; title: string }> = [], prompts: Cust
               id: t.id,
               title: t.title,
               workflow_step_id: "",
-              priority: "medium",
+              priority: 0,
               parent_id: undefined,
             })),
           } as unknown as never,
@@ -250,7 +244,6 @@ describe("ChatMessage entity references", () => {
   });
 });
 
-/** Renders a user ChatMessage wrapped with the given sender tasks and message metadata. */
 function renderWithSender(
   tasks: Array<{ id: string; title: string }>,
   metadata: Partial<Message["metadata"] & object>,
@@ -263,7 +256,6 @@ function renderWithSender(
   );
 }
 
-/** Renders an agent ChatMessage seeded with the given session and optional turn metadata. */
 function renderAgentMessageWithSession(
   session: Partial<TaskSession>,
   metadata = {},
@@ -289,7 +281,6 @@ function renderAgentMessageWithSession(
           created_at: MESSAGE_TIMESTAMP,
           updated_at: MESSAGE_TIMESTAMP,
         };
-  /** Renders children inside a StateProvider seeded with the test session and its turns. */
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <StateProvider
       initialState={{
@@ -297,9 +288,6 @@ function renderAgentMessageWithSession(
         turns: {
           bySession: { "sess-1": turn ? [turn] : [] },
           activeBySession: { "sess-1": turn?.id ?? null },
-          loadedBySession: {},
-          reconcileEpochBySession: {},
-          settledBoundaryBySession: {},
         },
       }}
     >
@@ -380,26 +368,6 @@ describe("ChatMessage sender badge", () => {
     expect(container.querySelector("a[href='/t/task-deleted']")).toBeNull();
     // Falls back to the snapshotted title rather than blanking the badge.
     expect(badge?.textContent).toContain("Old title");
-  });
-
-  it("localizes the fallback when no sender task title is available", async () => {
-    await activateLocale("en");
-    const { container } = renderWithSender([], {
-      sender_task_id: "task-deleted",
-      sender_task_title: "",
-    });
-
-    const badge = container.querySelector(SENDER_BADGE_SELECTOR);
-    expect(badge?.textContent).toContain("(unknown task)");
-
-    await act(async () => {
-      await activateLocale("pseudo");
-    });
-
-    expect(badge?.textContent).toContain("(ũńķńōŵń ţàśķ)");
-    await act(async () => {
-      await activateLocale("en");
-    });
   });
 
   it("uses the live title when it differs from the snapshot", () => {

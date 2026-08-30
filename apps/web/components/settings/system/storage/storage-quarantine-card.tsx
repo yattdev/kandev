@@ -31,7 +31,6 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const RESOURCE_TYPE_LABEL_KEYS: Record<StorageQuarantineEntry["resource_type"], string> = {
   task_workspace: "system:storageResourceTypeTaskWorkspace",
   go_cache: "system:storageResourceTypeGoCache",
-  temporary_artifact: "system:storageResourceTypeTemporaryArtifact",
 };
 
 function resourceTypeLabel(

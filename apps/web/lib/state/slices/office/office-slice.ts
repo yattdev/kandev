@@ -11,18 +11,18 @@ export const defaultTaskFilters = {
 
 export const defaultOfficeState: OfficeSliceState = {
   office: {
-    agentProfilesByWorkspaceId: {},
+    agentProfiles: [],
     skills: [],
-    projectsByWorkspaceId: {},
+    projects: [],
     approvals: [],
     activity: [],
     costSummary: null,
     budgetPolicies: [],
     routines: [],
-    inboxItemsByWorkspaceId: {},
-    inboxCountByWorkspaceId: {},
+    inboxItems: [],
+    inboxCount: 0,
     runs: [],
-    dashboardByWorkspaceId: {},
+    dashboard: null,
     tasks: {
       items: [],
       filters: {
@@ -56,36 +56,27 @@ export const defaultOfficeState: OfficeSliceState = {
 type ImmerSet = StateCreator<OfficeSlice, [["zustand/immer", never]], [], OfficeSlice>;
 type SetFn = Parameters<ImmerSet>[0];
 
-type AgentProfiles = OfficeSlice["office"]["agentProfilesByWorkspaceId"][string];
-
 function createAgentActions(set: SetFn) {
   return {
-    setOfficeAgentProfiles: (workspaceId: string, agents: AgentProfiles) =>
+    setOfficeAgentProfiles: (agents: OfficeSlice["office"]["agentProfiles"]) =>
       set((draft) => {
-        draft.office.agentProfilesByWorkspaceId[workspaceId] = agents;
+        draft.office.agentProfiles = agents;
       }),
-    addOfficeAgentProfile: (workspaceId: string, agent: AgentProfiles[number]) =>
+    addOfficeAgentProfile: (agent: OfficeSlice["office"]["agentProfiles"][number]) =>
       set((draft) => {
-        const list = draft.office.agentProfilesByWorkspaceId[workspaceId] ?? [];
-        list.push(agent);
-        draft.office.agentProfilesByWorkspaceId[workspaceId] = list;
+        draft.office.agentProfiles.push(agent);
       }),
     updateOfficeAgentProfile: (
-      workspaceId: string,
       id: string,
-      patch: Partial<AgentProfiles[number]>,
+      patch: Partial<OfficeSlice["office"]["agentProfiles"][number]>,
     ) =>
       set((draft) => {
-        const list = draft.office.agentProfilesByWorkspaceId[workspaceId];
-        if (!list) return;
-        const idx = list.findIndex((a) => a.id === id);
-        if (idx >= 0) Object.assign(list[idx], patch);
+        const idx = draft.office.agentProfiles.findIndex((a) => a.id === id);
+        if (idx >= 0) Object.assign(draft.office.agentProfiles[idx], patch);
       }),
-    removeOfficeAgentProfile: (workspaceId: string, id: string) =>
+    removeOfficeAgentProfile: (id: string) =>
       set((draft) => {
-        const list = draft.office.agentProfilesByWorkspaceId[workspaceId];
-        if (!list) return;
-        draft.office.agentProfilesByWorkspaceId[workspaceId] = list.filter((a) => a.id !== id);
+        draft.office.agentProfiles = draft.office.agentProfiles.filter((a) => a.id !== id);
       }),
   };
 }
@@ -112,32 +103,24 @@ function createSkillActions(set: SetFn) {
   };
 }
 
-type Projects = OfficeSlice["office"]["projectsByWorkspaceId"][string];
-
 function createProjectActions(set: SetFn) {
   return {
-    setProjects: (workspaceId: string, projects: Projects) =>
+    setProjects: (projects: OfficeSlice["office"]["projects"]) =>
       set((draft) => {
-        draft.office.projectsByWorkspaceId[workspaceId] = projects;
+        draft.office.projects = projects;
       }),
-    addProject: (workspaceId: string, project: Projects[number]) =>
+    addProject: (project: OfficeSlice["office"]["projects"][number]) =>
       set((draft) => {
-        const list = draft.office.projectsByWorkspaceId[workspaceId] ?? [];
-        list.push(project);
-        draft.office.projectsByWorkspaceId[workspaceId] = list;
+        draft.office.projects.push(project);
       }),
-    updateProject: (workspaceId: string, id: string, patch: Partial<Projects[number]>) =>
+    updateProject: (id: string, patch: Partial<OfficeSlice["office"]["projects"][number]>) =>
       set((draft) => {
-        const list = draft.office.projectsByWorkspaceId[workspaceId];
-        if (!list) return;
-        const idx = list.findIndex((p) => p.id === id);
-        if (idx >= 0) Object.assign(list[idx], patch);
+        const idx = draft.office.projects.findIndex((p) => p.id === id);
+        if (idx >= 0) Object.assign(draft.office.projects[idx], patch);
       }),
-    removeProject: (workspaceId: string, id: string) =>
+    removeProject: (id: string) =>
       set((draft) => {
-        const list = draft.office.projectsByWorkspaceId[workspaceId];
-        if (!list) return;
-        draft.office.projectsByWorkspaceId[workspaceId] = list.filter((p) => p.id !== id);
+        draft.office.projects = draft.office.projects.filter((p) => p.id !== id);
       }),
   };
 }
@@ -220,27 +203,21 @@ function createMiscActions(set: SetFn) {
       set((draft) => {
         draft.office.routines = routines;
       }),
-    setInboxItems: (
-      workspaceId: string,
-      items: OfficeSlice["office"]["inboxItemsByWorkspaceId"][string],
-    ) =>
+    setInboxItems: (items: OfficeSlice["office"]["inboxItems"]) =>
       set((draft) => {
-        draft.office.inboxItemsByWorkspaceId[workspaceId] = items;
+        draft.office.inboxItems = items;
       }),
-    setInboxCount: (workspaceId: string, count: number) =>
+    setInboxCount: (count: number) =>
       set((draft) => {
-        draft.office.inboxCountByWorkspaceId[workspaceId] = count;
+        draft.office.inboxCount = count;
       }),
     setRuns: (runs: OfficeSlice["office"]["runs"]) =>
       set((draft) => {
         draft.office.runs = runs;
       }),
-    setDashboard: (
-      workspaceId: string,
-      data: OfficeSlice["office"]["dashboardByWorkspaceId"][string],
-    ) =>
+    setDashboard: (data: OfficeSlice["office"]["dashboard"]) =>
       set((draft) => {
-        draft.office.dashboardByWorkspaceId[workspaceId] = data;
+        draft.office.dashboard = data;
       }),
     setMeta: (meta: OfficeSlice["office"]["meta"]) =>
       set((draft) => {

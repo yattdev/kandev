@@ -78,7 +78,6 @@ describe("kanban.update handler — primarySessionId preservation", () => {
         tasks: [
           {
             id: TASK_ID,
-            workflowId: WORKFLOW_ID,
             workflowStepId: STEP_ID,
             title: TASK_TITLE,
             position: 0,
@@ -114,7 +113,6 @@ describe("kanban.update handler — primarySessionId preservation", () => {
         tasks: [
           {
             id: TASK_ID,
-            workflowId: WORKFLOW_ID,
             workflowStepId: STEP_ID,
             title: TASK_TITLE,
             position: 0,
@@ -153,7 +151,7 @@ describe("kanban.update handler — primarySessionId preservation", () => {
     expect(task?.primarySessionId).toBeUndefined();
   });
 });
-// eslint-disable-next-line max-lines-per-function -- test describe block, splitting hurts readability
+
 describe("kanban.update handler — foregroundActivity preservation", () => {
   it("preserves foregroundActivity from existing tasks", () => {
     const store = makeStore({
@@ -163,7 +161,6 @@ describe("kanban.update handler — foregroundActivity preservation", () => {
         tasks: [
           {
             id: TASK_ID,
-            workflowId: WORKFLOW_ID,
             workflowStepId: STEP_ID,
             title: TASK_TITLE,
             position: 0,
@@ -181,7 +178,6 @@ describe("kanban.update handler — foregroundActivity preservation", () => {
             tasks: [
               {
                 id: TASK_ID,
-                workflowId: WORKFLOW_ID,
                 workflowStepId: STEP_ID,
                 title: TASK_TITLE,
                 position: 0,
@@ -217,7 +213,6 @@ describe("kanban.update handler — foregroundActivity preservation", () => {
         tasks: [
           {
             id: TASK_ID,
-            workflowId: WORKFLOW_ID,
             workflowStepId: STEP_ID,
             title: TASK_TITLE,
             position: 0,
@@ -235,7 +230,6 @@ describe("kanban.update handler — foregroundActivity preservation", () => {
             tasks: [
               {
                 id: TASK_ID,
-                workflowId: WORKFLOW_ID,
                 workflowStepId: STEP_ID,
                 title: TASK_TITLE,
                 position: 0,
@@ -263,9 +257,7 @@ describe("kanban.update handler — foregroundActivity preservation", () => {
     expect(snapshotTask?.foregroundActivity).toBeNull();
   });
 });
-// eslint-disable-next-line max-lines-per-function -- test describe block, splitting hurts readability
 
-// eslint-disable-next-line max-lines-per-function -- fixture-heavy test callback
 describe("kanban.update handler — taskPendingAction preservation", () => {
   it("preserves taskPendingAction from existing tasks", () => {
     const store = makeStore({
@@ -275,7 +267,6 @@ describe("kanban.update handler — taskPendingAction preservation", () => {
         tasks: [
           {
             id: TASK_ID,
-            workflowId: WORKFLOW_ID,
             workflowStepId: STEP_ID,
             title: TASK_TITLE,
             position: 0,
@@ -293,7 +284,6 @@ describe("kanban.update handler — taskPendingAction preservation", () => {
             tasks: [
               {
                 id: TASK_ID,
-                workflowId: WORKFLOW_ID,
                 workflowStepId: STEP_ID,
                 title: TASK_TITLE,
                 position: 0,
@@ -329,7 +319,6 @@ describe("kanban.update handler — taskPendingAction preservation", () => {
         tasks: [
           {
             id: TASK_ID,
-            workflowId: WORKFLOW_ID,
             workflowStepId: STEP_ID,
             title: TASK_TITLE,
             position: 0,
@@ -347,7 +336,6 @@ describe("kanban.update handler — taskPendingAction preservation", () => {
             tasks: [
               {
                 id: TASK_ID,
-                workflowId: WORKFLOW_ID,
                 workflowStepId: STEP_ID,
                 title: TASK_TITLE,
                 position: 0,
@@ -385,7 +373,6 @@ describe("kanban.update handler — repository preservation", () => {
         tasks: [
           {
             id: TASK_ID,
-            workflowId: WORKFLOW_ID,
             workflowStepId: STEP_ID,
             title: TASK_TITLE,
             position: 0,
@@ -449,7 +436,6 @@ describe("kanban.update handler — repository switch", () => {
         tasks: [
           {
             id: TASK_ID,
-            workflowId: WORKFLOW_ID,
             workflowStepId: STEP_ID,
             title: TASK_TITLE,
             position: 0,
@@ -468,7 +454,6 @@ describe("kanban.update handler — repository switch", () => {
             tasks: [
               {
                 id: TASK_ID,
-                workflowId: WORKFLOW_ID,
                 workflowStepId: STEP_ID,
                 title: TASK_TITLE,
                 position: 0,
@@ -514,7 +499,6 @@ describe("kanban.update handler — explicit-null primary preservation", () => {
         tasks: [
           {
             id: "t1",
-            workflowId: "wf1",
             workflowStepId: "s1",
             title: "T1",
             position: 0,
@@ -532,7 +516,6 @@ describe("kanban.update handler — explicit-null primary preservation", () => {
             tasks: [
               {
                 id: "t1",
-                workflowId: "wf1",
                 workflowStepId: "s1",
                 title: "T1",
                 position: 0,
@@ -569,7 +552,6 @@ describe("kanban.update handler — multi-snapshot primary lookup", () => {
             tasks: [
               {
                 id: "t1",
-                workflowId: "wf1",
                 workflowStepId: "s1",
                 title: "T1",
                 position: 0,

@@ -22,7 +22,6 @@ func (r *Repository) runMigrations() {
 	r.migrateSchedulerColumns()
 	r.migrateFailureColumns()
 	r.migrateRunPayloadIndexes()
-	r.migrateCostEventContract()
 	if err := r.migrateTaskPriorityToText(); err != nil {
 		// Surface to stderr; this stage runs from initSchema which doesn't
 		// have a logger handle. The recreate is wrapped in a transaction
@@ -36,42 +35,6 @@ func (r *Repository) runMigrations() {
 	// Provider routing tables and replayable column migrations. Fresh
 	// schemas include the columns inline; ALTERs converge existing databases.
 	r.migrateProviderRouting()
-}
-
-// migrateCostEventContract adds the cache read/write split, turn
-// attribution, and cost-provenance columns to office_cost_events for
-// databases created before this contract (docs/specs/office/costs.md). Every
-// ALTER is nullable with no DEFAULT: a legacy row must read NULL, never 0,
-// because a merged tokens_cached_in cannot be decomposed and an unversioned
-// "0" would be indistinguishable from "no cache activity". Keep this column
-// set byte-identical to the inline CREATE TABLE in createCostTables so a
-// fresh database and a migrated one converge.
-func (r *Repository) migrateCostEventContract() {
-	r.migrate.Apply("office_cost_events.tokens_cached_read",
-		`ALTER TABLE office_cost_events ADD COLUMN tokens_cached_read INTEGER`)
-	r.migrate.Apply("office_cost_events.tokens_cached_write",
-		`ALTER TABLE office_cost_events ADD COLUMN tokens_cached_write INTEGER`)
-	r.migrate.Apply("office_cost_events.turn_id",
-		`ALTER TABLE office_cost_events ADD COLUMN turn_id TEXT`)
-	r.migrate.Apply("office_cost_events.usage_event_id",
-		`ALTER TABLE office_cost_events ADD COLUMN usage_event_id TEXT`)
-	r.migrate.Apply("office_cost_events.cost_source",
-		`ALTER TABLE office_cost_events ADD COLUMN cost_source TEXT`)
-	r.migrate.Apply("office_cost_events.rate_input_per_million",
-		`ALTER TABLE office_cost_events ADD COLUMN rate_input_per_million INTEGER`)
-	r.migrate.Apply("office_cost_events.rate_cached_read_per_million",
-		`ALTER TABLE office_cost_events ADD COLUMN rate_cached_read_per_million INTEGER`)
-	r.migrate.Apply("office_cost_events.rate_cached_write_per_million",
-		`ALTER TABLE office_cost_events ADD COLUMN rate_cached_write_per_million INTEGER`)
-	r.migrate.Apply("office_cost_events.rate_output_per_million",
-		`ALTER TABLE office_cost_events ADD COLUMN rate_output_per_million INTEGER`)
-	r.migrate.Apply("office_cost_events.pricing_catalog_version",
-		`ALTER TABLE office_cost_events ADD COLUMN pricing_catalog_version TEXT`)
-	r.migrate.Apply("office_cost_events.cost_contract_version",
-		`ALTER TABLE office_cost_events ADD COLUMN cost_contract_version INTEGER`)
-	r.migrate.Apply("uniq_office_cost_usage_event",
-		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_office_cost_usage_event
-			ON office_cost_events(usage_event_id) WHERE usage_event_id IS NOT NULL`)
 }
 
 func (r *Repository) migrateRunPayloadIndexes() {
@@ -359,13 +322,6 @@ func (r *Repository) runTaskPriorityRecreate() error {
 	_, _ = conn.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN wip_admitted INTEGER NOT NULL DEFAULT 1`)
 	_, _ = conn.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN queued_for_step_id TEXT NOT NULL DEFAULT ''`)
 	_, _ = conn.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN queued_at TIMESTAMP`)
-	_, _ = conn.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN autopilot_enabled INTEGER NOT NULL DEFAULT 0`)
-	// Same defensive add for external_id/external_id_settled_at
-	// (docs/specs/tasks/external-id-idempotency): real installs already have
-	// these from task/repository/sqlite/base.go runMigrations(), but older
-	// priority-migration fixtures predate them too.
-	_, _ = conn.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN external_id TEXT COLLATE BINARY`)
-	_, _ = conn.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN external_id_settled_at TIMESTAMP`)
 
 	for _, stmt := range taskPriorityMigrationStatements() {
 		if _, err := conn.ExecContext(ctx, stmt); err != nil {
@@ -408,7 +364,6 @@ func taskPriorityMigrationStatements() []string {
 			metadata TEXT DEFAULT '{}',
 			is_ephemeral INTEGER NOT NULL DEFAULT 0,
 			parent_id TEXT DEFAULT '',
-			autopilot_enabled INTEGER NOT NULL DEFAULT 0,
 			archived_at TIMESTAMP,
 			archived_by_cascade_id TEXT DEFAULT '',
 			created_at TIMESTAMP NOT NULL,
@@ -418,43 +373,37 @@ func taskPriorityMigrationStatements() []string {
 			labels TEXT DEFAULT '[]',
 			identifier TEXT,
 			checkout_agent_id TEXT,
-			checkout_at TIMESTAMP,
-			external_id TEXT COLLATE BINARY,
-			external_id_settled_at TIMESTAMP
+			checkout_at TIMESTAMP
 		)`,
-		// archived_by_cascade_id and external_id/external_id_settled_at are
-		// added to the task schema by task/repository/sqlite/base.go
-		// runMigrations() via idempotent ALTER ADD COLUMN calls that run
-		// BEFORE this office recreate. If the recreate omitted them from the
-		// new shape: archived_by_cascade_id missing would 500
-		// httpArchiveTask -> HandoffService.ArchiveTaskTree (the CAS update
-		// in ArchiveTaskIfActive references it); external_id missing would
-		// silently drop task create-idempotency on any install that still
-		// needed this priority rebuild. Carry both over so they survive the
-		// recreate dance. external_id is not COALESCEd — NULL is its
-		// meaningful "no identity" state.
+		// archived_by_cascade_id is added to the task schema by
+		// task/repository/sqlite/base.go runMigrations() via an
+		// idempotent ALTER ADD COLUMN that runs BEFORE this office
+		// recreate. If the recreate omitted it from the new shape,
+		// httpArchiveTask -> HandoffService.ArchiveTaskTree would 500
+		// with "no such column: archived_by_cascade_id" because the
+		// CAS update in ArchiveTaskIfActive references it. Carry it
+		// over with COALESCE so the column is preserved across the
+		// recreate dance.
 		`INSERT INTO tasks_priority_new (
 			id, workspace_id, workflow_id, workflow_step_id, title, description,
-			state, priority, position, wip_admitted, queued_for_step_id, queued_at, metadata, is_ephemeral, parent_id, autopilot_enabled,
+			state, priority, position, wip_admitted, queued_for_step_id, queued_at, metadata, is_ephemeral, parent_id,
 			archived_at, archived_by_cascade_id, created_at, updated_at,
 			origin, project_id,
 			labels, identifier,
-			checkout_agent_id, checkout_at,
-			external_id, external_id_settled_at
+			checkout_agent_id, checkout_at
 		) SELECT
 			id, COALESCE(workspace_id,''), COALESCE(workflow_id,''),
 			COALESCE(workflow_step_id,''), title, COALESCE(description,''),
 			COALESCE(state,'TODO'), 'medium', COALESCE(position,0),
 			COALESCE(wip_admitted,1), COALESCE(queued_for_step_id,''), queued_at,
 			COALESCE(metadata,'{}'), COALESCE(is_ephemeral,0),
-			COALESCE(parent_id,''), COALESCE(autopilot_enabled,0), archived_at,
+			COALESCE(parent_id,''), archived_at,
 			COALESCE(archived_by_cascade_id,''),
 			created_at, updated_at,
 			COALESCE(origin,'manual'),
 			COALESCE(project_id,''),
 			COALESCE(labels,'[]'), identifier,
-			checkout_agent_id, checkout_at,
-			external_id, external_id_settled_at
+			checkout_agent_id, checkout_at
 		FROM tasks`,
 		`DROP TABLE tasks`,
 		`ALTER TABLE tasks_priority_new RENAME TO tasks`,
@@ -465,13 +414,5 @@ func taskPriorityMigrationStatements() []string {
 		`CREATE INDEX IF NOT EXISTS idx_tasks_workspace_archived ON tasks(workspace_id, archived_at)`,
 		// idx_tasks_assignee was removed in ADR 0005 Wave F when the
 		// per-task assignee moved to workflow_step_participants.
-		//
-		// uniq_tasks_external_id enforces task create-idempotency
-		// (docs/specs/tasks/external-id-idempotency). DROP TABLE tasks above
-		// silently drops every index on the old table, this one included —
-		// unlike a plain ALTER TABLE ADD COLUMN, recreating the table means
-		// every index must be explicitly relisted here or it is gone from
-		// any install that still needs this historical rebuild.
-		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_tasks_external_id ON tasks(workspace_id, external_id) WHERE external_id IS NOT NULL`,
 	}
 }

@@ -51,7 +51,6 @@ function RunNotice({ code, message }: { code: string; message: string }) {
 }
 
 function useRunReview(taskId: string | null | undefined, sessionId?: string | null) {
-  const { t } = useTranslation();
   const [notice, setNotice] = useState<{ code: string; message: string } | null>(null);
   const [starting, setStarting] = useState(false);
 
@@ -63,7 +62,7 @@ function useRunReview(taskId: string | null | undefined, sessionId?: string | nu
       await runTaskReview({ taskId, sessionId: sessionId ?? undefined });
     } catch (error) {
       const code = (error as { code?: string })?.code ?? "";
-      const message = error instanceof Error ? error.message : t("review:couldNotStartReview");
+      const message = error instanceof Error ? error.message : "Could not start the review";
       setNotice({ code, message });
     } finally {
       setStarting(false);

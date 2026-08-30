@@ -3,7 +3,6 @@
 import type { PointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { t } from "@/lib/i18n";
 
 type DebugOverlayProps = {
   title?: string;
@@ -23,7 +22,7 @@ function formatValue(value: unknown): string {
   }
 }
 
-export function DebugOverlay({ title = t("common:debug"), entries, className }: DebugOverlayProps) {
+export function DebugOverlay({ title = "Debug", entries, className }: DebugOverlayProps) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
 

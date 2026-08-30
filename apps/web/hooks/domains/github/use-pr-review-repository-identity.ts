@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { useAppStore } from "@/components/state-provider";
 import {
   resolvePRReviewRepositoryIdentity,
   type ReviewWorktreeIdentity,
 } from "@/components/review/review-repository-identity";
 import { useTaskRepositories } from "@/hooks/domains/kanban/use-task-repositories";
+import { useRepository } from "@/hooks/domains/workspace/use-repository";
 import type { Worktree } from "@/lib/state/slices/session/types";
 import type { TaskPR } from "@/lib/types/github";
 import type { TaskSessionWorktree } from "@/lib/types/http";
@@ -49,16 +50,8 @@ export function usePRReviewRepositoryIdentity(
   sessionId: string | null | undefined,
   pr: TaskPR | null,
 ): string | undefined {
-  const resolveRepositoryIdentity = usePRReviewRepositoryIdentityResolver(taskId, sessionId);
-  return useMemo(() => resolveRepositoryIdentity(pr), [pr, resolveRepositoryIdentity]);
-}
-
-export function usePRReviewRepositoryIdentityResolver(
-  taskId: string | null,
-  sessionId: string | null | undefined,
-): (pr: TaskPR | null) => string | undefined {
   const taskRepositories = useTaskRepositories(taskId);
-  const repositoriesByWorkspace = useAppStore((state) => state.repositories.itemsByWorkspaceId);
+  const workspaceRepository = useRepository(pr?.repository_id ?? null);
   const sessionWorktrees = useAppStore((state) =>
     sessionId ? state.taskSessions.items[sessionId]?.worktrees : undefined,
   );
@@ -73,24 +66,15 @@ export function usePRReviewRepositoryIdentityResolver(
     () => normalizeReviewWorktrees(sessionWorktrees, liveWorktreeIds, liveWorktrees),
     [sessionWorktrees, liveWorktreeIds, liveWorktrees],
   );
-  const repositoryNamesById = useMemo(() => {
-    const names = new Map<string, string>();
-    for (const repositories of Object.values(repositoriesByWorkspace)) {
-      for (const repository of repositories) names.set(repository.id, repository.name);
-    }
-    return names;
-  }, [repositoriesByWorkspace]);
 
-  return useCallback(
-    (pr: TaskPR | null) =>
+  return useMemo(
+    () =>
       resolvePRReviewRepositoryIdentity({
         pr,
-        workspaceRepositoryName: pr?.repository_id
-          ? repositoryNamesById.get(pr.repository_id)
-          : undefined,
+        workspaceRepositoryName: workspaceRepository?.name,
         taskRepositories,
         worktrees,
       }),
-    [repositoryNamesById, taskRepositories, worktrees],
+    [pr, workspaceRepository?.name, taskRepositories, worktrees],
   );
 }

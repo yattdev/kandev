@@ -19,22 +19,14 @@ export function GitHubAccessHelp({
   title,
   description,
   content,
-  icon,
-  onOpen,
 }: {
   label: string;
   title: string;
   description: string;
   content?: ReactNode;
-  icon?: ReactNode;
-  onOpen?: () => void;
 }) {
   const usesTouchDrawer = useTouchDrawer();
   const [open, setOpen] = useState(false);
-  const handleDrawerOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (nextOpen) onOpen?.();
-  };
   const button = (
     <Button
       type="button"
@@ -45,13 +37,13 @@ export function GitHubAccessHelp({
       aria-expanded={usesTouchDrawer ? open : undefined}
       aria-label={label}
     >
-      {icon ?? <IconInfoCircle className="h-4 w-4" />}
+      <IconInfoCircle className="h-4 w-4" />
     </Button>
   );
   const trigger = usesTouchDrawer ? (
     <DrawerTrigger asChild>{button}</DrawerTrigger>
   ) : (
-    <Tooltip onOpenChange={(nextOpen) => nextOpen && onOpen?.()}>
+    <Tooltip>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side="top" align="start" className="max-w-[320px] text-xs leading-relaxed">
         {content ?? description}
@@ -60,7 +52,7 @@ export function GitHubAccessHelp({
   );
 
   return (
-    <Drawer open={open} onOpenChange={handleDrawerOpenChange}>
+    <Drawer open={open} onOpenChange={setOpen}>
       {trigger}
       <DrawerContent>
         <DrawerHeader>

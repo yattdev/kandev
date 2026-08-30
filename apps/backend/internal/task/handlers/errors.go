@@ -109,9 +109,6 @@ func isValidationError(err error) bool {
 	if errors.Is(err, service.ErrTaskTitleTooLong) {
 		return true
 	}
-	if errors.Is(err, service.ErrExternalIDInvalid) {
-		return true
-	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "pending approval") ||
 		strings.Contains(msg, "validation") ||

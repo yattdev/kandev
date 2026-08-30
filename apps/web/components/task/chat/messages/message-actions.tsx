@@ -67,7 +67,7 @@ function FavoriteButton({ isFavorite, onToggle }: { isFavorite: boolean; onToggl
       onClick={onToggle}
       aria-pressed={isFavorite}
       className={cn(
-        ACTION_BUTTON_SIZE,
+        "flex min-h-11 min-w-11 items-center justify-center sm:min-h-0 sm:min-w-0 sm:h-5 sm:w-5 sm:p-1",
         ACTION_BUTTON_HOVER,
         ACTION_BUTTON_TRANSITION,
         "cursor-pointer",
@@ -78,7 +78,7 @@ function FavoriteButton({ isFavorite, onToggle }: { isFavorite: boolean; onToggl
         isFavorite ? t("task:removeMessageFromFavorites") : t("task:markMessageAsFavorite")
       }
     >
-      <IconStar className={cn("h-full w-full", isFavorite && "fill-yellow-500")} />
+      <IconStar className={cn("h-5 w-5", isFavorite && "fill-yellow-500")} />
     </button>
   );
 }
@@ -189,11 +189,6 @@ function MetadataValue({ value }: { value: unknown }) {
   );
 }
 
-/**
- * Debug dialog exposing a message's persisted and turn-derived metadata. The
- * entries area is a keyboard-focusable scroll region so long fields (e.g.
- * `turn_metadata`) stay reachable on every input modality.
- */
 function MessageDebugDialog({
   message,
   turn,
@@ -219,16 +214,11 @@ function MessageDebugDialog({
           <IconInfoCircle className="h-full w-full" />
         </button>
       </DialogTrigger>
-      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-2xl">
-        <DialogHeader className="shrink-0">
+      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-2xl">
+        <DialogHeader>
           <DialogTitle>{t("task:messageMetadataTitle")}</DialogTitle>
         </DialogHeader>
-        <div
-          role="region"
-          aria-label={t("task:messageMetadataEntries")}
-          tabIndex={0}
-          className="grid min-h-0 flex-1 gap-3 overflow-auto pr-1 outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        >
+        <div className="grid gap-3 overflow-auto pr-1">
           {Object.entries(entries).map(([key, value]) => (
             <div key={key} className="grid gap-1">
               <div className="font-mono text-[10px] uppercase text-muted-foreground">{key}</div>

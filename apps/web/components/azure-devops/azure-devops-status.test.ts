@@ -30,10 +30,10 @@ function taskPullRequest(
 describe("getAzureDevOpsPullRequestPresentation", () => {
   it("prioritizes terminal Azure states", () => {
     expect(getAzureDevOpsPullRequestPresentation(taskPullRequest({ status: "completed" }))).toEqual(
-      { provider: "azure_devops", labelKey: "azuredevops:prStatusCompleted", tone: "success" },
+      { provider: "azure_devops", label: "Completed", tone: "success" },
     );
     expect(getAzureDevOpsPullRequestPresentation(taskPullRequest({ status: "abandoned" }))).toEqual(
-      { provider: "azure_devops", labelKey: "azuredevops:prStatusAbandoned", tone: "muted" },
+      { provider: "azure_devops", label: "Abandoned", tone: "muted" },
     );
   });
 
@@ -42,24 +42,20 @@ describe("getAzureDevOpsPullRequestPresentation", () => {
       getAzureDevOpsPullRequestPresentation(
         taskPullRequest({ policyState: "failure", reviewState: "approved" }),
       ),
-    ).toEqual({
-      provider: "azure_devops",
-      labelKey: "azuredevops:prStatusPolicyFailed",
-      tone: "danger",
-    });
+    ).toEqual({ provider: "azure_devops", label: "Policy failed", tone: "danger" });
   });
 
   it("distinguishes drafts, review waits, and ready pull requests", () => {
-    expect(getAzureDevOpsPullRequestPresentation(taskPullRequest({ isDraft: true })).labelKey).toBe(
-      "azuredevops:prStatusDraft",
+    expect(getAzureDevOpsPullRequestPresentation(taskPullRequest({ isDraft: true })).label).toBe(
+      "Draft",
     );
     expect(
-      getAzureDevOpsPullRequestPresentation(taskPullRequest({ reviewState: "waiting" })).labelKey,
-    ).toBe("azuredevops:prStatusWaitingForReview");
+      getAzureDevOpsPullRequestPresentation(taskPullRequest({ reviewState: "waiting" })).label,
+    ).toBe("Waiting for review");
     expect(
       getAzureDevOpsPullRequestPresentation(
         taskPullRequest({ reviewState: "approved", policyState: "success" }),
       ),
-    ).toEqual({ provider: "azure_devops", labelKey: "azuredevops:prStatusReady", tone: "success" });
+    ).toEqual({ provider: "azure_devops", label: "Ready", tone: "success" });
   });
 });

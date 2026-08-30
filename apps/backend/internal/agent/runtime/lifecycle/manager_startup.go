@@ -123,7 +123,6 @@ func (m *Manager) StartAgentProcess(ctx context.Context, executionID string) (re
 	if isPassthrough {
 		return m.startPassthroughExecution(operationCtx, execution, profileInfo)
 	}
-	execution.beginStartupAttempt()
 
 	if execution.agentctl == nil {
 		return fmt.Errorf("execution %q has no agentctl client", executionID)
@@ -132,7 +131,7 @@ func (m *Manager) StartAgentProcess(ctx context.Context, executionID string) (re
 	// Check if we're reconnecting to an existing running agent process.
 	// When the existing process is still alive inside a remote executor (e.g., Sprites),
 	// we skip subprocess launch and go directly to ACP session initialization.
-	reuseExisting := execution.metadataBool("reuse_existing_process")
+	reuseExisting, _ := execution.Metadata["reuse_existing_process"].(bool)
 
 	if !reuseExisting && execution.AgentCommand == "" {
 		return fmt.Errorf("execution %q has no agent command configured", executionID)
@@ -182,14 +181,14 @@ func (m *Manager) StartAgentProcess(ctx context.Context, executionID string) (re
 			zap.String("command", bootCommand))
 	}
 
-	return m.initializeAgentSession(operationCtx, execution, bootCommand, agentDisplayName, taskDescription, approvalPolicy)
+	return m.initializeAgentSession(operationCtx, execution, bootCommand, agentDisplayName, taskDescription)
 }
 
 func (m *Manager) preflightRemoteContributionPushes(ctx context.Context, execution *AgentExecution) error {
 	if execution == nil || execution.agentctl == nil {
 		return nil
 	}
-	bindings, err := remoteContributionsFromMetadata(execution.MetadataSnapshot())
+	bindings, err := remoteContributionsFromMetadata(execution.Metadata)
 	if err != nil {
 		return err
 	}

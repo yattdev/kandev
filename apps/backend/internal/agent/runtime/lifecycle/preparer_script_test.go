@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kandev/kandev/internal/agent/executor"
-	"github.com/kandev/kandev/internal/task/models"
 )
 
 func TestResolvePreparerSetupScript_LocalFallbackCommentOnly(t *testing.T) {
@@ -14,10 +13,7 @@ func TestResolvePreparerSetupScript_LocalFallbackCommentOnly(t *testing.T) {
 		RepositoryPath: "/tmp/my-repo",
 	}
 
-	got, err := resolvePreparerSetupScript(req, "/tmp/my-repo")
-	if err != nil {
-		t.Fatalf("resolvePreparerSetupScript() error = %v", err)
-	}
+	got := resolvePreparerSetupScript(req, "/tmp/my-repo")
 	if got != "" {
 		t.Fatalf("expected comment-only default script to be treated as empty, got %q", got)
 	}
@@ -53,10 +49,7 @@ func TestResolvePreparerSetupScript_LocalWithRepoSetupScript(t *testing.T) {
 		RepoSetupScript: "make install",
 	}
 
-	got, err := resolvePreparerSetupScript(req, "/tmp/my-repo")
-	if err != nil {
-		t.Fatalf("resolvePreparerSetupScript() error = %v", err)
-	}
+	got := resolvePreparerSetupScript(req, "/tmp/my-repo")
 	if got == "" {
 		t.Fatal("expected non-empty script when repo setup script is set")
 	}
@@ -73,10 +66,7 @@ func TestResolvePreparerSetupScript_WorktreeWithRepoSetupScript(t *testing.T) {
 		RepoSetupScript: "npm ci",
 	}
 
-	got, err := resolvePreparerSetupScript(req, "/tmp/worktrees/wt-1")
-	if err != nil {
-		t.Fatalf("resolvePreparerSetupScript() error = %v", err)
-	}
+	got := resolvePreparerSetupScript(req, "/tmp/worktrees/wt-1")
 	if got == "" {
 		t.Fatal("expected non-empty script when repo setup script is set")
 	}
@@ -92,10 +82,7 @@ func TestResolvePreparerSetupScript_UsesExplicitScript(t *testing.T) {
 		SetupScript:    "echo {{repository.path}}",
 	}
 
-	got, err := resolvePreparerSetupScript(req, "/tmp/my-repo")
-	if err != nil {
-		t.Fatalf("resolvePreparerSetupScript() error = %v", err)
-	}
+	got := resolvePreparerSetupScript(req, "/tmp/my-repo")
 	// Data placeholders resolve to a self-contained single-quoted shell token
 	// (security: shellQuote) — functionally identical for echo, safe if the
 	// value ever carried shell metacharacters.
@@ -121,10 +108,7 @@ func TestResolvePreparerSetupScript_WorktreePlaceholders(t *testing.T) {
 		}, "\n"),
 	}
 
-	got, err := resolvePreparerSetupScript(req, "/tmp/worktrees/wt-123")
-	if err != nil {
-		t.Fatalf("resolvePreparerSetupScript() error = %v", err)
-	}
+	got := resolvePreparerSetupScript(req, "/tmp/worktrees/wt-123")
 	// Data placeholders resolve to self-contained single-quoted tokens
 	// (shellQuote); worktree.id is a kandev UUID and stays unquoted.
 	expected := []string{
@@ -141,17 +125,5 @@ func TestResolvePreparerSetupScript_WorktreePlaceholders(t *testing.T) {
 	}
 	if strings.Contains(got, "{{worktree.path}}") {
 		t.Fatalf("expected worktree placeholders to be resolved, got %q", got)
-	}
-}
-
-func TestResolvePreparerSetupScriptPropagatesContributionDestinationError(t *testing.T) {
-	req := &EnvPrepareRequest{
-		ExecutorType:            executor.NameStandalone,
-		RepositoryPath:          "/tmp/my-repo",
-		ContributionDestination: &models.ContributionDestination{},
-	}
-
-	if _, err := resolvePreparerSetupScript(req, "/tmp/my-repo"); err == nil {
-		t.Fatal("resolvePreparerSetupScript accepted an invalid contribution destination")
 	}
 }

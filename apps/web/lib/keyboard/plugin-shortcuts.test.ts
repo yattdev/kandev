@@ -59,12 +59,11 @@ describe("buildConfigurableShortcutEntries", () => {
       },
     });
 
-    const entries = buildConfigurableShortcutEntries([plugin], (key) => `translated:${key}`);
+    const entries = buildConfigurableShortcutEntries([plugin]);
     const coreEntry = entries.find((e) => e.source === "core" && e.id === "SEARCH");
     const pluginEntry = entries.find((e) => e.source === "plugin" && e.id === NAMESPACED_ID);
 
     expect(coreEntry).toBeDefined();
-    expect(coreEntry?.label).toBe("translated:settings:shortcutCommandPanel");
     expect(pluginEntry).toMatchObject({
       source: "plugin",
       id: NAMESPACED_ID,

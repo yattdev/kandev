@@ -64,7 +64,6 @@ vi.mock("@/hooks/use-keyboard-shortcut", () => ({
 }));
 
 vi.mock("@/components/task-create-dialog-footer", () => ({
-  isNativeSubmitDisabled: () => false,
   TaskCreateDialogFooter: () => null,
 }));
 
@@ -85,7 +84,6 @@ vi.mock("@/components/task-create-dialog-repo-chips", () => ({
 }));
 
 vi.mock("@/hooks/use-task-create-dialog-popover-container", () => ({
-  useTaskCreateDialogPopoverContainer: () => null,
   TaskCreateDialogPopoverContainerProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
@@ -96,19 +94,8 @@ vi.mock("@/components/task-create-dialog-handlers", () => ({
 }));
 
 vi.mock("@/components/state-provider", () => ({
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  useAppStore: (selector: (state: any) => unknown) =>
-    selector({
-      userSettings: { taskCreateLastUsed: null },
-      repositorySets: {
-        itemsByWorkspaceId: {},
-        loadingByWorkspaceId: {},
-        loadedByWorkspaceId: {},
-        revisionByWorkspaceId: {},
-      },
-      setRepositorySets: () => undefined,
-      setRepositorySetsLoading: () => undefined,
-    }),
+  useAppStore: (selector: (state: { userSettings: { taskCreateLastUsed: null } }) => unknown) =>
+    selector({ userSettings: { taskCreateLastUsed: null } }),
 }));
 
 vi.mock("@/components/task-create-dialog-submit", () => ({
@@ -243,11 +230,7 @@ vi.mock("@/components/task-create-dialog-state", () => ({
 
 function buildMockFs(initialDescription = ORIGINAL_PROMPT): DialogFormState {
   return {
-    blockedBy: [],
-    setBlockedBy: () => undefined,
     taskName: "Task title",
-    autopilot: false,
-    setAutopilot: () => undefined,
     setTaskName: () => undefined,
     hasTitle: true,
     setHasTitle: () => undefined,
@@ -301,7 +284,6 @@ function buildMockFs(initialDescription = ORIGINAL_PROMPT): DialogFormState {
     prInfoByUrl: {
       info: () => undefined,
       loading: () => false,
-      settled: () => true,
       error: () => undefined,
       ensure: () => undefined,
       clear: () => undefined,

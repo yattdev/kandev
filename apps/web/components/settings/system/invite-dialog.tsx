@@ -17,8 +17,6 @@ import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { ApiError } from "@/lib/api/client";
 import { createInvite } from "@/lib/api/domains/auth-api";
 import { copyToClipboard } from "@/lib/utils/copy-to-clipboard";
-import { SettingsErrorText, SettingsFieldLabel } from "@/components/settings/settings-typography";
-import { settingsControlClassName } from "@/components/settings/settings-control";
 
 type Props = {
   open: boolean;
@@ -54,9 +52,9 @@ function InviteForm({
       </DialogHeader>
       <div className="space-y-3">
         <div className="flex flex-col gap-1">
-          <SettingsFieldLabel htmlFor="invite-dialog-email">
+          <label htmlFor="invite-dialog-email" className="text-xs text-muted-foreground">
             {t("system:inviteEmailOptional")}
-          </SettingsFieldLabel>
+          </label>
           <Input
             id="invite-dialog-email"
             data-testid="invite-dialog-email"
@@ -66,15 +64,11 @@ function InviteForm({
           />
         </div>
         <div className="flex flex-col gap-1">
-          <SettingsFieldLabel htmlFor="invite-dialog-role">
+          <label htmlFor="invite-dialog-role" className="text-xs text-muted-foreground">
             {t("system:createUserRole")}
-          </SettingsFieldLabel>
+          </label>
           <Select value={role} onValueChange={setRole}>
-            <SelectTrigger
-              id="invite-dialog-role"
-              className={settingsControlClassName()}
-              data-testid="invite-dialog-role"
-            >
+            <SelectTrigger id="invite-dialog-role" data-testid="invite-dialog-role">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -84,7 +78,11 @@ function InviteForm({
             </SelectContent>
           </Select>
         </div>
-        {error && <SettingsErrorText data-testid="invite-dialog-error">{error}</SettingsErrorText>}
+        {error && (
+          <p className="text-xs text-destructive" data-testid="invite-dialog-error">
+            {error}
+          </p>
+        )}
       </div>
       <DialogFooter>
         <Button variant="outline" className="cursor-pointer" onClick={onCancel}>

@@ -3,18 +3,9 @@ export type FontCategory = "icons" | "ligatures" | "system";
 export type TerminalFontPreset = {
   value: string;
   label: string;
-  /**
-   * Catalog key used instead of `label` when the entry names no typeface.
-   * Resolved at render (`FontGroupOptions`), never here — a module-scope `t()`
-   * would freeze the copy at the boot locale.
-   */
-  labelKey?: string;
   category: FontCategory;
 };
 
-// i18n-exempt: `value` is a CSS font-family stack and `label` is the typeface's
-// own name; both are verbatim data. The one entry that names no typeface
-// ("System Default") carries `labelKey` and is resolved at render instead.
 export const TERMINAL_FONT_PRESETS: TerminalFontPreset[] = [
   // Nerd Fonts (icon/glyph support)
   {
@@ -67,7 +58,6 @@ export const TERMINAL_FONT_PRESETS: TerminalFontPreset[] = [
   {
     value: 'Menlo, "DejaVu Sans Mono", Consolas, monospace',
     label: "System Default",
-    labelKey: "settings:terminalFontSystemDefault",
     category: "system",
   },
   {
@@ -82,7 +72,6 @@ export const TERMINAL_FONT_PRESETS: TerminalFontPreset[] = [
   },
 ];
 
-// i18n-exempt: CSS font-family stack, not copy.
 const DEFAULT_FONT_FAMILY = 'Menlo, Monaco, "Courier New", monospace';
 
 export const DEFAULT_FONT_SIZE = 13;

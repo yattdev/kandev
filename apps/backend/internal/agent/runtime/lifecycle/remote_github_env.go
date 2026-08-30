@@ -6,10 +6,7 @@ import (
 	"github.com/kandev/kandev/internal/githubauth"
 )
 
-// managedGitCredentialBrokerEnvKeys retain the existing agentctl environment
-// contract while carrying provider-neutral opaque leases and helper scopes.
-// None of these values is a Git access token.
-var managedGitCredentialBrokerEnvKeys = []string{
+var managedGitHubBrokerEnvKeys = []string{
 	githubauth.CredentialBrokerURLEnv,
 	githubauth.CredentialLeaseEnv,
 	githubauth.CredentialTaskIDEnv,
@@ -22,15 +19,15 @@ var managedGitCredentialBrokerEnvKeys = []string{
 	"GIT_TERMINAL_PROMPT",
 }
 
-// managedGitCredentialBrokerEnv returns only runtime values needed by the
+// managedGitHubBrokerEnv returns only the runtime values needed by the
 // broker-backed git helper and gh shim. It deliberately excludes unrelated
 // profile and control-plane secrets from the long-lived agentctl process.
-func managedGitCredentialBrokerEnv(env map[string]string) map[string]string {
+func managedGitHubBrokerEnv(env map[string]string) map[string]string {
 	if env[githubauth.CredentialBrokerURLEnv] == "" {
 		return nil
 	}
-	result := make(map[string]string, len(managedGitCredentialBrokerEnvKeys)+1)
-	for _, key := range managedGitCredentialBrokerEnvKeys {
+	result := make(map[string]string, len(managedGitHubBrokerEnvKeys)+1)
+	for _, key := range managedGitHubBrokerEnvKeys {
 		if value := env[key]; value != "" {
 			result[key] = value
 		}
@@ -55,16 +52,6 @@ func copyIndexedGitConfig(source, target map[string]string) {
 	}
 }
 
-func hasManagedGitCredentialBrokerEnv(env map[string]string) bool {
-	return env[githubauth.CredentialBrokerURLEnv] != "" && env[githubauth.CredentialLeaseEnv] != ""
-}
-
-// Deprecated compatibility wrappers keep existing lifecycle call sites and
-// agentctl contract tests stable while their behavior is provider-neutral.
-func managedGitHubBrokerEnv(env map[string]string) map[string]string {
-	return managedGitCredentialBrokerEnv(env)
-}
-
 func hasManagedGitHubBrokerEnv(env map[string]string) bool {
-	return hasManagedGitCredentialBrokerEnv(env)
+	return env[githubauth.CredentialBrokerURLEnv] != "" && env[githubauth.CredentialLeaseEnv] != ""
 }

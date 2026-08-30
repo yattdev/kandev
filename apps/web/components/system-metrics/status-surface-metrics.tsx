@@ -23,14 +23,12 @@ type StatusSurfaceMetricsProps = {
   presentation: "bar" | "mobile-drawer";
   density: "full" | "compact";
   drawerOpen: boolean;
-  iconSize?: "size-3.5" | "size-4";
 };
 
 export function StatusSurfaceMetrics({
   presentation,
   density,
   drawerOpen,
-  iconSize = "size-3.5",
 }: StatusSurfaceMetricsProps) {
   const { t } = useTranslation();
   // Wire/storage name stays stable for existing user settings and API payloads.
@@ -56,13 +54,12 @@ export function StatusSurfaceMetrics({
           {t("system:systemMetrics")}
         </h3>
         {!host ? (
-          <EmptyMetrics drawer iconSize={iconSize} />
+          <EmptyMetrics drawer />
         ) : (
           <DrawerSourceMetrics
             source={host}
             updatedAt={snapshot?.timestamp}
             simplified={simplified}
-            iconSize={iconSize}
           />
         )}
       </section>
@@ -76,7 +73,7 @@ export function StatusSurfaceMetrics({
       aria-label={t("system:systemMetrics")}
     >
       {!host ? (
-        <EmptyMetrics iconSize={iconSize} />
+        <EmptyMetrics />
       ) : (
         <BarSourceMetrics
           source={host}
@@ -84,14 +81,13 @@ export function StatusSurfaceMetrics({
           showSourceLabel={density === "full"}
           metricLimit={density === "compact" ? 2 : 4}
           simplified={simplified}
-          iconSize={iconSize}
         />
       )}
     </div>
   );
 }
 
-function EmptyMetrics({ drawer = false, iconSize }: { drawer?: boolean; iconSize: string }) {
+function EmptyMetrics({ drawer = false }: { drawer?: boolean }) {
   const { t } = useTranslation();
   return (
     <div
@@ -101,7 +97,7 @@ function EmptyMetrics({ drawer = false, iconSize }: { drawer?: boolean; iconSize
           : "flex h-full items-center gap-2 text-[11px] text-current opacity-70"
       }
     >
-      <IconActivity className={iconSize} />
+      <IconActivity className="h-3.5 w-3.5" />
       <span>{t("system:metricsUnavailable")}</span>
     </div>
   );
@@ -113,31 +109,23 @@ function BarSourceMetrics({
   showSourceLabel,
   metricLimit,
   simplified,
-  iconSize,
 }: {
   source: SystemMetricsSource;
   updatedAt?: string;
   showSourceLabel: boolean;
   metricLimit: number;
   simplified: boolean;
-  iconSize: string;
 }) {
   return (
     <div className="flex h-full max-w-[360px] items-center gap-3 overflow-hidden text-[11px]">
       {!simplified ? (
-        <SourceBadge
-          source={source}
-          updatedAt={updatedAt}
-          showLabel={showSourceLabel}
-          iconSize={iconSize}
-        />
+        <SourceBadge source={source} updatedAt={updatedAt} showLabel={showSourceLabel} />
       ) : null}
       <MetricValues
         source={source}
         updatedAt={updatedAt}
         limit={metricLimit}
         simplified={simplified}
-        iconSize={iconSize}
       />
     </div>
   );
@@ -147,26 +135,16 @@ function DrawerSourceMetrics({
   source,
   updatedAt,
   simplified,
-  iconSize,
 }: {
   source: SystemMetricsSource;
   updatedAt?: string;
   simplified: boolean;
-  iconSize: string;
 }) {
   return (
     <div className="flex min-h-11 w-full min-w-0 items-center gap-2 px-0 text-sm">
-      {!simplified ? (
-        <SourceBadge source={source} updatedAt={updatedAt} showLabel iconSize={iconSize} />
-      ) : null}
+      {!simplified ? <SourceBadge source={source} updatedAt={updatedAt} showLabel /> : null}
       <div className="flex min-w-0 flex-1 items-center justify-end gap-3 overflow-hidden">
-        <MetricValues
-          source={source}
-          updatedAt={updatedAt}
-          limit={4}
-          simplified={simplified}
-          iconSize={iconSize}
-        />
+        <MetricValues source={source} updatedAt={updatedAt} limit={4} simplified={simplified} />
       </div>
     </div>
   );
@@ -176,12 +154,10 @@ function SourceBadge({
   source,
   updatedAt,
   showLabel,
-  iconSize,
 }: {
   source: SystemMetricsSource;
   updatedAt?: string;
   showLabel: boolean;
-  iconSize: string;
 }) {
   const { t } = useTranslation();
   const locale = useDateLocale();
@@ -192,7 +168,7 @@ function SourceBadge({
           className="flex shrink-0 items-center gap-1.5 text-current"
           aria-label={t("system:hostMetrics")}
         >
-          <IconServer className={iconSize} stroke={1.6} />
+          <IconServer className="size-3.5" stroke={1.6} />
           {showLabel ? <span className="max-w-20 truncate">{t("system:host")}</span> : null}
         </span>
       </TooltipTrigger>
@@ -214,13 +190,11 @@ function MetricValues({
   updatedAt,
   limit,
   simplified,
-  iconSize,
 }: {
   source: SystemMetricsSource;
   updatedAt?: string;
   limit: number;
   simplified: boolean;
-  iconSize: string;
 }) {
   const metrics = source.metrics.slice(0, limit);
   if (metrics.length === 0) return <span className="text-muted-foreground">-</span>;
@@ -233,7 +207,6 @@ function MetricValues({
           source={source}
           updatedAt={updatedAt}
           simplified={simplified}
-          iconSize={iconSize}
         />
       ))}
     </span>
@@ -245,13 +218,11 @@ function MetricValue({
   source,
   updatedAt,
   simplified,
-  iconSize,
 }: {
   metric: SystemMetricSample;
   source: SystemMetricsSource;
   updatedAt?: string;
   simplified: boolean;
-  iconSize: string;
 }) {
   const { t } = useTranslation();
   const locale = useDateLocale();
@@ -263,7 +234,7 @@ function MetricValue({
           className={`inline-flex shrink-0 items-center gap-1.5 tabular-nums ${metricColor(metric)}`}
           aria-label={`${metricLabel(t, metric.id)} ${formatMetric(metric)}`}
         >
-          {metricIcon(metric.id, iconSize)}
+          {metricIcon(metric.id)}
           {!simplified ? <MetricMeter metric={metric} /> : null}
           <span className="font-medium tracking-[-0.015em] [font-family:var(--font-geist-mono)]">
             {formatMetric(metric)}
@@ -304,7 +275,7 @@ function metricLabel(t: TFunction, id: string) {
   );
 }
 
-function metricIcon(id: string, iconSize: string) {
+function metricIcon(id: string) {
   const Icon =
     {
       cpu_percent: IconCpu,
@@ -313,7 +284,7 @@ function metricIcon(id: string, iconSize: string) {
       cpu_temp: IconFlame,
       io_load: IconGauge,
     }[id] ?? IconActivity;
-  return <Icon className={`${iconSize} opacity-80`} stroke={1.6} />;
+  return <Icon className="size-3.5 opacity-80" stroke={1.6} />;
 }
 
 function MetricMeter({ metric }: { metric: SystemMetricSample }) {

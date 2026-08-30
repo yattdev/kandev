@@ -19,15 +19,6 @@ import { timeAgo } from "@/lib/utils/time";
 import type { CommitDetailTarget } from "./changes-diff-target";
 import { useTranslation } from "react-i18next";
 
-export type CommitPresentation = "current_pr" | "local_checkout";
-
-const provenanceAccessibleLabelKey = {
-  current_pr: "task:currentPRCommit",
-  local_checkout: "task:localCheckoutCommit",
-  pushed: "task:pushedCommit",
-  unpushed: "task:unpushedCommit",
-} as const;
-
 export type CommitItem = {
   commit_sha: string;
   commit_message: string;
@@ -39,8 +30,6 @@ export type CommitItem = {
   /** Multi-repo: name of the repo this commit was made in. Empty for single-repo. */
   repository_name?: string;
   committed_at?: string;
-  /** Explicit provenance used when provider and checkout histories diverge. */
-  presentation?: CommitPresentation;
 };
 
 /** Context menu for commit items */
@@ -181,44 +170,6 @@ function CommitRowActions({
   );
 }
 
-function CommitStatusMarker({ commit }: { commit: CommitItem }) {
-  const { t } = useTranslation();
-  let label: string;
-  let provenance: "current_pr" | "local_checkout" | "pushed" | "unpushed";
-  let marker = <IconGitCommit aria-hidden="true" className="h-3.5 w-3.5 text-muted-foreground" />;
-
-  if (commit.presentation === "current_pr") {
-    label = t("task:currentPRCommit");
-    provenance = "current_pr";
-    marker = <IconGitCommit aria-hidden="true" className="h-3.5 w-3.5 text-violet-500" />;
-  } else if (commit.presentation === "local_checkout") {
-    label = t("task:localCheckoutCommit");
-    provenance = "local_checkout";
-    marker = <IconGitCommit aria-hidden="true" className="h-3.5 w-3.5 text-amber-500" />;
-  } else if (commit.pushed === true) {
-    label = t("task:pushedToRemote");
-    provenance = "pushed";
-  } else {
-    label = t("task:localCommitNotYetPushed");
-    provenance = "unpushed";
-    marker = <IconArrowUp aria-hidden="true" className="h-3.5 w-3.5 text-emerald-500" />;
-  }
-
-  const accessibleLabel = t(provenanceAccessibleLabelKey[provenance]);
-
-  return (
-    <span
-      className="shrink-0"
-      title={label}
-      data-testid="commit-provenance"
-      data-commit-provenance={provenance}
-    >
-      <span className="sr-only">{accessibleLabel}</span>
-      {marker}
-    </span>
-  );
-}
-
 /** Individual commit row with hover actions */
 export function CommitRow({
   commit,
@@ -241,6 +192,7 @@ export function CommitRow({
   onRevertCommit?: (sha: string, repo?: string) => void;
   onResetToCommit?: (sha: string, repo?: string) => void;
 }) {
+  const { t } = useTranslation();
   const isLocalCommit = commit.detailTarget.source === "local";
   const showActions =
     isLocalCommit && (onResetToCommit || (isLatest && (onAmendCommit || onRevertCommit)));
@@ -266,7 +218,21 @@ export function CommitRow({
           }
         }}
       >
-        <CommitStatusMarker commit={commit} />
+        <span
+          className="shrink-0"
+          title={
+            commit.pushed === true ? t("task:pushedToRemote") : t("task:localCommitNotYetPushed")
+          }
+        >
+          <span className="sr-only">
+            {commit.pushed === true ? t("task:pushedCommit") : t("task:unpushedCommit")}
+          </span>
+          {commit.pushed === true ? (
+            <IconGitCommit aria-hidden="true" className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <IconArrowUp aria-hidden="true" className="h-3.5 w-3.5 text-emerald-500" />
+          )}
+        </span>
         <code className="font-mono text-muted-foreground text-[11px]">
           {commit.commit_sha.slice(0, 7)}
         </code>

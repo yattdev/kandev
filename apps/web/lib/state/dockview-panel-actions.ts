@@ -2,31 +2,25 @@ import type { DockviewApi, DockviewGroupPanel } from "dockview-react";
 import type { CommitDetailTarget } from "@/components/task/changes-diff-target";
 import { t } from "@/lib/i18n";
 import { focusOrAddPanel } from "./dockview-layout-builders";
-import { reviewPanelId, type ReviewPanelTarget } from "./dockview-review-panel-id";
-import { panelTitle } from "./layout-manager/panel-title";
+import {
+  parsePluginPanelId,
+  pluginPanelId,
+  PLUGIN_PANEL_COMPONENT,
+  PLUGIN_PANEL_TAB_COMPONENT,
+} from "./layout-manager/plugin-panels";
 
-export type ScrollTarget = {
-  sessionId: string;
-  messageId: string;
-  token: number;
-  hostPanelId: string;
-};
-export type StoreGet = () => {
+type StoreGet = () => {
   api: DockviewApi | null;
   centerGroupId: string;
   rightTopGroupId: string;
   rightBottomGroupId: string;
   selectedDiff: { path: string; content?: string } | null;
-  scrollTarget?: ScrollTarget | null;
 };
-export type StoreSet = (
-  partial: Partial<{
-    selectedDiff: { path: string; content?: string } | null;
-    scrollTarget: ScrollTarget | null;
-  }>,
+type StoreSet = (
+  partial: Partial<{ selectedDiff: { path: string; content?: string } | null }>,
 ) => void;
 
-export type SimplePanelOpts = {
+type SimplePanelOpts = {
   id: string;
   component: string;
   title: string;
@@ -34,23 +28,14 @@ export type SimplePanelOpts = {
   params?: Record<string, unknown>;
 };
 
-/** Add a panel (or focus an existing one with the same id) inside the given group. */
-export function addSimplePanel(api: DockviewApi, groupId: string, opts: SimplePanelOpts): void {
+function addSimplePanel(api: DockviewApi, groupId: string, opts: SimplePanelOpts): void {
   focusOrAddPanel(api, { ...opts, position: { referenceGroup: groupId } });
 }
 
-export { reviewPanelId };
-
-/** The browser panel a preview should reuse: the active one, else the first. */
-function findBrowserPanel(api: DockviewApi) {
-  return (
-    (api.activePanel?.api.component === "browser" ? api.activePanel : undefined) ??
-    api.panels.find((panel) => panel.api.component === "browser")
-  );
-}
-
 function openBrowserPanel(api: DockviewApi, centerGroupId: string, url: string): void {
-  const browserPanel = findBrowserPanel(api);
+  const browserPanel =
+    (api.activePanel?.api.component === "browser" ? api.activePanel : undefined) ??
+    api.panels.find((panel) => panel.api.component === "browser");
 
   if (browserPanel) {
     browserPanel.api.updateParameters({ url });
@@ -67,8 +52,7 @@ function openBrowserPanel(api: DockviewApi, centerGroupId: string, url: string):
   });
 }
 
-export type SidePanelOpts = { groupId?: string; quiet?: boolean; inCenter?: boolean };
-export type ReviewPanelOptions = { groupId?: string };
+type SidePanelOpts = { groupId?: string; quiet?: boolean; inCenter?: boolean };
 
 /**
  * Shared placement logic for a single-instance "side" panel (Plan, a plugin
@@ -77,7 +61,7 @@ export type ReviewPanelOptions = { groupId?: string };
  * from `addPlanPanel` so `addPluginPanel` can reuse the identical placement
  * rules instead of re-deriving them.
  */
-export function addSidePanel(
+function addSidePanel(
   api: DockviewApi,
   centerGroupId: string,
   panel: SimplePanelOpts,
@@ -90,10 +74,6 @@ export function addSidePanel(
   focusOrAddPanel(api, { ...panel, position }, opts?.quiet ?? false);
 }
 
-/**
- * Focus the legacy single-instance panel when it carries the matching key
- * param and the modern keyed panel does not exist; returns whether it did.
- */
 function focusMatchingLegacyPanel(
   api: DockviewApi,
   keyedPanelId: string,
@@ -148,12 +128,10 @@ const PREVIEW_SPECS: Record<PreviewType, PreviewSpec> = {
   },
 };
 
-/** Return the last path segment of `path` (the file name). */
 function getFileName(path: string): string {
   return path.split("/").pop() || path;
 }
 
-/** Build a repo-scoped item id (`repo:path`) so multi-repo files get distinct panels. */
 export function buildRepoScopedItemId(path: string, repo?: string): string {
   return repo ? `${repo}:${path}` : path;
 }
@@ -350,11 +328,6 @@ export type OpenPanelOpts = {
 export const PREVIEW_FILE_EDITOR_ID = "preview:file-editor";
 const PINNED_TAB = "pinnedDefaultTab";
 
-/**
- * Build the `addFileEditorPanel` action: opens the file-editor preview (or a
- * pinned per-item panel) for the given path, keyed repo-scoped when a repo
- * is provided.
- */
 function buildFileEditorAction(get: StoreGet) {
   return (path: string, name: string, opts?: OpenPanelOpts) => {
     const { api, centerGroupId } = get();
@@ -374,11 +347,6 @@ function buildFileEditorAction(get: StoreGet) {
   };
 }
 
-/**
- * Build the `addFileDiffPanel` action: opens the file-diff preview (or pinned
- * panel) for a path, passing content/source/repository/pr params through and
- * keying the item repo-scoped.
- */
 function buildFileDiffAction(get: StoreGet) {
   return (
     path: string,
@@ -397,7 +365,7 @@ function buildFileDiffAction(get: StoreGet) {
       api,
       type: "file-diff",
       itemId,
-      title: t("task:panelFileDiff", { file: getFileName(path) }),
+      title: `Diff [${getFileName(path)}]`,
       params: {
         kind: "file",
         path,
@@ -414,11 +382,6 @@ function buildFileDiffAction(get: StoreGet) {
   };
 }
 
-/**
- * Compute the stable panel id for a commit detail target — legacy string
- * targets keep the raw (or `legacyRepo`-prefixed) id, while discriminated
- * targets encode provenance (`local:`/`github:`) and repository identity.
- */
 function buildCommitItemId(
   requestedTarget: CommitDetailTarget | string,
   target: CommitDetailTarget,
@@ -431,10 +394,6 @@ function buildCommitItemId(
   return `github:${target.workspaceId}:${target.owner}/${target.repo}:${target.sha}`;
 }
 
-/**
- * Build the `addCommitDetailPanel` action: opens the commit-detail preview
- * for a legacy sha string or a discriminated commit target.
- */
 function buildCommitDetailAction(get: StoreGet) {
   return (
     requestedTarget: CommitDetailTarget | string,
@@ -471,10 +430,6 @@ function buildCommitDetailAction(get: StoreGet) {
   };
 }
 
-/**
- * Build the store's core panel actions: chat, changes/files, diff viewer,
- * file diff/editor, commit detail, browser, and preview pinning.
- */
 export function buildPanelActions(set: StoreSet, get: StoreGet) {
   return {
     addChatPanel: () => {
@@ -484,7 +439,7 @@ export function buildPanelActions(set: StoreSet, get: StoreGet) {
         id: "chat",
         component: "chat",
         tabComponent: "permanentTab",
-        title: panelTitle("chat"),
+        title: "Agent",
         position: { referenceGroup: centerGroupId },
       });
     },
@@ -494,7 +449,7 @@ export function buildPanelActions(set: StoreSet, get: StoreGet) {
       addSimplePanel(api, groupId ?? rightTopGroupId, {
         id: "changes",
         component: "changes",
-        title: panelTitle("changes"),
+        title: "Changes",
         tabComponent: "changesTab",
       });
     },
@@ -504,7 +459,7 @@ export function buildPanelActions(set: StoreSet, get: StoreGet) {
       addSimplePanel(api, groupId ?? rightTopGroupId, {
         id: "files",
         component: "files",
-        title: panelTitle("files"),
+        title: "Files",
       });
     },
     addDiffViewerPanel: (path?: string, content?: string, groupId?: string) => {
@@ -514,7 +469,7 @@ export function buildPanelActions(set: StoreSet, get: StoreGet) {
       addSimplePanel(api, groupId ?? centerGroupId, {
         id: "diff-viewer",
         component: "diff-viewer",
-        title: t("task:panelDiffViewer"),
+        title: "Diff Viewer",
         params: { kind: "all" },
       });
     },
@@ -528,32 +483,8 @@ export function buildPanelActions(set: StoreSet, get: StoreGet) {
       addSimplePanel(api, groupId ?? centerGroupId, {
         id: browserId,
         component: "browser",
-        title: panelTitle("browser"),
+        title: t("task:browser"),
         params: { url: url ?? "" },
-      });
-    },
-    /**
-     * Open the preview browser without stacking a tab per call.
-     *
-     * `addBrowserPanel()` mints `browser:<timestamp>` when it has no URL, so an
-     * automatic open (start dev server, then stop, then start again) left a new
-     * empty tab behind on every cycle, and a URL detected later updated only the
-     * first of them. Explicit "+ > Browser" still uses `addBrowserPanel`, where
-     * a second tab is what the user asked for.
-     */
-    focusOrAddBrowserPanel: (groupId?: string) => {
-      const { api, centerGroupId } = get();
-      if (!api) return;
-      const existing = findBrowserPanel(api);
-      if (existing) {
-        existing.api.setActive();
-        return;
-      }
-      addSimplePanel(api, groupId ?? centerGroupId, {
-        id: `browser:${Date.now()}`,
-        component: "browser",
-        title: panelTitle("browser"),
-        params: { url: "" },
       });
     },
     openBrowserPanel: (url: string) => {
@@ -592,19 +523,14 @@ export function removeSessionPanel(api: DockviewApi, sessionId: string): void {
   if (panel) api.removePanel(panel);
 }
 
-/**
- * Build the review-detail panel actions (`addPRPanel`, `addMRPanel`,
- * `addReviewPanel`), each focusing an existing matching panel (canonical or
- * keyed) or adding a keyed detail panel in the requested group.
- */
-export function buildReviewPanelActions(get: StoreGet) {
+function buildReviewPanelActions(get: StoreGet) {
   return {
     /**
-     * Focus an existing PR tab in place, or add a keyed tab in the explicitly
-     * requested group. Callers without a group use the layout-owned canonical
-     * PR Details panel, then the center fallback.
+     * Focus an existing PR tab in place, or add a keyed tab beside the
+     * layout-owned canonical PR Details panel. Fall back to the center group
+     * when the current layout intentionally omits PR Details.
      */
-    addPRPanel: (prKey?: string, opts?: ReviewPanelOptions) => {
+    addPRPanel: (prKey?: string) => {
       const { api, centerGroupId } = get();
       if (!api) return;
       // Multi-repo: each TaskPR opens in its own panel keyed by
@@ -619,16 +545,16 @@ export function buildReviewPanelActions(get: StoreGet) {
         return;
       }
       if (prKey && focusMatchingLegacyPanel(api, id, "pr-detail", "prKey", prKey)) return;
-      const targetGroupId = opts?.groupId ?? api.getPanel("pr-detail")?.group.id ?? centerGroupId;
+      const targetGroupId = api.getPanel("pr-detail")?.group.id ?? centerGroupId;
       focusOrAddPanel(api, {
         id,
         component: "pr-detail",
-        title: prKey ? t("task:panelPullRequest") : panelTitle("pr-detail"),
+        title: prKey ? "Pull Request" : "PR Details",
         position: { referenceGroup: targetGroupId },
         params: prKey ? { prKey } : undefined,
       });
     },
-    addMRPanel: (mrKey: string, opts?: ReviewPanelOptions) => {
+    addMRPanel: (mrKey: string) => {
       const { api, centerGroupId } = get();
       if (!api) return;
       const id = `mr-detail|${mrKey}`;
@@ -646,42 +572,109 @@ export function buildReviewPanelActions(get: StoreGet) {
       focusOrAddPanel(api, {
         id,
         component: "mr-detail",
-        title: panelTitle("mr-detail"),
-        position: { referenceGroup: opts?.groupId ?? canonical?.group.id ?? centerGroupId },
+        title: "Merge Request",
+        position: { referenceGroup: canonical?.group.id ?? centerGroupId },
         params: { mrKey },
       });
     },
-    addReviewPanel: (review: ReviewPanelTarget, opts?: ReviewPanelOptions) => {
+  };
+}
+
+export function buildExtraPanelActions(get: StoreGet) {
+  return {
+    addVscodePanel: () => {
       const { api, centerGroupId } = get();
       if (!api) return;
-      const canonical = api.getPanel("pr-detail");
-      if (
-        canonical?.params?.providerId === review.providerId &&
-        canonical.params.connectionScope === review.connectionScope &&
-        canonical.params.repositoryId === review.repositoryId &&
-        String(canonical.params.changeRequestNumber) === String(review.changeRequestNumber)
-      ) {
-        canonical.api.setActive();
-        return;
-      }
-      const id = reviewPanelId(review);
-      const existing = api.getPanel(id);
+      focusOrAddPanel(api, {
+        id: "vscode",
+        component: "vscode",
+        title: "VS Code",
+        position: { referenceGroup: centerGroupId },
+      });
+    },
+    openInternalVscode: (_goto: { file: string; line: number; col: number } | null) => {
+      const { api, centerGroupId } = get();
+      if (!api) return;
+      const existing = api.getPanel("vscode");
       if (existing) {
         existing.api.setActive();
         return;
       }
       focusOrAddPanel(api, {
-        id,
-        component: "review-detail",
-        title: review.title,
-        position: { referenceGroup: opts?.groupId ?? canonical?.group.id ?? centerGroupId },
-        params: {
-          providerId: review.providerId,
-          reviewKey: review.reviewKey,
-          connectionScope: review.connectionScope,
-          repositoryId: review.repositoryId,
-          changeRequestNumber: review.changeRequestNumber,
+        id: "vscode",
+        component: "vscode",
+        title: "VS Code",
+        position: { referenceGroup: centerGroupId },
+      });
+    },
+    addPlanPanel: (opts?: SidePanelOpts) => {
+      const { api, centerGroupId } = get();
+      if (!api) return;
+      addSidePanel(
+        api,
+        centerGroupId,
+        { id: "plan", component: "plan", title: "Plan", tabComponent: "planTab" },
+        opts,
+      );
+    },
+    addPluginPanel: (pluginId: string, panelKey: string, title: string, opts?: SidePanelOpts) => {
+      const { api, centerGroupId } = get();
+      if (!api) return;
+      addSidePanel(
+        api,
+        centerGroupId,
+        {
+          id: pluginPanelId(pluginId, panelKey),
+          component: PLUGIN_PANEL_COMPONENT,
+          title,
+          tabComponent: PLUGIN_PANEL_TAB_COMPONENT,
+          params: { pluginId, panelKey },
         },
+        opts,
+      );
+    },
+    closePluginPanels: (pluginId: string) => {
+      const { api } = get();
+      if (!api) return;
+      api.panels
+        .filter((p) => parsePluginPanelId(p.id)?.pluginId === pluginId)
+        .forEach((p) => api.removePanel(p));
+    },
+    addTodosPanel: (opts?: SidePanelOpts) => {
+      const { api, centerGroupId } = get();
+      if (!api) return;
+      addSidePanel(
+        api,
+        centerGroupId,
+        { id: "todos", component: "todos", title: t("common:todos") },
+        opts,
+      );
+    },
+    ...buildReviewPanelActions(get),
+    addTerminalPanel: (
+      terminalId?: string,
+      groupId?: string,
+      environmentId?: string,
+      taskID?: string,
+      title?: string,
+    ) => {
+      const { api, rightBottomGroupId } = get();
+      if (!api) return;
+      const id = terminalId ?? `terminal-${Date.now()}`;
+      // Stamp env id + task id into the panel's params so cleanup
+      // (dockview-layout-setup.onDidRemovePanel) can call destroyUserShell
+      // with the correct task scope even after the user switches tasks.
+      // task_id is what the backend uses to verify ownership now — without
+      // it `requireOwnership` rejects with ErrTaskMismatch.
+      addSimplePanel(api, groupId ?? rightBottomGroupId, {
+        id,
+        component: "terminal",
+        // terminalTab is a custom dockview tab that adds the `#N` badge
+        // when there's more than one ordinary terminal in the task and
+        // exposes a context menu for rename / park / destroy.
+        tabComponent: "terminalTab",
+        title: title ?? "Terminal",
+        params: { terminalId: id, environmentId, taskID },
       });
     },
   };

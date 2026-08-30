@@ -15,7 +15,6 @@ import {
   resetBuiltInLayoutOverride,
   resolveEffectiveDefaultLayout,
   setDefaultLayoutProfile,
-  builtInLayoutProfileName,
   upsertBuiltInLayoutOverride,
   validateReusableLayout,
 } from "@/lib/layout/layout-profiles";
@@ -152,9 +151,8 @@ function updateBuiltInDefault(drafts: Drafts, selected: SelectedState) {
 }
 
 function useProfileActions(drafts: Drafts, selected: SelectedState) {
-  const selectedName = selected.selectedBuiltIn
-    ? builtInLayoutProfileName(selected.selectedBuiltIn, t)
-    : (selected.selectedCustom?.name ?? t("settings:layout"));
+  const selectedName =
+    selected.selectedBuiltIn?.name ?? selected.selectedCustom?.name ?? t("settings:layout");
   const duplicate = () =>
     attempt(drafts.setError, () => {
       const id = createLayoutProfileId();

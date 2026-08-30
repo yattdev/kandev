@@ -16,8 +16,6 @@ import { Spinner } from "@kandev/ui/spinner";
 import { IconAlertTriangle, IconCircleCheck } from "@tabler/icons-react";
 import { restoreBackup } from "@/lib/api/domains/system-api";
 import { useSystemJob } from "@/hooks/domains/system/use-system-jobs";
-import { useKandevRestart } from "@/hooks/domains/system/use-kandev-restart";
-import { RestartProgressDialog } from "./restart-progress-dialog";
 
 type Props = {
   open: boolean;
@@ -126,9 +124,8 @@ function ConfirmView({
   );
 }
 
-function SuccessView({ name }: { name: string }) {
+function SuccessView({ name, onClose }: { name: string; onClose: () => void }) {
   const { t } = useTranslation();
-  const restart = useKandevRestart();
   return (
     <>
       <DialogHeader>
@@ -140,27 +137,22 @@ function SuccessView({ name }: { name: string }) {
           <span>
             <Trans i18nKey="system:restoreCompleteBody" values={{ name }}>
               <code className="font-mono">{name}</code> has been written over the current database.
-              Restart Kandev before you continue. The database pool is closed until the restart. If
-              automatic restart is unavailable, quit and relaunch Kandev manually.
+              Quit and relaunch Kandev to load the restored data - the running backend still holds
+              connections to the previous version and will serve stale rows until you restart.
             </Trans>
           </span>
         </DialogDescription>
       </DialogHeader>
       <DialogFooter>
         <Button
-          onClick={() => void restart.start()}
-          disabled={restart.isRestarting}
-          className="w-full cursor-pointer sm:w-auto"
-          data-testid="system-restore-restart"
+          variant="outline"
+          onClick={onClose}
+          className="cursor-pointer"
+          data-testid="system-restore-close"
         >
-          {t("system:agentRuntimeUnavailableRestart")}
+          {t("system:close")}
         </Button>
       </DialogFooter>
-      <RestartProgressDialog
-        phase={restart.phase}
-        errorMessage={restart.errorMessage}
-        onDismiss={restart.dismiss}
-      />
     </>
   );
 }
@@ -182,7 +174,7 @@ export function RestoreDialog({ open, onOpenChange, name }: Props) {
   const enabled = typed === CONFIRM_TOKEN && !submitting && !succeeded;
 
   const handleClose = (next: boolean) => {
-    if (submitting || succeeded) return;
+    if (submitting) return;
     if (!next) {
       setTyped("");
       setRequestError(null);
@@ -209,7 +201,7 @@ export function RestoreDialog({ open, onOpenChange, name }: Props) {
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent data-testid="system-restore-dialog">
         {succeeded ? (
-          <SuccessView name={name} />
+          <SuccessView name={name} onClose={() => handleClose(false)} />
         ) : (
           <ConfirmView
             name={name}

@@ -11,25 +11,12 @@ import {
   parseSessionModelUri,
 } from "@/lib/lsp/file-uri";
 
-export type CursorPosition = { line: number; column: number; flashLine?: boolean };
-export type CursorRevealOptions = { sessionId?: string; flashLine?: boolean };
-type CodeMirrorCursorRevealer = (
-  line: number,
-  column: number,
-  options: CursorRevealOptions,
-) => boolean;
+type CursorPosition = { line: number; column: number };
+type CodeMirrorCursorRevealer = (line: number, column: number) => boolean;
 type MonacoInstance = NonNullable<ReturnType<typeof getMonacoInstance>>;
 type MountedMonacoEditor = ReturnType<MonacoInstance["editor"]["getEditors"]>[number];
-type MonacoCursorFlash = {
-  collection: ReturnType<MountedMonacoEditor["createDecorationsCollection"]>;
-  timeout: ReturnType<typeof setTimeout>;
-};
-
-export const EDITOR_CONTENT_SEARCH_FLASH_CLASS = "editor-content-search-flash";
-export const EDITOR_CONTENT_SEARCH_FLASH_DURATION_MS = 1_200;
 
 const pendingCursorPositions = new Map<string, CursorPosition>();
-const monacoCursorFlashes = new WeakMap<MountedMonacoEditor, MonacoCursorFlash>();
 const codeMirrorCursorRevealers = new Map<
   string,
   Map<string | undefined, Set<CodeMirrorCursorRevealer>>
@@ -51,17 +38,9 @@ export function setPendingCursorPosition(
   line: number,
   column: number,
   repo?: string,
-  sessionIdOrOptions?: string | CursorRevealOptions,
+  sessionId?: string,
 ) {
-  const options =
-    typeof sessionIdOrOptions === "string"
-      ? { sessionId: sessionIdOrOptions }
-      : (sessionIdOrOptions ?? {});
-  pendingCursorPositions.set(pendingCursorKey(path, repo, options.sessionId), {
-    line,
-    column,
-    ...(options.flashLine ? { flashLine: true } : {}),
-  });
+  pendingCursorPositions.set(pendingCursorKey(path, repo, sessionId), { line, column });
 }
 
 export function consumePendingCursorPosition(
@@ -96,11 +75,12 @@ export function registerCodeMirrorCursorRevealer(
 
 function runCodeMirrorRevealers(
   revealers: Set<CodeMirrorCursorRevealer> | undefined,
-  target: CursorPosition,
+  line: number,
+  column: number,
 ): boolean {
   if (!revealers) return false;
   for (const reveal of [...revealers].reverse()) {
-    if (reveal(target.line, target.column, { flashLine: target.flashLine })) return true;
+    if (reveal(line, column)) return true;
   }
   return false;
 }
@@ -109,11 +89,12 @@ function revealMountedCodeMirror(
   path: string,
   repo: string | undefined,
   sessionId: string | undefined,
-  target: CursorPosition,
+  line: number,
+  column: number,
 ): boolean {
   const revealersBySession = codeMirrorCursorRevealers.get(buildRepoScopedItemId(path, repo));
   if (!revealersBySession) return false;
-  if (runCodeMirrorRevealers(revealersBySession.get(sessionId), target)) {
+  if (runCodeMirrorRevealers(revealersBySession.get(sessionId), line, column)) {
     consumePendingCursorPosition(path, repo, sessionId);
     return true;
   }
@@ -122,7 +103,10 @@ function revealMountedCodeMirror(
   const scopedRevealerSets = [...revealersBySession.entries()]
     .filter(([registeredSessionId]) => registeredSessionId !== undefined)
     .map(([, revealers]) => revealers);
-  if (scopedRevealerSets.length !== 1 || !runCodeMirrorRevealers(scopedRevealerSets[0], target)) {
+  if (
+    scopedRevealerSets.length !== 1 ||
+    !runCodeMirrorRevealers(scopedRevealerSets[0], line, column)
+  ) {
     return false;
   }
   consumePendingCursorPosition(path, repo);
@@ -149,7 +133,7 @@ function editorModelMatches(modelPath: string, monacoPath: string, path: string,
   return exactMatch || walkthroughFileMatches(modelPath, path);
 }
 
-export type EditorFileScope = { repo?: string } & CursorRevealOptions;
+type EditorFileScope = { repo?: string; sessionId?: string };
 
 type ModelMatchContext = EditorFileScope & {
   targetUri: string | null;
@@ -196,44 +180,9 @@ function sessionModelMatchesTarget(documentUri: string, context: ModelMatchConte
   );
 }
 
-export function clearMonacoCursorFlash(editor: MountedMonacoEditor): void {
-  const flash = monacoCursorFlashes.get(editor);
-  if (!flash) return;
-  clearTimeout(flash.timeout);
-  flash.collection.set([]);
-  monacoCursorFlashes.delete(editor);
-}
-
-function flashMonacoEditorLine(editor: MountedMonacoEditor, line: number): void {
-  clearMonacoCursorFlash(editor);
-  const collection = editor.createDecorationsCollection([
-    {
-      range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 },
-      options: {
-        isWholeLine: true,
-        className: EDITOR_CONTENT_SEARCH_FLASH_CLASS,
-      },
-    },
-  ]);
-  const flash: MonacoCursorFlash = {
-    collection,
-    timeout: setTimeout(() => {
-      if (monacoCursorFlashes.get(editor) !== flash) return;
-      collection.set([]);
-      monacoCursorFlashes.delete(editor);
-    }, EDITOR_CONTENT_SEARCH_FLASH_DURATION_MS),
-  };
-  monacoCursorFlashes.set(editor, flash);
-}
-
-export function revealMonacoEditor(editor: MountedMonacoEditor, target: CursorPosition): void {
-  // A fresh Dockview panel can mount Monaco before automaticLayout has measured
-  // the newly active container. Centering against that stale zero-size layout
-  // updates the cursor but leaves the viewport at the top of the file.
-  if (target.flashLine) editor.layout();
-  editor.setPosition({ lineNumber: target.line, column: target.column });
-  editor.revealLineInCenter(target.line);
-  if (target.flashLine) flashMonacoEditorLine(editor, target.line);
+function revealMonacoEditor(editor: MountedMonacoEditor, line: number, column: number) {
+  editor.setPosition({ lineNumber: line, column });
+  editor.revealLineInCenter(line);
   editor.focus();
 }
 
@@ -249,32 +198,6 @@ function targetUriForPath(
   } catch {
     return null;
   }
-}
-
-function modelMatchContext(
-  path: string,
-  worktreePath: string | null,
-  scope: EditorFileScope,
-): ModelMatchContext {
-  const { repo } = scope;
-  return {
-    targetUri: targetUriForPath(worktreePath, repo, path),
-    monacoPath: worktreePath ? `${worktreePath}/${repo ? `${repo}/` : ""}${path}` : path,
-    path,
-    ...scope,
-  };
-}
-
-export function monacoEditorMatchesFile(
-  editor: MountedMonacoEditor,
-  path: string,
-  worktreePath: string | null,
-  scope: EditorFileScope = {},
-): boolean {
-  const model = editor.getModel();
-  return (
-    model !== null && editorModelMatchesTarget(model, modelMatchContext(path, worktreePath, scope))
-  );
 }
 
 function findMountedMonacoEditor(
@@ -307,11 +230,16 @@ function revealMountedMonaco(
   const monaco = getMonacoInstance();
   if (!monaco) return false;
   const { repo } = scope;
-  const context = modelMatchContext(path, worktreePath, scope);
+  const context = {
+    targetUri: targetUriForPath(worktreePath, repo, path),
+    monacoPath: worktreePath ? `${worktreePath}/${repo ? `${repo}/` : ""}${path}` : path,
+    path,
+    ...scope,
+  };
   const editor = findMountedMonacoEditor(monaco.editor.getEditors(), context);
   if (!editor) return false;
   consumePendingCursorPosition(path, repo, scope.sessionId);
-  revealMonacoEditor(editor, { line, column, flashLine: scope.flashLine });
+  revealMonacoEditor(editor, line, column);
   return true;
 }
 
@@ -323,9 +251,5 @@ export function scrollEditorIfMounted(
   scope: EditorFileScope = {},
 ): boolean {
   if (revealMountedMonaco(path, worktreePath, line, column, scope)) return true;
-  return revealMountedCodeMirror(path, scope.repo, scope.sessionId, {
-    line,
-    column,
-    flashLine: scope.flashLine,
-  });
+  return revealMountedCodeMirror(path, scope.repo, scope.sessionId, line, column);
 }

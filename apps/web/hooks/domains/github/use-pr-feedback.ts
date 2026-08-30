@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useReducer } from "react";
 import { getPRFeedback } from "@/lib/api/domains/github-api";
 import type { PRFeedback } from "@/lib/types/github";
-import { t } from "@/lib/i18n";
 
 export type PRFeedbackState = {
   /** `<workspaceId>/<owner>/<repo>/<prNumber>` of the request `feedback` belongs to. */
@@ -91,7 +90,7 @@ export function usePRFeedback(
           dispatch({
             type: "error",
             key,
-            message: err instanceof Error ? err.message : t("github:failedToFetchPrFeedback"),
+            message: err instanceof Error ? err.message : "Failed to fetch PR feedback",
           });
       });
     return () => {

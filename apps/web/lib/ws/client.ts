@@ -50,9 +50,6 @@ const DEFAULT_RECONNECT_OPTIONS: Required<ReconnectOptions> = {
   maxDelay: 30000,
   backoffMultiplier: 1.5,
 };
-// i18n-exempt: transport/API diagnostic. Callers branch on the error code and
-// render translated copy; this text only ever appears in a console or as an
-// interpolated English diagnostic (see docs/i18n.md on interpolated values).
 const WEBSOCKET_CONNECTION_CLOSED_ERROR = "WebSocket connection closed";
 
 export class WebSocketClient {
@@ -486,9 +483,6 @@ export class WebSocketClient {
     pending.resolve(payload);
   }
 
-  // i18n-exempt: transport/API diagnostic. Callers branch on the error code and
-  // render translated copy; this text only ever appears in a console or as an
-  // interpolated English diagnostic (see docs/i18n.md on interpolated values).
   private rejectPendingRequest(msgId: string, payload: unknown) {
     const pending = this.pendingRequests.get(msgId);
     if (!pending) return;

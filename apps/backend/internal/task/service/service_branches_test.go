@@ -31,8 +31,7 @@ func TestAddBranchToTask_HappyPath(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "main", CheckoutBranch: "feature/a"},
 		},
 	}
-	taskResult, err := svc.CreateTask(ctx, req)
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, req)
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -83,7 +82,7 @@ func TestAddBranchToTask_RejectsDuplicate(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -92,7 +91,6 @@ func TestAddBranchToTask_RejectsDuplicate(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "main", CheckoutBranch: "feature/a"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -122,7 +120,7 @@ func TestCreateTask_AllowsSameRepoDifferentBranches(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -132,7 +130,6 @@ func TestCreateTask_AllowsSameRepoDifferentBranches(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "main", CheckoutBranch: "feature/b"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -159,7 +156,7 @@ func TestAddBranchToTask_RejectsNonWorktreeExecutor(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -168,7 +165,6 @@ func TestAddBranchToTask_RejectsNonWorktreeExecutor(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -208,7 +204,7 @@ func TestAddBranchToTask_AllowsWorktreeExecutor(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend", DefaultBranch: "main"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -217,7 +213,6 @@ func TestAddBranchToTask_AllowsWorktreeExecutor(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -255,7 +250,7 @@ func TestAddBranchToTask_AllowsBeforeLaunch(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend", DefaultBranch: "main"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -264,7 +259,6 @@ func TestAddBranchToTask_AllowsBeforeLaunch(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -292,7 +286,7 @@ func TestAddBranchToTask_AutoGeneratesNameWhenWouldCollide(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend", DefaultBranch: "main"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -301,7 +295,6 @@ func TestAddBranchToTask_AutoGeneratesNameWhenWouldCollide(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -343,7 +336,7 @@ func TestAddBranchToTask_DefaultsRepositoryWhenSingleRepoTask(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend", DefaultBranch: "main"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -352,7 +345,6 @@ func TestAddBranchToTask_DefaultsRepositoryWhenSingleRepoTask(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -381,7 +373,7 @@ func TestAddBranchToTask_RejectsMissingRepoOnMultiRepoTask(t *testing.T) {
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-2", WorkspaceID: "ws-1", Name: "backend"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -391,7 +383,6 @@ func TestAddBranchToTask_RejectsMissingRepoOnMultiRepoTask(t *testing.T) {
 			{RepositoryID: "repo-2", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -420,7 +411,7 @@ func TestCreateTask_AllowsSameRepoDifferentBaseBranches(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -430,7 +421,6 @@ func TestCreateTask_AllowsSameRepoDifferentBaseBranches(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "feature/b"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -474,7 +464,7 @@ func TestAddBranchToTask_ResolvesGitHubURL(t *testing.T) {
 
 	// Multi-repo task — auto-default would fail, so URL resolution must
 	// supply the repository_id.
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -483,7 +473,6 @@ func TestAddBranchToTask_ResolvesGitHubURL(t *testing.T) {
 			{RepositoryID: "repo-primary", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -521,7 +510,7 @@ func TestAddBranchToTask_ResolvesLocalPath(t *testing.T) {
 		LocalPath: "/tmp/sibling", DefaultBranch: "develop",
 	})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -530,7 +519,6 @@ func TestAddBranchToTask_ResolvesLocalPath(t *testing.T) {
 			{RepositoryID: "repo-primary", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -568,7 +556,7 @@ func TestAddBranchToTask_RejectsNonWorktreeExecutor_NoOrphanRepo(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-primary", WorkspaceID: "ws-1", Name: "primary", DefaultBranch: "main"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -577,7 +565,6 @@ func TestAddBranchToTask_RejectsNonWorktreeExecutor_NoOrphanRepo(t *testing.T) {
 			{RepositoryID: "repo-primary", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -727,7 +714,7 @@ func TestAddBranchToTask_RejectsProviderURLWithUnresolvableBaseBranch(t *testing
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend", DefaultBranch: "main"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -736,7 +723,6 @@ func TestAddBranchToTask_RejectsProviderURLWithUnresolvableBaseBranch(t *testing
 			{RepositoryID: "repo-1", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -795,7 +781,7 @@ func TestAddBranchToTask_ProviderURLResolvesDefaultBranchAndPersists(t *testing.
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend", DefaultBranch: "main"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -804,7 +790,6 @@ func TestAddBranchToTask_ProviderURLResolvesDefaultBranchAndPersists(t *testing.
 			{RepositoryID: "repo-1", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -855,7 +840,7 @@ func TestAddBranchToTask_MaterializeFailureRollsBackOnLiveTask(t *testing.T) {
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend", DefaultBranch: "main"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -864,7 +849,6 @@ func TestAddBranchToTask_MaterializeFailureRollsBackOnLiveTask(t *testing.T) {
 			{RepositoryID: "repo-1", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -912,7 +896,7 @@ func TestAddBranchToTask_MaterializeSkippedPreLaunchStillSucceeds(t *testing.T) 
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "WF"})
 	_ = repo.CreateRepository(ctx, &models.Repository{ID: "repo-1", WorkspaceID: "ws-1", Name: "frontend", DefaultBranch: "main"})
 
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:    "ws-1",
 		WorkflowID:     "wf-1",
 		WorkflowStepID: "step-1",
@@ -921,7 +905,6 @@ func TestAddBranchToTask_MaterializeSkippedPreLaunchStillSucceeds(t *testing.T) 
 			{RepositoryID: "repo-1", BaseBranch: "main"},
 		},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -959,8 +942,7 @@ func TestAddBranchToTask_ActiveTurnUsesLegacyMaterializer(t *testing.T) {
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-add-idle", WorkspaceID: "ws-add-idle", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-add-idle", WorkflowID: "wf-add-idle", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-add-idle", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-add-idle", WorkflowID: "wf-add-idle", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-add-idle", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1019,8 +1001,7 @@ func TestAddBranchToTask_LiveTaskRollsBackDeferredMaterialization(t *testing.T) 
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-live-deferred", WorkspaceID: "ws-live-deferred", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-live-deferred", WorkflowID: "wf-live-deferred", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-live-deferred", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-live-deferred", WorkflowID: "wf-live-deferred", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-live-deferred", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

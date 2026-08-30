@@ -16,10 +16,6 @@ import { MobileSearchBar } from "@/components/kanban/mobile-search-bar";
 import { TaskCreateDialog } from "@/components/task-create-dialog";
 import type { Task, Workspace, Workflow, Repository } from "@/lib/types/http";
 import { useToast } from "@/components/toast-provider";
-// Module-level `t`: every use below is inside a callback or a plain helper
-// (`errorDescription`), so it resolves at invocation rather than at import —
-// the case `apps/web/CLAUDE.md` sanctions. None of it renders as JSX.
-import { t } from "@/lib/i18n";
 import { useAppStore, useAppStoreApi } from "@/components/state-provider";
 import { useKanbanDisplaySettings } from "@/hooks/use-kanban-display-settings";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -28,7 +24,6 @@ import { useTaskListingView } from "@/hooks/use-task-listing-view";
 import { useForegroundRefresh } from "@/hooks/use-foreground-refresh";
 import { useWorkflowSnapshot } from "@/hooks/use-workflow-snapshot";
 import { useWorkspacePRs } from "@/hooks/domains/github/use-task-pr";
-import { useWorkspaceMRs } from "@/hooks/domains/gitlab/use-task-mr";
 import { linkToTask } from "@/lib/links";
 import { unarchiveToastPayload } from "@/lib/tasks/unarchive-feedback";
 import { shouldSkipInitialTasksFetch } from "./tasks-page-fetch-policy";
@@ -136,7 +131,7 @@ function useTaskOperations({
         if (!shouldCommit()) return;
         if (!silent) {
           toast({
-            title: t("tasks:failedToLoadTasks"),
+            title: "Failed to load tasks",
             description: errorDescription(err),
             variant: "error",
           });
@@ -169,7 +164,7 @@ function useTaskOperations({
 }
 
 function errorDescription(err: unknown): string {
-  return err instanceof Error ? err.message : t("common:unknownError");
+  return err instanceof Error ? err.message : "Unknown error";
 }
 
 function useTaskMutations(fetchTasks: () => void) {
@@ -180,14 +175,11 @@ function useTaskMutations(fetchTasks: () => void) {
     async (taskId: string, opts?: { cascade?: boolean }) => {
       try {
         await archiveTask(taskId, opts);
-        toast({
-          title: t("tasks:taskArchived"),
-          description: t("tasks:taskArchivedDescription"),
-        });
+        toast({ title: "Task archived", description: "The task has been archived successfully." });
         fetchTasks();
       } catch (err) {
         toast({
-          title: t("tasks:failedToArchiveTask"),
+          title: "Failed to archive task",
           description: errorDescription(err),
           variant: "error",
         });
@@ -204,7 +196,7 @@ function useTaskMutations(fetchTasks: () => void) {
         fetchTasks();
       } catch (err) {
         toast({
-          title: t("tasks:failedToUnarchiveTask"),
+          title: "Failed to unarchive task",
           description: errorDescription(err),
           variant: "error",
         });
@@ -221,7 +213,7 @@ function useTaskMutations(fetchTasks: () => void) {
         fetchTasks();
       } catch (err) {
         toast({
-          title: t("tasks:failedToDeleteTask"),
+          title: "Failed to delete task",
           description: errorDescription(err),
           variant: "error",
         });
@@ -528,10 +520,6 @@ export function TasksPageClient(props: TasksPageClientProps) {
   );
   useWorkflowSnapshot(s.activeWorkflowId);
   useWorkspacePRs(showTaskDetails ? s.activeWorkspaceId : null);
-  // Unconditional, unlike useWorkspacePRs above: useWorkspaceMRs(null) clears
-  // every workspace's cached MRs, not just this page's, and the sidebar (also
-  // mounted here) reads that same cache — see spec "Hydration ownership".
-  useWorkspaceMRs(s.activeWorkspaceId);
   useForegroundRefresh(() => s.fetchTasks(true), Boolean(s.activeWorkspaceId), s.activeWorkspaceId);
   const { handleSortChange, handleGroupChange } = useTasksListPreferenceSync({
     tasksListSort: s.tasksListSort,

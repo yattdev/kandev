@@ -1,6 +1,5 @@
 import { type Locator, type Page, expect } from "@playwright/test";
 import { FileTreePage } from "./file-tree-page";
-import { dwell } from "../helpers/causal-waits";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -12,8 +11,6 @@ function sectionLabelToStateTestId(label: string): string {
   if (label === "Turn Finished") return "task-state-turn-finished";
   return "task-state-backlog";
 }
-
-const TERMINAL_READY_TIMEOUT = 30_000;
 
 export class SessionPage {
   readonly chat: Locator;
@@ -85,11 +82,6 @@ export class SessionPage {
   async togglePortForwardingPreference(): Promise<void> {
     await this.addPanelButton().click();
     await expect(this.portForwardingMenuItem).toBeVisible();
-    // The menu item is rendered before the session's agentctl launcher is
-    // ready, but it is disabled until port forwarding can actually work.
-    // Waiting for enabled avoids force-clicking a no-op during that startup
-    // window, which otherwise leaves the top-bar control absent.
-    await expect(this.portForwardingMenuItem).toBeEnabled({ timeout: 30_000 });
     const enabling = (await this.portForwardingMenuItem.getAttribute("aria-checked")) !== "true";
     await this.portForwardingMenuItem.click({ force: true });
     if (enabling) {
@@ -347,12 +339,7 @@ export class SessionPage {
       if ((await this.readXtermBuffer("passthrough-terminal")).includes(text)) {
         throw new Error(`Expected passthrough terminal NOT to contain "${text}", but it was found`);
       }
-      await dwell(
-        this.page,
-        200,
-        "poll-interval",
-        "sampling interval for the stability window above; the assertion is that the text never appears, so the loop keeps re-reading the buffer across real elapsed time",
-      );
+      await this.page.waitForTimeout(200);
     }
   }
 
@@ -471,28 +458,7 @@ export class SessionPage {
 
   /** Clarification overlay (visible when a clarification request is pending). */
   clarificationOverlay(): Locator {
-    return this.activeChat().getByTestId("clarification-overlay");
-  }
-
-  /**
-   * The persistent bar wrapping the clarification overlay. Stays mounted
-   * (collapsed to a header row) while the bundle is pending, even after the
-   * user dismisses it with Escape or the collapse toggle.
-   */
-  clarificationBar(): Locator {
-    return this.activeChat().getByTestId("clarification-overlay-container");
-  }
-
-  /** Expand/collapse toggle in the clarification bar's header row. */
-  clarificationCollapseToggle(): Locator {
-    // The expanded overlay stays mounted but is hidden when the compact bar
-    // is shown, so scope this locator to the one visible toggle.
-    return this.activeChat().locator('[data-testid="clarification-collapse-toggle"]:visible');
-  }
-
-  /** Shared context shown once above the active clarification question. */
-  clarificationContext(): Locator {
-    return this.clarificationOverlay().getByTestId("clarification-context");
+    return this.page.getByTestId("clarification-overlay");
   }
 
   /** A specific clarification option button by its text label. */
@@ -644,16 +610,6 @@ export class SessionPage {
     return this.page.getByTestId("recovery-fresh-button");
   }
 
-  /** Terminal-state banner shown when the active session has completed. */
-  completedSessionBanner(): Locator {
-    return this.activeChat().getByTestId("completed-session-banner");
-  }
-
-  /** "New Agent" action shown for a completed session. */
-  completedSessionNewAgentButton(): Locator {
-    return this.completedSessionBanner().getByTestId("completed-session-new-agent-button");
-  }
-
   /** "Cancel" button shown on the yellow transient-retry (529 Overloaded) card. */
   recoveryCancelRetryButton(): Locator {
     return this.page.getByTestId("recovery-cancel-retry-button");
@@ -687,12 +643,8 @@ export class SessionPage {
    * Hovers to reveal the menu trigger, opens it, clicks "Archive",
    * and confirms the archive dialog.
    */
-  async archiveTaskInSidebar(title: string, options: { cascade?: boolean } = {}): Promise<void> {
+  async archiveTaskInSidebar(title: string): Promise<void> {
     await this.openSidebarMenuAndClick(title, "Archive");
-    if (options.cascade) {
-      const cascadeCheckbox = this.page.getByTestId("archive-cascade-checkbox");
-      await cascadeCheckbox.click();
-    }
     // Confirm the archive dialog
     const confirmButton = this.page
       .getByRole("alertdialog")
@@ -718,12 +670,7 @@ export class SessionPage {
       } catch {
         // Menu was likely detached by a re-render — dismiss and retry
         await this.page.keyboard.press("Escape");
-        await dwell(
-          this.page,
-          500,
-          "unverified",
-          "spacing before the next attempt in this menu-retry loop; the menu was detached mid-render and nothing was identified that signals it is safe to re-open",
-        );
+        await this.page.waitForTimeout(500);
       }
     }
     // Final attempt without catch
@@ -733,7 +680,7 @@ export class SessionPage {
   }
 
   stepperStep(name: string): Locator {
-    return this.page.locator(`[data-testid="workflow-step-${name}"][aria-current="step"]`);
+    return this.page.getByTestId(`workflow-step-${name}`);
   }
 
   /** PR button in the topbar (visible only when a PR is associated). */
@@ -754,19 +701,17 @@ export class SessionPage {
 
   /** Submitted review row scoped by its normalized GitHub author login. */
   prSubmittedReview(author: string): Locator {
-    return this.page.getByTestId(`change-request-submitted-review-${author.trim().toLowerCase()}`);
+    return this.page.getByTestId(`pr-submitted-review-${author.trim().toLowerCase()}`);
   }
 
   /** Pending reviewer row scoped by its normalized GitHub author login. */
   prPendingReviewer(author: string): Locator {
-    return this.page.getByTestId(`change-request-pending-reviewer-${author.trim().toLowerCase()}`);
+    return this.page.getByTestId(`pr-pending-reviewer-${author.trim().toLowerCase()}`);
   }
 
   /** Re-request action scoped by its normalized GitHub author login. */
   prReRequestReviewButton(author: string): Locator {
-    return this.page.getByTestId(
-      `change-request-review-action-rerequest-review-${author.trim().toLowerCase()}`,
-    );
+    return this.page.getByTestId(`pr-rerequest-review-${author.trim().toLowerCase()}`);
   }
 
   // --- PR CI accessors: desktop hover popover + chip + mobile chip drawer ---
@@ -800,50 +745,6 @@ export class SessionPage {
   async tapPRStatusChip(): Promise<void> {
     await this.prStatusChip().tap();
     await expect(this.prStatusChipDrawer()).toBeVisible({ timeout: 5_000 });
-  }
-
-  // --- GitLab MR status chip accessors: mirrors the PR status chip shape
-  // above, including its scoping (spec: gitlab-mr-status-chip, Constraints).
-
-  /** Compact GitLab MR status chip rendered in the chat status bar. */
-  mrStatusChip(): Locator {
-    return this.activeChat().getByTestId("chat-status-bar").getByTestId("mr-status-chip");
-  }
-
-  /** Compact GitLab MR status chip rendered in the passthrough toolbar's status row. */
-  mrStatusChipInPassthrough(): Locator {
-    return this.page.getByTestId("passthrough-status-row").getByTestId("mr-status-chip");
-  }
-
-  /** Mobile bottom-sheet drawer that hosts the chip's MRCIPopover body. */
-  mrStatusChipDrawer(): Locator {
-    return this.page.getByTestId("mr-status-chip-drawer");
-  }
-
-  /** Close button inside the chip's mobile drawer. */
-  mrStatusChipDrawerClose(): Locator {
-    return this.page.getByTestId("mr-status-chip-drawer-close");
-  }
-
-  /**
-   * MRCIPopover body when rendered inside the chip's own disclosure — the
-   * hover popover on a fine pointer, or the drawer on a coarse pointer.
-   * `mr-topbar-popover-inner` is also emitted by MRTopbarButton's own
-   * popover on the same route, so this scopes through the chip's own
-   * wrapper testid (`mr-status-chip-popover` / `mr-status-chip-drawer`)
-   * rather than resolving the inner testid globally.
-   */
-  mrStatusChipPopoverInner(): Locator {
-    return this.page
-      .getByTestId("mr-status-chip-popover")
-      .getByTestId("mr-topbar-popover-inner")
-      .or(this.mrStatusChipDrawer().getByTestId("mr-topbar-popover-inner"));
-  }
-
-  /** Tap the chip and wait for the mobile drawer to be visible. */
-  async tapMRStatusChip(): Promise<void> {
-    await this.mrStatusChip().tap();
-    await expect(this.mrStatusChipDrawer()).toBeVisible({ timeout: 5_000 });
   }
 
   /** Multi-PR aggregate popover content (segmented tabs + selected PR's CI). */
@@ -1000,13 +901,13 @@ export class SessionPage {
   }
 
   /** Click a dockview tab by its visible label (e.g. "Changes", "Files", "Terminal"). */
-  async clickTab(label: string, options: { force?: boolean } = {}): Promise<void> {
+  async clickTab(label: string): Promise<void> {
     const tab = this.page
       .locator(".dv-default-tab:visible")
       .filter({ hasText: new RegExp(`^${escapeRegExp(label)}(?: \\(\\d+\\))?$`) })
       .first();
     await expect(tab).toBeVisible();
-    await tab.click(options);
+    await tab.click();
   }
 
   /**
@@ -1197,7 +1098,7 @@ export class SessionPage {
    * placeholder decoration is only rendered while the editor has no content.
    */
   async waitForDirectInput(timeout = 15_000) {
-    await this.waitForChatIdle({ timeout, requireEditable: true });
+    await expect(this.anyIdleInput()).toBeVisible({ timeout });
   }
 
   /** The composer's send/submit button (scoped to the active chat panel). */
@@ -1285,12 +1186,8 @@ export class SessionPage {
    * disappears — i.e. the WebSocket actually opened for that env terminal.
    * Use this to detect the "terminal hangs forever on Connecting" bug.
    */
-  async expectTerminalConnected(timeout = TERMINAL_READY_TIMEOUT): Promise<void> {
-    await this.page
-      .locator("[data-testid='terminal-panel']:visible")
-      .first()
-      .getByTestId("passthrough-loading")
-      .waitFor({ state: "hidden", timeout });
+  async expectTerminalConnected(timeout = 15_000): Promise<void> {
+    await this.terminal.getByTestId("passthrough-loading").waitFor({ state: "hidden", timeout });
   }
 
   /**
@@ -1298,10 +1195,9 @@ export class SessionPage {
    * the prompt), then type a command and press Enter.
    */
   async typeInTerminal(command: string): Promise<void> {
-    await this.expectTerminalConnected();
     await expect
       .poll(async () => (await this.readXtermBuffer("terminal-panel")).length > 0, {
-        timeout: TERMINAL_READY_TIMEOUT,
+        timeout: 15_000,
         message: "Waiting for terminal shell to connect",
       })
       .toBe(true);

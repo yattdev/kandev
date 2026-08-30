@@ -5,7 +5,6 @@ import { toast } from "@/lib/toast/sonner";
 import { useAppStoreApi } from "@/components/state-provider";
 import type { Task } from "@/app/office/tasks/[id]/types";
 import type { OfficeTask } from "@/lib/state/slices/office/types";
-import { t } from "@/lib/i18n";
 
 /**
  * Context for the local (page-level) task representation. The office store
@@ -69,7 +68,7 @@ export function useOptimisticTaskMutation() {
         if (storeSnapshot) {
           storeApi.getState().patchTaskInStore(taskId, storeSnapshot);
         }
-        const message = err instanceof Error ? err.message : t("task:updateFailed");
+        const message = err instanceof Error ? err.message : "Update failed";
         toast.error(message);
         throw err;
       }

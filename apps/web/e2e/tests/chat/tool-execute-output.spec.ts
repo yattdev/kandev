@@ -1,7 +1,6 @@
 import { test, expect, type SeedData } from "../../fixtures/test-base";
 import { ApiClient } from "../../helpers/api-client";
 import { SessionPage } from "../../pages/session-page";
-import { dwell } from "../../helpers/causal-waits";
 
 type ShellOutput = {
   exit_code?: number;
@@ -183,12 +182,7 @@ test.describe("shell command output", () => {
     await expect.poll(() => requestCount, { timeout: 4_000 }).toBe(2);
     await expect(chat.getByText("final running transcript")).toBeVisible();
     await expect(chat.getByText("Exit code 0")).toBeVisible();
-    await dwell(
-      testPage,
-      1_250,
-      "negative-assertion",
-      "asserts that no further fetches occur after the stream completes; a negative has no event to wait on, so it needs real time past the polling interval",
-    );
+    await testPage.waitForTimeout(1_250);
     expect(requestCount).toBe(2);
   });
 

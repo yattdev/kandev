@@ -7,10 +7,7 @@ import { createQueuedUserSettingsSync } from "@/lib/user-settings-sync";
 
 export type SavedView = {
   id: string;
-  /** User-authored for custom views; empty for builtins, which use `nameKey`. */
   name: string;
-  /** Catalog key for the built-in views, resolved where the view is listed. */
-  nameKey?: string;
   filters: FilterState;
   // customJql is set when the user saved the view while the raw JQL editor was
   // overriding the structured filters. Restoring such a view re-applies the
@@ -22,8 +19,7 @@ export type SavedView = {
 const BUILTIN_VIEWS: SavedView[] = [
   {
     id: "builtin:assigned",
-    name: "",
-    nameKey: "jira:builtinViewAssignedToMe",
+    name: "Assigned to me",
     builtin: true,
     filters: { ...DEFAULT_FILTERS, assignee: "me" },
   },
@@ -34,8 +30,7 @@ const BUILTIN_VIEWS: SavedView[] = [
   // Users get an in-progress view by selecting a project and its statuses.
   {
     id: "builtin:unassigned",
-    name: "",
-    nameKey: "jira:builtinViewUnassigned",
+    name: "Unassigned",
     builtin: true,
     filters: { ...DEFAULT_FILTERS, assignee: "unassigned" },
   },
@@ -212,11 +207,3 @@ export function useSavedViews() {
 }
 
 export const DEFAULT_VIEW = BUILTIN_VIEWS[0];
-
-/**
- * Display name for a view: the catalog copy for a builtin, the user's own
- * wording for a saved one. Takes `t` so it resolves at render.
- */
-export function savedViewLabel(translate: (key: string) => string, view: SavedView): string {
-  return view.nameKey ? translate(view.nameKey) : view.name;
-}

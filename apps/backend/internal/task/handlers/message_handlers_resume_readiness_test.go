@@ -71,11 +71,7 @@ func (o *resumeRetryOrchestrator) StartCreatedSession(
 	return nil
 }
 
-func (o *resumeRetryOrchestrator) ProcessOnTurnStart(context.Context, string, string) (orchestrator.ProcessOnTurnStartResult, error) {
-	return orchestrator.ProcessOnTurnStartResult{}, nil
-}
-
-func (*resumeRetryOrchestrator) QueueUserPrompt(context.Context, string, string, string, string, bool, []v1.MessageAttachment, map[string]interface{}, bool) error {
+func (o *resumeRetryOrchestrator) ProcessOnTurnStart(context.Context, string, string) error {
 	return nil
 }
 

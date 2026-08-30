@@ -19,7 +19,6 @@ import (
 	"github.com/kandev/kandev/internal/common/httpmw"
 	"github.com/kandev/kandev/internal/common/logger"
 	lspinstaller "github.com/kandev/kandev/internal/lsp/installer"
-	"github.com/kandev/kandev/internal/mcp/plugintools"
 	mcpproviders "github.com/kandev/kandev/internal/mcp/providers"
 	"github.com/kandev/kandev/internal/mcp/server"
 	"github.com/kandev/kandev/internal/system/metrics"
@@ -148,7 +147,6 @@ func (s *Server) setupRoutes() {
 		api.POST("/workspace/diagnostics/:id", s.handleWorkspaceDiagnostics)
 		api.POST("/workspace/materialize-repository", s.handleWorkspaceMaterializeRepository)
 		api.POST("/workspace/materialize-repository/remove", s.handleWorkspaceRemoveMaterializedRepository)
-		api.POST("/workspace/attest-git-metadata", s.handleWorkspaceGitMetadataAttestation)
 
 		// Shell access (HTTP endpoints only - streaming is via /workspace/stream)
 		api.GET("/shell/status", s.handleShellStatus)
@@ -186,8 +184,6 @@ func (s *Server) setupRoutes() {
 		api.POST("/git/pull", s.handleGitPull)
 		api.POST("/git/push", s.handleGitPush)
 		api.POST("/git/push-preflight", s.handleGitPushPreflight)
-		api.POST("/git/contribution/replace", s.handleGitReplaceContribution)
-		api.POST("/git/contribution/use", s.handleGitUseContribution)
 		api.POST("/git/rebase", s.handleGitRebase)
 		api.POST("/git/merge", s.handleGitMerge)
 		api.POST("/git/abort", s.handleGitAbort)
@@ -215,7 +211,6 @@ func (s *Server) setupRoutes() {
 		s.mcpServer.RegisterRoutes(s.router)
 		api.PUT("/mcp/mode", s.handleSetMcpMode)
 		api.PUT("/mcp/providers", s.handleSetMcpProviders)
-		api.PUT("/mcp/plugin-tools", s.handleSetPluginTools)
 	}
 
 	// pprof + memory stats (enabled via KANDEV_DEBUG_PPROF_ENABLED=true)
@@ -346,19 +341,6 @@ func (s *Server) handleSetMcpProviders(c *gin.Context) {
 	providers := mcpproviders.Normalize(req.Providers)
 	s.mcpServer.SetProviders(providers)
 	c.JSON(http.StatusOK, gin.H{"mcp_providers": providers})
-}
-
-func (s *Server) handleSetPluginTools(c *gin.Context) {
-	var snapshot plugintools.Snapshot
-	if err := c.ShouldBindJSON(&snapshot); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := s.mcpServer.SetPluginTools(snapshot); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"generation": snapshot.Generation, "revision": snapshot.Revision})
 }
 
 // Status response

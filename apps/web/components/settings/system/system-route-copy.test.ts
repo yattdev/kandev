@@ -39,11 +39,8 @@ const ROUTE_COPY: Array<{ route: string; titleKey: string; title: string; descri
     description: "Database driver, size, and available maintenance controls.",
   },
   {
-    // /settings/system/logs now redirects into Data & Storage, whose Logs
-    // section titles itself with `system:navLogs`. The description key is
-    // unchanged, so the sentence users read is still pinned below.
     route: "logs",
-    titleKey: "system:navLogs",
+    titleKey: "settings:logsPageTitle",
     title: "Logs",
     description: "Create a diagnostic ZIP with frontend and backend logs.",
   },
@@ -77,7 +74,7 @@ describe("System route headers keep their pre-migration English", () => {
   it.each(ROUTE_COPY)("$route", ({ titleKey, title, description }) => {
     expect(t(titleKey)).toBe(title);
     const descriptionKey =
-      titleKey === "system:navLogs"
+      titleKey === "settings:logsPageTitle"
         ? "settings:logsPageDescription"
         : `system:${camelRoute(title)}PageDescription`;
     expect(t(descriptionKey)).toBe(description);

@@ -25,7 +25,6 @@ async function heightOf(page: Page, testId: string): Promise<number> {
 
 async function enableStatusMetrics(apiClient: ApiClient): Promise<void> {
   await apiClient.rawRequest("PATCH", "/api/v1/user/settings", {
-    app_status_bar_enabled: true,
     system_metrics_display: { show_in_topbar: true },
   });
 }
@@ -35,7 +34,6 @@ test.describe("Sidebar header / top bar alignment", () => {
 
   test.afterEach(async ({ apiClient }) => {
     await apiClient.rawRequest("PATCH", "/api/v1/user/settings", {
-      app_status_bar_enabled: false,
       system_metrics_display: { show_in_topbar: false },
     });
   });

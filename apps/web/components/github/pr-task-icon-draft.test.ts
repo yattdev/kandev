@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TaskPR } from "@/lib/types/github";
-import { getPRStatusColor } from "./pr-task-icon";
-import { derivePRTaskStatusSummary } from "./pr-task-status-summary";
+import { getPRStatusColor, getPRTooltip } from "./pr-task-icon";
 
 function draftPR(): TaskPR {
   return {
@@ -41,8 +40,8 @@ describe("draft PR task status", () => {
   });
 
   it("identifies the draft without claiming it is ready to merge", () => {
-    const summary = derivePRTaskStatusSummary(draftPR(), false);
-    expect(summary.rows.at(-1)).toEqual({ kind: "merge", status: "draft", tone: "muted" });
-    expect(summary.rows.some((row) => row.status === "ready")).toBe(false);
+    const tooltip = getPRTooltip(draftPR());
+    expect(tooltip).toContain("Draft");
+    expect(tooltip).not.toContain("Ready to merge");
   });
 });

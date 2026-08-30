@@ -93,6 +93,7 @@ func (c *Controller) buildAvailableAgentDTO(ctx context.Context, ag agents.Agent
 	}
 
 	modelConfig := c.buildModelConfigFromHostUtility(ag.ID())
+	_ = ctx
 
 	capabilities := dto.AgentCapabilitiesDTO{
 		SupportsSessionResume: availability.Capabilities.SupportsSessionResume,
@@ -132,7 +133,7 @@ func (c *Controller) buildAvailableAgentDTO(ctx context.Context, ag agents.Agent
 	}
 
 	loginCommand := buildLoginCommandDTO(ag)
-	runtimeUpdate := c.buildRuntimeUpdateDTO(ctx, ag, availability.Available)
+	runtimeUpdate := c.buildRuntimeUpdateDTO(ag, availability.Available)
 
 	return dto.AvailableAgentDTO{
 		Name:               ag.ID(),
@@ -154,7 +155,7 @@ func (c *Controller) buildAvailableAgentDTO(ctx context.Context, ag agents.Agent
 	}
 }
 
-func (c *Controller) buildRuntimeUpdateDTO(ctx context.Context, ag agents.Agent, available bool) *dto.RuntimeUpdateDTO {
+func (c *Controller) buildRuntimeUpdateDTO(ag agents.Agent, available bool) *dto.RuntimeUpdateDTO {
 	if !available {
 		return nil
 	}
@@ -167,11 +168,6 @@ func (c *Controller) buildRuntimeUpdateDTO(ctx context.Context, ag agents.Agent,
 		return nil
 	}
 	item := &dto.RuntimeUpdateDTO{Supported: true, Package: spec.Package}
-	if c.managedRuntimeSelections != nil {
-		if selection, found, err := c.managedRuntimeSelections.Get(ctx, ag.ID(), spec.Package); err == nil && found {
-			item.ActiveVersion = selection.Version
-		}
-	}
 	if c.runtimeUpdater != nil {
 		if caps, found := c.runtimeUpdater.CurrentCapabilities(ag.ID()); found {
 			item.CurrentVersion = caps.AgentVersion
@@ -479,13 +475,9 @@ func resolveDefaultModel(agentConfig agents.Agent, _ string) (string, bool, erro
 		return "passthrough", true, nil
 	}
 	// Mock agent is not probed (not an InferenceAgent) but needs a concrete
-	// model for E2E tests that exercise the ModelSelector UI. It must be one
-	// of the models the mock agent actually advertises (mock-fast /
-	// mock-smart): the no-silent-model-fallback policy fails session start
-	// explicitly when the profile model is absent from the advertised list,
-	// and "mock-default" is not advertised.
+	// model for E2E tests that exercise the ModelSelector UI.
 	if agentConfig.ID() == "mock-agent" {
-		return "mock-fast", false, nil
+		return "mock-default", false, nil
 	}
 	return "", false, nil
 }

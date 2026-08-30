@@ -28,8 +28,7 @@ func TestAttachWorkspaceSourcesDerivesLegacyPrimaryBranchForWorktreeProjection(t
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-legacy-primary", WorkspaceID: "ws-legacy-primary", Name: "primary", LocalPath: canonicalRepoTestPath(t, primaryPath)}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-legacy-primary", WorkflowID: "wf-legacy-primary", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-legacy-primary"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-legacy-primary", WorkflowID: "wf-legacy-primary", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-legacy-primary"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +69,7 @@ func TestAttachWorkspaceSourcesRejectsDetachedLegacyPrimaryAtomically(t *testing
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-detached-primary", WorkspaceID: "ws-detached-primary", Name: "primary", LocalPath: primaryPath}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-detached-primary", WorkflowID: "wf-detached-primary", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-detached-primary"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-detached-primary", WorkflowID: "wf-detached-primary", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-detached-primary"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,11 +182,10 @@ func TestAttachWorkspaceSources_RefreshesProvidersOncePerBatch(t *testing.T) {
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-provider-batch", WorkspaceID: "ws-provider-batch", Name: "app", Provider: "github", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-provider-batch", WorkflowID: "wf-provider-batch", WorkflowStepID: "step", Title: "Task",
 		Repositories: []TaskRepositoryInput{{RepositoryID: "repo-provider-batch", BaseBranch: "main"}},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,11 +216,10 @@ func TestAddBranchToTask_RefreshesProvidersAfterCommit(t *testing.T) {
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-provider-branch", WorkspaceID: "ws-provider-branch", Name: "app", Provider: "gitlab", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-provider-branch", WorkflowID: "wf-provider-branch", WorkflowStepID: "step", Title: "Task",
 		Repositories: []TaskRepositoryInput{{RepositoryID: "repo-provider-branch", BaseBranch: "main"}},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,11 +249,10 @@ func TestAttachWorkspaceSources_RefreshFailureDoesNotRollBackAttachment(t *testi
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-provider-failure", WorkspaceID: "ws-provider-failure", Name: "app", Provider: "github", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-provider-failure", WorkflowID: "wf-provider-failure", WorkflowStepID: "step", Title: "Task",
 		Repositories: []TaskRepositoryInput{{RepositoryID: "repo-provider-failure", BaseBranch: "main"}},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,11 +285,10 @@ func TestAttachWorkspaceSources_BoundsLiveProviderRefresh(t *testing.T) {
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-provider-timeout", WorkspaceID: "ws-provider-timeout", Name: "app", Provider: "github", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-provider-timeout", WorkflowID: "wf-provider-timeout", WorkflowStepID: "step", Title: "Task",
 		Repositories: []TaskRepositoryInput{{RepositoryID: "repo-provider-timeout", BaseBranch: "main"}},
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,8 +360,7 @@ func TestAttachWorkspaceSources_CancellationBeforeMaterializationPreventsMutatio
 	if err := repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-cancel-before-materialize", WorkspaceID: "ws-cancel-before-materialize", Name: "Workflow"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-cancel-before-materialize", WorkflowID: "wf-cancel-before-materialize", WorkflowStepID: "step", Title: "Task"})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-cancel-before-materialize", WorkflowID: "wf-cancel-before-materialize", WorkflowStepID: "step", Title: "Task"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,8 +393,7 @@ func TestAttachWorkspaceSources_RejectsRepositorylessTaskBeforePersistingFolders
 	if err := repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-repositoryless", WorkspaceID: "ws-repositoryless", Name: "Workflow"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-repositoryless", WorkflowID: "wf-repositoryless", WorkflowStepID: "step", Title: "Task"})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-repositoryless", WorkflowID: "wf-repositoryless", WorkflowStepID: "step", Title: "Task"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,8 +424,7 @@ func TestAttachWorkspaceSources_RejectsUnsafeBranchBeforeCreatingRepository(t *t
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-primary", WorkspaceID: "ws-unsafe-source", Name: "primary", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-unsafe-source", WorkflowID: "wf-unsafe-source", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-primary", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-unsafe-source", WorkflowID: "wf-unsafe-source", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-primary", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,8 +479,7 @@ func TestAttachWorkspaceSourcesReturnsAuthoritativeMaterializationResult(t *test
 	if err := repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-authoritative-result", WorkspaceID: "ws-authoritative-result", Name: "Workflow"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-authoritative-result", WorkflowID: "wf-authoritative-result", WorkflowStepID: "step", Title: "Task"})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-authoritative-result", WorkflowID: "wf-authoritative-result", WorkflowStepID: "step", Title: "Task"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,8 +517,7 @@ func TestAttachWorkspaceSources_PublishesTaskBeforeSessionAdoption(t *testing.T)
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-event-order", WorkspaceID: "ws-event-order", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-event-order", WorkflowID: "wf-event-order", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-event-order", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-event-order", WorkflowID: "wf-event-order", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-event-order", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -567,8 +556,7 @@ func TestAttachWorkspaceSources_HoldsTaskMutationGateThroughMaterialization(t *t
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-mutation-gate", WorkspaceID: "ws-mutation-gate", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-mutation-gate", WorkflowID: "wf-mutation-gate", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-mutation-gate", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-mutation-gate", WorkflowID: "wf-mutation-gate", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-mutation-gate", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -622,8 +610,7 @@ func TestAttachWorkspaceSources_CommitsWhenCancellationArrivesAfterMaterializati
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-cancel-after-materialize", WorkspaceID: "ws-cancel-after-materialize", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-cancel-after-materialize", WorkflowID: "wf-cancel-after-materialize", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-cancel-after-materialize", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-cancel-after-materialize", WorkflowID: "wf-cancel-after-materialize", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-cancel-after-materialize", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -652,8 +639,7 @@ func TestAttachWorkspaceSourcesPersistsMixedSourcesInRequestOrder(t *testing.T) 
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-sources", WorkspaceID: "ws-sources", Name: "app", LocalPath: t.TempDir(), DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-sources", WorkflowID: "wf-sources", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-sources", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-sources", WorkflowID: "wf-sources", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-sources", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -690,8 +676,7 @@ func TestAttachWorkspaceSourcesCompensatesOnMaterializationFailure(t *testing.T)
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-rollback", WorkspaceID: "ws-rollback", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-rollback", WorkflowID: "wf-rollback", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-rollback", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-rollback", WorkflowID: "wf-rollback", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-rollback", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -720,8 +705,7 @@ func TestAttachWorkspaceSourcesAllowsFolderForLocalPCAlias(t *testing.T) {
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-local-pc", WorkspaceID: "ws-local-pc", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-local-pc", WorkflowID: "wf-local-pc", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-local-pc", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-local-pc", WorkflowID: "wf-local-pc", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-local-pc", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,8 +731,7 @@ func TestAttachWorkspaceSourcesRejectsFolderForRemoteExecutorBeforeResolvingPath
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-remote-folder", WorkspaceID: "ws-remote-folder", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-remote-folder", WorkflowID: "wf-remote-folder", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-remote-folder", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-remote-folder", WorkflowID: "wf-remote-folder", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-remote-folder", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -776,8 +759,7 @@ func TestAttachWorkspaceSources_PersistsPrelaunchSourcesWithExplicitDeferredResu
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-prelaunch", WorkspaceID: "ws-prelaunch", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-prelaunch", WorkflowID: "wf-prelaunch", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-prelaunch", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-prelaunch", WorkflowID: "wf-prelaunch", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-prelaunch", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -812,8 +794,7 @@ func TestAttachWorkspaceSources_RejectsCheckoutBranchForLocalRuntime(t *testing.
 			t.Fatal(err)
 		}
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-local-checkout", WorkflowID: "wf-local-checkout", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-local-primary", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-local-checkout", WorkflowID: "wf-local-checkout", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-local-primary", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -840,8 +821,7 @@ func TestAttachWorkspaceSources_RejectsSameRepositoryDifferentBaseOnLocalRuntime
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-local-base", WorkspaceID: "ws-local-base", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-local-base", WorkflowID: "wf-local-base", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-local-base", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-local-base", WorkflowID: "wf-local-base", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-local-base", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -868,8 +848,7 @@ func TestAttachWorkspaceSourcesRejectsDuplicateRepositoryWithinBatch(t *testing.
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-dup", WorkspaceID: "ws-dup", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-dup", WorkflowID: "wf-dup", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-dup", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-dup", WorkflowID: "wf-dup", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-dup", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -892,8 +871,7 @@ func TestAttachWorkspaceSourcesRejectsSanitizedBranchCollisionWithinBatch(t *tes
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-slug", WorkspaceID: "ws-slug", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-slug", WorkflowID: "wf-slug", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-slug", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-slug", WorkflowID: "wf-slug", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-slug", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -925,8 +903,7 @@ func TestAttachWorkspaceSourcesClassifiesCrossWorkspaceRepositoryAsNotFound(t *t
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-other", WorkspaceID: "ws-other", Name: "other", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-owner", WorkflowID: "wf-owner", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-owner", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-owner", WorkflowID: "wf-owner", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-owner", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -950,8 +927,7 @@ func TestAttachWorkspaceSourcesRejectsFolderNameCollidingWithRepositoryRuntimeDi
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-runtime", WorkspaceID: "ws-runtime", Name: "app", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-runtime", WorkflowID: "wf-runtime", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-runtime", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-runtime", WorkflowID: "wf-runtime", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-runtime", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -975,8 +951,7 @@ func TestAttachWorkspaceSourcesRejectsNewRepositoriesWithSameRuntimeName(t *test
 	if err := repo.CreateRepository(ctx, &models.Repository{ID: "repo-primary-runtime", WorkspaceID: "ws-new-runtime", Name: "primary", DefaultBranch: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-new-runtime", WorkflowID: "wf-new-runtime", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-primary-runtime", BaseBranch: "main"}}})
-	task := taskResult.Task
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{WorkspaceID: "ws-new-runtime", WorkflowID: "wf-new-runtime", WorkflowStepID: "step", Title: "Task", Repositories: []TaskRepositoryInput{{RepositoryID: "repo-primary-runtime", BaseBranch: "main"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

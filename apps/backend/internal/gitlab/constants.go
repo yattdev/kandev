@@ -9,22 +9,16 @@ const (
 )
 
 const (
-	approvalStateApproved  = "approved"
-	gitlabStateClosed      = "closed"
-	gitlabStateLocked      = "locked"
-	gitlabStateMerged      = "merged"
-	gitlabStateOpened      = "opened"
-	pipelineStateFailure   = "failure"
-	pipelineStatusCanceled = "canceled"
-	pipelineStatusFailed   = "failed"
-	pipelineStatusSkipped  = "skipped"
-	pipelineStatusSuccess  = "success"
-	secretNameTokenLower   = "gitlab_token"
-	connectionUnavailable  = "GitLab connection unavailable"
-	sqlBooleanDefaultFalse = "BOOLEAN NOT NULL DEFAULT 0"
-	sqlDateTime            = "DATETIME"
-	sqlIntegerDefaultZero  = "INTEGER NOT NULL DEFAULT 0"
-	sqlTextDefaultEmpty    = "TEXT NOT NULL DEFAULT ''"
+	approvalStateApproved = "approved"
+	gitlabStateClosed     = "closed"
+	gitlabStateLocked     = "locked"
+	gitlabStateMerged     = "merged"
+	gitlabStateOpened     = "opened"
+	pipelineStateFailure  = "failure"
+	pipelineStatusFailed  = "failed"
+	pipelineStatusSuccess = "success"
+	secretNameTokenLower  = "gitlab_token"
+	connectionUnavailable = "GitLab connection unavailable"
 )
 
 // DefaultHost is the public GitLab.com host. Self-managed instances override

@@ -29,19 +29,17 @@ var (
 )
 
 type Settings struct {
-	MaxPerSession    int  `json:"max_per_session"`
-	MergeEnabled     bool `json:"merge_enabled"`
-	AutoMergeEnabled bool `json:"auto_merge_enabled"`
+	MaxPerSession int  `json:"max_per_session"`
+	MergeEnabled  bool `json:"merge_enabled"`
 }
 
 // SettingsPatch is a partial update to Settings: a nil field means "leave
 // unchanged" rather than "reset to zero value". Without this distinction a
-// client that PATCHes one field would otherwise silently reset either merge
-// setting to false, since Settings has no way to represent omission.
+// client that PATCHes only max_per_session would silently reset
+// merge_enabled to false, since Settings has no way to represent omission.
 type SettingsPatch struct {
-	MaxPerSession    *int  `json:"max_per_session"`
-	MergeEnabled     *bool `json:"merge_enabled"`
-	AutoMergeEnabled *bool `json:"auto_merge_enabled"`
+	MaxPerSession *int  `json:"max_per_session"`
+	MergeEnabled  *bool `json:"merge_enabled"`
 }
 
 // Apply returns base with every non-nil patch field overlaid.
@@ -51,9 +49,6 @@ func (p SettingsPatch) Apply(base Settings) Settings {
 	}
 	if p.MergeEnabled != nil {
 		base.MergeEnabled = *p.MergeEnabled
-	}
-	if p.AutoMergeEnabled != nil {
-		base.AutoMergeEnabled = *p.AutoMergeEnabled
 	}
 	return base
 }
@@ -71,9 +66,6 @@ type Effective struct {
 	// it has no environment override, so there is no separate source/lock to
 	// track.
 	MergeEnabled bool `json:"merge_enabled"`
-	// AutoMergeEnabled mirrors Settings.AutoMergeEnabled and has no
-	// environment override.
-	AutoMergeEnabled bool `json:"auto_merge_enabled"`
 }
 
 type Environment struct {
@@ -86,9 +78,10 @@ type Resolution struct {
 	InvalidEnvironment bool
 }
 
-// DefaultSettings returns the shipped queue cap with both merge modes enabled.
+// DefaultSettings returns the shipped defaults: no session-count cap and
+// merging enabled.
 func DefaultSettings() Settings {
-	return Settings{MaxPerSession: DefaultMaxPerSession, MergeEnabled: true, AutoMergeEnabled: true}
+	return Settings{MaxPerSession: DefaultMaxPerSession, MergeEnabled: true}
 }
 
 func Validate(settings Settings) error {

@@ -1,10 +1,9 @@
 "use client";
 
-import { Card, CardContent } from "@kandev/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@kandev/ui/card";
 import { Input } from "@kandev/ui/input";
+import { Label } from "@kandev/ui/label";
 import { useTranslation } from "react-i18next";
-import { SettingsCardHeader } from "@/components/settings/settings-card-header";
-import { SettingsFieldLabel } from "@/components/settings/settings-typography";
 
 type GitIdentityCardProps = {
   name: string;
@@ -22,15 +21,13 @@ export function GitIdentityCard({
   const { t } = useTranslation();
   return (
     <Card>
-      <SettingsCardHeader
-        title={t("executors:gitIdentity")}
-        description={t("executors:optionalAuthorIdentityAppliedInRemote")}
-      />
+      <CardHeader>
+        <CardTitle>{t("executors:gitIdentity")}</CardTitle>
+        <CardDescription>{t("executors:optionalAuthorIdentityAppliedInRemote")}</CardDescription>
+      </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <SettingsFieldLabel htmlFor="git-user-name">
-            {t("executors:gitUserName")}
-          </SettingsFieldLabel>
+          <Label htmlFor="git-user-name">{t("executors:gitUserName")}</Label>
           <Input
             id="git-user-name"
             value={name}
@@ -39,9 +36,7 @@ export function GitIdentityCard({
           />
         </div>
         <div className="space-y-2">
-          <SettingsFieldLabel htmlFor="git-user-email">
-            {t("executors:gitUserEmail")}
-          </SettingsFieldLabel>
+          <Label htmlFor="git-user-email">{t("executors:gitUserEmail")}</Label>
           <Input
             id="git-user-email"
             value={email}

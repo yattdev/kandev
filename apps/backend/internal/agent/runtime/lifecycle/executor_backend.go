@@ -13,9 +13,7 @@ import (
 	agentctl "github.com/kandev/kandev/internal/agent/runtime/agentctl"
 	"github.com/kandev/kandev/internal/agentctl/server/process"
 	"github.com/kandev/kandev/internal/agentruntime"
-	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/task/models"
-	"github.com/kandev/kandev/internal/worktree"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 )
 
@@ -51,42 +49,6 @@ func validateRemoteContributions(values map[string]models.RemoteContribution) (m
 			return nil, fmt.Errorf("validate remote contribution %q: %w", key, err)
 		}
 		validated[key] = binding
-	}
-	return validated, nil
-}
-
-func contributionDestinationsFromMetadata(metadata map[string]interface{}) (map[string]models.ContributionDestination, error) {
-	if metadata == nil {
-		return nil, nil
-	}
-	raw, ok := metadata[MetadataKeyContributionDestinations]
-	if !ok || raw == nil {
-		return nil, nil
-	}
-	if typed, ok := raw.(map[string]models.ContributionDestination); ok {
-		return validateContributionDestinations(typed)
-	}
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return nil, fmt.Errorf("encode contribution destinations: %w", err)
-	}
-	var decoded map[string]models.ContributionDestination
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return nil, fmt.Errorf("decode contribution destinations: %w", err)
-	}
-	return validateContributionDestinations(decoded)
-}
-
-func validateContributionDestinations(values map[string]models.ContributionDestination) (map[string]models.ContributionDestination, error) {
-	if len(values) == 0 {
-		return nil, nil
-	}
-	validated := make(map[string]models.ContributionDestination, len(values))
-	for key, destination := range values {
-		if err := destination.Validate(); err != nil {
-			return nil, fmt.Errorf("validate contribution destination %q: %w", key, err)
-		}
-		validated[key] = destination
 	}
 	return validated, nil
 }
@@ -149,21 +111,18 @@ const (
 	// MetadataKeyBaseBranches stores a map[string]string (RepositoryName →
 	// base branch ref) for per-repo diff-stat resolution inside agentctl.
 	// The empty key "" applies to the root / single-repo tracker.
-	MetadataKeyBaseBranches             = "base_branches"
-	MetadataKeyRemoteContributions      = "remote_contributions"
-	MetadataKeyContributionDestinations = "contribution_destinations"
-	MetadataKeyIsRemote                 = "is_remote"
-	MetadataKeyRemoteAuthHome           = "remote_auth_target_home"
-	MetadataKeyAgentConfigBundles       = "agent_config_bundles"
-	MetadataKeyExecutorProfileID        = "executor_profile_id"
-	MetadataKeyGitUserName              = "git_user_name"
-	MetadataKeyGitUserEmail             = "git_user_email"
-	MetadataKeyImageTagOverride         = "image_tag_override"
-	MetadataKeyContainerID              = "container_id"
-	MetadataKeySpriteName               = "sprite_name"
-	MetadataKeySpriteState              = "sprite_state"
-	MetadataKeySpriteCreatedAt          = "sprite_created_at"
-	MetadataKeyLocalPort                = "local_port"
+	MetadataKeyBaseBranches        = "base_branches"
+	MetadataKeyRemoteContributions = "remote_contributions"
+	MetadataKeyIsRemote            = "is_remote"
+	MetadataKeyRemoteAuthHome      = "remote_auth_target_home"
+	MetadataKeyGitUserName         = "git_user_name"
+	MetadataKeyGitUserEmail        = "git_user_email"
+	MetadataKeyImageTagOverride    = "image_tag_override"
+	MetadataKeyContainerID         = "container_id"
+	MetadataKeySpriteName          = "sprite_name"
+	MetadataKeySpriteState         = "sprite_state"
+	MetadataKeySpriteCreatedAt     = "sprite_created_at"
+	MetadataKeyLocalPort           = "local_port"
 
 	// MetadataKeyModelOverride holds a user-requested model that overrides the
 	// agent profile's configured model on the next launch. Set by SetSessionModel
@@ -230,22 +189,20 @@ var persistentMetadataKeys = map[string]bool{
 	MetadataKeyIsRemote: true,
 
 	// Executor profile / auth config
-	MetadataKeyCleanupScript:            true,
-	MetadataKeyRepoSetupScript:          true,
-	MetadataKeyRemoteAuthHome:           true,
-	MetadataKeyAgentConfigBundles:       true,
-	MetadataKeyGitUserName:              true,
-	MetadataKeyGitUserEmail:             true,
-	"remote_credentials":                true,
-	"remote_auth_secrets":               true,
-	"executor_mcp_policy":               true,
-	"sprites_network_policy_rules":      true,
-	MetadataKeyExecutorProfileID:        true,
-	MetadataKeyImageTagOverride:         true,
-	MetadataKeyContainerID:              true,
-	MetadataKeyWorktreeBranch:           true,
-	MetadataKeyRemoteContributions:      true,
-	MetadataKeyContributionDestinations: true,
+	MetadataKeyCleanupScript:       true,
+	MetadataKeyRepoSetupScript:     true,
+	MetadataKeyRemoteAuthHome:      true,
+	MetadataKeyGitUserName:         true,
+	MetadataKeyGitUserEmail:        true,
+	"remote_credentials":           true,
+	"remote_auth_secrets":          true,
+	"executor_mcp_policy":          true,
+	"sprites_network_policy_rules": true,
+	"executor_profile_id":          true,
+	MetadataKeyImageTagOverride:    true,
+	MetadataKeyContainerID:         true,
+	MetadataKeyWorktreeBranch:      true,
+	MetadataKeyRemoteContributions: true,
 }
 
 // persistentMetadataPrefixes lists key prefixes that should persist.
@@ -386,18 +343,10 @@ type ExecutorCreateRequest struct {
 	TaskEnvironmentID    string // Env this execution belongs to (shared across sessions in same task)
 	AgentProfileID       string
 	OfficeAgentProfileID string
-	PromptTurnID         string
 	WorkspacePath        string
 	WorkspaceSourceRoots []string
-	// GitMetadataRequirement describes metadata that must be attested by the
-	// executor itself. It deliberately carries no host paths: a clone executor
-	// must validate its canonical checkout before the agent is configured.
-	GitMetadataRequirement GitMetadataRequirement
-	// GitMetadataProjections are fresh, task-owned grants compiled by the
-	// executor; they replace legacy source-repository gitdir metadata.
-	GitMetadataProjections []*worktree.GitMetadataProjection
-	Protocol               string
-	Env                    map[string]string
+	Protocol             string
+	Env                  map[string]string
 	// ApprovedSecretEnvKeys contains repository binding keys explicitly
 	// approved for SSH forwarding. Other request env keys remain filtered.
 	ApprovedSecretEnvKeys  []string
@@ -409,50 +358,19 @@ type ExecutorCreateRequest struct {
 	// RemoteContributions carries validated, credential-free bindings to the
 	// runtime/agentctl boundary. Keys use the same workspace subpath convention
 	// as BaseBranches; the empty key is the workspace root.
-	RemoteContributions      map[string]models.RemoteContribution
-	ContributionDestinations map[string]models.ContributionDestination
-	McpServers               []McpServerConfig
-	AgentConfig              agents.Agent // Agent type info needed by runtimes
-	PreviousExecutionID      string       // Non-empty when reconnecting to a previous execution
-	McpMode                  string       // MCP tool mode: "task" (default), "config", or "office"
-	McpProviders             []string     // Normalized provider capabilities attached to the task
-	McpProfile               *mcpprofile.Context
-	AuthToken                string // Previously handshaken agentctl token for reconnects
-	BootstrapNonce           string // Stored nonce for re-handshake after container restart
+	RemoteContributions map[string]models.RemoteContribution
+	McpServers                     []McpServerConfig
+	AgentConfig                    agents.Agent // Agent type info needed by runtimes
+	PreviousExecutionID            string       // Non-empty when reconnecting to a previous execution
+	McpMode                        string       // MCP tool mode: "task" (default), "config", or "office"
+	McpProviders                   []string     // Normalized provider capabilities attached to the task
+	AuthToken                      string       // Previously handshaken agentctl token for reconnects
+	BootstrapNonce                 string       // Stored nonce for re-handshake after container restart
 
 	// OnProgress is an optional callback for streaming preparation progress.
 	// Executors that perform multi-step setup (e.g. Sprites, remote Docker) can
 	// call this to report real-time progress to the frontend.
 	OnProgress PrepareProgressCallback
-}
-
-// GitMetadataRequirementMode identifies an executor-side metadata policy.
-// Only mutable clone checkouts need this descriptor today; the zero value has
-// no special metadata requirement.
-type GitMetadataRequirementMode string
-
-const gitMetadataRequirementMutableClone GitMetadataRequirementMode = "mutable_clone_checkout"
-
-// GitMetadataRequirement is an explicit, path-free request to attest a
-// mutable clone. It is intentionally distinct from GitMetadataProjections,
-// which carry host-visible worktree metadata for local executors.
-type GitMetadataRequirement struct {
-	Mode GitMetadataRequirementMode
-}
-
-func (r GitMetadataRequirement) RequiresMutableCloneCheckout() bool {
-	return r.Mode == gitMetadataRequirementMutableClone
-}
-
-func requiresCloneGitMetadataPolicy(req *ExecutorCreateRequest) bool {
-	return req != nil && req.GitMetadataRequirement.RequiresMutableCloneCheckout()
-}
-
-func cloneGitMetadataRequirement(required bool) GitMetadataRequirement {
-	if !required {
-		return GitMetadataRequirement{}
-	}
-	return GitMetadataRequirement{Mode: gitMetadataRequirementMutableClone}
 }
 
 // ExecutorInstance represents an agentctl instance created by a runtime.
@@ -476,11 +394,10 @@ type ExecutorInstance struct {
 	StandalonePort       int    // Standalone
 
 	// Common fields
-	WorkspacePath        string
-	WorkspaceSourceRoots []string // Canonical executor-visible roots for agentctl workspace operations.
-	Metadata             map[string]interface{}
-	StopReason           string
-	AgentStopFailed      bool
+	WorkspacePath   string
+	Metadata        map[string]interface{}
+	StopReason      string
+	AgentStopFailed bool
 
 	// AuthToken is the agentctl auth token retrieved via handshake.
 	// Populated by Docker executor for encrypted storage in SecretStore.
@@ -509,10 +426,6 @@ func (ri *ExecutorInstance) ToAgentExecution(req *ExecutorCreateRequest) *AgentE
 	if workspacePath == "" {
 		workspacePath = req.WorkspacePath
 	}
-	workspaceSourceRoots := req.WorkspaceSourceRoots
-	if len(ri.WorkspaceSourceRoots) > 0 {
-		workspaceSourceRoots = ri.WorkspaceSourceRoots
-	}
 
 	var historyEnabled bool
 	var agentID string
@@ -525,28 +438,26 @@ func (ri *ExecutorInstance) ToAgentExecution(req *ExecutorCreateRequest) *AgentE
 	}
 
 	execution := &AgentExecution{
-		ID:                     ri.InstanceID,
-		TaskID:                 req.TaskID,
-		SessionID:              req.SessionID,
-		TaskEnvironmentID:      req.TaskEnvironmentID,
-		AgentProfileID:         req.AgentProfileID,
-		OfficeAgentProfileID:   req.OfficeAgentProfileID,
-		promptTurnID:           req.PromptTurnID,
-		AgentID:                agentID,
-		ContainerID:            ri.ContainerID,
-		ContainerIP:            ri.ContainerIP,
-		WorkspacePath:          workspacePath,
-		WorkspaceSourceRoots:   append([]string(nil), workspaceSourceRoots...),
-		GitMetadataProjections: append([]*worktree.GitMetadataProjection(nil), req.GitMetadataProjections...),
-		RuntimeName:            ri.RuntimeName,
-		Status:                 v1.AgentStatusRunning,
-		StartedAt:              time.Now(),
-		metadata:               metadata,
-		agentctl:               ri.Client,
-		standaloneInstanceID:   ri.StandaloneInstanceID,
-		standalonePort:         ri.StandalonePort,
-		historyEnabled:         historyEnabled,
-		promptDoneCh:           make(chan PromptCompletionSignal, 1),
+		ID:                   ri.InstanceID,
+		TaskID:               req.TaskID,
+		SessionID:            req.SessionID,
+		TaskEnvironmentID:    req.TaskEnvironmentID,
+		AgentProfileID:       req.AgentProfileID,
+		OfficeAgentProfileID: req.OfficeAgentProfileID,
+		AgentID:              agentID,
+		ContainerID:          ri.ContainerID,
+		ContainerIP:          ri.ContainerIP,
+		WorkspacePath:        workspacePath,
+		WorkspaceSourceRoots: append([]string(nil), req.WorkspaceSourceRoots...),
+		RuntimeName:          ri.RuntimeName,
+		Status:               v1.AgentStatusRunning,
+		StartedAt:            time.Now(),
+		Metadata:             metadata,
+		agentctl:             ri.Client,
+		standaloneInstanceID: ri.StandaloneInstanceID,
+		standalonePort:       ri.StandalonePort,
+		historyEnabled:       historyEnabled,
+		promptDoneCh:         make(chan PromptCompletionSignal, 1),
 	}
 	execution.setRuntimeEnvironment(req.Env)
 	return execution

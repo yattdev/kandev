@@ -3,7 +3,6 @@
 import { useEffect, useMemo } from "react";
 import { Combobox, type ComboboxOption } from "@/components/combobox";
 import { useAppStore } from "@/components/state-provider";
-import { selectOfficeAgentProfiles } from "@/lib/state/slices/office/selectors";
 import { updateTask } from "@/lib/api/domains/office-extended-api";
 import { listAgentProfiles } from "@/lib/api/domains/office-api";
 import { useOptimisticTaskMutation } from "@/hooks/use-optimistic-task-mutation";
@@ -19,7 +18,7 @@ const NO_ASSIGNEE = "__none__";
 
 export function AssigneePicker({ task }: AssigneePickerProps) {
   const { t } = useTranslation();
-  const agents = useAppStore(selectOfficeAgentProfiles);
+  const agents = useAppStore((s) => s.office.agentProfiles);
   const setOfficeAgentProfiles = useAppStore((s) => s.setOfficeAgentProfiles);
   const workspaceId = useAppStore((s) => s.workspaces.activeId);
   const mutate = useOptimisticTaskMutation();
@@ -33,7 +32,7 @@ export function AssigneePicker({ task }: AssigneePickerProps) {
     let cancelled = false;
     listAgentProfiles(workspaceId)
       .then((res) => {
-        if (!cancelled && res.agents) setOfficeAgentProfiles(workspaceId, res.agents);
+        if (!cancelled && res.agents) setOfficeAgentProfiles(res.agents);
       })
       .catch(() => {
         /* swallow: picker just shows No assignee */

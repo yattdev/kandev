@@ -32,11 +32,6 @@ export class JiraSettingsPage {
     await this.siteInput.waitFor({ state: "visible" });
   }
 
-  async gotoWorkspace(workspaceId: string) {
-    await this.page.goto(`/settings/workspaces/${workspaceId}/integrations/jira`);
-    await this.siteInput.waitFor({ state: "visible" });
-  }
-
   async fillForm(args: { siteUrl: string; email?: string; secret: string; projectKey?: string }) {
     await this.siteInput.fill(args.siteUrl);
     if (args.email !== undefined) await this.emailInput.fill(args.email);

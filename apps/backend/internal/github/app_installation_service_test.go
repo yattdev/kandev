@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 )
 
 type appInstallationMemoryStore struct {
@@ -51,8 +50,6 @@ type fakeGitHubAppOAuth struct {
 	user            GitHubOAuthUser
 	userErr         error
 	canAccess       bool
-	accessResults   []bool
-	accessCalls     int
 	exchangeCode    string
 	verifier        string
 	exchangeStarted chan struct{}
@@ -85,12 +82,6 @@ func (f *fakeGitHubAppOAuth) GetOAuthUser(_ context.Context, _ string) (GitHubOA
 }
 
 func (f *fakeGitHubAppOAuth) UserCanAccessInstallation(_ context.Context, _ string, _ int64) (bool, error) {
-	if f.accessCalls < len(f.accessResults) {
-		result := f.accessResults[f.accessCalls]
-		f.accessCalls++
-		return result, nil
-	}
-	f.accessCalls++
 	return f.canAccess, nil
 }
 
@@ -119,7 +110,7 @@ func TestAppInstallationStartBuildsStateBoundInstallURL(t *testing.T) {
 	}
 }
 
-func TestAppInstallationCompleteAcceptsAutomaticOAuthInstallCallback(t *testing.T) {
+func TestAppInstallationCompleteAcceptsOAuthDuringInstallCallbackShape(t *testing.T) {
 	flowStore := &oauthFlowMemoryStore{}
 	flows := NewOAuthFlowManager(flowStore)
 	flows.random = strings.NewReader(strings.Repeat("e", oauthRandomBytes))
@@ -133,29 +124,25 @@ func TestAppInstallationCompleteAcceptsAutomaticOAuthInstallCallback(t *testing.
 	}}
 	oauth := &fakeGitHubAppOAuth{
 		tokens: GitHubOAuthTokens{AccessToken: "temporary-user-token"},
-		user:   GitHubOAuthUser{ID: 11, Login: "octocat"}, accessResults: []bool{false, true},
+		user:   GitHubOAuthUser{ID: 11, Login: "octocat"}, canAccess: true,
 	}
 	service := NewAppInstallationService(
 		AppInstallationConfig{RegistrationID: "registration-test", Slug: "kandev-app", CallbackURL: "https://kandev.example/callback"},
 		flows, store, verifier, oauth,
 	)
-	service.installationAccessRetryDelays = []time.Duration{0}
 	started, err := service.Start(context.Background(), "workspace-1", "user-1")
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 
 	result, err := service.Complete(context.Background(), AppInstallationCallback{
-		State: started.State, Code: "oauth-code", InstallationID: 42,
+		State: started.State, Code: "oauth-code", SetupAction: "install", InstallationID: 42,
 	})
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
 	if result.AuthorizingUser.Login != "octocat" || result.Installation.AccountLogin != "acme" {
 		t.Fatalf("Complete() = %+v", result)
-	}
-	if oauth.exchangeCode != "oauth-code" || oauth.verifier != "" || oauth.accessCalls != 2 {
-		t.Fatalf("OAuth exchange code = %q, verifier = %q, access calls = %d", oauth.exchangeCode, oauth.verifier, oauth.accessCalls)
 	}
 	if store.connection.Source != ConnectionSourceGitHubAppInstallation ||
 		store.connection.CredentialGeneration != 4 || store.connection.InstallationID == nil ||
@@ -176,7 +163,6 @@ func TestAppInstallationCompleteRejectsSpoofedAssociation(t *testing.T) {
 		&fakeAppInstallationVerifier{installation: AppInstallation{ID: 42}},
 		&fakeGitHubAppOAuth{tokens: GitHubOAuthTokens{AccessToken: "token"}, user: GitHubOAuthUser{ID: 11}, canAccess: false},
 	)
-	service.installationAccessRetryDelays = nil
 	started, err := service.Start(context.Background(), "workspace-1", "user-1")
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)

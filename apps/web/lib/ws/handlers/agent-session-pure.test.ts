@@ -16,7 +16,6 @@ function makeAppState(partial: Partial<AppState>): AppState {
       activeSessionId: null,
       pinnedSessionId: null,
       lastSessionByTaskId: {},
-      resumeSkippedSessionIds: {},
     },
     taskSessions: { items: {} },
     taskSessionsByTask: { itemsByTaskId: {} },
@@ -77,7 +76,6 @@ describe("shouldAdoptNewSession", () => {
         activeSessionId: null,
         pinnedSessionId: null,
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
     });
     expect(shouldAdoptNewSession(state, "t-1", "STARTING")).toBe(true);
@@ -90,7 +88,6 @@ describe("shouldAdoptNewSession", () => {
         activeSessionId: "s-other",
         pinnedSessionId: null,
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
       taskSessions: {
         items: { "s-other": { id: "s-other", task_id: "t-2", state: "RUNNING" } },
@@ -106,7 +103,6 @@ describe("shouldAdoptNewSession", () => {
         activeSessionId: "s-old",
         pinnedSessionId: null,
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
       taskSessions: {
         items: { "s-old": { id: "s-old", task_id: "t-1", state: "COMPLETED" } },
@@ -122,7 +118,6 @@ describe("shouldAdoptNewSession", () => {
         activeSessionId: "s-old",
         pinnedSessionId: null,
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
       taskSessions: {
         items: { "s-old": { id: "s-old", task_id: "t-1", state: "IDLE" } },
@@ -138,7 +133,6 @@ describe("shouldAdoptNewSession", () => {
         activeSessionId: "s-old",
         pinnedSessionId: null,
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
       taskSessions: {
         items: { "s-old": { id: "s-old", task_id: "t-1", state: "RUNNING" } },
@@ -154,7 +148,6 @@ describe("shouldAdoptNewSession", () => {
         activeSessionId: null,
         pinnedSessionId: null,
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
     });
     expect(shouldAdoptNewSession(state, "t-2", "STARTING")).toBe(false);
@@ -167,7 +160,6 @@ describe("shouldAdoptNewSession", () => {
         activeSessionId: null,
         pinnedSessionId: null,
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
     });
     expect(shouldAdoptNewSession(state, "t-1", "COMPLETED")).toBe(false);
@@ -217,7 +209,6 @@ describe("shouldPreservePinnedSessionForTask", () => {
         activeSessionId: "s-pinned",
         pinnedSessionId: "s-pinned",
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
       taskSessions: {
         items: { "s-pinned": { id: "s-pinned", task_id: "t-1", state: "IDLE" } },
@@ -234,7 +225,6 @@ describe("shouldPreservePinnedSessionForTask", () => {
         activeSessionId: "s-drifted",
         pinnedSessionId: "s-pinned",
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
       taskSessionsByTask: {
         itemsByTaskId: { "t-1": [] },
@@ -253,7 +243,6 @@ describe("shouldPreservePinnedSessionForTask", () => {
         activeSessionId: "s-drifted",
         pinnedSessionId: "s-pinned",
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
       taskSessionsByTask: {
         itemsByTaskId: { "t-1": [] },
@@ -272,7 +261,6 @@ describe("shouldPreservePinnedSessionForTask", () => {
         activeSessionId: "s-drifted",
         pinnedSessionId: "s-pinned",
         lastSessionByTaskId: {},
-        resumeSkippedSessionIds: {},
       },
       taskSessions: {
         items: {

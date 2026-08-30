@@ -116,31 +116,6 @@ type Repository interface {
 	// missing source returns ErrEntryNotFound.
 	MergeIntoAbove(ctx context.Context, sessionID, sourceID, queuedBy string) (*QueuedMessage, error)
 
-	// AutoMergeIntoAbove attempts to fold the exact source entry into its
-	// immediate predecessor. A compatible merge returns the surviving target
-	// and true. A missing source, missing predecessor, or incompatible pair is a
-	// successful skip and returns false without mutating either row.
-	AutoMergeIntoAbove(ctx context.Context, sessionID, sourceID string) (*QueuedMessage, bool, error)
-
-	// AutoMergeCandidateIntoAbove folds a not-yet-admitted candidate message
-	// into the session's tail entry when compatible, without inserting it. Used
-	// by admission at full capacity: the fold itself is the admission, so a
-	// message that would merge anyway is accepted instead of rejected with
-	// ErrQueueFull. A missing tail or incompatible pair is a successful skip
-	// and returns false without mutating any row.
-	AutoMergeCandidateIntoAbove(ctx context.Context, candidate *QueuedMessage) (*QueuedMessage, bool, error)
-
-	// ReorderEntries atomically rewrites the FIFO positions of the session's
-	// pending entries to match orderedIDs. The submitted list must be an exact
-	// permutation of the currently visible pending (not reserved-in-flight)
-	// entry ids ordered as the caller wants them; any drift — missing, extra,
-	// or duplicate ids, or an id belonging to a reserved in-flight row —
-	// returns ErrQueueChanged and leaves the queue untouched. Reserved
-	// in-flight rows keep their place in the sequence; visible rows are
-	// interleaved in the submitted order and all positions are compacted to
-	// 1..N in one transaction.
-	ReorderEntries(ctx context.Context, sessionID string, orderedIDs []string) error
-
 	// DeleteByID removes a single entry. The session scope (`AND session_id = ?`)
 	// is mandatory so a caller can't delete an entry by guessing its UUID across
 	// sessions — the queue_full MCP payload deliberately discloses sibling-task
@@ -174,7 +149,6 @@ type Repository interface {
 	TakePendingMove(ctx context.Context, sessionID string) (*PendingMove, error)
 }
 
-// applyMetadataUpdates merges metadata key updates into current; a nil value removes the key.
 func applyMetadataUpdates(current, updates map[string]interface{}) map[string]interface{} {
 	merged := make(map[string]interface{}, len(current)+len(updates))
 	for key, value := range current {

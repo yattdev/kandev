@@ -96,14 +96,6 @@ function applyRemoteRepoPatch(
   }
   return {
     ...row,
-    remoteUrl: undefined,
-    provider: undefined,
-    providerHost: undefined,
-    providerScope: undefined,
-    providerRepoId: undefined,
-    providerOwner: undefined,
-    providerName: undefined,
-    fullName: undefined,
     prNumber: undefined,
     prBaseBranch: undefined,
     prHeadBranch: undefined,

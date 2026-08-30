@@ -155,7 +155,6 @@ class ClaudeCodeReviewWorkflowContractTest(unittest.TestCase):
             label_job,
         )
         self.assertIn("issues: write", label_job)
-        self.assertIn("pull-requests: write", label_job)
         self.assertIn("github.rest.issues.addLabels", label_job)
         self.assertIn(
             "const labels = ['safe-to-review', 'safe-to-test'];",

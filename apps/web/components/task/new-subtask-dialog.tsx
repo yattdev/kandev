@@ -170,7 +170,6 @@ function useSubtaskDialogState(parentTaskId: string, parentSessions: TaskSession
 }
 
 function useSessionOptions(taskId: string) {
-  const { t } = useTranslation();
   const { sessions, loadSessions } = useTaskSessions(taskId);
   const agentProfiles = useAppStore((s) => s.agentProfiles.items);
   useEffect(() => {
@@ -184,10 +183,10 @@ function useSessionOptions(taskId: string) {
     return sorted.map((s, idx) => {
       const profile = agentProfiles.find((p: { id: string }) => p.id === s.agent_profile_id);
       const parts = profile?.label.split(" \u2022 ");
-      const name = parts?.[1] || parts?.[0] || t("task:panelAgent");
+      const name = parts?.[1] || parts?.[0] || "Agent";
       return { id: s.id, label: name, index: idx + 1, agentName: profile?.agent_name };
     });
-  }, [sessions, agentProfiles, t]);
+  }, [sessions, agentProfiles]);
 }
 
 function useExecutorProfiles(
@@ -423,7 +422,6 @@ function NewSubtaskForm({
     resolvePrompt: promptZone.resolvePrompt,
     title,
     autoTitle,
-    autopilot: fs.autopilot,
     setIsCreating,
     onClose,
     workspaceMode,
@@ -434,9 +432,9 @@ function NewSubtaskForm({
     title,
     setTitle,
     autoTitle,
-    autopilot: fs.autopilot,
     workspaceId,
     availableRepositories,
+    parentRepositoryId,
     worktreeBranch,
     profileOptions,
     executorProfileOptions,
@@ -517,16 +515,6 @@ export function NewSubtaskDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid="new-subtask-dialog"
-        onOpenAutoFocus={(event) => {
-          if (!autoTitle) return;
-          const content = event.currentTarget as HTMLElement | null;
-          const prompt = content?.querySelector<HTMLTextAreaElement>(
-            '[data-testid="subtask-prompt-input"]',
-          );
-          if (!prompt) return;
-          event.preventDefault();
-          prompt.focus();
-        }}
         className="w-full h-full min-w-0 max-w-full max-h-full overflow-hidden rounded-none sm:w-[800px] sm:h-auto sm:max-w-none sm:max-h-[85vh] sm:rounded-lg flex flex-col"
       >
         <DialogHeader>

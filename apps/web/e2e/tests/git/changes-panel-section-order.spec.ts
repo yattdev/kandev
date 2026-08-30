@@ -114,14 +114,7 @@ async function seedWorkflow(apiClient: ApiClient, workspaceId: string) {
 /**
  * Seed mock GitHub PR data: one PR with two files and one commit.
  */
-function currentCheckoutBranch(backend: { tmpDir: string }): string {
-  return execSync("git branch --show-current", {
-    cwd: path.join(backend.tmpDir, "repos", "e2e-repo"),
-    encoding: "utf8",
-  }).trim();
-}
-
-async function seedMockPR(apiClient: ApiClient, headBranch: string) {
+async function seedMockPR(apiClient: ApiClient) {
   await apiClient.mockGitHubReset();
   await apiClient.mockGitHubSetUser("test-user");
 
@@ -130,7 +123,7 @@ async function seedMockPR(apiClient: ApiClient, headBranch: string) {
       number: 300,
       title: "Add feature",
       state: "open",
-      head_branch: headBranch,
+      head_branch: "feat/order-test",
       base_branch: "main",
       author_login: "test-user",
       repo_owner: "testorg",
@@ -188,6 +181,8 @@ test.describe("Changes panel section ordering", () => {
       apiClient,
       seedData.workspaceId,
     );
+    await seedMockPR(apiClient);
+
     const profile = await createStandardProfile(apiClient, "Order Test Profile");
     const task = await apiClient.createTask(seedData.workspaceId, "Order Test Task", {
       workflow_id: workflow.id,
@@ -205,9 +200,6 @@ test.describe("Changes panel section ordering", () => {
       timeout: 45_000,
     });
 
-    const checkoutBranch = currentCheckoutBranch(backend);
-    await seedMockPR(apiClient, checkoutBranch);
-
     // Associate PR with task
     await apiClient.mockGitHubAssociateTaskPR({
       task_id: task.id,
@@ -216,7 +208,7 @@ test.describe("Changes panel section ordering", () => {
       pr_number: 300,
       pr_url: "https://github.com/testorg/testrepo/pull/300",
       pr_title: "Add feature",
-      head_branch: checkoutBranch,
+      head_branch: "feat/order-test",
       base_branch: "main",
       author_login: "test-user",
       additions: 40,
@@ -271,7 +263,6 @@ test.describe("Changes panel section ordering", () => {
     testPage,
     apiClient,
     seedData,
-    backend,
   }) => {
     test.setTimeout(120_000);
 
@@ -279,6 +270,8 @@ test.describe("Changes panel section ordering", () => {
       apiClient,
       seedData.workspaceId,
     );
+    await seedMockPR(apiClient);
+
     const profile = await createStandardProfile(apiClient, "PR Only Profile");
     const task = await apiClient.createTask(seedData.workspaceId, "PR Only Task", {
       workflow_id: workflow.id,
@@ -295,9 +288,6 @@ test.describe("Changes panel section ordering", () => {
       timeout: 45_000,
     });
 
-    const checkoutBranch = currentCheckoutBranch(backend);
-    await seedMockPR(apiClient, checkoutBranch);
-
     await apiClient.mockGitHubAssociateTaskPR({
       task_id: task.id,
       owner: "testorg",
@@ -305,7 +295,7 @@ test.describe("Changes panel section ordering", () => {
       pr_number: 300,
       pr_url: "https://github.com/testorg/testrepo/pull/300",
       pr_title: "Add feature",
-      head_branch: checkoutBranch,
+      head_branch: "feat/order-test",
       base_branch: "main",
       author_login: "test-user",
       additions: 40,
@@ -352,7 +342,6 @@ test.describe("Changes panel section ordering", () => {
     testPage,
     apiClient,
     seedData,
-    backend,
   }) => {
     test.setTimeout(120_000);
 
@@ -412,22 +401,6 @@ test.describe("Changes panel section ordering", () => {
       timeout: 45_000,
     });
 
-    const checkoutBranch = currentCheckoutBranch(backend);
-    await apiClient.mockGitHubAddPRs([
-      {
-        number: 301,
-        title: "Large PR",
-        state: "open",
-        head_branch: checkoutBranch,
-        base_branch: "main",
-        author_login: "test-user",
-        repo_owner: "testorg",
-        repo_name: "testrepo",
-        additions: 100,
-        deletions: 10,
-      },
-    ]);
-
     await apiClient.mockGitHubAssociateTaskPR({
       task_id: task.id,
       owner: "testorg",
@@ -435,7 +408,7 @@ test.describe("Changes panel section ordering", () => {
       pr_number: 301,
       pr_url: "https://github.com/testorg/testrepo/pull/301",
       pr_title: "Large PR",
-      head_branch: checkoutBranch,
+      head_branch: "feat/large",
       base_branch: "main",
       author_login: "test-user",
       additions: 100,
@@ -633,22 +606,6 @@ test.describe("PR diff regression", () => {
       timeout: 45_000,
     });
 
-    const checkoutBranch = currentCheckoutBranch(backend);
-    await apiClient.mockGitHubAddPRs([
-      {
-        number: 301,
-        title: "Desktop overlap PR diff test",
-        state: "open",
-        head_branch: checkoutBranch,
-        base_branch: "main",
-        author_login: "test-user",
-        repo_owner: "testorg",
-        repo_name: "testrepo",
-        additions: 2,
-        deletions: 0,
-      },
-    ]);
-
     // Associate PR with task
     await apiClient.mockGitHubAssociateTaskPR({
       task_id: task.id,
@@ -657,7 +614,7 @@ test.describe("PR diff regression", () => {
       pr_number: 301,
       pr_url: "https://github.com/testorg/testrepo/pull/301",
       pr_title: "Desktop overlap PR diff test",
-      head_branch: checkoutBranch,
+      head_branch: "feat/desktop-overlap",
       base_branch: "main",
       author_login: "test-user",
       additions: 2,

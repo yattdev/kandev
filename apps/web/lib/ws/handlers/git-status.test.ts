@@ -65,8 +65,6 @@ function statusUpdateEvent(timestamp: string, diff = "-old\n+new"): GitStatusUpd
       renamed: [],
       ahead: 0,
       behind: 0,
-      remote_ahead: 0,
-      remote_behind: 0,
       files: {
         "a.ts": {
           path: "a.ts",
@@ -100,8 +98,6 @@ function repoStatusUpdateEvent(
       renamed: [],
       ahead: 0,
       behind: 0,
-      remote_ahead: 0,
-      remote_behind: 0,
       repository_name: repositoryName,
       files: {
         [modifiedPath]: {
@@ -205,29 +201,6 @@ describe("git-status WS handler — stale-while-revalidate", () => {
     handler(gitEvent(event));
 
     expect(store.getState().gitStatus.byEnvironmentId[SESSION].is_submodule).toBe(true);
-  });
-
-  it("retains the commit and upstream evidence from a status event", () => {
-    const handler = gitStatusHandler(store);
-    const event = statusUpdateEvent(STATUS_TIME_1);
-    event.status = {
-      ...event.status,
-      head_commit: "head-sha",
-      base_commit: "base-sha",
-      remote_head_commit: "remote-head-sha",
-      remote_ahead: 2,
-      remote_behind: 3,
-    } as typeof event.status;
-
-    handler(gitEvent(event));
-
-    expect(store.getState().gitStatus.byEnvironmentId[SESSION]).toMatchObject({
-      head_commit: "head-sha",
-      base_commit: "base-sha",
-      remote_head_commit: "remote-head-sha",
-      remote_ahead: 2,
-      remote_behind: 3,
-    });
   });
 
   it("invalidates cumulative diff when status diff content changes", () => {

@@ -159,7 +159,7 @@ func TestStartAgentProcess_RunsContributionPreflightBeforeAgentStart(t *testing.
 		SessionID:      "session-preflight",
 		AgentCommand:   "agent",
 		AgentProfileID: "profile-preflight",
-		metadata: map[string]interface{}{
+		Metadata: map[string]interface{}{
 			MetadataKeyRemoteContributions: map[string]models.RemoteContribution{"": binding},
 		},
 		agentctl: agentctl.NewClient(host, port, newTestLogger()),
@@ -222,7 +222,7 @@ func TestStartAgentProcessBoundsContributionPreflight(t *testing.T) {
 	execution := &AgentExecution{
 		ID: "exec-preflight-timeout", SessionID: "session-preflight-timeout",
 		AgentCommand: "agent", AgentProfileID: "profile-preflight-timeout",
-		metadata: map[string]interface{}{
+		Metadata: map[string]interface{}{
 			MetadataKeyRemoteContributions: map[string]models.RemoteContribution{"": binding},
 		},
 		agentctl: agentctl.NewClient(host, port, newTestLogger()),

@@ -3,9 +3,6 @@ import type { Window as HappyDOMWindow } from "happy-dom";
 import { loadPlugins, unloadPlugin } from "./host";
 import { pluginModalManager } from "./modal-manager";
 import { pluginRegistry } from "./registry";
-import { buildPluginContextApi } from "./plugin-context-api";
-import { createAppStore } from "@/lib/state/store";
-import { useResponsiveBreakpoint } from "@/hooks/use-responsive-breakpoint";
 import type { ActivePlugin, PluginHostApi, PluginRegistry } from "./types";
 
 /** No-op `host.toast`; these specs exercise lifecycle, never notifications. */
@@ -23,48 +20,39 @@ const BUNDLE_JS_URL = "/bundle.js";
 const PLUGIN_UNLOAD_A_ID = "plugin-unload-a";
 const PLUGIN_UNLOAD_THROW_A_ID = "plugin-unload-throw-a";
 const PLUGIN_UNLOAD_STYLE_A_ID = "plugin-unload-style-a";
+const PLUGIN_REENABLE_A_ID = "plugin-reenable-a";
+const PLUGIN_REENABLE_A_PATH = "/plugin-reenable-a";
+const NAV_REENABLE_A_ID = "nav-reenable-a";
+const PLUGIN_HANG_A_ID = "plugin-hang-a";
+const PLUGIN_HANG_B_ID = "plugin-hang-b";
+
 function makeHostFactory(pluginId: string): PluginHostApi {
-  const store = createAppStore();
   return {
     pluginId,
     React: {} as PluginHostApi["React"],
     jsx: {} as PluginHostApi["jsx"],
-    store,
-    context: buildPluginContextApi(store),
-    api: {
-      fetch: async () => new Response(),
-      invokeAction: async <TResponse>() => undefined as TResponse,
-      baseUrl: "",
+    store: {
+      getState: () => ({}) as never,
+      setState: () => {},
+      subscribe: () => () => {},
     },
-    i18n: {
-      locale: "en",
-      t: (key) => key,
-      useTranslation: () => ({ locale: "en", t: (key) => key }),
-    },
-    ui: {} as PluginHostApi["ui"],
-    useResponsiveBreakpoint,
+    api: { fetch: async () => new Response(), baseUrl: "" },
+    ui: {},
     theme: "light",
     onThemeChange: () => () => {},
     navigate: () => {},
     openModal: () => ({ close: () => {} }),
-    openTaskLinkDialog: () => ({ close: () => {} }),
-    openTaskReview: () => {},
     toast: NOOP_TOAST,
-    utils: {
-      cn: () => "",
-      generateUUID: () => "uuid",
-      formatRelativeTime: () => "",
-      integrationStatusRefreshMs: 90000,
-    },
-    useSettingsSaveContributor: () => {},
-    setIntegrationEnabled: () => {},
+    utils: { cn: () => "", formatRelativeTime: () => "" },
     storage: {
       get: async () => undefined,
       set: async () => ({ updatedAt: "" }),
       delete: async () => {},
       list: async () => [],
+      listByKey: async () => ({ entries: [], truncated: false }),
       subscribe: () => () => {},
     },
+    taskFilters: { getSelection: () => [], setSelection: () => {}, subscribe: () => () => {} },
   };
 }
 
@@ -101,17 +89,15 @@ afterEach(() => {
   mockApiBaseUrl = "";
 });
 
-function cleanupBasePluginLoads() {
-  pluginRegistry.unregisterPlugin(PLUGIN_SCOPE_A_ID);
-  pluginRegistry.unregisterPlugin("plugin-style-a");
-  pluginRegistry.unregisterPlugin("plugin-throw-a");
-  pluginRegistry.unregisterPlugin("plugin-throw-b");
-  pluginRegistry.unregisterPlugin("plugin-silent-a");
-  document.head.querySelectorAll("link[rel='stylesheet']").forEach((el) => el.remove());
-}
-
-describe("loadPlugins — initialization", () => {
-  afterEach(cleanupBasePluginLoads);
+describe("loadPlugins", () => {
+  afterEach(() => {
+    pluginRegistry.unregisterPlugin(PLUGIN_SCOPE_A_ID);
+    pluginRegistry.unregisterPlugin("plugin-style-a");
+    pluginRegistry.unregisterPlugin("plugin-throw-a");
+    pluginRegistry.unregisterPlugin("plugin-throw-b");
+    pluginRegistry.unregisterPlugin("plugin-silent-a");
+    document.head.querySelectorAll("link[rel='stylesheet']").forEach((el) => el.remove());
+  });
 
   it("imports the bundle, then calls initialize(registry, host) with a registry scoped to the plugin", async () => {
     const initialize = vi.fn((registry: PluginRegistry, _host: PluginHostApi) => {
@@ -137,10 +123,6 @@ describe("loadPlugins — initialization", () => {
       path: "/plugin-scope-a",
     });
   });
-});
-
-describe("loadPlugins — bundle lifecycle", () => {
-  afterEach(cleanupBasePluginLoads);
 
   it("injects styleUrls as <link> elements before importing the bundle", async () => {
     // happy-dom eagerly loads real <link rel="stylesheet"> hrefs over the network;
@@ -198,34 +180,6 @@ describe("loadPlugins — bundle lifecycle", () => {
 
     expect(errorSpy).toHaveBeenCalled();
     expect(goodInitialize).toHaveBeenCalledTimes(1);
-    errorSpy.mockRestore();
-  });
-
-  it("keeps registrations made before an initialize failure (spec.md:816)", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const pluginId = "plugin-partial-initialize";
-    const importer = fakeImporterFor({
-      "/partial-bundle.js": (win) =>
-        (win as unknown as FakeWindow).registerKandevPlugin(pluginId, {
-          initialize: (registry: PluginRegistry) => {
-            registry.registerNavItem({ id: "partial-nav", label: "Partial", path: "/partial" });
-            throw new Error("initialize failed");
-          },
-        }),
-    });
-
-    await loadPlugins(
-      [activePlugin({ id: pluginId, bundleUrl: "/partial-bundle.js" })],
-      makeHostFactory,
-      importer,
-    );
-
-    expect(pluginRegistry.getNavItems()).toContainEqual({
-      id: "partial-nav",
-      label: "Partial",
-      path: "/partial",
-    });
-    pluginRegistry.unregisterPlugin(pluginId);
     errorSpy.mockRestore();
   });
 
@@ -427,6 +381,51 @@ describe("unloadPlugin — plugin modal cleanup", () => {
     expect(snapshot.some((m) => m.pluginId === "some-other-plugin")).toBe(true);
 
     otherHandle.close();
+  });
+});
+
+describe("loadPlugins — initialize() timeout isolation", () => {
+  afterEach(() => {
+    pluginRegistry.unregisterPlugin(PLUGIN_HANG_A_ID);
+    pluginRegistry.unregisterPlugin(PLUGIN_HANG_B_ID);
+  });
+
+  it("does not let a plugin whose initialize() never resolves block a subsequent plugin", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const secondInitialize = vi.fn((registry: PluginRegistry) => {
+      registry.registerNavItem({ id: "nav-hang-b", label: "B", path: "/plugin-hang-b" });
+    });
+    const importer = fakeImporterFor({
+      "/hang-bundle.js": (win) =>
+        (win as unknown as FakeWindow).registerKandevPlugin(PLUGIN_HANG_A_ID, {
+          // Never resolves — simulates a hung plugin initialize().
+          initialize: () => new Promise<void>(() => {}),
+        }),
+      "/second-bundle.js": (win) =>
+        (win as unknown as FakeWindow).registerKandevPlugin(PLUGIN_HANG_B_ID, {
+          initialize: secondInitialize,
+        }),
+    });
+
+    await loadPlugins(
+      [
+        activePlugin({ id: PLUGIN_HANG_A_ID, bundleUrl: "/hang-bundle.js" }),
+        activePlugin({ id: PLUGIN_HANG_B_ID, bundleUrl: "/second-bundle.js" }),
+      ],
+      makeHostFactory,
+      importer,
+      window,
+      10, // short per-test timeout instead of the 10s default
+    );
+
+    expect(secondInitialize).toHaveBeenCalledTimes(1);
+    expect(pluginRegistry.getNavItems()).toContainEqual({
+      id: "nav-hang-b",
+      label: "B",
+      path: "/plugin-hang-b",
+    });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(PLUGIN_HANG_A_ID));
+    warnSpy.mockRestore();
   });
 });
 
@@ -670,5 +669,51 @@ describe("unloadPlugin — evictCache option", () => {
 
     expect(importCount).toBe(2);
     expect(secondInitialize).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("disable then re-enable in the same session", () => {
+  afterEach(() => {
+    pluginRegistry.unregisterPlugin(PLUGIN_REENABLE_A_ID);
+  });
+
+  it("re-initializes from the cached registration when the bundle's module-eval side effect only fires once (ESM import caching)", async () => {
+    const initialize = vi.fn((registry: PluginRegistry) => {
+      registry.registerNavItem({ id: NAV_REENABLE_A_ID, label: "A", path: PLUGIN_REENABLE_A_PATH });
+    });
+    let importCount = 0;
+    const importer = vi.fn(async (_url: string) => {
+      importCount += 1;
+      // The real browser only runs a module's top-level side effect on the
+      // *first* resolution of a given specifier — a second `import(url)`
+      // resolves from the module cache without re-executing
+      // `window.registerKandevPlugin(...)`.
+      if (importCount === 1) {
+        registerFake(PLUGIN_REENABLE_A_ID, { initialize });
+      }
+      return {};
+    });
+
+    await loadPlugins([activePlugin({ id: PLUGIN_REENABLE_A_ID })], makeHostFactory, importer);
+    expect(initialize).toHaveBeenCalledTimes(1);
+    expect(pluginRegistry.getNavItems()).toContainEqual({
+      id: NAV_REENABLE_A_ID,
+      label: "A",
+      path: PLUGIN_REENABLE_A_PATH,
+    });
+
+    unloadPlugin(PLUGIN_REENABLE_A_ID);
+    expect(
+      pluginRegistry.getNavItems().find((item) => item.id === NAV_REENABLE_A_ID),
+    ).toBeUndefined();
+
+    await loadPlugins([activePlugin({ id: PLUGIN_REENABLE_A_ID })], makeHostFactory, importer);
+
+    expect(initialize).toHaveBeenCalledTimes(2);
+    expect(pluginRegistry.getNavItems()).toContainEqual({
+      id: NAV_REENABLE_A_ID,
+      label: "A",
+      path: PLUGIN_REENABLE_A_PATH,
+    });
   });
 });

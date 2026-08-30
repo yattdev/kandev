@@ -116,12 +116,12 @@ export function SetupWizard() {
       if (err instanceof ApiError) {
         setError(
           err.status === 409
-            ? t("auth:setupNoLongerAvailable")
-            : (err.message ?? t("auth:setupFailed")),
+            ? "Setup is no longer available — an account already exists."
+            : (err.message ?? "Setup failed. Please try again."),
         );
         return;
       }
-      setError(t("auth:somethingWentWrong"));
+      setError("Something went wrong. Please try again.");
     }
   }
 

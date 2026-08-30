@@ -16,7 +16,7 @@ test.describe("Agent-generated task titles on mobile", () => {
 
     try {
       await apiClient.saveUserSettings({ agent_generated_task_titles: true });
-      await testPage.goto("/settings/preferences/task-behavior");
+      await testPage.goto("/settings/general/task-actions");
       await expect(
         testPage.getByRole("switch", { name: "Use the agent for new task titles" }),
       ).toBeChecked();

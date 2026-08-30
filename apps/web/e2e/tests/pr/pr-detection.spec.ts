@@ -362,13 +362,13 @@ test.describe("PR external detection", () => {
       workflow_id: workflow.id,
       workflow_step_id: inboxStep.id,
       agent_profile_id: seedData.agentProfileId,
-      repositories: [{ repository_id: seedData.repositoryId, checkout_branch: "main" }],
+      repository_ids: [seedData.repositoryId],
     });
     const helperTask = await apiClient.createTask(seedData.workspaceId, "Helper Task", {
       workflow_id: workflow.id,
       workflow_step_id: inboxStep.id,
       agent_profile_id: seedData.agentProfileId,
-      repositories: [{ repository_id: seedData.repositoryId, checkout_branch: "main" }],
+      repository_ids: [seedData.repositoryId],
     });
 
     const kanban = new KanbanPage(testPage);
@@ -392,8 +392,6 @@ test.describe("PR external detection", () => {
     const session = new SessionPage(testPage);
     await session.waitForLoad();
 
-    const checkoutBranch = "main";
-
     // --- Verify NO PR button initially ---
     await expect(session.prTopbarButton()).not.toBeVisible({ timeout: 5_000 });
 
@@ -403,7 +401,7 @@ test.describe("PR external detection", () => {
         number: 42,
         title: "Add feature X",
         state: "open",
-        head_branch: checkoutBranch,
+        head_branch: "feat/feature-x",
         base_branch: "main",
         author_login: "test-user",
         repo_owner: "testorg",
@@ -434,7 +432,7 @@ test.describe("PR external detection", () => {
       pr_number: 42,
       pr_url: "https://github.com/testorg/testrepo/pull/42",
       pr_title: "Add feature X",
-      head_branch: checkoutBranch,
+      head_branch: "feat/feature-x",
       base_branch: "main",
       author_login: "test-user",
       additions: 50,

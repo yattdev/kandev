@@ -1,5 +1,4 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/components/state-provider";
 import { useToast } from "@/components/toast-provider";
 import { getWebSocketClient } from "@/lib/ws/connection";
@@ -22,7 +21,6 @@ const AUTO_TRANSITION_ACTIONS = ["move_to_next", "move_to_previous", "move_to_st
 
 export function useNextWorkflowStep(taskId: string | null) {
   const { toast } = useToast();
-  const { t } = useTranslation("task");
   const workflowId = useAppStore((s) => s.kanban.workflowId);
   const steps = useAppStore((s) => s.kanban.steps);
   const taskStepId = useAppStore((s) => {
@@ -85,18 +83,17 @@ export function useNextWorkflowStep(taskId: string | null) {
       return true;
     } catch (err) {
       console.error("Failed to proceed to next step:", err);
-      toast({ description: t("task:failedToProceedToNextStep"), variant: "error" });
+      toast({ description: "Failed to proceed to next step", variant: "error" });
       setMoveFromSessionId(null);
       return false;
     }
-  }, [taskId, workflowId, nextStep, activeSessionId, t, toast]);
+  }, [taskId, workflowId, nextStep, activeSessionId, toast]);
 
   const proceedStepName = nextStep && !currentStepAutoTransitions ? nextStep.title : null;
 
   return { proceedStepName, nextStepIsWorkStep, proceed, isMoving };
 }
 
-// i18n-exempt: system block sent verbatim to the agent.
 const IMPLEMENT_PLAN_SYSTEM_BLOCK = `<kandev-system>
 IMPLEMENT PLAN: The user has approved the plan and wants you to implement it now.
 Read the current plan using the get_task_plan_kandev MCP tool.
@@ -105,7 +102,6 @@ After completing the implementation, provide a summary of what was done.
 </kandev-system>`;
 
 export function buildImplementPlanContent(userText: string): string {
-  // i18n-exempt: becomes the message content sent to the agent and stored in the transcript.
   const visibleText = userText.trim() || "Implement the plan";
   return `${visibleText}\n\n${IMPLEMENT_PLAN_SYSTEM_BLOCK}`;
 }
@@ -162,7 +158,6 @@ function useImplementPlan(
 ) {
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
   const { toast } = useToast();
-  const { t } = useTranslation("task");
   return useCallback(async (): Promise<boolean> => {
     if (!resolvedSessionId || !taskId) return false;
 
@@ -214,7 +209,7 @@ function useImplementPlan(
       return true;
     } catch (err) {
       console.error("Failed to start implementation:", err);
-      toast({ description: t("task:failedToStartImplementingPlan"), variant: "error" });
+      toast({ description: "Failed to start implementing the plan", variant: "error" });
       return false;
     }
   }, [
@@ -225,7 +220,6 @@ function useImplementPlan(
     clearPlanModeAfterSend,
     handlePlanModeChange,
     toast,
-    t,
   ]);
 }
 

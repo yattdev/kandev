@@ -21,7 +21,6 @@ import { UninstallPluginDialog } from "./uninstall-plugin-dialog";
 import { usePluginActions } from "./use-plugin-actions";
 import { usePluginConfigForm } from "./use-plugin-config-form";
 import type { PluginRecord } from "@/lib/types/plugins";
-import { SETTINGS_TYPOGRAPHY } from "@/components/settings/settings-typography";
 
 const PLUGINS_SETTINGS_HREF = "/settings/plugins";
 
@@ -103,10 +102,7 @@ function PluginDetailHeader({ plugin }: PluginDetailHeaderProps) {
             {plugin.signed === false && (
               <Badge
                 variant="outline"
-                className={
-                  "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 " +
-                  SETTINGS_TYPOGRAPHY.meta
-                }
+                className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[11px]"
               >
                 {t("plugins:unsigned")}
               </Badge>

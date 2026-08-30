@@ -30,8 +30,6 @@ import { registerCodeMirrorCursorRevealer } from "@/hooks/file-editor-cursor";
 import { useCodeMirrorEditorState } from "./use-codemirror-editor-state";
 import { useCodeMirrorWalkthroughRange } from "./use-codemirror-walkthrough-range";
 import {
-  clearCodeMirrorCursorFlash,
-  codeMirrorCursorFlashExtension,
   revealCodeMirrorCursor,
   revealPendingCodeMirrorCursor,
 } from "./codemirror-cursor-navigation";
@@ -376,16 +374,9 @@ function useCodeMirrorCodeEditorSetup(props: FileEditorContentProps) {
   });
   useEffect(() => {
     if (!editorView) return;
-    const unregister = registerCodeMirrorCursorRevealer(
-      path,
-      repo,
-      sessionId,
-      (line, column, options) => revealCodeMirrorCursor(editorView, line, column, options),
+    return registerCodeMirrorCursorRevealer(path, repo, sessionId, (line, column) =>
+      revealCodeMirrorCursor(editorView, line, column),
     );
-    return () => {
-      unregister();
-      clearCodeMirrorCursorFlash(editorView);
-    };
   }, [editorView, path, repo, sessionId]);
   const handleCreateEditor = useCallback((view: EditorView) => setEditorView(view), []);
   return { wrapperRef, editorAreaRef, editorRef, state, walkthroughRange, handleCreateEditor };
@@ -440,7 +431,7 @@ export function CodeMirrorCodeEditor(props: FileEditorContentProps) {
           value={content}
           height="100%"
           theme={vscodeDark}
-          extensions={[...state.extensions, codeMirrorCursorFlashExtension]}
+          extensions={state.extensions}
           onChange={state.handleChange}
           basicSetup={{
             lineNumbers: true,

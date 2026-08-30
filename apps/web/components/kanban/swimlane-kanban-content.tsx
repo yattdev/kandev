@@ -33,7 +33,6 @@ import {
   useKanbanExternalLinkAvailability,
 } from "@/components/kanban-external-link-availability";
 import { useTranslation } from "react-i18next";
-import { t } from "@/lib/i18n";
 
 /**
  * Sentinel step ID used to collect tasks whose workflow_step_id no longer
@@ -44,7 +43,7 @@ export const ORPHAN_STEP_ID = "__kandev_orphan__";
 
 export const ORPHAN_STEP: WorkflowStep = {
   id: ORPHAN_STEP_ID,
-  title: "",
+  title: "Needs Reassignment",
   color: "#f59e0b",
 };
 
@@ -140,7 +139,7 @@ function useSwimlaneKanbanDnd({ tasks, workflowId, onMoveError }: SwimlaneKanban
             .getState()
             .setWorkflowSnapshot(workflowId, { ...currentSnapshot, tasks: originalTasks });
         }
-        const message = error instanceof Error ? error.message : t("task:failedToMoveTask");
+        const message = error instanceof Error ? error.message : "Failed to move task";
         onMoveError?.({ message, taskId, sessionId: task.primarySessionId ?? null });
       }
     },
@@ -235,15 +234,12 @@ function useOrphanDisplay(
   tasks: Task[],
   steps: WorkflowStep[],
 ): { displayTasks: Task[]; displaySteps: WorkflowStep[] } {
-  const { t } = useTranslation("kanban");
   return useMemo(() => {
     const stepIds = new Set(steps.map((s) => s.id));
     const { tasks: displayTasks, hasOrphans } = remapOrphanTasks(tasks, stepIds, ORPHAN_STEP_ID);
-    const displaySteps = hasOrphans
-      ? [...steps, { ...ORPHAN_STEP, title: t("kanban:needsReassignment") }]
-      : steps;
+    const displaySteps = hasOrphans ? [...steps, ORPHAN_STEP] : steps;
     return { displayTasks, displaySteps };
-  }, [tasks, steps, t]);
+  }, [tasks, steps]);
 }
 
 function useTasksByStep(tasks: Task[]) {

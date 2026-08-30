@@ -54,7 +54,6 @@ function hydrateCreatedTask(
           ...currentKanban.tasks,
           {
             id: task.id,
-            workflowId: task.workflow_id,
             workflowStepId: task.workflow_step_id,
             title: task.title,
             description: task.description ?? undefined,

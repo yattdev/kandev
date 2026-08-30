@@ -23,7 +23,7 @@ func NewSSHPreparer(log *logger.Logger) *SSHPreparer {
 }
 
 // Name implements EnvironmentPreparer.
-func (p *SSHPreparer) Name() string { return executorTypeSSH }
+func (p *SSHPreparer) Name() string { return "ssh" }
 
 // Prepare implements EnvironmentPreparer. SSH executor configuration is
 // validated at launch time (target / fingerprint / arch are checked inside

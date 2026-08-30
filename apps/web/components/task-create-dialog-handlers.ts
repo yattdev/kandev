@@ -372,15 +372,12 @@ function useGitHubAndFreshBranchHandlers(fs: DialogFormState) {
   const handleToggleNoRepository = useCallback(() => {
     const next = !fs.noRepository;
     fs.setNoRepository(next);
-    // Clear the executor selection in both directions so the destination
-    // source mode can resolve its own policy. None mode will re-pick Local;
-    // Repo mode will re-pick the workspace default or Worktree fallback.
-    fs.setExecutorId("");
-    fs.setExecutorProfileId("");
     if (next) {
       fs.setUseRemote(false);
-      // None mode excludes Worktree, so its auto-fill effect picks a
-      // non-worktree default.
+      // Clear the executor selection so the auto-fill effect re-picks a
+      // non-worktree default (worktree is unworkable in no-repo mode).
+      fs.setExecutorId("");
+      fs.setExecutorProfileId("");
       syncTaskCreateLastUsed({
         repository_id: null,
         branch: null,

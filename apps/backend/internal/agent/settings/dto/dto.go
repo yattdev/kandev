@@ -7,25 +7,18 @@ import (
 )
 
 type AgentProfileDTO struct {
-	ID               string `json:"id"`
-	AgentID          string `json:"agent_id"`
-	Name             string `json:"name"`
-	AgentDisplayName string `json:"agent_display_name"`
-	Model            string `json:"model"`
-	Mode             string `json:"mode,omitempty"`
-	// FallbackModel is the optional single ACP model ID the runtime switches
-	// to when the start model becomes unavailable. Ignored when
-	// auto_fallback is true.
-	FallbackModel string `json:"fallback_model,omitempty"`
-	// AutoFallback opts the profile into the legacy automatic-fallback
-	// behavior (session-start best-effort, office re-dispatch).
-	AutoFallback   bool               `json:"auto_fallback"`
-	ConfigOptions  map[string]string  `json:"config_options,omitempty"`
-	AllowIndexing  bool               `json:"allow_indexing"` // Deprecated: use CLIFlags. Retained for legacy clients.
-	AutoApprove    bool               `json:"auto_approve"`
-	CLIFlags       []CLIFlagDTO       `json:"cli_flags"`
-	EnvVars        []ProfileEnvVarDTO `json:"env_vars,omitempty"`
-	CLIPassthrough bool               `json:"cli_passthrough"`
+	ID               string             `json:"id"`
+	AgentID          string             `json:"agent_id"`
+	Name             string             `json:"name"`
+	AgentDisplayName string             `json:"agent_display_name"`
+	Model            string             `json:"model"`
+	Mode             string             `json:"mode,omitempty"`
+	ConfigOptions    map[string]string  `json:"config_options,omitempty"`
+	AllowIndexing    bool               `json:"allow_indexing"` // Deprecated: use CLIFlags. Retained for legacy clients.
+	AutoApprove      bool               `json:"auto_approve"`
+	CLIFlags         []CLIFlagDTO       `json:"cli_flags"`
+	EnvVars          []ProfileEnvVarDTO `json:"env_vars,omitempty"`
+	CLIPassthrough   bool               `json:"cli_passthrough"`
 	// Enabled gates the profile from new-work selection. When false the
 	// profile is hidden from task/session creation pickers but still serves
 	// existing sessions and remains editable in settings.
@@ -44,16 +37,6 @@ type AgentProfileDTO struct {
 	BillingType string    `json:"billing_type,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
-}
-
-// GetWorkspaceID lets struct-shaped profile payloads (e.g. the MCP event-bus
-// publisher wrapping *AgentProfileDTO under "profile") be routed by the
-// gateway's extractWorkspaceID without a JSON round-trip.
-func (p *AgentProfileDTO) GetWorkspaceID() string {
-	if p == nil {
-		return ""
-	}
-	return p.WorkspaceID
 }
 
 // CLIFlagDTO mirrors models.CLIFlag on the wire. Each entry is one user-facing
@@ -79,8 +62,6 @@ type TUIConfigDTO struct {
 	Description     string   `json:"description,omitempty"`
 	CommandArgs     []string `json:"command_args,omitempty"`
 	WaitForTerminal bool     `json:"wait_for_terminal"`
-	// MCPStrategy is the selected MCP injection mechanism ("" = none).
-	MCPStrategy string `json:"mcp_strategy,omitempty"`
 }
 
 type AgentDTO struct {
@@ -238,7 +219,6 @@ type RuntimeUpdateDTO struct {
 	Supported      bool   `json:"supported"`
 	Package        string `json:"package"`
 	CurrentVersion string `json:"current_version,omitempty"`
-	ActiveVersion  string `json:"active_version,omitempty"`
 }
 
 type ListAvailableAgentsResponse struct {
@@ -299,9 +279,7 @@ type AgentUpdateJobDTO struct {
 	JobID          string               `json:"job_id"`
 	AgentName      string               `json:"agent_name"`
 	Status         AgentUpdateJobStatus `json:"status"`
-	Operation      string               `json:"operation"`
 	CurrentVersion string               `json:"current_version,omitempty"`
-	ActiveVersion  string               `json:"active_version,omitempty"`
 	TargetVersion  string               `json:"target_version,omitempty"`
 	Output         string               `json:"output,omitempty"`
 	Error          string               `json:"error,omitempty"`
@@ -313,28 +291,12 @@ type AgentUpdateJobDTO struct {
 // AgentUpdatePreviewDTO is a read-only representation of the next managed
 // runtime update. The command is derived from trusted built-in agent metadata.
 type AgentUpdatePreviewDTO struct {
-	AgentName         string                  `json:"agent_name"`
-	Package           string                  `json:"package"`
-	CurrentVersion    string                  `json:"current_version,omitempty"`
-	ActiveVersion     string                  `json:"active_version,omitempty"`
-	TargetVersion     string                  `json:"target_version"`
-	Operation         string                  `json:"operation"`
-	AvailableVersions []AgentUpdateVersionDTO `json:"available_versions"`
-	Command           []string                `json:"command"`
-	CommandString     string                  `json:"command_string"`
-}
-
-// AgentUpdateVersionDTO is one stable, selectable package version.
-type AgentUpdateVersionDTO struct {
-	Version string `json:"version"`
-	Latest  bool   `json:"latest"`
-}
-
-// AgentUpdateRequest is the only state-changing input accepted by the
-// managed-runtime update endpoint. Package identity and command arguments are
-// always resolved from trusted built-in agent metadata.
-type AgentUpdateRequest struct {
-	TargetVersion string `json:"target_version"`
+	AgentName      string   `json:"agent_name"`
+	Package        string   `json:"package"`
+	CurrentVersion string   `json:"current_version,omitempty"`
+	TargetVersion  string   `json:"target_version"`
+	Command        []string `json:"command"`
+	CommandString  string   `json:"command_string"`
 }
 
 type ListAgentUpdateJobsResponse struct {

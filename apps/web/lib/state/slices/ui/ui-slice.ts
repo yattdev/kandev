@@ -12,17 +12,25 @@ import {
   buildAppSidebarActions,
   loadAppSidebarState,
 } from "./app-sidebar-actions";
-import { buildSettingsMenuActions, loadSettingsMenuState } from "./settings-menu-actions";
-import { DEFAULT_SETTINGS_MENU_MODE } from "@/lib/settings/settings-menu-mode";
 import { APP_SIDEBAR_EXPANDED_WIDTH } from "@/components/app-sidebar/app-sidebar-constants";
 import { buildSidebarTaskPrefsActions } from "./sidebar-task-prefs-actions";
 import { buildSidebarViewActions } from "./sidebar-view-actions";
 import { DEFAULT_VIEW } from "./sidebar-view-builtins";
 import type { SidebarView, SidebarViewDraft, SortSpec } from "./sidebar-view-types";
 import type { SystemHealthResponse } from "@/lib/types/health";
-import type { ActiveDocument, UISlice, UISliceState } from "./types";
-import { buildQuickChatActions } from "./quick-chat-actions";
-import { buildQuickTerminalActions } from "./quick-terminal-actions";
+import type { ActiveDocument, QuickChatSession, UISlice, UISliceState } from "./types";
+import { getQuickChatSetupSessionId } from "./quick-chat-session";
+import {
+  reconcileQuickChatSessions,
+  reconcileQuickTerminalTabs,
+  removeQuickChatSessionsForTask,
+  upsertQuickChatSession,
+} from "./quick-chat-sync";
+import {
+  activateConversationDraft,
+  activateWorkspaceFallback,
+  buildQuickTerminalActions,
+} from "./quick-terminal-actions";
 
 /** Default sidebar view state: the single built-in "All tasks" view, active, no draft. */
 function createDefaultSidebarState(): UISliceState["sidebarViews"] {
@@ -46,7 +54,6 @@ export const KNOWN_DIMENSIONS = new Set<string>([
 export const KNOWN_SORT_KEYS = new Set<string>([
   "state",
   "updatedAt",
-  "lastActivityAt",
   "createdAt",
   "title",
   "custom",
@@ -92,15 +99,10 @@ export const defaultUIState: UISliceState = {
   rightPanel: { activeTabBySessionId: {} },
   diffs: { files: [] },
   connection: { status: "disconnected", error: null, issueSeverity: "none" },
-  mobileKanban: {
-    activeStepIdByWorkflowId: {},
-    isMenuOpen: false,
-    isSearchOpen: false,
-    focusedWorkflowId: null,
-  },
+  mobileKanban: { activeStepIdByWorkflowId: {}, isMenuOpen: false, isSearchOpen: false },
   mobileSession: {
     activePanelBySessionId: {},
-    reviewItemIdBySessionId: {},
+    reviewMRKeyBySessionId: {},
     isTaskSwitcherOpen: false,
   },
   chatInput: { planModeBySessionId: {}, cancellingBySessionId: {} },
@@ -119,11 +121,6 @@ export const defaultUIState: UISliceState = {
     activeKind: "conversation",
     activeTerminalTabId: null,
     lastTerminalTabIdByWorkspace: {},
-    unseenIdleByWorkspace: {},
-    lastSettledAtBySession: {},
-    sessionOwnership: {},
-    syncRevisionByWorkspace: {},
-    tombstonedSessions: {},
   },
   sessionFailureNotification: null,
   taskDeletedNotification: null,
@@ -139,12 +136,6 @@ export const defaultUIState: UISliceState = {
     width: APP_SIDEBAR_EXPANDED_WIDTH,
     settingsMode: false,
     improveDialogOpen: false,
-    workspacePickerOpen: false,
-  },
-  settingsMenu: {
-    mode: DEFAULT_SETTINGS_MENU_MODE,
-    savedMode: DEFAULT_SETTINGS_MENU_MODE,
-    expandedKeys: [],
   },
   acknowledgedAgentErrors: {},
   dismissedAgentErrors: {},
@@ -215,10 +206,6 @@ function buildMobileActions(set: ImmerSet) {
       set((draft) => {
         draft.mobileKanban.isSearchOpen = open;
       }),
-    setMobileKanbanFocusedWorkflow: (workflowId: string | null) =>
-      set((draft) => {
-        draft.mobileKanban.focusedWorkflowId = workflowId;
-      }),
     setMobileSessionPanel: (
       sessionId: string,
       panel: UISliceState["mobileSession"]["activePanelBySessionId"][string],
@@ -226,14 +213,14 @@ function buildMobileActions(set: ImmerSet) {
       set((draft) => {
         draft.mobileSession.activePanelBySessionId[sessionId] = panel;
       }),
-    setMobileSessionReview: (sessionId: string, reviewItemId: string | null) =>
+    setMobileSessionReview: (sessionId: string, mrKey: string | null) =>
       set((draft) => {
-        if (reviewItemId) {
-          draft.mobileSession.reviewItemIdBySessionId[sessionId] = reviewItemId;
+        if (mrKey) {
+          draft.mobileSession.reviewMRKeyBySessionId[sessionId] = mrKey;
           draft.mobileSession.activePanelBySessionId[sessionId] = "review";
           return;
         }
-        delete draft.mobileSession.reviewItemIdBySessionId[sessionId];
+        delete draft.mobileSession.reviewMRKeyBySessionId[sessionId];
         if (draft.mobileSession.activePanelBySessionId[sessionId] === "review") {
           draft.mobileSession.activePanelBySessionId[sessionId] = "chat";
         }
@@ -329,6 +316,165 @@ function buildNotificationActions(set: ImmerSet) {
   };
 }
 
+/** Finds this workspace's quick-chat "config" session, if one is already open. */
+function findWorkspaceConfigSession(
+  sessions: UISliceState["quickChat"]["sessions"],
+  workspaceId: string,
+) {
+  return sessions.find(
+    (session) => session.workspaceId === workspaceId && session.kind === "config",
+  );
+}
+
+/**
+ * Builds the `openQuickChat` action: opens (creating if needed) a quick-chat
+ * session, reusing an existing workspace config session for `kind: "config"`
+ * rather than creating a duplicate.
+ */
+function buildOpenQuickChatAction(set: ImmerSet) {
+  return (
+    sessionId: string,
+    workspaceId: string,
+    agentProfileId?: string,
+    kind: "chat" | "config" = "chat",
+    taskId?: string,
+  ) =>
+    set((draft) => {
+      if (!sessionId) {
+        const existingConfigSession =
+          kind === "config"
+            ? findWorkspaceConfigSession(draft.quickChat.sessions, workspaceId)
+            : undefined;
+        if (existingConfigSession) {
+          draft.quickChat.isOpen = true;
+          draft.quickChat.activeSessionId = existingConfigSession.sessionId;
+          draft.quickChat.activeKind = "conversation";
+          return;
+        }
+        const setupSessionId = getQuickChatSetupSessionId(workspaceId, kind);
+        if (!draft.quickChat.sessions.some((session) => session.sessionId === setupSessionId)) {
+          draft.quickChat.sessions.push({ sessionId: setupSessionId, workspaceId, kind });
+        }
+        draft.quickChat.isOpen = true;
+        draft.quickChat.activeSessionId = setupSessionId;
+        draft.quickChat.activeKind = "conversation";
+        return;
+      }
+      const existing = draft.quickChat.sessions.find((session) => session.sessionId === sessionId);
+      if (existing) {
+        if (existing.workspaceId !== workspaceId) return;
+        if (agentProfileId) existing.agentProfileId = agentProfileId;
+        if (taskId) existing.taskId = taskId;
+      } else {
+        draft.quickChat.sessions.push({ sessionId, workspaceId, agentProfileId, kind, taskId });
+      }
+      draft.quickChat.isOpen = true;
+      draft.quickChat.activeSessionId = sessionId;
+      draft.quickChat.activeKind = "conversation";
+    });
+}
+
+/** Builds the remaining quick-chat session CRUD actions (add/remove/rename/close). */
+function buildQuickChatActions(set: ImmerSet) {
+  return {
+    addQuickChatSession: (
+      sessionId: string,
+      workspaceId: string,
+      agentProfileId?: string,
+      kind: "chat" | "config" = "chat",
+      taskId?: string,
+    ) =>
+      set((draft) => {
+        const activeWorkspaceId = draft.quickChat.sessions.find(
+          (session) => session.sessionId === draft.quickChat.activeSessionId,
+        )?.workspaceId;
+        const shouldActivate =
+          !draft.quickChat.isOpen || !activeWorkspaceId || activeWorkspaceId === workspaceId;
+        const existing = draft.quickChat.sessions.find(
+          (session) => session.sessionId === sessionId,
+        );
+        if (existing) {
+          if (existing.workspaceId !== workspaceId) return;
+          if (agentProfileId) existing.agentProfileId = agentProfileId;
+          if (taskId) existing.taskId = taskId;
+        } else {
+          draft.quickChat.sessions.push({ sessionId, workspaceId, agentProfileId, kind, taskId });
+        }
+        if (shouldActivate) {
+          draft.quickChat.activeSessionId = sessionId;
+          draft.quickChat.activeKind = "conversation";
+        }
+      }),
+    openQuickChat: buildOpenQuickChatAction(set),
+    closeQuickChat: () =>
+      set((draft) => {
+        draft.quickChat.isOpen = false;
+      }),
+    closeQuickChatSession: (sessionId: string) =>
+      set((draft) => {
+        const closingSession = draft.quickChat.sessions.find(
+          (session) => session.sessionId === sessionId,
+        );
+        draft.quickChat.sessions = draft.quickChat.sessions.filter(
+          (session) => session.sessionId !== sessionId,
+        );
+        if (
+          draft.quickChat.activeKind !== "conversation" ||
+          draft.quickChat.activeSessionId !== sessionId
+        ) {
+          return;
+        }
+        const nextSession = draft.quickChat.sessions.find(
+          (session) => session.workspaceId === closingSession?.workspaceId,
+        );
+        if (nextSession) {
+          activateConversationDraft(
+            draft.quickChat,
+            nextSession.sessionId,
+            nextSession.workspaceId,
+          );
+        } else {
+          activateWorkspaceFallback(draft.quickChat, closingSession?.workspaceId);
+        }
+      }),
+    setActiveQuickChatSession: (sessionId: string, workspaceId: string) =>
+      set((draft) => {
+        const session = draft.quickChat.sessions.find((item) => item.sessionId === sessionId);
+        if (!session || session.workspaceId !== workspaceId) return;
+        draft.quickChat.activeSessionId = sessionId;
+        draft.quickChat.activeKind = "conversation";
+      }),
+    // Optimistic only. Persisting the name is `persistQuickChatRename`'s job,
+    // so the backing task title stays the shared source of truth.
+    renameQuickChatSession: (sessionId: string, name: string) =>
+      set((draft) => {
+        const session = draft.quickChat.sessions.find((item) => item.sessionId === sessionId);
+        if (session) session.name = name;
+      }),
+    syncQuickChatSessions: (workspaceId: string, sessions: QuickChatSession[]) =>
+      set((draft) => {
+        draft.quickChat = reconcileQuickChatSessions(draft.quickChat, workspaceId, sessions);
+      }),
+    syncQuickTerminalTabs: (workspaceId: string, tabs: UISliceState["quickChat"]["terminalTabs"]) =>
+      set((draft) => {
+        draft.quickChat = reconcileQuickTerminalTabs(draft.quickChat, workspaceId, tabs);
+      }),
+    upsertQuickChatSessionFromEvent: (session: QuickChatSession) =>
+      set((draft) => {
+        draft.quickChat = upsertQuickChatSession(draft.quickChat, session);
+      }),
+    removeQuickChatSessionsForTask: (taskId: string) =>
+      set((draft) => {
+        draft.quickChat = removeQuickChatSessionsForTask(draft.quickChat, taskId);
+      }),
+    setQuickChatInitialPrompt: (sessionId: string, prompt?: string) =>
+      set((draft) => {
+        const session = draft.quickChat.sessions.find((item) => item.sessionId === sessionId);
+        if (session) session.initialPrompt = prompt;
+      }),
+  };
+}
+
 export const createUISlice: StateCreator<UISlice, [["zustand/immer", never]], [], UISlice> = (
   set,
   get,
@@ -339,9 +485,7 @@ export const createUISlice: StateCreator<UISlice, [["zustand/immer", never]], []
   collapsedSubtaskParents: getStoredCollapsedSubtaskParents(),
   sidebarTaskPrefs: { pinnedTaskIds: [], orderedTaskIds: [], subtaskOrderByParentId: {} },
   appSidebar: loadAppSidebarState(),
-  settingsMenu: loadSettingsMenuState(),
   ...buildAppSidebarActions(set),
-  ...buildSettingsMenuActions(set),
   ...buildPreviewActions(set),
   ...buildMobileActions(set),
   ...buildBottomTerminalActions(set),

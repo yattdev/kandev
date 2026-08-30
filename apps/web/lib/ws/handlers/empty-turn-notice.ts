@@ -4,7 +4,6 @@ import type { AvailableCommand } from "@/lib/state/slices/session-runtime/types"
 import type { TurnEventPayload } from "@/lib/types/backend";
 import type { Message } from "@/lib/types/http";
 import { sessionId, taskId } from "@/lib/types/http";
-import { t } from "@/lib/i18n";
 
 /**
  * Extracts a leading `/command` token from a user prompt. Returns the bare
@@ -28,19 +27,17 @@ export function isKnownCommand(
   return (available ?? []).some((c) => c.name.toLowerCase() === lower);
 }
 
-// Catalog key; resolved inside `emptyTurnNoticeText`.
-const RESEND_HINT_KEY = "chat:emptyTurnResendHint";
+const RESEND_HINT = "Try resending your request as a normal message, without the leading slash.";
 
 /** The notice text shown for an empty turn, tailored to the triggering prompt. */
 export function emptyTurnNoticeText(command: string | null, known: boolean): string {
   if (!command) {
-    return t("chat:emptyTurnNoOutput");
+    return "The agent finished without producing any output.";
   }
-  const hint = t(RESEND_HINT_KEY);
   if (!known) {
-    return t("chat:emptyTurnUnknownCommand", { command, hint });
+    return `\`/${command}\` isn't a command this agent recognizes, so it returned no output. ${RESEND_HINT}`;
   }
-  return t("chat:emptyTurnKnownCommand", { command, hint });
+  return `\`/${command}\` ran but produced no output. ${RESEND_HINT}`;
 }
 
 export interface EmptyTurnNoticeInput {

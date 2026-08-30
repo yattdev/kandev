@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "@/lib/routing/client-router";
 import { runWithNavigationBlockerBypassed } from "@/lib/routing/navigation-guard";
 import { Button } from "@kandev/ui/button";
-import { Card, CardContent } from "@kandev/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@kandev/ui/card";
 import { Input } from "@kandev/ui/input";
+import { Label } from "@kandev/ui/label";
 import { Separator } from "@kandev/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@kandev/ui/select";
 import {
@@ -21,9 +22,6 @@ import { useAppStore } from "@/components/state-provider";
 import { useToast } from "@/components/toast-provider";
 import { useSettingsSaveContributor } from "@/components/settings/settings-save-provider";
 import { SettingsCard } from "@/components/settings/settings-card";
-import { SettingsCardHeader } from "@/components/settings/settings-card-header";
-import { SettingsPageHeader, SettingsFieldLabel } from "@/components/settings/settings-typography";
-import { settingsActionClassName } from "@/components/settings/settings-control";
 import { serializeSettingsRevision } from "@/components/settings/settings-save-revision";
 import { useSecrets } from "@/hooks/domains/settings/use-secrets";
 import {
@@ -118,10 +116,12 @@ function ProfileDetailsCard({
   const isDirty = name.trim() !== baselineName.trim();
   return (
     <SettingsCard isDirty={isDirty}>
-      <SettingsCardHeader title={t("executors:profileDetails")} />
+      <CardHeader>
+        <CardTitle>{t("executors:profileDetails")}</CardTitle>
+      </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <SettingsFieldLabel htmlFor="profile-name">{t("executors:name")}</SettingsFieldLabel>
+          <Label htmlFor="profile-name">{t("executors:name")}</Label>
           <Input
             id="profile-name"
             value={name}
@@ -234,22 +234,26 @@ function EnvVarsCard({
     JSON.stringify(rowsToEnvVars(rows)) !== JSON.stringify(rowsToEnvVars(baselineRows));
   return (
     <SettingsCard isDirty={isDirty}>
-      <SettingsCardHeader
-        title={t("executors:environmentVariables")}
-        description={t("executors:injectedIntoTheExecutionEnvironmentVariables")}
-        actions={
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>{t("executors:environmentVariables")}</CardTitle>
+            <CardDescription>
+              {t("executors:injectedIntoTheExecutionEnvironmentVariables")}
+            </CardDescription>
+          </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={onAdd}
-            className={settingsActionClassName("cursor-pointer")}
+            className="cursor-pointer"
           >
             <IconPlus className="h-3.5 w-3.5 mr-1" />
             {t("executors:add")}
           </Button>
-        }
-      />
+        </div>
+      </CardHeader>
       <CardContent className="space-y-3">
         {rows.length === 0 && (
           <p className="text-sm text-muted-foreground">
@@ -457,20 +461,22 @@ function ProfileEditHeader({ executor, profileName }: { executor: Executor; prof
   const { t } = useTranslation();
   const router = useRouter();
   return (
-    <SettingsPageHeader
-      title={profileName}
-      description={t("executors:profileForExecutor", { name: executor.name })}
-      actions={
-        <Button
-          variant="outline"
-          size="sm"
-          className={settingsActionClassName("cursor-pointer")}
-          onClick={() => router.push(`/settings/executor/${executor.id}`)}
-        >
-          {t("executors:backToExecutor")}
-        </Button>
-      }
-    />
+    <div className="flex items-start justify-between flex-wrap gap-3">
+      <div>
+        <h2 className="text-2xl font-bold">{profileName}</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          {t("executors:profileForExecutor", { name: executor.name })}
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        className="cursor-pointer"
+        onClick={() => router.push(`/settings/executor/${executor.id}`)}
+      >
+        {t("executors:backToExecutor")}
+      </Button>
+    </div>
   );
 }
 

@@ -59,10 +59,9 @@ type NewSessionRequest struct {
 
 // NewSessionResponse is the response to a new session call
 type NewSessionResponse struct {
-	Success    bool                       `json:"success"`
-	SessionID  string                     `json:"session_id,omitempty"`
-	ModelState *streams.SessionModelState `json:"model_state,omitempty"`
-	Error      string                     `json:"error,omitempty"`
+	Success   bool   `json:"success"`
+	SessionID string `json:"session_id,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // LoadSessionRequest is a request to load an existing ACP session
@@ -73,10 +72,9 @@ type LoadSessionRequest struct {
 
 // LoadSessionResponse is the response to a load session call
 type LoadSessionResponse struct {
-	Success    bool                       `json:"success"`
-	SessionID  string                     `json:"session_id,omitempty"`
-	ModelState *streams.SessionModelState `json:"model_state,omitempty"`
-	Error      string                     `json:"error,omitempty"`
+	Success   bool   `json:"success"`
+	SessionID string `json:"session_id,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // PromptRequest is a request to send a prompt to the agent
@@ -298,13 +296,13 @@ func (s *Server) handleWSInitialize(ctx context.Context, msg *ws.Message) *ws.Me
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
 
-	agentAdapter := s.procMgr.GetAdapter()
-	if agentAdapter == nil {
+	adapter := s.procMgr.GetAdapter()
+	if adapter == nil {
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent not running", nil)
 		return resp
 	}
 
-	if err := agentAdapter.Initialize(ctx); err != nil {
+	if err := adapter.Initialize(ctx); err != nil {
 		s.logger.Error("initialize failed", zap.Error(err))
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, err.Error(), nil)
 		return resp
@@ -312,7 +310,7 @@ func (s *Server) handleWSInitialize(ctx context.Context, msg *ws.Message) *ws.Me
 
 	// Get agent info after successful initialization
 	var agentInfoResp *AgentInfoResponse
-	if info := agentAdapter.GetAgentInfo(); info != nil {
+	if info := adapter.GetAgentInfo(); info != nil {
 		agentInfoResp = &AgentInfoResponse{
 			Name:    info.Name,
 			Version: info.Version,
@@ -441,8 +439,8 @@ func (s *Server) handleWSNewSession(ctx context.Context, msg *ws.Message) *ws.Me
 	ctx, cancel := context.WithTimeout(ctx, constants.SessionNewTimeout)
 	defer cancel()
 
-	agentAdapter := s.procMgr.GetAdapter()
-	if agentAdapter == nil {
+	adapter := s.procMgr.GetAdapter()
+	if adapter == nil {
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent not running", nil)
 		return resp
 	}
@@ -462,18 +460,7 @@ func (s *Server) handleWSNewSession(ctx context.Context, msg *ws.Message) *ws.Me
 
 	ctx = s.startMCPAttachmentAttempt(ctx, mcpServers)
 	attachmentContext, _ := streams.MCPAttachmentContextFromContext(ctx)
-	var sessionID string
-	var err error
-	if sessioner, ok := agentAdapter.(adapter.AdditionalDirectoriesSessioner); ok {
-		workspaceRoots, rootsErr := s.procMgr.ValidatedWorkspaceSourceRoots()
-		if rootsErr != nil {
-			resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "git_metadata_projection_unsupported: workspace roots must be revalidated before starting a session", nil)
-			return resp
-		}
-		sessionID, err = sessioner.NewSessionWithAdditionalDirectories(ctx, mcpServers, workspaceRoots)
-	} else {
-		sessionID, err = agentAdapter.NewSession(ctx, mcpServers)
-	}
+	sessionID, err := adapter.NewSession(ctx, mcpServers)
 	s.publishMCPAttachmentResult(attachmentContext.Attempt.AttemptID, mcpServers, err)
 	if err != nil {
 		s.logger.Error("new session failed", zap.Error(err))
@@ -482,9 +469,8 @@ func (s *Server) handleWSNewSession(ctx context.Context, msg *ws.Message) *ws.Me
 	}
 
 	resp, _ := ws.NewResponse(msg.ID, msg.Action, NewSessionResponse{
-		Success:    true,
-		SessionID:  sessionID,
-		ModelState: sessionModelState(agentAdapter),
+		Success:   true,
+		SessionID: sessionID,
 	})
 	return resp
 }
@@ -533,9 +519,8 @@ func (s *Server) handleWSLoadSession(ctx context.Context, msg *ws.Message) *ws.M
 	s.publishMCPAttachmentResult(attachmentContext.Attempt.AttemptID, mcpServers, nil)
 
 	resp, _ := ws.NewResponse(msg.ID, msg.Action, LoadSessionResponse{
-		Success:    true,
-		SessionID:  req.SessionID,
-		ModelState: sessionModelState(adapter),
+		Success:   true,
+		SessionID: req.SessionID,
 	})
 	return resp
 }
@@ -781,19 +766,10 @@ func (s *Server) handleWSResetSession(ctx context.Context, msg *ws.Message) *ws.
 	}
 
 	resp, _ := ws.NewResponse(msg.ID, msg.Action, NewSessionResponse{
-		Success:    true,
-		SessionID:  sessionID,
-		ModelState: sessionModelState(agentAdapter),
+		Success:   true,
+		SessionID: sessionID,
 	})
 	return resp
-}
-
-func sessionModelState(agentAdapter adapter.AgentAdapter) *streams.SessionModelState {
-	provider, ok := agentAdapter.(adapter.SessionModelStateProvider)
-	if !ok {
-		return nil
-	}
-	return provider.GetSessionModelState()
 }
 
 // promptOrSteer routes a prompt to the steering path when the caller asked for it

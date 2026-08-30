@@ -1,17 +1,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { KanbanDisplayDropdown } from "./kanban-display-dropdown";
 
-const { useKanbanDisplaySettingsMock } = vi.hoisted(() => ({
-  useKanbanDisplaySettingsMock: vi.fn(),
-}));
-
 vi.mock("@/hooks/use-kanban-display-settings", () => ({
-  useKanbanDisplaySettings: useKanbanDisplaySettingsMock,
-}));
-
-function defaultMockSettings() {
-  return {
+  useKanbanDisplaySettings: () => ({
     workflows: [],
     activeWorkflowId: null,
     repositories: [],
@@ -20,20 +12,12 @@ function defaultMockSettings() {
     selectedRepositoryId: null,
     enablePreviewOnClick: false,
     tasksListShowDetails: false,
-    eligibleWorkflows: [],
-    snapshots: {},
-    hiddenWorkflowStepIds: {},
     onWorkflowChange: vi.fn(),
     onRepositoryChange: vi.fn(),
     onTogglePreviewOnClick: vi.fn(),
     onToggleTasksListShowDetails: vi.fn(),
-    onToggleStepVisibility: vi.fn(),
-  };
-}
-
-beforeEach(() => {
-  useKanbanDisplaySettingsMock.mockReturnValue(defaultMockSettings());
-});
+  }),
+}));
 
 afterEach(cleanup);
 
@@ -165,32 +149,5 @@ describe("KanbanDisplayDropdown — plugin task filter identities", () => {
     rerender(<KanbanDisplayDropdown {...props} />);
 
     expect(getOptions).toHaveBeenCalledTimes(1);
-  });
-});
-describe("KanbanDisplayDropdown — no Steps section (relocated to the lane)", () => {
-  it("renders no Steps section, group, or step control on the kanban page", () => {
-    useKanbanDisplaySettingsMock.mockReturnValue(defaultMockSettings());
-    render(<KanbanDisplayDropdown currentPage="kanban" />);
-    openDropdown();
-
-    // Column visibility moved to the swimlane header's ColumnsMenu; the
-    // dropdown keeps only Workflow, Repository, plugin filters and Preview.
-    expect(screen.queryByText("kanban:steps")).toBeNull();
-    expect(screen.queryByTestId(/steps-filter-/)).toBeNull();
-    expect(screen.queryByTestId(/columns-menu/)).toBeNull();
-  });
-
-  it("renders no step control even when workflows have snapshots with steps", () => {
-    useKanbanDisplaySettingsMock.mockReturnValue({
-      ...defaultMockSettings(),
-      eligibleWorkflows: [{ id: "wf-a", name: "Workflow A" }],
-      snapshots: { "wf-a": { steps: [{ id: "step-1", title: "Step 1", position: 0 }] } },
-      hiddenWorkflowStepIds: { "wf-a": ["step-1"] },
-    });
-    render(<KanbanDisplayDropdown currentPage="kanban" />);
-    openDropdown();
-
-    expect(screen.queryByTestId("steps-filter-step-step-1")).toBeNull();
-    expect(screen.queryByTestId("columns-menu-step-step-1")).toBeNull();
   });
 });

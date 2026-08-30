@@ -4,11 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "@/lib/routing/client-router";
 import { useCommands, useCommandPanelOpen } from "@/lib/commands/command-registry";
 import type { CommandPanelMode, CommandItem as CommandItemType } from "@/lib/commands/types";
-import {
-  findFirstMatchingCommand,
-  selectCommandSearchResult,
-  selectContentSearchResult,
-} from "@/lib/commands/search";
+import { findFirstMatchingCommand, selectCommandSearchResult } from "@/lib/commands/search";
 import { useCommandPanelShortcuts } from "@/hooks/use-command-panel-shortcuts";
 import { useContentSearchResultOpener } from "@/hooks/use-content-search-result-opener";
 import { useWorkspaceContentSearch } from "@/hooks/domains/session/use-workspace-content-search";
@@ -392,8 +388,8 @@ function useFirstResultSelection(
     }
 
     if (mode === MODE_SEARCH_CONTENT) {
-      const values = contentResults.map(getContentSearchResultValue);
-      setSelectedValue((current) => selectContentSearchResult(values, current));
+      const firstResult = contentResults[0];
+      setSelectedValue(firstResult ? getContentSearchResultValue(firstResult) : "");
       return;
     }
 

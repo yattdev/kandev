@@ -1,28 +1,30 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "../../fixtures/test-base";
 import {
   setAgentRuntimeAvailability,
   stubAgentRuntimeRestart,
 } from "../../helpers/agent-runtime-availability";
 import { KanbanPage } from "../../pages/kanban-page";
-import {
-  captureAppStatusBarSettings,
-  restoreAppStatusBarSettings,
-  setAppStatusBarEnabled,
-  type AppStatusBarSettingsBaseline,
-} from "../../helpers/app-status-bar-settings";
+
+type E2EStoreWindow = Window & {
+  __KANDEV_E2E_STORE__?: {
+    getState: () => {
+      features: Record<string, boolean>;
+      setFeatures: (features: Record<string, boolean>) => void;
+    };
+  };
+};
+
+async function setAppStatusBarEnabled(page: Page, enabled: boolean): Promise<void> {
+  await page.evaluate((nextEnabled) => {
+    const store = (window as E2EStoreWindow).__KANDEV_E2E_STORE__;
+    if (!store) throw new Error("E2E store bridge missing");
+    const state = store.getState();
+    state.setFeatures({ ...state.features, appStatusBar: nextEnabled });
+  }, enabled);
+}
 
 test.describe("Agent runtime availability", () => {
-  let baseline: AppStatusBarSettingsBaseline | undefined;
-
-  test.beforeEach(async ({ apiClient }) => {
-    baseline = await captureAppStatusBarSettings(apiClient);
-    await setAppStatusBarEnabled(apiClient, true);
-  });
-
-  test.afterEach(async ({ apiClient }) => {
-    await restoreAppStatusBarSettings(apiClient, baseline);
-  });
-
   test("retains the current board, supports restart, and clears after recovery", async ({
     testPage,
     apiClient,
@@ -37,7 +39,6 @@ test.describe("Agent runtime availability", () => {
     const restartRequestCount = await stubAgentRuntimeRestart(testPage);
     const kanban = new KanbanPage(testPage);
 
-    await setAppStatusBarEnabled(apiClient, false);
     await kanban.goto();
     const taskCard = kanban.taskCard(task.id);
     await expect(taskCard).toBeVisible();
@@ -57,6 +58,7 @@ test.describe("Agent runtime availability", () => {
       caption: "Persistent desktop agent runtime recovery alert",
     });
 
+    await setAppStatusBarEnabled(testPage, false);
     await expect(testPage.getByTestId("app-status-bar")).toHaveCount(0);
     await expect(alert).toBeVisible();
 

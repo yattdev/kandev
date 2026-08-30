@@ -14,8 +14,6 @@ import (
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/events"
 	"github.com/kandev/kandev/internal/events/bus"
-	taskmodels "github.com/kandev/kandev/internal/task/models"
-	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 	"github.com/kandev/kandev/internal/workflow/controller"
 	"github.com/kandev/kandev/internal/workflow/models"
 	"github.com/kandev/kandev/internal/workflow/service"
@@ -285,15 +283,7 @@ func (h *Handlers) httpListHistoryBySession(c *gin.Context) {
 	})
 	if err != nil {
 		h.logger.Error("failed to list history", zap.Error(err))
-		// Session IDs are opaque, so denied/missing access is reported as
-		// not-found rather than leaking whether another workspace owns the
-		// session. Any other error (e.g. a repository read failure) is a
-		// genuine server error and must not be masked as not-found.
-		if errors.Is(err, taskmodels.ErrTaskSessionNotFound) || errors.Is(err, repoerrors.ErrTaskNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list history"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list history"})
 		return
 	}
 	c.JSON(http.StatusOK, resp)

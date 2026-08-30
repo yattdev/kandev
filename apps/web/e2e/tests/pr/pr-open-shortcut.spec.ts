@@ -305,7 +305,7 @@ test.describe("Open-task-PR keyboard shortcut", () => {
   });
 
   test("shortcut is rebindable from the general settings page", async ({ testPage, prCapture }) => {
-    await testPage.goto("/settings/preferences/keyboard-shortcuts");
+    await testPage.goto("/settings/general/keyboard-shortcuts");
     const recorder = testPage.getByTestId("shortcut-recorder-OPEN_TASK_PR");
     await recorder.scrollIntoViewIfNeeded();
     await expect(recorder).toBeVisible();

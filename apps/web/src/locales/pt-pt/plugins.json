@@ -57,7 +57,6 @@
   "noPluginsMatchSearch": "Nenhum plugin corresponde à sua pesquisa. Experimente limpar os filtros.",
   "noPluginsYet": "Ainda não há plugins. Instale um a partir do separador Explorar ou carregue um pacote.",
   "notSet": "Não definido",
-  "openSettingsFor": "Abrir as definições de {{name}}",
   "override": "substituição",
   "packageUrl": "URL do pacote",
   "pluginInstalled": "{{name}} instalado",
@@ -78,15 +77,14 @@
   "settings": "Definições",
   "settingsDescription": "Explore o marketplace e instale, ative, desative e desinstale plugins do Kandev.",
   "settingsSaved": "Definições do plugin guardadas",
-  "settingsSavedReloadFailed": "As definições foram guardadas, mas não foi possível recarregá-las; atualize para confirmar.",
-  "setupRequired": "Configuração necessária",
+  "settingsSavedReloadFailed": "As definições foram guardadas, mas não foi possível recarregá-las — atualize para confirmar.",
   "sortMostStars": "Mais estrelas",
   "sortName": "Nome",
   "sortRecentlyUpdated": "Atualizados recentemente",
   "sourceNamePlaceholder": "Nome da origem (ex.: Acme Interno)",
   "sourceOfficial": "Oficial",
   "sourceUnreachable": "Inacessível",
-  "sourceUnreachableDetail": "<0>{{name}}</0> está inacessível{{detail}}; os seus plugins estão ocultos.",
+  "sourceUnreachableDetail": "<0>{{name}}</0> está inacessível{{detail}} — os seus plugins estão ocultos.",
   "sources": "Origens",
   "statusActive": "Ativo",
   "statusDisabled": "Desativado",
@@ -115,6 +113,5 @@
   "uploadFile": "Carregar ficheiro",
   "utilityAgentsUnavailable": "Agentes utilitários indisponíveis",
   "viewRaw": "Ver o original",
-  "yes": "sim",
-  "pluginDialog": "Janela do plugin"
+  "yes": "sim"
 }

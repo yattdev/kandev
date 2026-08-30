@@ -1,5 +1,4 @@
 import type { LaunchSessionRequest, MessageAttachment } from "./session-launch-service";
-import type { TaskPriority } from "@/lib/types/http";
 
 export type LayoutIntentHint = "default" | "plan" | "pr-review" | "keep";
 
@@ -16,9 +15,8 @@ export function buildStartRequest(
     executorProfileId?: string;
     prompt?: string;
     planMode?: boolean;
-    priority?: TaskPriority;
+    priority?: number;
     autoStart?: boolean;
-    profileExplicit?: boolean;
     attachments?: MessageAttachment[];
   },
 ): BuildResult {
@@ -34,7 +32,6 @@ export function buildStartRequest(
       priority: opts?.priority,
       auto_start: opts?.autoStart,
       attachments: opts?.attachments,
-      ...(opts?.profileExplicit !== undefined ? { profile_explicit: opts.profileExplicit } : {}),
     },
     layout: opts?.planMode ? "plan" : "default",
   };

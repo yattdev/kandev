@@ -1,6 +1,5 @@
 import { test, expect } from "../../fixtures/test-base";
 import { stubGitHubRateLimits } from "./github-rate-limit-fixture";
-import { dwell } from "../../helpers/causal-waits";
 
 type ReviewWatchesResponse = {
   watches: Array<{ id: string; enabled: boolean }>;
@@ -26,7 +25,7 @@ test.describe("GitHub workspace settings", () => {
     );
 
     try {
-      await testPage.goto(`/settings/workspaces/${seedData.workspaceId}/integrations/github`);
+      await testPage.goto(`/settings/workspace/${seedData.workspaceId}/integrations/github`);
       const row = testPage.getByRole("row").filter({ hasText: "All repositories" });
       await expect(row).toBeVisible();
 
@@ -85,13 +84,7 @@ test.describe("GitHub workspace settings", () => {
       { host: "github.com", login: "workspace-cli", active: true, state: "active" },
     ]);
     await stubGitHubRateLimits(testPage, workspaceId);
-    await testPage.goto(`/settings/workspaces/${workspaceId}/integrations/github`);
-    const accessCard = testPage.getByTestId("github-workspace-access-card");
-    const accessContent = accessCard.locator('[data-slot="card-content"]');
-    const accessContentPaddingTop = await accessContent.evaluate(
-      (element) => getComputedStyle(element).paddingTop,
-    );
-    expect(Number.parseFloat(accessContentPaddingTop)).toBeLessThan(24);
+    await testPage.goto(`/settings/workspace/${workspaceId}/integrations/github`);
     const automation = testPage.getByTestId("github-workspace-automation");
     await expect(automation.getByTestId("github-task-access-summary")).toContainText(
       "Inherit executor Git credentials",
@@ -120,31 +113,17 @@ test.describe("GitHub workspace settings", () => {
     ).toBeVisible();
     const rateLimitHelp = automation.getByRole("button", { name: "Show GitHub API limits" });
     await expect(rateLimitHelp).toBeVisible();
-    await expect(rateLimitHelp.getByTestId("github-rate-limit-icon")).toHaveClass(
-      /tabler-icon-gauge/,
-    );
     await rateLimitHelp.hover();
     const rateLimitTooltip = testPage.getByRole("tooltip", { name: /API rate limit/ });
     await expect(rateLimitTooltip).toContainText(
-      "API rate limit: 3,210 of 5,000 requests remaining",
+      "API rate limit: 4,321 of 5,000 requests remaining",
     );
     await expect(rateLimitTooltip).toContainText(
-      "GraphQL query limit: 4,789 of 5,000 points remaining",
+      "GraphQL query limit: 4,900 of 5,000 points remaining",
     );
-    await prCapture.screenshot("desktop-github-rate-limit-tooltip", {
-      caption: "GitHub API rate limits refresh on hover",
-    });
 
     await automation.getByRole("button", { name: "Change connection" }).click();
     const dialog = testPage.getByRole("dialog", { name: "Change GitHub connection" });
-    await expect(dialog).toBeVisible();
-    await dialog.evaluate(async (element) => {
-      await Promise.all(
-        element
-          .getAnimations({ subtree: true })
-          .map((animation) => animation.finished.catch(() => undefined)),
-      );
-    });
     const dialogBox = await dialog.boundingBox();
     expect(dialogBox).not.toBeNull();
     expect(dialogBox!.width).toBeGreaterThanOrEqual(800);
@@ -155,23 +134,6 @@ test.describe("GitHub workspace settings", () => {
     const footer = dialog.getByTestId("github-connection-footer");
     const fixedSaveButton = footer.getByRole("button", { name: "Save changes" });
     await expect(fixedSaveButton).toBeVisible();
-    await expect
-      .poll(
-        async () => {
-          const [currentScrollBox, currentFadeBox] = await Promise.all([
-            scrollBody.boundingBox(),
-            scrollFade.boundingBox(),
-          ]);
-          if (!currentScrollBox || !currentFadeBox) return Number.POSITIVE_INFINITY;
-          return Math.abs(
-            currentFadeBox.y +
-              currentFadeBox.height -
-              (currentScrollBox.y + currentScrollBox.height),
-          );
-        },
-        { timeout: 10_000 },
-      )
-      .toBeLessThanOrEqual(2);
     const [scrollBox, fadeBox, footerBox, initialSaveBox] = await Promise.all([
       scrollBody.boundingBox(),
       scrollFade.boundingBox(),
@@ -223,12 +185,7 @@ test.describe("GitHub workspace settings", () => {
     expect(executorBox).not.toBeNull();
     expect(executorBox!.y - (managedBox!.y + managedBox!.height)).toBeLessThanOrEqual(9);
     await dialog.getByRole("radio", { name: "Inherit executor Git credentials" }).click();
-    await dwell(
-      testPage,
-      300,
-      "unverified",
-      "settling the radio selection's render before the capture below; no timer was identified behind the number, and the capture itself is a no-op unless CAPTURE_PR_ASSETS is set",
-    );
+    await testPage.waitForTimeout(300);
     await prCapture.screenshot("desktop-task-git-access-dialog", {
       caption: "Task Git access is configured alongside the workspace connection",
     });
@@ -312,7 +269,7 @@ test.describe("GitHub workspace settings", () => {
       },
     ]);
 
-    await testPage.goto(`/settings/workspaces/${seedData.workspaceId}/integrations/github`);
+    await testPage.goto(`/settings/workspace/${seedData.workspaceId}/integrations/github`);
     await expect(testPage.getByTestId("github-integration-heading")).toBeVisible();
 
     const issueWatchesHeading = testPage.getByRole("heading", { name: "Issue Watches" });
@@ -336,10 +293,7 @@ test.describe("GitHub workspace settings", () => {
     await testPage.getByTestId("github-scope-mode").click();
     await testPage.getByRole("option", { name: "Selected repositories" }).click();
     await testPage.getByTestId("github-scope-repos-input").fill("kdlbs/kandev");
-    await testPage
-      .getByTestId("settings-floating-save")
-      .getByRole("button", { name: "Save changes" })
-      .click();
+    await testPage.getByTestId("settings-floating-save").getByRole("button").click();
     await expect(testPage.getByText("GitHub workspace settings saved").last()).toBeVisible({
       timeout: 10_000,
     });
@@ -376,10 +330,7 @@ test.describe("GitHub workspace settings", () => {
     await apiClient.mockGitHubReset();
     await apiClient.mockGitHubSetUser("test-user");
 
-    // Pin the seed workspace in the URL: the install-level path redirects to
-    // the active workspace, which may be one another test created — the API
-    // assertions below read seedData.workspaceId.
-    await testPage.goto(`/settings/workspaces/${seedData.workspaceId}/integrations/github`);
+    await testPage.goto("/settings/integrations/github");
     await expect(testPage.getByTestId("github-integration-heading")).toBeVisible();
 
     await testPage.getByTestId("github-scope-mode").click();
@@ -388,10 +339,7 @@ test.describe("GitHub workspace settings", () => {
     await testPage.getByTestId("github-scope-mode").click();
     await testPage.getByRole("option", { name: "Organizations" }).click();
     await testPage.getByTestId("github-scope-orgs-input").fill("kdlbs");
-    await testPage
-      .getByTestId("settings-floating-save")
-      .getByRole("button", { name: "Save changes" })
-      .click();
+    await testPage.getByTestId("settings-floating-save").getByRole("button").click();
     await expect(testPage.getByText("GitHub workspace settings saved").last()).toBeVisible({
       timeout: 10_000,
     });
@@ -415,10 +363,7 @@ test.describe("GitHub workspace settings", () => {
     await testPage.getByTestId("github-scope-repos-input").fill("not-a-repo");
     await testPage.getByTestId("github-scope-mode").click();
     await testPage.getByRole("option", { name: "Organizations" }).click();
-    await testPage
-      .getByTestId("settings-floating-save")
-      .getByRole("button", { name: "Save changes" })
-      .click();
+    await testPage.getByTestId("settings-floating-save").getByRole("button").click();
     await expect(testPage.getByText("GitHub workspace settings saved").last()).toBeVisible({
       timeout: 10_000,
     });

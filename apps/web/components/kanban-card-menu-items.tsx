@@ -32,9 +32,9 @@ import {
   type TaskMoveWorkflow,
 } from "@/components/task/task-move-context-menu";
 import { cn } from "@/lib/utils";
-import { buildLinkSubmenu } from "./kanban-card-link-submenu";
-import type { PluginIcon, PluginTaskMenuContext } from "@/lib/plugins/types";
+import type { PluginTaskMenuContext } from "@/lib/plugins/types";
 import { buildEditMenuEntry } from "./kanban-card-edit-submenu";
+import { buildLinkSubmenu } from "./kanban-card-link-submenu";
 import { buildPrimaryPluginEntries } from "./kanban-card-plugin-menu-actions";
 import { useTranslation } from "react-i18next";
 import { t } from "@/lib/i18n";
@@ -73,15 +73,6 @@ export type KanbanCardMoveTargets = {
   stepsByWorkflowId: Record<string, TaskMoveStep[]>;
 };
 
-/** Registry action already bound to this card's immutable task context. */
-export type KanbanPluginLinkAction = {
-  id: string;
-  label: string;
-  icon?: PluginIcon;
-  disabled?: boolean;
-  onSelect: () => void;
-};
-
 type BuildKanbanCardMenuEntriesArgs = {
   currentWorkflowId?: string | null;
   currentStepId?: string | null;
@@ -102,7 +93,6 @@ type BuildKanbanCardMenuEntriesArgs = {
   onLinkJiraTicket?: () => void;
   onLinkLinearIssue?: () => void;
   onLinkSentryIssue?: () => void;
-  pluginLinkActions?: KanbanPluginLinkAction[];
   onMoveToStep?: (stepId: string) => void;
   onSendToWorkflow?: (workflowId: string, stepId: string) => void;
   /** Defaults to an empty-id context (no visible plugin actions match it in practice). */
@@ -275,7 +265,6 @@ export function buildKanbanCardMenuEntries({
   onLinkJiraTicket,
   onLinkLinearIssue,
   onLinkSentryIssue,
-  pluginLinkActions,
   onMoveToStep,
   onSendToWorkflow,
   pluginMenuContext,
@@ -323,7 +312,6 @@ export function buildKanbanCardMenuEntries({
     onLinkJiraTicket,
     onLinkLinearIssue,
     onLinkSentryIssue,
-    pluginLinkActions,
   });
   if (linkEntry) entries.push(linkEntry);
 

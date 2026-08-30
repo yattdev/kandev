@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { IconCheck, IconCircleDashed, IconX } from "@tabler/icons-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@kandev/ui/tooltip";
 import { useAppStore } from "@/components/state-provider";
-import { selectOfficeAgentProfiles } from "@/lib/state/slices/office/selectors";
 import { useOptimisticTaskMutation } from "@/hooks/use-optimistic-task-mutation";
 import { formatRelativeTime } from "@/lib/utils";
 import type { AgentProfile } from "@/lib/state/slices/office/types";
@@ -63,7 +62,7 @@ function decisionTooltip(decision: TaskDecision | undefined): string {
   const verb =
     decision.decision === "approved" ? t("task:approvedVerb") : t("task:requestedChangesVerb");
   const when = formatRelativeTime(decision.createdAt);
-  const note = decision.comment ? ` - ${decision.comment}` : "";
+  const note = decision.comment ? ` — ${decision.comment}` : "";
   return `${verb} ${when}${note}`;
 }
 
@@ -118,7 +117,7 @@ export function AgentsMultiPicker({
   decisionsByAgent,
 }: AgentsMultiPickerProps) {
   const { t } = useTranslation();
-  const agents = useAppStore(selectOfficeAgentProfiles);
+  const agents = useAppStore((s) => s.office.agentProfiles);
   const mutate = useOptimisticTaskMutation();
   const items = useMemo(() => buildAgentItems(agents), [agents]);
 

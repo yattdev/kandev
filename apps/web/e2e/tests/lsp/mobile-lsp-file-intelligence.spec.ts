@@ -12,7 +12,6 @@ import {
   readFakeLspEvents,
   releaseFakeLspInitialization,
 } from "./lsp-e2e-helpers";
-import { dwell } from "../../helpers/causal-waits";
 
 test.describe("Mobile LSP boundaries", () => {
   test.describe.configure({ timeout: 90_000 });
@@ -57,12 +56,7 @@ test.describe("Mobile LSP boundaries", () => {
       await expect(viewer.locator(".cm-editor")).toBeVisible();
       await expect(viewer.getByTestId("lsp-status-button")).toHaveCount(0);
       await expect(testPage.getByTestId("app-status-lsp")).toHaveCount(0);
-      await dwell(
-        testPage,
-        1_000,
-        "negative-assertion",
-        "asserts that no LSP socket is ever opened on mobile; a connection that must not happen publishes nothing, so the check needs the window in which it would have opened to elapse",
-      );
+      await testPage.waitForTimeout(1_000);
       expect(lspSockets).toEqual([]);
       expect(readFakeLspEvents(backend)).toEqual([]);
     } finally {
@@ -171,7 +165,7 @@ test.describe("Mobile LSP boundaries", () => {
         lsp_auto_start_languages: [],
         lsp_status_location: "toolbar",
       });
-      await testPage.goto("/settings/preferences/terminal-editors");
+      await testPage.goto("/settings/general/editors");
       await expect(testPage.getByRole("heading", { name: "Editors", exact: true })).toBeVisible();
 
       const kotlinCard = testPage.getByTestId("lsp-language-card-kotlin");

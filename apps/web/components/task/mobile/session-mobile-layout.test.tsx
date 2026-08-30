@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, renderHook, act, fireEvent, screen } from "@testing-library/react";
+import { render, renderHook, act, screen } from "@testing-library/react";
 import { useState } from "react";
 import type { OpenFileTab } from "@/lib/types/backend";
-import type { ReviewItemSummary } from "@/lib/plugins/types";
 
 vi.mock("@/components/toast-provider", () => ({
   useToast: () => ({ toast: vi.fn() }),
@@ -17,50 +16,28 @@ vi.mock("@/hooks/use-visual-viewport-offset", () => ({
   useVisualViewportOffset: () => ({ keyboardOpen: false, bottomOffset: 0 }),
 }));
 
-vi.mock("../review-item-selector", () => ({
-  ReviewItemSelector: ({
-    reviews,
-    onSelectReview,
-  }: {
-    reviews: ReviewItemSummary[];
-    onSelectReview: (review: ReviewItemSummary) => void;
-  }) => (
-    <button type="button" onClick={() => onSelectReview(reviews[1]!)}>
-      Select review B
-    </button>
-  ),
-}));
-
 vi.mock("@/components/state-provider", () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({ tasks: { activeTaskId: "task-1", activeSessionId: "session-1" } }),
 }));
 
-vi.mock("../review-detail-panel", async () => {
+vi.mock("@/components/review/review-pr-selector", () => ({
+  ReviewPRSelector: ({ onSelectPR }: { onSelectPR: (pr: { id: string }) => void }) => (
+    <button type="button" onClick={() => onSelectPR({ id: "pr-b" })}>
+      Select PR B
+    </button>
+  ),
+}));
+
+vi.mock("@/components/github/pr-detail-panel", async () => {
   const React = await import("react");
   return {
-    ReviewDetailPanelComponent: ({ params }: { params: { reviewKey: string } }) => {
-      const [feedback] = React.useState(`feedback for ${params.reviewKey}`);
+    PRDetailPanelComponent: ({ params }: { params: { prKey: string } }) => {
+      const [feedback] = React.useState(`feedback for ${params.prKey}`);
       return <button type="button">{feedback}</button>;
     },
   };
 });
-
-vi.mock("../prompt-history-panel-content", () => ({
-  PromptHistoryPanelContent: ({
-    onNavigateToPrompt,
-  }: {
-    onNavigateToPrompt?: (messageId: string) => void;
-  }) => (
-    <button
-      type="button"
-      data-testid="mobile-prompt-history-content"
-      onClick={() => onNavigateToPrompt?.("prompt-1")}
-    >
-      Prompt history
-    </button>
-  ),
-}));
 
 import {
   MobilePanelArea,
@@ -68,7 +45,6 @@ import {
   resolveMobileReviewSource,
   terminalPaddingBottom,
   useMobilePanelHandlers,
-  useMobileReviewPanelFallback,
 } from "./session-mobile-layout";
 import type { PluginLifecycleSnapshot } from "@/lib/plugins/registry";
 import { pluginRegistry } from "@/lib/plugins/registry";
@@ -270,27 +246,17 @@ describe("useMobilePanelHandlers request cancellation", () => {
   });
 });
 
-describe("useMobileReviewPanelFallback", () => {
-  it("persists chat when the last linked review disappears", () => {
-    const handlePanelChange = vi.fn();
-
-    const { result } = renderHook(() =>
-      useMobileReviewPanelFallback("review", false, handlePanelChange),
-    );
-
-    expect(result.current).toBe("chat");
-    expect(handlePanelChange).toHaveBeenCalledOnce();
-    expect(handlePanelChange).toHaveBeenCalledWith("chat");
+describe("resolveMobileReviewSource", () => {
+  it("prefers GitHub when a task has both review providers", () => {
+    expect(resolveMobileReviewSource(true, true)).toBe("github");
   });
 
-  it("keeps Review selected while a registered provider is still loading", () => {
-    const handlePanelChange = vi.fn();
-    const { result } = renderHook(() =>
-      useMobileReviewPanelFallback("review", false, handlePanelChange, true),
-    );
+  it("makes GitHub Review available without a GitLab MR", () => {
+    expect(resolveMobileReviewSource(true, false)).toBe("github");
+  });
 
-    expect(result.current).toBe("review");
-    expect(handlePanelChange).not.toHaveBeenCalled();
+  it("keeps GitLab Review when no GitHub PR exists", () => {
+    expect(resolveMobileReviewSource(false, true)).toBe("gitlab");
   });
 });
 
@@ -317,31 +283,9 @@ describe("resolveMobilePluginPanel", () => {
 });
 
 describe("MobilePanelArea PR identity", () => {
-  it("remounts detail feedback when the user chooses another mixed-provider review", () => {
+  it("remounts PR detail feedback before the selected PR changes", () => {
     function MobileReviewHarness() {
-      const reviews: ReviewItemSummary[] = [
-        {
-          providerId: "github",
-          reviewKey: "pr-a",
-          title: "GitHub pull request",
-          url: "https://github.test/a",
-          connectionScope: "https://github.test",
-          repositoryId: "owner/repository",
-          changeRequestNumber: 1,
-          state: "OPEN",
-        },
-        {
-          providerId: "bitbucket",
-          reviewKey: "pr-b",
-          title: "Bitbucket pull request",
-          url: "https://bitbucket.test/b",
-          connectionScope: "https://bitbucket.test",
-          repositoryId: "workspace/repository",
-          changeRequestNumber: 2,
-          state: "OPEN",
-        },
-      ];
-      const [selectedReview, setSelectedReview] = useState<ReviewItemSummary | null>(reviews[0]!);
+      const [prKey, setPrKey] = useState("pr-a");
       return (
         <MobilePanelArea
           currentMobilePanel="review"
@@ -355,13 +299,13 @@ describe("MobilePanelArea PR identity", () => {
           handleClearSelectedDiff={vi.fn()}
           handleOpenFile={vi.fn()}
           handlePanelChangeAndClearSheet={vi.fn()}
-          onNavigateToPrompt={vi.fn()}
-          mobileScrollTarget={null}
           topNavHeight="3.5rem"
           bottomNavHeight="3.25rem"
-          reviews={reviews}
-          selectedReview={selectedReview}
-          onSelectReview={setSelectedReview}
+          reviewSource="github"
+          prKey={prKey}
+          reviewPRs={[]}
+          selectedReviewPR={null}
+          onSelectReviewPR={() => setPrKey("pr-b")}
         />
       );
     }
@@ -369,43 +313,10 @@ describe("MobilePanelArea PR identity", () => {
     render(<MobileReviewHarness />);
     expect(screen.getByRole("button", { name: "feedback for pr-a" })).not.toBeNull();
 
-    act(() => screen.getByRole("button", { name: "Select review B" }).click());
+    act(() => screen.getByRole("button", { name: "Select PR B" }).click());
 
     expect(screen.queryByRole("button", { name: "feedback for pr-a" })).toBeNull();
     expect(screen.getByRole("button", { name: "feedback for pr-b" })).not.toBeNull();
-  });
-});
-
-describe("MobilePanelArea Prompt history", () => {
-  it("renders the history surface and forwards prompt navigation", () => {
-    const handleNavigateToPrompt = vi.fn();
-
-    render(
-      <MobilePanelArea
-        currentMobilePanel="prompt-history"
-        activeTaskId="task-1"
-        isPassthroughMode={false}
-        effectiveSessionId="session-1"
-        selectedFile={null}
-        selectedFilePreview={false}
-        selectedDiff={null}
-        handleOpenFileFromChat={vi.fn()}
-        handleClearSelectedDiff={vi.fn()}
-        handleOpenFile={vi.fn()}
-        handlePanelChangeAndClearSheet={vi.fn()}
-        onNavigateToPrompt={handleNavigateToPrompt}
-        mobileScrollTarget={null}
-        topNavHeight="3.5rem"
-        bottomNavHeight="3.25rem"
-        reviews={[]}
-        selectedReview={null}
-        onSelectReview={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByTestId("mobile-prompt-history-content")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("mobile-prompt-history-content"));
-    expect(handleNavigateToPrompt).toHaveBeenCalledWith("prompt-1");
   });
 });
 
@@ -423,13 +334,12 @@ function renderMobilePanel(currentMobilePanel: string) {
       handleClearSelectedDiff={vi.fn()}
       handleOpenFile={vi.fn()}
       handlePanelChangeAndClearSheet={vi.fn()}
-      onNavigateToPrompt={vi.fn()}
-      mobileScrollTarget={null}
       topNavHeight="3.5rem"
       bottomNavHeight="3.25rem"
-      reviews={[]}
-      selectedReview={null}
-      onSelectReview={vi.fn()}
+      reviewSource={null}
+      reviewPRs={[]}
+      selectedReviewPR={null}
+      onSelectReviewPR={vi.fn()}
     />,
   );
 }
@@ -475,13 +385,5 @@ describe("terminalPaddingBottom", () => {
     expect(terminalPaddingBottom(true, 300, "3.25rem")).toBe(
       "calc(348px - 3.25rem - env(safe-area-inset-bottom, 0px))",
     );
-  });
-});
-
-describe("resolveMobileReviewSource", () => {
-  it("keeps built-in source precedence for saved mobile state", () => {
-    expect(resolveMobileReviewSource(true, true)).toBe("github");
-    expect(resolveMobileReviewSource(false, true)).toBe("gitlab");
-    expect(resolveMobileReviewSource(false, false)).toBeNull();
   });
 });

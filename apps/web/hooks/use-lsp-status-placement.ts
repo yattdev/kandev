@@ -1,6 +1,7 @@
 "use client";
 
 import { useAppStore } from "@/components/state-provider";
+import { useFeature } from "@/hooks/domains/features/use-feature";
 import { useResponsiveBreakpoint } from "@/hooks/use-responsive-breakpoint";
 import {
   resolveLspStatusPlacement,
@@ -9,7 +10,7 @@ import {
 
 export function useLspStatusPlacement(): EffectiveLspStatusPlacement {
   const preferredLocation = useAppStore((state) => state.userSettings.lspStatusLocation);
-  const appStatusBarEnabled = useAppStore((state) => state.userSettings.appStatusBarEnabled);
+  const appStatusBarEnabled = useFeature("appStatusBar");
   const responsive = useResponsiveBreakpoint();
   return resolveLspStatusPlacement({
     preferredLocation,

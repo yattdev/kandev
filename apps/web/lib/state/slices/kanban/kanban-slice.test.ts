@@ -81,7 +81,6 @@ describe("kanban slice workspace transition", () => {
         tasks: [
           {
             id: TASK_ID,
-            workflowId: WORKFLOW_ID,
             workflowStepId: "step-a",
             title: "Workspace A task",
             position: 0,
@@ -109,7 +108,6 @@ describe("kanban slice workspace transition", () => {
         activeSessionId: PINNED_SESSION_ID,
         pinnedSessionId: PINNED_SESSION_ID,
         lastSessionByTaskId: { [TASK_ID]: PINNED_SESSION_ID },
-        resumeSkippedSessionIds: {},
       },
     });
 
@@ -133,13 +131,7 @@ describe("kanban slice workspace transition", () => {
 describe("kanban slice archived sidebar projection", () => {
   it("stores archived tasks separately from active kanban state and deduplicates IDs", () => {
     const store = makeStore();
-    const task = {
-      id: TASK_ID,
-      workflowId: WORKFLOW_ID,
-      workflowStepId: "step-a",
-      title: "Archived",
-      position: 0,
-    };
+    const task = { id: TASK_ID, workflowStepId: "step-a", title: "Archived", position: 0 };
 
     store.getState().setSidebarArchivedTasks(ARCHIVED_WORKSPACE_ID, [task]);
     store
@@ -157,13 +149,7 @@ describe("kanban slice archived sidebar projection", () => {
 
   it("creates a workspace bucket when upserting its first archived task", () => {
     const store = makeStore();
-    const task = {
-      id: TASK_ID,
-      workflowId: WORKFLOW_ID,
-      workflowStepId: "step-a",
-      title: "Archived",
-      position: 0,
-    };
+    const task = { id: TASK_ID, workflowStepId: "step-a", title: "Archived", position: 0 };
 
     store.getState().upsertSidebarArchivedTask("workspace-new", task);
 
@@ -186,13 +172,7 @@ describe("kanban slice archived sidebar projection", () => {
       tasks: KanbanSlice["sidebarArchivedTasks"]["itemsByWorkspaceId"][string],
       expectedRevision?: number,
     ) => boolean;
-    const task = {
-      id: TASK_ID,
-      workflowId: WORKFLOW_ID,
-      workflowStepId: "step-a",
-      title: "Loaded",
-      position: 0,
-    };
+    const task = { id: TASK_ID, workflowStepId: "step-a", title: "Loaded", position: 0 };
 
     setArchivedTasks(ARCHIVED_WORKSPACE_ID, [task]);
     const beforeArchive = revision();
@@ -218,29 +198,5 @@ describe("kanban slice archived sidebar projection", () => {
     expect(store.getState().sidebarArchivedTasks.itemsByWorkspaceId[ARCHIVED_WORKSPACE_ID]).toEqual(
       [],
     );
-  });
-});
-
-describe("kanban slice resume-skipped marker", () => {
-  it("records the skip for any session and clears it on request", () => {
-    const store = makeStore();
-    store.getState().setResumeSkipped("session-idle", true);
-    expect(store.getState().tasks.resumeSkippedSessionIds["session-idle"]).toBe(true);
-
-    store.getState().setResumeSkipped("session-idle", false);
-    expect(store.getState().tasks.resumeSkippedSessionIds["session-idle"]).toBeUndefined();
-  });
-
-  it("records the skip as a plain keyed write (the STARTING/RUNNING guard lives at the hook call site)", () => {
-    // The slice is deliberately a dumb write: the guard that refuses to mark
-    // a starting/running session resume-skipped reads the live session row
-    // with typed store access in use-session-resumption's skip branch. A
-    // direct slice call records unconditionally.
-    const store = makeStore();
-    store.getState().setResumeSkipped("session-running", true);
-    expect(store.getState().tasks.resumeSkippedSessionIds["session-running"]).toBe(true);
-
-    store.getState().setResumeSkipped("session-running", false);
-    expect(store.getState().tasks.resumeSkippedSessionIds["session-running"]).toBeUndefined();
   });
 });

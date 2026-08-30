@@ -28,13 +28,11 @@ var ErrInvalidBranchName = errors.New("invalid branch name")
 
 // GitOperationResult represents the result of a git operation.
 type GitOperationResult struct {
-	Success        bool     `json:"success"`
-	Operation      string   `json:"operation"`
-	Output         string   `json:"output"`
-	Error          string   `json:"error,omitempty"`
-	ErrorCode      string   `json:"error_code,omitempty"`
-	ConflictFiles  []string `json:"conflict_files,omitempty"`
-	RecoveryBranch string   `json:"recovery_branch,omitempty"`
+	Success       bool     `json:"success"`
+	Operation     string   `json:"operation"`
+	Output        string   `json:"output"`
+	Error         string   `json:"error,omitempty"`
+	ConflictFiles []string `json:"conflict_files,omitempty"`
 }
 
 // GitOperator executes git operations in a workspace directory.
@@ -46,11 +44,9 @@ type GitOperator struct {
 	// repoName is the multi-repo subpath this operator runs in (e.g. "kandev").
 	// Empty for the workspace-root operator. Stamped on emitted commit
 	// notifications so the frontend can group commits per repo.
-	repoName                   string
-	remoteContribution         *models.RemoteContribution
-	remoteContributionErr      error
-	contributionDestination    *models.ContributionDestination
-	contributionDestinationErr error
+	repoName              string
+	remoteContribution    *models.RemoteContribution
+	remoteContributionErr error
 
 	mu         sync.Mutex // Prevents concurrent git operations
 	inProgress bool
@@ -93,18 +89,6 @@ func (g *GitOperator) setRemoteContribution(binding *models.RemoteContribution) 
 	g.remoteContribution = &copy
 }
 
-func (g *GitOperator) setContributionDestination(destination *models.ContributionDestination) {
-	if destination == nil {
-		return
-	}
-	if err := destination.Validate(); err != nil {
-		g.contributionDestinationErr = fmt.Errorf("invalid contribution destination: %w", err)
-		return
-	}
-	copy := *destination
-	g.contributionDestination = &copy
-}
-
 func (g *GitOperator) validateContributionRemote(ctx context.Context) error {
 	if g.remoteContribution == nil {
 		return nil
@@ -125,27 +109,6 @@ func (g *GitOperator) validateContributionRemote(ctx context.Context) error {
 	for _, configured := range urls {
 		if strings.TrimSpace(configured) != g.remoteContribution.SourceRepository.RemoteURL {
 			return errors.New("contribution remote push URL does not match the validated source")
-		}
-	}
-	return nil
-}
-
-func (g *GitOperator) validateContributionDestinationRemote(ctx context.Context) error {
-	if g.contributionDestination == nil {
-		return nil
-	}
-	remoteName := g.contributionDestination.ContributionRemoteName()
-	urlsOutput, err := g.runGitCommand(ctx, "config", "--get-all", "remote."+remoteName+".pushurl")
-	if err != nil {
-		return errors.New("contribution destination remote is unavailable")
-	}
-	urls := strings.Split(strings.TrimSpace(urlsOutput), "\n")
-	if len(urls) == 0 || urls[0] == "" {
-		return errors.New("contribution destination remote has no configured push URL")
-	}
-	for _, configured := range urls {
-		if strings.TrimSpace(configured) != g.contributionDestination.TargetRepository.RemoteURL {
-			return errors.New("contribution destination push URL does not match the validated target")
 		}
 	}
 	return nil
@@ -192,13 +155,6 @@ func (g *GitOperator) runGitCommand(ctx context.Context, args ...string) (string
 
 		// After "--", all arguments are file paths - no validation needed
 		if afterDoubleDash {
-			continue
-		}
-
-		if strings.HasPrefix(arg, contributionLeaseFlagPrefix) {
-			if err := validateContributionLeaseFlag(arg); err != nil {
-				return "", err
-			}
 			continue
 		}
 
@@ -399,10 +355,6 @@ func (g *GitOperator) Pull(ctx context.Context, rebase bool) (*GitOperationResul
 		result.Error = g.remoteContributionErr.Error()
 		return result, nil
 	}
-	if g.contributionDestinationErr != nil {
-		result.Error = g.contributionDestinationErr.Error()
-		return result, nil
-	}
 	if g.remoteContribution != nil {
 		if err := g.validateContributionRemote(ctx); err != nil {
 			result.Error = err.Error()
@@ -440,6 +392,7 @@ func (g *GitOperator) Pull(ctx context.Context, rebase bool) (*GitOperationResul
 		}
 		return result, nil
 	}
+
 	result.Success = true
 	g.logger.Info("pull completed", zap.String("branch", pullBranch), zap.String("remote", remote), zap.Bool("rebase", rebase))
 	return result, nil
@@ -459,17 +412,7 @@ func (g *GitOperator) Push(ctx context.Context, force bool, setUpstream bool) (*
 		result.Error = g.remoteContributionErr.Error()
 		return result, nil
 	}
-	if g.contributionDestinationErr != nil {
-		result.Error = g.contributionDestinationErr.Error()
-		return result, nil
-	}
-	if g.contributionDestination != nil {
-		if err := g.validateContributionDestinationRemote(ctx); err != nil {
-			result.Error = err.Error()
-			return result, nil
-		}
-	}
-	if (g.remoteContribution != nil || g.contributionDestination != nil) && force {
+	if g.remoteContribution != nil && force {
 		result.Error = "force push is not allowed for a remote contribution"
 		return result, nil
 	}
@@ -488,11 +431,7 @@ func (g *GitOperator) Push(ctx context.Context, force bool, setUpstream bool) (*
 	shouldSetUpstream := setUpstream || g.getUpstreamRef(ctx) == ""
 	remote := "origin"
 	refspec := branch
-	if g.contributionDestination != nil {
-		remote = g.contributionDestination.ContributionRemoteName()
-		refspec = branch
-		shouldSetUpstream = setUpstream
-	} else if g.remoteContribution != nil {
+	if g.remoteContribution != nil {
 		remote = g.remoteContribution.ContributionRemoteName()
 		refspec = "HEAD:refs/heads/" + g.remoteContribution.HeadBranch
 		shouldSetUpstream = setUpstream
@@ -535,30 +474,6 @@ func (g *GitOperator) PushPreflight(ctx context.Context) (*GitOperationResult, e
 	result := &GitOperationResult{Operation: "push_preflight"}
 	if g.remoteContributionErr != nil {
 		result.Error = g.remoteContributionErr.Error()
-		return result, nil
-	}
-	if g.contributionDestinationErr != nil {
-		result.Error = g.contributionDestinationErr.Error()
-		return result, nil
-	}
-	if g.contributionDestination != nil {
-		if err := g.validateContributionDestinationRemote(ctx); err != nil {
-			result.Error = err.Error()
-			return result, nil
-		}
-		branch, err := g.getCurrentBranch(ctx)
-		if err != nil {
-			result.Error = err.Error()
-			return result, nil
-		}
-		output, err := g.runGitCommand(ctx, "push", "--dry-run", g.contributionDestination.ContributionRemoteName(), branch)
-		result.Output = output
-		if err != nil {
-			result.Error = err.Error()
-			return result, nil
-		}
-		result.Success = true
-		g.logger.Info("contribution destination push preflight completed", zap.String("branch", branch))
 		return result, nil
 	}
 	if g.remoteContribution == nil {
@@ -1237,13 +1152,6 @@ func (g *GitOperator) CreatePR(ctx context.Context, title, body, baseBranch stri
 		g.logger.Info("updated existing remote contribution", zap.String("branch", branch), zap.String("provider", result.Provider))
 		return result, nil
 	}
-	if g.contributionDestinationErr != nil {
-		result.Error = g.contributionDestinationErr.Error()
-		return result, nil
-	}
-	if g.contributionDestination != nil {
-		return g.createManagedContributionPR(ctx, title, body, baseBranch, draft)
-	}
 
 	branch, err := g.getCurrentBranch(ctx)
 	if err != nil {
@@ -1308,42 +1216,6 @@ func (g *GitOperator) CreatePR(ctx context.Context, title, body, baseBranch stri
 		result.Error = "unsupported git remote for PR creation"
 		return result, nil
 	}
-}
-
-func (g *GitOperator) createManagedContributionPR(
-	ctx context.Context,
-	title, body, baseBranch string,
-	draft bool,
-) (*PRCreateResult, error) {
-	result := &PRCreateResult{}
-	originURL, err := g.getOriginRemoteURL(ctx)
-	if err != nil {
-		result.Error = err.Error()
-		return result, nil
-	}
-	if g.detectPRProvider(originURL) != prProviderGitHub {
-		result.Error = fmt.Sprintf("managed contribution destination requires a GitHub origin: %s", redactRemoteURL(originURL))
-		return result, nil
-	}
-	if err := g.validateContributionDestinationRemote(ctx); err != nil {
-		result.Error = err.Error()
-		return result, nil
-	}
-	branch, err := g.getCurrentBranch(ctx)
-	if err != nil {
-		result.Error = fmt.Sprintf("failed to get current branch: %s", err.Error())
-		return result, nil
-	}
-	output, err := g.runGitCommand(ctx, "push", g.contributionDestination.ContributionRemoteName(), "HEAD:refs/heads/"+branch)
-	if err != nil {
-		result.Error = fmt.Sprintf("failed to push contribution destination: %s", g.sanitizePRFailure(output, title, body))
-		result.Output = g.sanitizeGitPushOutput(output)
-		return result, nil
-	}
-	result.Provider = string(prProviderGitHub)
-	result.BranchPushed = true
-	created, createErr := g.createGitHubPR(ctx, result, branch, title, body, baseBranch, draft)
-	return finalizePRCreationAfterPush(created, createErr)
 }
 
 func finalizePRCreationAfterPush(result *PRCreateResult, createErr error) (*PRCreateResult, error) {

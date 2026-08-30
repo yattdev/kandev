@@ -85,15 +85,17 @@ describe("PRMergeabilityRow", () => {
     expect(container.textContent).toContain("Blocked by branch protection");
   });
 
-  it("keeps an otherwise green blocked PR neutral until GitHub accepts it", () => {
-    const { queryByTestId } = renderRow(
+  it("shows normal branch protection as a neutral waiting state", () => {
+    const { container, queryByTestId } = renderRow(
       makePR({
         mergeable_state: "blocked",
         checks_state: "success",
         review_state: "approved",
       }),
     );
+    expect(queryByTestId("pr-blocked-note")).toBeNull();
     expect(queryByTestId("pr-branch-protection-wait-note")).not.toBeNull();
+    expect(container.textContent).toContain("Waiting on branch protection");
   });
 
   it("stays silent for a blocked PR that is only awaiting a requested review", () => {

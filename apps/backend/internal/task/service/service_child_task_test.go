@@ -13,12 +13,11 @@ func TestCreateChildTask_HappyPath_InheritsWorkflow(t *testing.T) {
 	svc, repo := setupOfficeTest(t)
 	ctx := context.Background()
 
-	parentResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	parent, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		Title:       "Parent",
 		ProjectID:   "proj-1",
 	})
-	parent := parentResult.Task
 	if err != nil {
 		t.Fatalf("create parent: %v", err)
 	}
@@ -56,12 +55,11 @@ func TestCreateChildTask_OverridesWorkflow(t *testing.T) {
 	svc, repo := setupOfficeTest(t)
 	ctx := context.Background()
 
-	parentResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	parent, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		Title:       "Parent",
 		ProjectID:   "proj-1",
 	})
-	parent := parentResult.Task
 	if err != nil {
 		t.Fatalf("create parent: %v", err)
 	}
@@ -93,7 +91,7 @@ func TestCreateTask_Subtask_InheritsParentRepositories(t *testing.T) {
 		t.Fatalf("CreateRepository: %v", err)
 	}
 
-	parentResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	parent, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		Title:       "Parent",
 		ProjectID:   "proj-1",
@@ -103,20 +101,18 @@ func TestCreateTask_Subtask_InheritsParentRepositories(t *testing.T) {
 			CheckoutBranch: "feature/parent",
 		}},
 	})
-	parent := parentResult.Task
 	if err != nil {
 		t.Fatalf("create parent: %v", err)
 	}
 
 	// Child created without explicit repositories — mirrors the UI inherit_parent
 	// flow, which omits repositories expecting the backend to inherit them.
-	childResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	child, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		Title:       "Child",
 		ParentID:    parent.ID,
 		ProjectID:   "proj-1",
 	})
-	child := childResult.Task
 	if err != nil {
 		t.Fatalf("create child: %v", err)
 	}
@@ -150,25 +146,23 @@ func TestCreateTask_Subtask_ExplicitRepositoriesNotOverridden(t *testing.T) {
 		}
 	}
 
-	parentResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	parent, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:  "ws-1",
 		Title:        "Parent",
 		ProjectID:    "proj-1",
 		Repositories: []TaskRepositoryInput{{RepositoryID: "repo-a", BaseBranch: "main"}},
 	})
-	parent := parentResult.Task
 	if err != nil {
 		t.Fatalf("create parent: %v", err)
 	}
 
-	childResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	child, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID:  "ws-1",
 		Title:        "Child",
 		ParentID:     parent.ID,
 		ProjectID:    "proj-1",
 		Repositories: []TaskRepositoryInput{{RepositoryID: "repo-b", BaseBranch: "dev"}},
 	})
-	child := childResult.Task
 	if err != nil {
 		t.Fatalf("create child: %v", err)
 	}
@@ -193,12 +187,11 @@ func TestCreateChildTask_RequiresParent(t *testing.T) {
 func TestCreateChildTask_RequiresTitle(t *testing.T) {
 	svc, _ := setupOfficeTest(t)
 	ctx := context.Background()
-	parentResult, _ := svc.CreateTask(ctx, &CreateTaskRequest{
+	parent, _ := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		Title:       "Parent",
 		ProjectID:   "proj-1",
 	})
-	parent := parentResult.Task
 	_, err := svc.CreateChildTask(ctx, parent, ChildTaskSpec{})
 	if err == nil || !strings.Contains(err.Error(), "title") {
 		t.Fatalf("expected title error, got: %v", err)
@@ -212,23 +205,21 @@ func TestCreateTask_SubtaskOfSubtask_Kanban_Rejected(t *testing.T) {
 	_ = repo.CreateWorkspace(ctx, &models.Workspace{ID: "ws-1", Name: "Workspace"})
 	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-1", WorkspaceID: "ws-1", Name: "Board"})
 
-	rootResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	root, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		WorkflowID:  "wf-1",
 		Title:       "Root",
 	})
-	root := rootResult.Task
 	if err != nil {
 		t.Fatalf("create root: %v", err)
 	}
 
-	childResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	child, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		WorkflowID:  "wf-1",
 		ParentID:    root.ID,
 		Title:       "Child",
 	})
-	child := childResult.Task
 	if err != nil {
 		t.Fatalf("create child: %v", err)
 	}
@@ -248,34 +239,31 @@ func TestCreateTask_SubtaskOfSubtask_Office_Allowed(t *testing.T) {
 	svc, repo := setupOfficeTest(t)
 	ctx := context.Background()
 
-	rootResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	root, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		Title:       "Root office",
 		ProjectID:   "proj-1",
 	})
-	root := rootResult.Task
 	if err != nil {
 		t.Fatalf("create root: %v", err)
 	}
 
-	childResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	child, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		ParentID:    root.ID,
 		Title:       "Child office",
 		ProjectID:   "proj-1",
 	})
-	child := childResult.Task
 	if err != nil {
 		t.Fatalf("create child: %v", err)
 	}
 
-	grandchildResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	grandchild, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		ParentID:    child.ID,
 		Title:       "Grandchild office",
 		ProjectID:   "proj-1",
 	})
-	grandchild := grandchildResult.Task
 	if err != nil {
 		t.Fatalf("create grandchild: %v", err)
 	}

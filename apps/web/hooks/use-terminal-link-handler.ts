@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "@/components/state-provider";
 import { useDockviewStore } from "@/lib/state/dockview-store";
 import { openExternalLink } from "@/lib/desktop/external-links";
-import { t } from "@/lib/i18n";
 
 /**
  * Returns a stable callback for handling terminal link clicks.
@@ -25,7 +24,7 @@ export function useTerminalLinkHandler(): (event: MouseEvent, uri: string) => vo
         api.addPanel({
           id: browserId,
           component: "browser",
-          title: t("task:browser"),
+          title: "Browser",
           params: { url: uri },
         });
         return;

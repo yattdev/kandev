@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/kandev/kandev/internal/task/models"
@@ -238,7 +239,7 @@ func TestWorkflowStore_ApplyTransitionPublishesOldWorkflowIDOnCrossWorkflowMove(
 	}
 }
 
-func TestWorkflowStore_ApplyTransitionQueuesFullWIPLimitedTarget(t *testing.T) {
+func TestWorkflowStore_ApplyTransitionRejectsFullWIPLimitedTarget(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
 	seedSession(t, repo, "t1", "s1", "step1")
@@ -261,16 +262,19 @@ func TestWorkflowStore_ApplyTransitionQueuesFullWIPLimitedTarget(t *testing.T) {
 	store := newWorkflowStore(repo, stepGetter, nil, noopPublisher, testLogger())
 
 	err := store.ApplyTransition(ctx, "t1", "s1", "step1", "step2", "on_turn_complete")
-	if err != nil {
-		t.Fatalf("ApplyTransition: %v", err)
+	if err == nil {
+		t.Fatalf("expected WIP-limited transition to be rejected")
+	}
+	if !strings.Contains(err.Error(), "WIP limit") {
+		t.Fatalf("error = %q, want WIP limit rejection", err.Error())
 	}
 
 	task, err := repo.GetTask(ctx, "t1")
 	if err != nil {
 		t.Fatalf("failed to get task: %v", err)
 	}
-	if task.WorkflowStepID != "step2" || task.WIPAdmitted || task.QueuedForStepID != "step2" {
-		t.Fatalf("queued task placement: step=%q admitted=%t queue=%q", task.WorkflowStepID, task.WIPAdmitted, task.QueuedForStepID)
+	if task.WorkflowStepID != "step1" {
+		t.Fatalf("task moved despite WIP limit: %s", task.WorkflowStepID)
 	}
 }
 

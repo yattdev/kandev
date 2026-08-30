@@ -1,9 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
-import { t } from "@/lib/i18n";
-import { IconAlertTriangle, IconGitBranch, IconTerminal2 } from "@tabler/icons-react";
+import { IconGitBranch, IconTerminal2 } from "@tabler/icons-react";
 import { Badge } from "@kandev/ui/badge";
 import { ScrollOnOverflow } from "@kandev/ui/scroll-on-overflow";
 import type {
@@ -13,15 +11,15 @@ import type {
   Executor,
   ExecutorProfile,
 } from "@/lib/types/http";
-import type { AvailableAgent } from "@/lib/types/http-agents";
 import type { AgentProfileOption } from "@/lib/state/slices";
-import { useAvailableAgents } from "@/hooks/domains/settings/use-available-agents";
 import { isSelectableAgentProfile } from "@/lib/state/slices/settings/types";
 import { formatUserHomePath, truncateRepoPath } from "@/lib/utils";
 import { getExecutorIcon } from "@/lib/executor-icons";
 import { AgentLogo } from "@/components/agent-logo";
 import { getCapabilityWarning } from "@/lib/capability-warning";
 import { buildBranchKeywords } from "./task-create-dialog-pill";
+import { useTranslation } from "react-i18next";
+import { t } from "@/lib/i18n";
 
 type OptionItem = {
   value: string;
@@ -122,16 +120,8 @@ export function useBranchOptions(branchOptionsRaw: Branch[]) {
   }, [branchOptionsRaw]);
 }
 
-// advertisedModelIDs returns the currently advertised model IDs for an agent
-// from the host-utility probe cache (empty when the probe has not landed).
-function advertisedModelIDs(availableAgents: AvailableAgent[], agentName: string): string[] {
-  const agent = availableAgents.find((a) => a.name === agentName);
-  return agent?.model_config?.available_models?.map((m) => m.id) ?? [];
-}
-
 export function useAgentProfileOptions(agentProfiles: AgentProfileOption[]): OptionItem[] {
   const { t } = useTranslation();
-  const { items: availableAgents } = useAvailableAgents();
   return useMemo(() => {
     // Disabled profiles stay in the store (existing sessions keep their
     // labels) but are never offered as a choice for new work.
@@ -142,62 +132,36 @@ export function useAgentProfileOptions(agentProfiles: AgentProfileOption[]): Opt
       const profileLabel = parts[1] ?? "";
       const isPassthrough = profile.cli_passthrough === true;
       const warning = getCapabilityWarning(profile.capability_status, profile.capability_error);
-      // The host-utility probe is an editing hint only. The selected
-      // executor owns the launch-time model catalog, so a host-only mismatch
-      // must never remove a profile from the task selector.
-      const advertised = advertisedModelIDs(availableAgents, profile.agent_name);
-      const startModelGone = Boolean(
-        profile.model && advertised.length > 0 && !advertised.includes(profile.model),
-      );
-      const modelProbeNote = startModelGone
-        ? t("settings:profileStartModelNotAdvertisedOnHost", { model: profile.model })
-        : undefined;
       return {
         value: profile.id,
         label: profile.label,
-        disabled: undefined,
-        disabledReason: undefined,
         renderLabel: () => (
-          <span className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="flex shrink-0 items-center justify-between gap-2">
-              <span className="flex shrink-0 items-center gap-1.5">
-                <AgentLogo agentName={profile.agent_name} className="shrink-0" />
-                <span>{agentLabel}</span>
-                {warning && (
-                  <warning.Icon className={`size-3.5 ${warning.color}`} title={warning.title} />
-                )}
-                {modelProbeNote && (
-                  <IconAlertTriangle
-                    className="size-3.5 shrink-0 text-amber-500"
-                    title={modelProbeNote}
-                  />
-                )}
-              </span>
-              <span className="flex shrink-0 items-center gap-1.5">
-                {isPassthrough && (
-                  <IconTerminal2
-                    className="size-3.5 text-muted-foreground"
-                    title={t("common:cliModeYourPromptWillBe")}
-                  />
-                )}
-                {profileLabel ? (
-                  <ScrollOnOverflow className="rounded-full border border-border px-2 py-0.5 text-xs">
-                    {profileLabel}
-                  </ScrollOnOverflow>
-                ) : null}
-              </span>
+          <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            <span className="flex shrink-0 items-center gap-1.5">
+              <AgentLogo agentName={profile.agent_name} className="shrink-0" />
+              <span>{agentLabel}</span>
+              {warning && (
+                <warning.Icon className={`size-3.5 ${warning.color}`} title={warning.title} />
+              )}
             </span>
-            {modelProbeNote && (
-              <span className="flex items-center gap-1.5 pl-1 text-xs text-amber-600">
-                <IconAlertTriangle className="size-3 shrink-0" aria-hidden />
-                {modelProbeNote}
-              </span>
-            )}
+            <span className="flex shrink-0 items-center gap-1.5">
+              {isPassthrough && (
+                <IconTerminal2
+                  className="size-3.5 text-muted-foreground"
+                  title={t("common:cliModeYourPromptWillBe")}
+                />
+              )}
+              {profileLabel ? (
+                <ScrollOnOverflow className="rounded-full border border-border px-2 py-0.5 text-xs">
+                  {profileLabel}
+                </ScrollOnOverflow>
+              ) : null}
+            </span>
           </span>
         ),
       };
     });
-  }, [agentProfiles, availableAgents, t]);
+  }, [agentProfiles]);
 }
 
 export function useExecutorOptions(executors: Executor[]): OptionItem[] {

@@ -41,12 +41,7 @@ export function PresetsScopeBar({
       testId="gitlab-presets-scope-bar"
       savedMenuTestId="gitlab-saved-queries-menu"
       kinds={KINDS.map(({ value, labelKey }) => ({ value, label: t(labelKey) }))}
-      presetsByKind={(kind) =>
-        (kind === "mr" ? mrPresets : issuePresets).map((preset) => ({
-          ...preset,
-          label: t(preset.labelKey),
-        }))
-      }
+      presetsByKind={(kind) => (kind === "mr" ? mrPresets : issuePresets)}
     />
   );
 }

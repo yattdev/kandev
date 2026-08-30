@@ -8,7 +8,6 @@ const navigationMock = vi.hoisted(() => ({
 }));
 const officeRouteMock = vi.hoisted(() => ({
   inOffice: false,
-  mode: null as "office" | "kanban" | "unknown" | null,
 }));
 const footerMock = vi.hoisted(() => ({
   onLayout: null as (() => void) | null,
@@ -81,22 +80,10 @@ vi.mock("@/lib/routing/client-router", () => ({
 
 vi.mock("@/hooks/use-in-office", () => ({
   useInOffice: () => officeRouteMock.inOffice,
-  // Mode is derived from the active workspace now, not the route. These specs
-  // cover section composition per mode, so they pin a resolved mode directly;
-  // the unresolved case has its own spec below.
-  useOfficeModeState: () =>
-    officeRouteMock.mode ?? (officeRouteMock.inOffice ? "office" : "kanban"),
 }));
 
 vi.mock("@/hooks/use-workflows", () => ({
   useEnsureWorkspaceWorkflows: () => {},
-}));
-
-// Same reason as the workflows hook above: this suite covers the sidebar's
-// layout and section composition, not the workspace-scoped data loads it
-// hoists. `use-office-workspace-data.test.ts` covers those.
-vi.mock("@/hooks/use-office-workspace-data", () => ({
-  useOfficeWorkspaceData: () => {},
 }));
 
 const storeState = {
@@ -157,26 +144,18 @@ function renderSidebar() {
   return render(sidebar());
 }
 
-const TASKS_SECTION = "tasks-section";
-const INTEGRATIONS_SECTION = "integrations-section";
-const OFFICE_WORK_SECTION = "office-navigation-section-work";
-const OFFICE_OFFICE_SECTION = "office-navigation-section-office";
-
-function resetSidebarState() {
-  navigationMock.pathname = "/";
-  officeRouteMock.inOffice = false;
-  officeRouteMock.mode = null;
-  storeState.appSidebar.collapsed = false;
-  storeState.appSidebar.settingsMode = false;
-  storeState.toggleAppSidebar = vi.fn();
-  storeState.toggleAppSidebarSection = vi.fn();
-  storeState.toggleAppSidebarSettingsMode = vi.fn();
-  storeState.setAppSidebarSettingsMode = vi.fn((_settingsMode: boolean) => {});
-  footerMock.onLayout = null;
-}
-
 describe("AppSidebar", () => {
-  beforeEach(resetSidebarState);
+  beforeEach(() => {
+    navigationMock.pathname = "/";
+    officeRouteMock.inOffice = false;
+    storeState.appSidebar.collapsed = false;
+    storeState.appSidebar.settingsMode = false;
+    storeState.toggleAppSidebar = vi.fn();
+    storeState.toggleAppSidebarSection = vi.fn();
+    storeState.toggleAppSidebarSettingsMode = vi.fn();
+    storeState.setAppSidebarSettingsMode = vi.fn((_settingsMode: boolean) => {});
+    footerMock.onLayout = null;
+  });
 
   afterEach(() => {
     cleanup();
@@ -185,7 +164,7 @@ describe("AppSidebar", () => {
   it("renders the expanded nav inside a clipped animation layer", () => {
     renderSidebar();
     expect(screen.getByTestId("app-sidebar").getAttribute("data-collapsed")).toBe("false");
-    expect(screen.getByTestId(TASKS_SECTION)).toBeTruthy();
+    expect(screen.getByTestId("tasks-section")).toBeTruthy();
     expect(screen.getByTestId("projects-section")).toBeTruthy();
     expect(screen.getByTestId("agents-section")).toBeTruthy();
     expect(screen.queryByTestId("settings-section")).toBeNull();
@@ -199,22 +178,10 @@ describe("AppSidebar", () => {
 
     renderSidebar();
 
-    expect(screen.getByTestId(OFFICE_WORK_SECTION)).toBeTruthy();
-    expect(screen.getByTestId(OFFICE_OFFICE_SECTION)).toBeTruthy();
-    expect(screen.queryByTestId(TASKS_SECTION)).toBeNull();
-    expect(screen.queryByTestId(INTEGRATIONS_SECTION)).toBeNull();
-  });
-
-  it("keeps office navigation on shared routes when an office workspace is active", () => {
-    officeRouteMock.inOffice = true;
-    navigationMock.pathname = "/stats";
-
-    renderSidebar();
-
-    expect(screen.getByTestId(OFFICE_WORK_SECTION)).toBeTruthy();
-    expect(screen.getByTestId(OFFICE_OFFICE_SECTION)).toBeTruthy();
-    expect(screen.queryByTestId(TASKS_SECTION)).toBeNull();
-    expect(screen.queryByTestId(INTEGRATIONS_SECTION)).toBeNull();
+    expect(screen.getByTestId("office-navigation-section-work")).toBeTruthy();
+    expect(screen.getByTestId("office-navigation-section-office")).toBeTruthy();
+    expect(screen.queryByTestId("tasks-section")).toBeNull();
+    expect(screen.queryByTestId("integrations-section")).toBeNull();
   });
 
   it("orders office navigation sections around entity groups", () => {
@@ -226,10 +193,10 @@ describe("AppSidebar", () => {
     const nav = screen.getByRole("navigation");
     const expectedSections = [
       "primary-nav",
-      OFFICE_WORK_SECTION,
+      "office-navigation-section-work",
       "projects-section",
       "agents-section",
-      OFFICE_OFFICE_SECTION,
+      "office-navigation-section-office",
     ];
     expect(
       Array.from(nav.querySelectorAll("[data-testid]"))
@@ -242,7 +209,7 @@ describe("AppSidebar", () => {
     storeState.appSidebar.collapsed = true;
     renderSidebar();
     expect(screen.getByTestId("app-sidebar").getAttribute("data-collapsed")).toBe("true");
-    expect(screen.getByTestId(TASKS_SECTION).getAttribute("data-collapsed")).toBe("true");
+    expect(screen.getByTestId("tasks-section").getAttribute("data-collapsed")).toBe("true");
   });
 
   it("invokes toggleAppSidebar when the header collapse button is clicked", () => {
@@ -295,32 +262,5 @@ describe("AppSidebar", () => {
       expect(storeState.setAppSidebarSettingsMode).toHaveBeenCalledWith(false);
     });
     expect(storeState.toggleAppSidebarSettingsMode).not.toHaveBeenCalled();
-  });
-});
-
-describe("AppSidebar before the workspace resolves", () => {
-  beforeEach(() => {
-    navigationMock.pathname = "/";
-    officeRouteMock.inOffice = false;
-    officeRouteMock.mode = "unknown";
-    storeState.appSidebar.collapsed = false;
-    storeState.appSidebar.settingsMode = false;
-  });
-
-  afterEach(() => {
-    officeRouteMock.mode = null;
-    cleanup();
-  });
-
-  it("renders only mode-independent rows instead of guessing kanban", () => {
-    // Mode comes from the active workspace. On the first frame of a boot that
-    // ships no workspace list it is genuinely unknown, and painting kanban
-    // sections there means visibly swapping them for Office ones a tick later.
-    renderSidebar();
-
-    expect(screen.getByTestId("primary-nav")).toBeTruthy();
-    expect(screen.queryByTestId(TASKS_SECTION)).toBeNull();
-    expect(screen.queryByTestId(INTEGRATIONS_SECTION)).toBeNull();
-    expect(screen.queryByTestId(OFFICE_WORK_SECTION)).toBeNull();
   });
 });

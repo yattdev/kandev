@@ -1,5 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { i18n, t } from "@/lib/i18n";
+import { describe, expect, it } from "vitest";
 import type { RecentTaskEntry } from "@/lib/recent-tasks";
 import {
   repositoryId as toRepositoryId,
@@ -82,7 +81,6 @@ function buildContext(): RecentTaskBuildContext {
     kanbanTasks: [
       {
         id: CURRENT_TASK_ID,
-        workflowId: WF_MAIN,
         workflowStepId: "step-1",
         title: "Current live title",
         position: 0,
@@ -102,7 +100,6 @@ function buildContext(): RecentTaskBuildContext {
         tasks: [
           {
             id: PREVIOUS_TASK_ID,
-            workflowId: WF_REVIEW,
             workflowStepId: "step-2",
             title: "Previous live title",
             position: 0,
@@ -124,10 +121,6 @@ function buildContext(): RecentTaskBuildContext {
     environmentIdBySessionId: {},
   };
 }
-
-afterEach(async () => {
-  await i18n.changeLanguage("en");
-});
 
 describe("recent task switcher model", () => {
   it("starts selection on the first non-current task when possible", () => {
@@ -177,15 +170,13 @@ describe("recent task switcher model", () => {
   });
 
   it("maps task and session states to compact status badges", () => {
-    expect(getTaskStatusBadge("IN_PROGRESS", "RUNNING")).toMatchObject({
-      labelKey: "task:sessionStatusRunning",
-    });
+    expect(getTaskStatusBadge("IN_PROGRESS", "RUNNING")).toMatchObject({ label: "Running" });
     expect(getTaskStatusBadge("REVIEW", "WAITING_FOR_INPUT")).toMatchObject({
-      labelKey: "task:sessionStatusTurnFinished",
+      label: "Turn Finished",
     });
-    expect(getTaskStatusBadge("TODO", undefined)).toMatchObject({ labelKey: "task:statusTodo" });
+    expect(getTaskStatusBadge("TODO", undefined)).toMatchObject({ label: "Todo" });
     expect(getTaskStatusBadge("FAILED", "FAILED")).toMatchObject({
-      labelKey: "task:sessionStatusFailed",
+      label: "Failed",
       variant: "destructive",
     });
   });
@@ -204,7 +195,7 @@ describe("recent task switcher model", () => {
       workflowName: "Main Flow",
       workflowStepTitle: "Working",
     });
-    expect(display[0]?.statusBadge.labelKey).toBe("task:sessionStatusRunning");
+    expect(display[0]?.statusBadge.label).toBe("Running");
 
     expect(display[1]).toMatchObject({
       taskId: PREVIOUS_TASK_ID,
@@ -232,21 +223,5 @@ describe("recent task switcher model", () => {
       workflowStepTitle: "Working",
       workspaceId: WORKSPACE_ID,
     });
-  });
-});
-
-describe("status badge localization", () => {
-  it("emits catalog keys that resolve to the badge copy", () => {
-    expect(t(getTaskStatusBadge("IN_PROGRESS", "RUNNING").labelKey)).toBe("Running");
-    expect(t(getTaskStatusBadge("REVIEW", "WAITING_FOR_INPUT").labelKey)).toBe("Turn Finished");
-    expect(t(getTaskStatusBadge("TODO", undefined).labelKey)).toBe("Todo");
-    expect(t(getTaskStatusBadge(undefined, undefined).labelKey)).toBe("Backlog");
-  });
-
-  it("keeps badge copy out of module scope, so a locale switch reaches it", async () => {
-    await i18n.changeLanguage("pseudo");
-    // The table is built at import time. Resolving `t()` there would have
-    // frozen these at "en" and this would still read "Running".
-    expect(t(getTaskStatusBadge("IN_PROGRESS", "RUNNING").labelKey)).toMatch(/[^\p{ASCII}]/u);
   });
 });

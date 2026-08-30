@@ -2,10 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@testing-library/react";
 import { ApiError } from "@/lib/api/client";
 import { updateUserSettings } from "@/lib/api/domains/settings-api";
-import {
-  createQueuedUserSettingsSync,
-  createQueuedUserSettingsSyncWithResponse,
-} from "./user-settings-sync";
+import { createQueuedUserSettingsSync } from "./user-settings-sync";
 
 vi.mock("@/lib/api/domains/settings-api", () => ({
   updateUserSettings: vi.fn(),
@@ -48,18 +45,6 @@ describe("createQueuedUserSettingsSync", () => {
       expect(updateUserSettings).toHaveBeenCalledTimes(2);
       expect(updateUserSettings).toHaveBeenLastCalledWith({ preferred_shell: "zsh" });
     });
-  });
-
-  it("returns the authoritative response when the caller needs its revision", async () => {
-    const response = { settings: { revision: 7 } } as Awaited<
-      ReturnType<typeof updateUserSettings>
-    >;
-    vi.mocked(updateUserSettings).mockResolvedValueOnce(response);
-    const sync = createQueuedUserSettingsSyncWithResponse<string>((value) => ({
-      preferred_shell: value,
-    }));
-
-    await expect(sync("zsh")).resolves.toBe(response);
   });
 
   it("retries a transient settings write before processing the next payload", async () => {

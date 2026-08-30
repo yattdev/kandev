@@ -18,7 +18,6 @@ const (
 	QueuedByAgent    = "agent"
 	QueuedByWorkflow = "workflow"
 	QueuedByServer   = "server"
-	QueuedByMoveTask = "mcp-move-task"
 )
 
 // IsReservedQueuedBy reports identities owned by backend dispatch paths.
@@ -73,11 +72,6 @@ const MetadataLifecycleReserved = "lifecycle_reserved_in_flight"
 // never mixes prompts issued by different agents.
 const MetadataSenderTaskID = "sender_task_id"
 
-// MetadataDeferredMoveID identifies the hand-off prompt created for one
-// deferred workflow move. The orchestrator uses it to remove only stale move
-// prompts after a replay.
-const MetadataDeferredMoveID = "deferred_move_id"
-
 // QueueFullErrorCode is the well-known WS / MCP error code surfaced when an
 // insert would exceed the per-session cap. Shared between the user-side WS
 // handlers and the inter-task MCP handler so the wire contract stays in sync.
@@ -99,11 +93,6 @@ var (
 	// message merging is disabled (see Service.SetMergeEnabled). The setting
 	// is admin-controlled and enabled by default.
 	ErrMergeDisabled = errors.New("queued message merging is disabled")
-	// ErrQueueChanged is returned when a reorder's submitted id set does not
-	// match the session's current visible pending entries — an entry was
-	// drained, removed, merged, or newly queued since the client's snapshot.
-	// The reorder is rejected atomically with no partial position rewrite.
-	ErrQueueChanged = errors.New("queue changed during reorder")
 	// ErrTaskInactive means a lifecycle prompt could not be accepted because
 	// its task was deleted or archived before the queue transaction claimed it.
 	ErrTaskInactive = errors.New("queue task is inactive")
@@ -211,20 +200,9 @@ type QueueStatus struct {
 // move_task_kandev) while its turn is still active. Applied by handleAgentReady
 // once the turn ends.
 type PendingMove struct {
-	// MoveID identifies one deferred move request across queue snapshots. A
-	// rollback can restore a previously consumed snapshot, so the orchestrator
-	// needs a durable identity to reject that stale replay.
-	MoveID         string    `json:"move_id"`
 	TaskID         string    `json:"task_id"`
 	WorkflowID     string    `json:"workflow_id"`
 	WorkflowStepID string    `json:"workflow_step_id"`
 	Position       int       `json:"position"`
 	QueuedAt       time.Time `json:"queued_at"`
-	// Actor records provenance across the deferred move boundary. Agent is the
-	// value used by move_task_kandev; it prevents owner identity leakage.
-	Actor string `json:"actor,omitempty"`
-	// SenderSessionID identifies the session that requested the move. It is
-	// distinct from the session owning this queue, which is only the execution
-	// context used to apply the deferred move.
-	SenderSessionID string `json:"sender_session_id,omitempty"`
 }

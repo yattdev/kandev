@@ -12,10 +12,7 @@ const state = {
     } as Record<string, boolean>,
   },
   office: {
-    projectsByWorkspaceId: {} as Record<string, unknown[]>,
-  },
-  workspaces: {
-    activeId: "ws-1" as string | null,
+    projects: [],
   },
   toggleAppSidebarSection: vi.fn(),
   setAppSidebarCollapsed: vi.fn(),

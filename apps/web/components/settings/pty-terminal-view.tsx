@@ -17,7 +17,6 @@ import {
 import { openExternalLink } from "@/lib/desktop/external-links";
 import { clearBufferReader, exposeBufferReader } from "@/components/task/terminal-buffer-reader";
 import { pendingPtyStarts, type PendingPtyStart } from "./pty-terminal-lifecycle";
-import { FONT } from "@/lib/theme/colors";
 
 export type PtySessionStatus = "connecting" | "running" | "exited" | "error";
 
@@ -54,8 +53,8 @@ function createTerminal(container: HTMLDivElement): { term: Terminal; fit: FitAd
   const term = new Terminal({
     convertEol: true,
     cursorBlink: true,
-    fontFamily: FONT.mono,
-    fontSize: FONT.size,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace',
+    fontSize: 13,
     theme: { background: "#0b0b0c" },
   });
   const fit = new FitAddon();

@@ -8,7 +8,7 @@ async function sectionTop(sidebar: AppSidebarPage, label: string): Promise<numbe
 }
 
 test.describe("Sidebar workspace mode navigation", () => {
-  test("routes the brand link by active workspace type", async ({
+  test("routes brand and footer toggle by active workspace type", async ({
     testPage,
     apiClient,
     officeSeed,
@@ -16,8 +16,6 @@ test.describe("Sidebar workspace mode navigation", () => {
     const kanbanWorkspace = await apiClient.createWorkspace("Sidebar Mode Kanban Workspace");
     const sidebar = new AppSidebarPage(testPage);
 
-    // Mode switches are workspace switches, made through the picker — the
-    // footer's dedicated Office↔Kanban button is gone.
     await testPage.goto("/");
     await testPage.getByTestId("sidebar-workspace-trigger").click();
     await testPage.getByTestId(`sidebar-workspace-item-${kanbanWorkspace.id}`).click();
@@ -33,10 +31,9 @@ test.describe("Sidebar workspace mode navigation", () => {
       "href",
       `/?home=overview&workspaceId=${kanbanWorkspace.id}`,
     );
-    await expect(sidebar.root.getByTestId("sidebar-office-button")).toHaveCount(0);
+    await expect(sidebar.root.getByRole("button", { name: "Office" })).toBeVisible();
+    await sidebar.root.getByRole("button", { name: "Office" }).click();
 
-    await testPage.getByTestId("sidebar-workspace-trigger").click();
-    await testPage.getByTestId(`sidebar-workspace-item-${officeSeed.workspaceId}`).click();
     await expect(testPage).toHaveURL(
       (url) =>
         url.pathname === "/office" &&
@@ -48,10 +45,9 @@ test.describe("Sidebar workspace mode navigation", () => {
       "href",
       `/office?workspaceId=${officeSeed.workspaceId}`,
     );
-    await expect(sidebar.root.getByTestId("sidebar-kanban-button")).toHaveCount(0);
+    await expect(sidebar.root.getByRole("button", { name: "Kanban" })).toBeVisible();
+    await sidebar.root.getByRole("button", { name: "Kanban" }).click();
 
-    await testPage.getByTestId("sidebar-workspace-trigger").click();
-    await testPage.getByTestId(`sidebar-workspace-item-${kanbanWorkspace.id}`).click();
     await expect(testPage).toHaveURL(
       (url) =>
         url.pathname === "/" &&

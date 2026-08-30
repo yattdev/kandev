@@ -2,11 +2,7 @@ import type { StateCreator } from "zustand";
 import { original } from "immer";
 import type { Message, TaskSession } from "@/lib/types/http";
 import type { SessionSlice, SessionSliceState } from "./types";
-import { buildTurnActions, isSettledSessionState, parseTurnTimestamp } from "./turn-actions";
-import {
-  buildTaskSessionProjectionActions,
-  mergePendingActionProjection,
-} from "./task-session-projection-actions";
+import { buildTurnActions } from "./turn-actions";
 import { reconcileMessages } from "./message-signature";
 import {
   migrateEnvKeyedData,
@@ -58,7 +54,6 @@ function mergeMessageFields(target: Record<string, unknown>, source: Record<stri
   }
 }
 
-/** Return a new messages array with the message matching `messageId` removed. */
 function removeMessageByID(messages: Message[], messageId: string) {
   return messages.filter((message) => message.id !== messageId);
 }
@@ -140,12 +135,10 @@ function mergeCancellationProjection(
 /** Merge an incoming session update with an existing session, preserving nullable fields. */
 function mergeTaskSession(existing: TaskSession, incoming: TaskSession): TaskSession {
   const cancellation = mergeCancellationProjection(existing, incoming);
-  const pendingAction = mergePendingActionProjection(existing, incoming);
   return {
     ...existing,
     ...incoming,
     ...cancellation,
-    ...pendingAction,
     agent_profile_snapshot: incoming.agent_profile_snapshot ?? existing.agent_profile_snapshot,
     worktree_id: incoming.worktree_id ?? existing.worktree_id,
     worktree_path: incoming.worktree_path ?? existing.worktree_path,
@@ -157,48 +150,39 @@ function mergeTaskSession(existing: TaskSession, incoming: TaskSession): TaskSes
   };
 }
 
-// Settled states are defined once in turn-actions (SETTLED_SESSION_STATES /
-// isSettledSessionState); this file must use the shared predicate so every
-// settled-boundary path — hydration seeding, session updates, and the WS
-// turn guard — stays on one definition.
+const IDLE_SESSION_STATES = new Set<TaskSession["state"]>([
+  "IDLE",
+  "WAITING_FOR_INPUT",
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED",
+]);
+
 /**
- * Retires stale active-turn markers and advances the settled boundary when a
- * session update reports a settled state: any turn started at/before the
- * boundary can never be active again (delayed WS start, stale hydration, or
- * a force-merged snapshot naming it are all rejected).
+ * An API session snapshot is authoritative about whether a session is idle,
+ * while turn history can be incomplete after boot or a WS reconnect. Drop an
+ * orphaned active-turn marker, but only retire a known turn when the idle
+ * session snapshot is at least as new as that turn's start time.
  */
 function reconcileActiveTurnForIdleSession(draft: SessionSliceState, session: TaskSession): void {
-  if (!isSettledSessionState(session.state)) return;
-  const turns = draft.turns.bySession[session.id] ?? [];
-  // Boundary-independent cleanup: drop a marker pointing at a
-  // missing/completed turn.
+  if (!IDLE_SESSION_STATES.has(session.state)) return;
+
   const activeTurnId = draft.turns.activeBySession[session.id];
-  if (activeTurnId) {
-    const activeTurn = turns.find((turn) => turn.id === activeTurnId);
-    if (!activeTurn || activeTurn.completed_at) {
-      draft.turns.activeBySession[session.id] = null;
-    }
+  if (!activeTurnId) return;
+
+  const activeTurn = draft.turns.bySession[session.id]?.find((turn) => turn.id === activeTurnId);
+  if (!activeTurn || activeTurn.completed_at) {
+    draft.turns.activeBySession[session.id] = null;
+    return;
   }
-  // Advance the settled boundary (monotonic). Every turn STARTED at/before
-  // it can never be active again — covering missed-start turns and turns
-  // unknown to this client, so delayed WS starts and stale hydrations cannot
-  // resurrect them. An unparseable session timestamp leaves the boundary as
-  // it was (the cleanup above already ran).
-  const boundary = parseTurnTimestamp(session.updated_at);
-  if (boundary === null) return;
-  const currentBoundary = parseTurnTimestamp(draft.turns.settledBoundaryBySession[session.id]);
-  const effective =
-    currentBoundary === null || boundary > currentBoundary ? boundary : currentBoundary;
-  if (effective === boundary) {
-    draft.turns.settledBoundaryBySession[session.id] = session.updated_at;
-  }
-  // Clear the marker if it points at a turn started at/before the boundary.
-  const activeId = draft.turns.activeBySession[session.id];
-  if (!activeId) return;
-  const active = turns.find((turn) => turn.id === activeId);
-  if (!active || active.completed_at) return;
-  const startedAt = parseTurnTimestamp(active.started_at);
-  if (startedAt !== null && startedAt <= effective) {
+
+  const sessionUpdatedAt = Date.parse(session.updated_at);
+  const turnStartedAt = Date.parse(activeTurn.started_at);
+  if (
+    !Number.isNaN(sessionUpdatedAt) &&
+    !Number.isNaN(turnStartedAt) &&
+    turnStartedAt <= sessionUpdatedAt
+  ) {
     draft.turns.activeBySession[session.id] = null;
   }
 }
@@ -208,9 +192,6 @@ export const defaultSessionState: SessionSliceState = {
   turns: {
     bySession: {},
     activeBySession: {},
-    loadedBySession: {},
-    reconcileEpochBySession: {},
-    settledBoundaryBySession: {},
   },
   taskSessions: { items: {} },
   taskSessionsByTask: { itemsByTaskId: {}, loadingByTaskId: {}, loadedByTaskId: {} },
@@ -243,7 +224,6 @@ export const defaultSessionState: SessionSliceState = {
 type ImmerSet = Parameters<typeof createSessionSlice>[0];
 type ImmerGet = () => SessionSlice;
 
-/** Create the message store actions (set, add, update, remove, merge, prepend, metadata) backed by the given Immer setter. */
 function buildMessageActions(set: ImmerSet) {
   return {
     setMessages: (
@@ -346,7 +326,6 @@ function buildMessageActions(set: ImmerSet) {
   };
 }
 
-/** Create the task-plan store actions (set, loading, saving, clear, seen, revisions, preview, compare) backed by the given Immer setter and getter. */
 function buildTaskPlanActions(set: ImmerSet, get: ImmerGet) {
   return {
     setTaskPlan: (taskId: string, plan: Parameters<SessionSlice["setTaskPlan"]>[1]) => {
@@ -442,7 +421,6 @@ function buildTaskPlanActions(set: ImmerSet, get: ImmerGet) {
   };
 }
 
-/** Create the walkthrough store actions (set, active step, seen) backed by the given Immer setter and getter. */
 function buildWalkthroughActions(set: ImmerSet, get: ImmerGet) {
   return {
     setWalkthrough: (
@@ -484,7 +462,6 @@ function buildWalkthroughActions(set: ImmerSet, get: ImmerGet) {
   };
 }
 
-/** Create the plan preview/compare actions (set preview revision, toggle and clear compare pair) backed by the given Immer setter. */
 function buildPreviewCompareActions(set: ImmerSet) {
   return {
     setPreviewRevision: (taskId: string, revisionId: string | null) =>
@@ -523,7 +500,6 @@ function nextPair(
   return [current[1], revisionId];
 }
 
-/** Create the task-session store actions (set, read cursor, remove, list, upsert from event, loading) backed by the given Immer setter. */
 function buildTaskSessionActions(set: ImmerSet) {
   return {
     setTaskSession: (session: Parameters<SessionSlice["setTaskSession"]>[0]) =>
@@ -541,7 +517,6 @@ function buildTaskSessionActions(set: ImmerSet) {
         syncEnvironmentMapping(draft, session.id, mergedSession.task_environment_id);
         reconcileActiveTurnForIdleSession(draft, mergedSession);
       }),
-    /** Narrowly updates only the session's read cursor (last_read_message_id). */
     updateSessionReadCursor: (sessionId: string, lastReadMessageId: string) =>
       set((draft) => {
         const session = draft.taskSessions.items[sessionId];
@@ -553,11 +528,6 @@ function buildTaskSessionActions(set: ImmerSet) {
           if (match) match.last_read_message_id = lastReadMessageId;
         }
       }),
-    /**
-     * Removes a session and all its per-session state: task session rows,
-     * messages, turns, reconciliation maps (loaded/epoch/boundary), and the
-     * cascaded runtime buffers.
-     */
     removeTaskSession: (taskId: string, sessionId: string) =>
       set((draft) => {
         delete draft.taskSessions.items[sessionId];
@@ -572,9 +542,6 @@ function buildTaskSessionActions(set: ImmerSet) {
         delete draft.messages.metaBySession[sessionId];
         delete draft.turns.bySession[sessionId];
         delete draft.turns.activeBySession[sessionId];
-        delete draft.turns.loadedBySession[sessionId];
-        delete draft.turns.reconcileEpochBySession[sessionId];
-        delete draft.turns.settledBoundaryBySession[sessionId];
         // Cascade into the runtime slice (shell/process/git buffers + per-session
         // maps); this also removes the environmentIdBySessionId mapping.
         purgeSessionRuntimeState(draft as unknown as SessionRuntimeSliceState, sessionId);
@@ -630,7 +597,6 @@ function buildTaskSessionActions(set: ImmerSet) {
   };
 }
 
-/** Create the session slice, combining the default state with all session action builders wired to the store's Immer set/get. */
 export const createSessionSlice: StateCreator<
   SessionSlice,
   [["zustand/immer", never]],
@@ -641,7 +607,6 @@ export const createSessionSlice: StateCreator<
   ...buildMessageActions(set),
   ...buildTurnActions(set),
   ...buildTaskSessionActions(set),
-  ...buildTaskSessionProjectionActions(set),
   setSessionAgentctlStatus: (sessionId, status) =>
     set((draft) => {
       draft.sessionAgentctl.itemsBySessionId[sessionId] = status;

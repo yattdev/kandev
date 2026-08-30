@@ -1,22 +1,19 @@
 "use client";
 
-import { useCallback, useRef } from "react";
-import { useTranslation } from "react-i18next";
 import { IntegrationScopeBar } from "@/components/integrations/presets-scope-bar-base";
 import { PR_PRESETS, ISSUE_PRESETS, type PresetOption } from "./search-bar";
-import type { SavedPreset } from "./saved-preset-model";
-import type { SidebarSelection, SidebarSelectionRequest } from "./presets-sidebar";
+import type { SavedPreset } from "./use-saved-presets";
+import type { SidebarSelection } from "./presets-sidebar";
+import { useTranslation } from "react-i18next";
 
 type PresetsScopeBarProps = {
   className?: string;
   selected: SidebarSelection;
-  onSelect: (request: SidebarSelectionRequest) => void;
+  onSelect: (s: SidebarSelection) => void;
   savedPresets: SavedPreset[];
   onDeleteSaved: (id: string) => void;
   canSaveCurrent: boolean;
   onSaveCurrent: () => void;
-  onToggleSavedDefault: (preset: SavedPreset) => void;
-  defaultMutationPendingId: string | null;
   prPresets?: PresetOption[];
   issuePresets?: PresetOption[];
 };
@@ -35,42 +32,12 @@ const KINDS = [
 export function PresetsScopeBar({
   prPresets = PR_PRESETS,
   issuePresets = ISSUE_PRESETS,
-  savedPresets,
-  selected,
-  onSelect,
-  onToggleSavedDefault,
   ...props
 }: PresetsScopeBarProps) {
   const { t } = useTranslation();
-  const savedPresetsRef = useRef(savedPresets);
-  savedPresetsRef.current = savedPresets;
-  const handleToggleSavedDefault = useCallback(
-    (id: string) => {
-      const preset = savedPresetsRef.current.find((candidate) => candidate.id === id);
-      if (!preset) {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("[github:presets] default toggle target missing", { id });
-        }
-        return;
-      }
-      void onToggleSavedDefault(preset);
-    },
-    [onToggleSavedDefault],
-  );
-  const handleKindChange = useCallback(
-    (kind: SidebarSelection["kind"]) => {
-      if (kind !== selected.kind) onSelect({ kind, source: "kind-switch" });
-    },
-    [onSelect, selected.kind],
-  );
   return (
     <IntegrationScopeBar
       {...props}
-      selected={selected}
-      onSelect={onSelect}
-      onKindChange={handleKindChange}
-      savedPresets={savedPresets}
-      onToggleSavedDefault={handleToggleSavedDefault}
       testId="github-presets-scope-bar"
       savedMenuTestId="github-saved-queries-menu"
       kinds={KINDS.map(({ value, labelKey }) => ({ value, label: t(labelKey) }))}

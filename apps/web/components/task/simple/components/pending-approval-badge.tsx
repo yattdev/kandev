@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { Badge } from "@kandev/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@kandev/ui/tooltip";
 import { useAppStore } from "@/components/state-provider";
-import { selectOfficeAgentProfiles } from "@/lib/state/slices/office/selectors";
 import type { Task, TaskDecision } from "@/app/office/tasks/[id]/types";
 import { useTranslation } from "react-i18next";
 
@@ -43,7 +42,7 @@ type PendingApprovalBadgeProps = {
 
 export function PendingApprovalBadge({ task }: PendingApprovalBadgeProps) {
   const { t } = useTranslation();
-  const agents = useAppStore(selectOfficeAgentProfiles);
+  const agents = useAppStore((s) => s.office.agentProfiles);
   const agentLookup = useMemo(() => {
     const map: Record<string, string> = {};
     for (const a of agents) map[a.id] = a.name;

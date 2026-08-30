@@ -13,7 +13,6 @@ import { PromptResultRecovery } from "@/components/prompt-result-recovery";
 import { usePromptResultDelivery } from "@/hooks/use-prompt-result-delivery";
 import { useUtilityAgentGenerator } from "@/hooks/use-utility-agent-generator";
 import { useAppStore } from "@/components/state-provider";
-import { selectOfficeAgentProfiles } from "@/lib/state/slices/office/selectors";
 import { selectCommandCount } from "@/lib/state/slices/session/selectors";
 import { createComment } from "@/lib/api/domains/office-api";
 import { formatRelativeTime } from "@/lib/utils";
@@ -100,7 +99,7 @@ function CommentEntry({
   // carry a name; the mapper leaves authorName empty for agents.
   const resolvedAgentName = useAppStore((s) =>
     isAgent
-      ? (selectOfficeAgentProfiles(s).find((a) => a.id === comment.authorId)?.name ??
+      ? (s.office.agentProfiles.find((a) => a.id === comment.authorId)?.name ??
         comment.authorName ??
         t("task:agent"))
       : "",

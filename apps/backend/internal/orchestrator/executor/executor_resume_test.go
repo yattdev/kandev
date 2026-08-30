@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/kandev/kandev/internal/agent/runtime/lifecycle"
-	"github.com/kandev/kandev/internal/gitcredentials"
 	"github.com/kandev/kandev/internal/task/models"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 )
@@ -80,25 +79,25 @@ type resumeCredentialStateIssuer struct {
 	afterIssue    func()
 }
 
-func (i *resumeCredentialStateIssuer) Issue(
+func (i *resumeCredentialStateIssuer) IssueGitHubCredentialLease(
 	ctx context.Context,
-	req gitcredentials.Scope,
-) (gitcredentials.Lease, error) {
+	req GitHubCredentialLeaseRequest,
+) (GitHubCredentialLease, error) {
 	session, err := i.repo.GetTaskSession(ctx, req.SessionID)
 	if err != nil {
-		return gitcredentials.Lease{}, err
+		return GitHubCredentialLease{}, err
 	}
 	i.observedState = session.State
 	if i.err != nil {
-		return gitcredentials.Lease{}, i.err
+		return GitHubCredentialLease{}, i.err
 	}
 	if session.State != models.TaskSessionStateStarting {
-		return gitcredentials.Lease{}, fmt.Errorf("Git credential scope denied: session is terminal")
+		return GitHubCredentialLease{}, fmt.Errorf("GitHub credential scope denied: session is terminal")
 	}
 	if i.afterIssue != nil {
 		i.afterIssue()
 	}
-	return gitcredentials.Lease{Token: "opaque-lease"}, nil
+	return GitHubCredentialLease{Token: "opaque-lease"}, nil
 }
 
 func attachManagedGitHubRepositoryForResume(t *testing.T, repo *mockRepository) {
@@ -1152,43 +1151,6 @@ func TestApplyResumeRepoConfig_BaseBranchByExecutorType(t *testing.T) {
 	}
 }
 
-func TestApplyResumeWorktreeConfigPreservesSelectedRepositoryDestination(t *testing.T) {
-	primaryDestination := resumeTestContributionDestination("200")
-	selectedDestination := resumeTestContributionDestination("201")
-	primaryMetadata := map[string]interface{}{}
-	if err := models.PutContributionDestination(primaryMetadata, &primaryDestination); err != nil {
-		t.Fatalf("PutContributionDestination() = %v", err)
-	}
-
-	repo := newMockRepository()
-	repo.taskRepositories["primary-link"] = &models.TaskRepository{
-		ID: "primary-link", TaskID: "task-1", RepositoryID: "repo-primary", Metadata: primaryMetadata,
-	}
-	exec := newTestExecutor(t, &mockAgentManager{}, repo)
-	req := &LaunchAgentRequest{ContributionDestination: &selectedDestination}
-	exec.applyResumeWorktreeConfig(
-		context.Background(), &v1.Task{ID: "task-1"}, req,
-		&models.Repository{ID: "repo-selected"}, "repo-selected", "/tmp/repo", "main", nil,
-	)
-
-	if req.ContributionDestination == nil || req.ContributionDestination.TargetRepository.ProviderID != "201" {
-		t.Fatalf("resume destination = %#v, want selected repository destination", req.ContributionDestination)
-	}
-}
-
-func resumeTestContributionDestination(providerID string) models.ContributionDestination {
-	return models.ContributionDestination{
-		Version:  models.ContributionDestinationVersion,
-		Provider: models.ContributionDestinationProviderGitHub,
-		SourceRepository: models.ContributionDestinationRepository{
-			Host: "github.com", Path: "kdlbs/kandev", ProviderID: "100", RemoteURL: "https://github.com/kdlbs/kandev.git",
-		},
-		TargetRepository: models.ContributionDestinationRepository{
-			Host: "github.com", Path: "alice/kandev", ProviderID: providerID, RemoteURL: "https://github.com/alice/kandev.git",
-		},
-	}
-}
-
 // TestApplyResumeRepoConfig_WorktreeStampsTaskDir locks in the fix for
 // resumes of single-repo worktree tasks: the lifecycle preparer hands the
 // request to worktree.Manager.Create, which rejects requests missing
@@ -1342,10 +1304,11 @@ func TestResumeSession_RefreshesStaleEnvironmentRow(t *testing.T) {
 	// LaunchAgent fails before persistTaskEnvironment writes the worktree
 	// fields back.
 	repo.taskEnvironments["env-stale"] = &models.TaskEnvironment{
-		ID:          "env-stale",
-		TaskID:      taskID,
-		Status:      models.TaskEnvironmentStatusStopped,
-		TaskDirName: "",
+		ID:           "env-stale",
+		TaskID:       taskID,
+		Status:       models.TaskEnvironmentStatusStopped,
+		WorktreePath: "",
+		TaskDirName:  "",
 	}
 
 	const newWorktreePath = "/home/u/.kandev/tasks/resume-after-failure_abc/my-repo"
@@ -1371,12 +1334,11 @@ func TestResumeSession_RefreshesStaleEnvironmentRow(t *testing.T) {
 		t.Errorf("env.Status = %q, want %q — without the refresh the frontend keeps showing the executor as unavailable",
 			env.Status, models.TaskEnvironmentStatusReady)
 	}
-	envRepos := repo.taskEnvironmentRepos["env-stale"]
-	if len(envRepos) != 1 || envRepos[0].WorktreePath != newWorktreePath {
-		t.Errorf("env repos = %+v, want one row with path %q", envRepos, newWorktreePath)
+	if env.WorktreePath != newWorktreePath {
+		t.Errorf("env.WorktreePath = %q, want %q", env.WorktreePath, newWorktreePath)
 	}
-	if len(envRepos) != 1 || envRepos[0].WorktreeID != "wt-new" {
-		t.Errorf("env repos = %+v, want worktree id %q", envRepos, "wt-new")
+	if env.WorktreeID != "wt-new" {
+		t.Errorf("env.WorktreeID = %q, want %q", env.WorktreeID, "wt-new")
 	}
 	if env.TaskDirName == "" {
 		t.Error("env.TaskDirName must not be empty after resume; the worktree manager needs it for the on-disk task root")

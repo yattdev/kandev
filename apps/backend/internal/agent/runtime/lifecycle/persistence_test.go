@@ -139,7 +139,7 @@ func TestBuildRunningFromExecutionPersistsSSHRuntimePID(t *testing.T) {
 		RuntimeName: agentruntime.RuntimeSSH,
 		Status:      v1.AgentStatusRunning,
 		agentctl:    client,
-		metadata: map[string]interface{}{
+		Metadata: map[string]interface{}{
 			MetadataKeySSHLocalForwardPort:   "43001",
 			MetadataKeySSHRemoteAgentctlPID:  "9321",
 			MetadataKeySSHRemoteAgentctlPort: "43000",
@@ -258,7 +258,7 @@ func TestSSHRowNeverCarriesLocalPID(t *testing.T) {
 		RuntimeName: agentruntime.RuntimeSSH,
 		Status:      v1.AgentStatusRunning,
 		agentctl:    client,
-		metadata: map[string]interface{}{
+		Metadata: map[string]interface{}{
 			MetadataKeySSHLocalForwardPort:  "43001",
 			MetadataKeySSHRemoteAgentctlPID: "9321",
 		},

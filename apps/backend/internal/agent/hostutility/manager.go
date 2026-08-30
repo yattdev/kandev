@@ -16,14 +16,10 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/kandev/kandev/internal/agent/agents"
-	"github.com/kandev/kandev/internal/agent/managedruntime"
 	"github.com/kandev/kandev/internal/agent/registry"
 	agentctlclient "github.com/kandev/kandev/internal/agent/runtime/agentctl"
-	settingsmodels "github.com/kandev/kandev/internal/agent/settings/models"
 	agentctlutil "github.com/kandev/kandev/internal/agentctl/server/utility"
 	"github.com/kandev/kandev/internal/common/logger"
-	"github.com/kandev/kandev/internal/system/storage"
-	"github.com/kandev/kandev/internal/system/storage/tempartifacts"
 	"github.com/kandev/kandev/pkg/agent"
 )
 
@@ -39,38 +35,25 @@ import (
 //   - RefreshAgent: re-runs the probe against the existing instance.
 //   - Stop(ctx): deletes each instance from agentctl and removes the tmp parent.
 type Manager struct {
-	registry        *registry.Registry
-	controlHost     string
-	controlPort     int
-	controlClient   *agentctlclient.ControlClient
-	authToken       string // per-launch auth token for instance clients
-	log             *logger.Logger
-	profileResolver interface {
-		Resolve(context.Context, string) (*settingsmodels.AgentProfile, error)
-	}
+	registry      *registry.Registry
+	controlHost   string
+	controlPort   int
+	controlClient *agentctlclient.ControlClient
+	authToken     string // per-launch auth token for instance clients
+	log           *logger.Logger
 
-	parentTmpDir  string
-	tempArtifacts *tempartifacts.Registry
-	tempLease     *tempartifacts.Lease
-	cache         *cache
-	modelCache    *modelConfigCache
+	parentTmpDir string
+	cache        *cache
+	modelCache   *modelConfigCache
 
-	mu                       sync.RWMutex
-	instances                map[string]*instance // keyed by agent type
-	createGroup              singleflight.Group
-	modelGroup               singleflight.Group
-	modelGenerationMu        sync.Mutex
-	modelGenerations         map[string]uint64
-	managedRuntimeSelections managedruntime.SelectionReader
-	startCancel              context.CancelFunc
-	stopped                  bool
-}
-
-// SetProfileResolver wires the profile eligibility and launch-policy reader.
-func (m *Manager) SetProfileResolver(resolver interface {
-	Resolve(context.Context, string) (*settingsmodels.AgentProfile, error)
-}) {
-	m.profileResolver = resolver
+	mu                sync.RWMutex
+	instances         map[string]*instance // keyed by agent type
+	createGroup       singleflight.Group
+	modelGroup        singleflight.Group
+	modelGenerationMu sync.Mutex
+	modelGenerations  map[string]uint64
+	startCancel       context.CancelFunc
+	stopped           bool
 }
 
 // instance is a single warm agentctl instance bound to an agent type.
@@ -107,18 +90,6 @@ func (m *Manager) SetAuthToken(token string) {
 	m.authToken = token
 }
 
-// SetManagedRuntimeSelectionStore wires the install-wide exact-version
-// resolver used by every host-local managed-runtime command path.
-func (m *Manager) SetManagedRuntimeSelectionStore(store managedruntime.SelectionReader) {
-	m.managedRuntimeSelections = store
-}
-
-func (m *Manager) SetTemporaryArtifactRegistry(registry *tempartifacts.Registry) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.tempArtifacts = registry
-}
-
 // Start boots one warm instance per ACP-capable inference agent and runs an
 // initial probe against each in parallel. Individual agent failures are
 // captured in the cache but do not abort the other agents.
@@ -145,32 +116,16 @@ func (m *Manager) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("create host utility tmp dir: %w", err)
 	}
-	m.mu.RLock()
-	artifactRegistry := m.tempArtifacts
-	m.mu.RUnlock()
-	var tempLease *tempartifacts.Lease
-	if artifactRegistry != nil {
-		tempLease, err = artifactRegistry.RegisterExisting(
-			ctx, storage.TemporaryArtifactKindHostUtility, parent, nil,
-		)
-		if err != nil {
-			_ = os.RemoveAll(parent)
-			return fmt.Errorf("register host utility tmp dir: %w", err)
-		}
-	}
 	m.mu.Lock()
 	if m.stopped {
 		m.mu.Unlock()
-		if tempLease != nil {
-			_ = tempLease.Remove(context.Background())
-		} else if err := os.RemoveAll(parent); err != nil {
+		if err := os.RemoveAll(parent); err != nil {
 			m.log.Warn("failed to remove unused host utility parent tmp dir",
 				zap.String("path", parent), zap.Error(err))
 		}
 		return nil
 	}
 	m.parentTmpDir = parent
-	m.tempLease = tempLease
 	m.mu.Unlock()
 	m.log.Info("host utility parent tmp dir created", zap.String("path", parent))
 
@@ -211,8 +166,6 @@ func (m *Manager) Stop(ctx context.Context) {
 	m.instances = make(map[string]*instance)
 	parentTmpDir := m.parentTmpDir
 	m.parentTmpDir = ""
-	tempLease := m.tempLease
-	m.tempLease = nil
 	m.mu.Unlock()
 
 	if cancel != nil {
@@ -225,11 +178,7 @@ func (m *Manager) Stop(ctx context.Context) {
 		cancel()
 	}
 
-	if tempLease != nil {
-		if err := tempLease.Remove(ctx); err != nil {
-			m.log.Warn("failed to remove host utility parent tmp dir", zap.String("path", parentTmpDir), zap.Error(err))
-		}
-	} else if parentTmpDir != "" {
+	if parentTmpDir != "" {
 		if err := os.RemoveAll(parentTmpDir); err != nil {
 			m.log.Warn("failed to remove host utility parent tmp dir",
 				zap.String("path", parentTmpDir), zap.Error(err))
@@ -249,20 +198,10 @@ func (m *Manager) deleteInstance(ctx context.Context, inst *instance) {
 	}
 	if m.controlClient != nil {
 		if err := m.controlClient.DeleteInstance(ctx, inst.instanceID); err != nil {
-			// During shutdown agentctl may already be gone, so the delete
-			// returns a not-found/404. That is benign and idempotent: log DEBUG
-			// so it does not add teardown noise. Any other failure stays WARN.
-			if isInstanceNotFound(err) {
-				m.log.Debug("host utility instance already deleted",
-					zap.String("agent_type", inst.agentType),
-					zap.String("instance_id", inst.instanceID),
-					zap.String("error", err.Error()))
-			} else {
-				m.log.Warn("failed to delete host utility instance",
-					zap.String("agent_type", inst.agentType),
-					zap.String("instance_id", inst.instanceID),
-					zap.Error(err))
-			}
+			m.log.Warn("failed to delete host utility instance",
+				zap.String("agent_type", inst.agentType),
+				zap.String("instance_id", inst.instanceID),
+				zap.Error(err))
 		}
 	}
 	if inst.workDir == "" {
@@ -274,19 +213,6 @@ func (m *Manager) deleteInstance(ctx context.Context, inst *instance) {
 			zap.String("path", inst.workDir),
 			zap.Error(err))
 	}
-}
-
-// isInstanceNotFound reports whether a DeleteInstance error means the agentctl
-// instance was already gone. ControlClient.DeleteInstance stringifies the
-// upstream error as "failed to delete instance: <msg> (status 404)" without a
-// wrapped sentinel, so this matches on the 404 status and the not-found phrase
-// rather than errors.Is.
-func isInstanceNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "status 404") || strings.Contains(msg, "not found")
 }
 
 // eligibleAgents returns enabled agents that implement InferenceAgent AND whose
@@ -631,12 +557,8 @@ func (m *Manager) probeWithCommand(
 ) AgentCapabilities {
 	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	resolvedCommand, err := m.resolveInferenceCommand(probeCtx, inst.agentType, ia, command)
-	if err != nil {
-		return probeFailureCapabilities(inst.agentType, StatusFailed, err.Error(), 0, time.Now())
-	}
 
-	req := buildProbeRequest(inst, ia, refresh, resolvedCommand)
+	req := buildProbeRequest(inst, ia, refresh, command)
 	resp, err := inst.client.Probe(probeCtx, req)
 	now := time.Now()
 	if err != nil {
@@ -686,41 +608,6 @@ func (m *Manager) probeWithCommand(
 		caps.Commands = append(caps.Commands, Command{Name: c.Name, Description: c.Description})
 	}
 	return caps
-}
-
-// resolveInferenceCommand selects the trusted exact host version for ordinary
-// probes and prompts. A non-empty override is reserved for candidate probes.
-func (m *Manager) resolveInferenceCommand(
-	ctx context.Context,
-	agentType string,
-	ia agents.InferenceAgent,
-	override agents.Command,
-) (agents.Command, error) {
-	if !override.IsEmpty() {
-		return override, nil
-	}
-	cfg := ia.InferenceConfig()
-	if cfg == nil || !cfg.Supported {
-		return agents.Command{}, errors.New("inference config not available")
-	}
-	command := cfg.Command
-	ag, ok := ia.(agents.Agent)
-	if !ok || m.managedRuntimeSelections == nil {
-		return command, nil
-	}
-	managed, ok := ag.(agents.ManagedNPMRuntimeAgent)
-	if !ok {
-		return command, nil
-	}
-	spec := managed.ManagedNPMRuntime()
-	selection, found, err := m.managedRuntimeSelections.Get(ctx, agentType, spec.Package)
-	if err != nil {
-		return agents.Command{}, fmt.Errorf("resolve active managed runtime version for %s: %w", agentType, err)
-	}
-	if !found || selection.Package != spec.Package {
-		return command, nil
-	}
-	return spec.ACPCommand(selection.Version), nil
 }
 
 const modelConfigResolveTimeout = 60 * time.Second

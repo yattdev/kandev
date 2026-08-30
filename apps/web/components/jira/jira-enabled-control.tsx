@@ -2,14 +2,10 @@
 
 import { DraftedIntegrationEnabledControl } from "@/components/integrations/drafted-integration-enabled-control";
 import { useJiraEnabled } from "@/hooks/domains/jira/use-jira-enabled";
-import type { IntegrationEnabledControlProps } from "@/components/integrations/integration-enabled-control-props";
 
-/**
- * Enable/disable slider for the Jira integration in `workspaceId`, wired to
- * `useJiraEnabled`.
- */
-export function JiraEnabledControl({ workspaceId }: IntegrationEnabledControlProps) {
-  const { enabled, setEnabled } = useJiraEnabled(workspaceId);
+/** Enable/disable slider for the Jira integration, wired to `useJiraEnabled`. */
+export function JiraEnabledControl() {
+  const { enabled, setEnabled } = useJiraEnabled();
   return (
     <DraftedIntegrationEnabledControl
       id="jira"

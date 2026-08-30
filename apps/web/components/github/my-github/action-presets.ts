@@ -1,5 +1,14 @@
+import {
+  IconEye,
+  IconMessageDots,
+  IconTool,
+  IconCode,
+  IconSearch,
+  IconBug,
+  IconSparkles,
+  IconChecks,
+} from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
-import { iconForIntegrationPreset } from "@/components/integrations/integration-preset-icons";
 import type {
   GitHubActionPreset,
   GitHubActionPresetIcon,
@@ -15,26 +24,23 @@ export const PRESET_ICON_CHOICES: {
   icon: Icon;
   labelKey: string;
 }[] = [
-  { key: "eye", icon: iconForIntegrationPreset("eye"), labelKey: "github:presetIconEye" },
-  {
-    key: "message",
-    icon: iconForIntegrationPreset("message"),
-    labelKey: "github:presetIconMessage",
-  },
-  { key: "tool", icon: iconForIntegrationPreset("tool"), labelKey: "github:presetIconTool" },
-  { key: "code", icon: iconForIntegrationPreset("code"), labelKey: "github:presetIconCode" },
-  { key: "search", icon: iconForIntegrationPreset("search"), labelKey: "github:presetIconSearch" },
-  { key: "bug", icon: iconForIntegrationPreset("bug"), labelKey: "github:presetIconBug" },
-  {
-    key: "sparkle",
-    icon: iconForIntegrationPreset("sparkle"),
-    labelKey: "github:presetIconSparkle",
-  },
-  { key: "check", icon: iconForIntegrationPreset("check"), labelKey: "github:presetIconCheck" },
+  { key: "eye", icon: IconEye, labelKey: "github:presetIconEye" },
+  { key: "message", icon: IconMessageDots, labelKey: "github:presetIconMessage" },
+  { key: "tool", icon: IconTool, labelKey: "github:presetIconTool" },
+  { key: "code", icon: IconCode, labelKey: "github:presetIconCode" },
+  { key: "search", icon: IconSearch, labelKey: "github:presetIconSearch" },
+  { key: "bug", icon: IconBug, labelKey: "github:presetIconBug" },
+  { key: "sparkle", icon: IconSparkles, labelKey: "github:presetIconSparkle" },
+  { key: "check", icon: IconChecks, labelKey: "github:presetIconCheck" },
 ];
 
+const ICON_BY_KEY: Record<string, Icon> = Object.fromEntries(
+  PRESET_ICON_CHOICES.map((choice) => [choice.key, choice.icon]),
+);
+
 export function iconForPresetKey(key: string | undefined): Icon {
-  return iconForIntegrationPreset(key);
+  if (!key) return IconSparkles;
+  return ICON_BY_KEY[key] ?? IconSparkles;
 }
 
 // Interpolate `{{url}}` and `{{title}}` placeholders in a prompt template.
@@ -68,7 +74,6 @@ export function toTaskPreset(stored: GitHubActionPreset): TaskPreset {
 // into a user's saved presets and leave them there after a locale switch.
 // `prompt_template` is additionally sent to the agent verbatim. Localizing these
 // needs a key/persisted-value split, the same open item as PR_PRESETS.
-// i18n-exempt: persisted preset seed. Localizing needs a key/value split in the preset type.
 export const DEFAULT_PR_PRESETS: GitHubActionPreset[] = [
   {
     id: "review",
@@ -84,7 +89,7 @@ export const DEFAULT_PR_PRESETS: GitHubActionPreset[] = [
     hint: "Apply review comments",
     icon: "message",
     prompt_template:
-      "Review the feedback on the pull request at {{url}}. Evaluate each comment critically - apply changes that improve the code, push back on suggestions that are unnecessary or harmful, and explain your reasoning. Push the changes when done.",
+      "Review the feedback on the pull request at {{url}}. Evaluate each comment critically — apply changes that improve the code, push back on suggestions that are unnecessary or harmful, and explain your reasoning. Push the changes when done.",
   },
   {
     id: "fix_ci",
@@ -96,7 +101,6 @@ export const DEFAULT_PR_PRESETS: GitHubActionPreset[] = [
   },
 ];
 
-// i18n-exempt: persisted preset seed. Localizing needs a key/value split in the preset type.
 export const DEFAULT_ISSUE_PRESETS: GitHubActionPreset[] = [
   {
     id: "implement",

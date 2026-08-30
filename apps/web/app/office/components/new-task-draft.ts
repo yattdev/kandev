@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { clampTaskTitleInput } from "@/lib/task-title";
-import type { TaskPriority } from "@/lib/types/http";
 
 export type IssueDraft = {
   title: string;
@@ -10,7 +9,7 @@ export type IssueDraft = {
   assigneeId: string;
   projectId: string;
   status: string;
-  priority: TaskPriority;
+  priority: string;
   showReviewer: boolean;
   showApprover: boolean;
   reviewerIds: string[];

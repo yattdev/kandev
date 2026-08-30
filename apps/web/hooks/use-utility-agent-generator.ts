@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useTranslation } from "react-i18next";
 import { executeUtilityPrompt, type ExecutePromptRequest } from "@/lib/api/domains/utility-api";
 import { useToast } from "@/components/toast-provider";
 import { useSessionGitStatus } from "@/hooks/domains/session/use-session-git-status";
@@ -53,7 +52,6 @@ export function useUtilityAgentGenerator({
   taskDescription,
 }: UseUtilityAgentGeneratorOptions) {
   const [generating, setGenerating] = useState<Set<GeneratorType>>(new Set());
-  const { t } = useTranslation();
   const { toast } = useToast();
   const gitStatus = useSessionGitStatus(sessionId);
 
@@ -105,8 +103,8 @@ export function useUtilityAgentGenerator({
       // Other generators need git context from an active session.
       if (!sessionId && type !== ENHANCE_PROMPT) {
         toast({
-          title: t("task:noActiveSession"),
-          description: t("task:noActiveSessionDescription"),
+          title: "No active session",
+          description: "Start a session first to use AI generation",
           variant: "error",
         });
         return;
@@ -117,8 +115,8 @@ export function useUtilityAgentGenerator({
         const resp = await executeUtilityPrompt(buildRequest(type, options));
         if (!resp.success || !resp.response) {
           toast({
-            title: t("task:generationFailed"),
-            description: resp.error || t("task:failedToGenerateContent"),
+            title: "Generation failed",
+            description: resp.error || "Failed to generate content",
             variant: "error",
           });
           return;
@@ -130,15 +128,15 @@ export function useUtilityAgentGenerator({
         });
       } catch (error) {
         toast({
-          title: t("task:generationFailed"),
-          description: error instanceof Error ? error.message : t("task:unknownError"),
+          title: "Generation failed",
+          description: error instanceof Error ? error.message : "Unknown error",
           variant: "error",
         });
       } finally {
         clearType(type);
       }
     },
-    [sessionId, buildRequest, clearType, t, toast],
+    [sessionId, buildRequest, clearType, toast],
   );
 
   return useGeneratorCallbacks(generate, generating);

@@ -7,7 +7,6 @@ import { Button } from "@kandev/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@kandev/ui/card";
 import { formatDateTime } from "@/lib/i18n/formats";
 import type { PluginRecord } from "@/lib/types/plugins";
-import { SETTINGS_TYPOGRAPHY } from "@/components/settings/settings-typography";
 
 /**
  * Read-only view of the plugin's manifest: identity, capabilities, declared
@@ -38,7 +37,7 @@ export function PluginManifestCard({ plugin }: { plugin: PluginRecord }) {
           <ManifestRow label={t("plugins:manifestId")} value={plugin.id} mono />
           <ManifestRow label={t("plugins:manifestVersion")} value={plugin.version} mono />
           <ManifestRow label={t("plugins:manifestApiVersion")} value={String(plugin.api_version)} />
-          <ManifestRow label={t("plugins:manifestAuthor")} value={plugin.author || "-"} />
+          <ManifestRow label={t("plugins:manifestAuthor")} value={plugin.author || "—"} />
           <ManifestRow
             label={t("plugins:manifestSigned")}
             value={plugin.signed ? t("plugins:yes") : t("plugins:no")}
@@ -95,11 +94,7 @@ function CapabilityBadges({ plugin }: { plugin: PluginRecord }) {
       <div className="text-sm text-muted-foreground">{t("plugins:manifestCapabilities")}</div>
       <div className="flex flex-wrap gap-1">
         {badges.map((badge) => (
-          <Badge
-            key={badge}
-            variant="secondary"
-            className={SETTINGS_TYPOGRAPHY.meta + " font-mono"}
-          >
+          <Badge key={badge} variant="secondary" className="text-[11px] font-mono">
             {badge}
           </Badge>
         ))}
@@ -121,7 +116,7 @@ function DeclarationList({
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className="flex flex-wrap gap-1">
         {items.map((item) => (
-          <Badge key={item.key} variant="outline" className={SETTINGS_TYPOGRAPHY.meta}>
+          <Badge key={item.key} variant="outline" className="text-[11px]">
             {item.text}
           </Badge>
         ))}

@@ -24,7 +24,6 @@ import (
 	"github.com/kandev/kandev/internal/task/service"
 	"github.com/kandev/kandev/internal/task/statussummary"
 	usermodels "github.com/kandev/kandev/internal/user/models"
-	wfmodels "github.com/kandev/kandev/internal/workflow/models"
 	"github.com/kandev/kandev/internal/worktree"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	"go.uber.org/zap"
@@ -233,12 +232,11 @@ func buildTaskDTOsWithSessionInfo(
 		statusSummaries = map[string]*statussummary.TaskStatusSummary{}
 	}
 	if summaryErr == nil && pendingErr == nil {
-		reconciledSummaries, reconcileErr := svc.ReconcileTaskStatusSummaries(
+		statusSummaries, err = svc.HydrateMissingTaskStatusSummaries(
 			ctx, tasks, sessionsByTask, pendingActionsBySession, statusSummaries,
 		)
-		statusSummaries = reconciledSummaries
-		if reconcileErr != nil {
-			log.Warn("failed to reconcile task status summaries", zap.Error(reconcileErr))
+		if err != nil {
+			log.Warn("failed to repair missing task status summaries", zap.Error(err))
 		}
 	}
 	// Stamp the authoritative per-task queued prompt count onto every summary.
@@ -251,10 +249,6 @@ func buildTaskDTOsWithSessionInfo(
 	if queuedErr != nil {
 		log.Warn("failed to load queued prompt counts for task list, omitting badges", zap.Error(queuedErr))
 	}
-	// Dependency state is derived, never stored, so it is computed per read. One
-	// batched call for the whole list: a per-task query would add a round trip
-	// per card to every board load.
-	dependencyViews := svc.BuildDependencyViews(ctx, tasks)
 	result := make([]dto.TaskDTO, 0, len(tasks))
 	for _, task := range tasks {
 		sessions := sessionsByTask[task.ID]
@@ -286,8 +280,7 @@ func buildTaskDTOsWithSessionInfo(
 		)
 		taskDTO.TaskPendingAction = taskPendingActionPtr(sessions, pendingActionsBySession)
 		dto.EnrichTaskForegroundActivity(&taskDTO, sessions, activityProvider)
-		dto.EnrichTaskDependencies(&taskDTO, dependencyProjection(dependencyViews[task.ID]), task)
-		dto.EnrichTaskStatusSummary(&taskDTO, task.ID, statusSummaries)
+		taskDTO.StatusSummary = statusSummaries[task.ID]
 		if taskDTO.StatusSummary != nil {
 			switch {
 			case queuedErr != nil:
@@ -416,33 +409,19 @@ func pendingActionPtr(
 	return &value
 }
 
-func pendingActionRevisionPtr(
-	sessionID string,
-	revisionsBySession map[string]models.PendingActionRevision,
-) *models.PendingActionRevision {
-	revision, ok := revisionsBySession[sessionID]
-	if !ok {
-		return nil
-	}
-	return &revision
-}
-
 func (h *TaskHandlers) taskSessionDTO(ctx context.Context, session *models.TaskSession) dto.TaskSessionDTO {
 	result := dto.FromTaskSession(session)
 	dto.EnrichCancellationPending(&result, h.cancellationPending)
-	actions, revisions, err := h.service.GetPendingActionProjectionsForSessions(
-		ctx,
-		[]string{session.ID},
-	)
+	if !isInputCapableSession(session) {
+		return result
+	}
+	actions, err := h.service.GetPendingActionsForSessions(ctx, []string{session.ID})
 	if err != nil {
 		h.logger.Warn("get task session pending action failed",
 			zap.String("session_id", session.ID), zap.Error(err))
 		return result
 	}
-	if isInputCapableSession(session) {
-		result.PendingAction = pendingActionPtr(&session.ID, actions)
-	}
-	result.PendingActionRevision = pendingActionRevisionPtr(session.ID, revisions)
+	result.PendingAction = pendingActionPtr(&session.ID, actions)
 	return result
 }
 
@@ -472,15 +451,24 @@ func (h *TaskHandlers) httpListTaskSessions(c *gin.Context) {
 		handleNotFound(c, h.logger, err, "task sessions not found")
 		return
 	}
-	sessionDTOs, projectionErr := h.taskSessionSummariesWithPendingActions(ctx, sessions)
-	if projectionErr != nil {
-		h.logger.Error("get task session pending actions failed", zap.Error(projectionErr))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load task session pending actions"})
-		return
+	pendingActionsBySession, pendingErr := pendingActionsForInputCapableSessions(
+		ctx,
+		h.service,
+		map[string][]*models.TaskSession{c.Param("id"): sessions},
+	)
+	if pendingErr != nil {
+		h.logger.Warn("get task session pending actions failed", zap.Error(pendingErr))
+		pendingActionsBySession = map[string]models.TaskPendingAction{}
 	}
-	ids := make([]string, 0, len(sessionDTOs))
-	for _, summary := range sessionDTOs {
-		ids = append(ids, summary.ID)
+	sessionDTOs := make([]dto.TaskSessionSummaryDTO, 0, len(sessions))
+	ids := make([]string, 0, len(sessions))
+	for _, session := range sessions {
+		summary := dto.FromTaskSessionSummary(session)
+		dto.EnrichForegroundActivitySummary(&summary, h.foregroundActivity)
+		dto.EnrichCancellationPendingSummary(&summary, h.cancellationPending)
+		summary.PendingAction = pendingActionPtr(&session.ID, pendingActionsBySession)
+		sessionDTOs = append(sessionDTOs, summary)
+		ids = append(ids, session.ID)
 	}
 	// Resolve the per-session tool_call counts so the frontend can render
 	// the "ran N commands" segment without fetching every session's full
@@ -747,7 +735,6 @@ type httpCreateTaskRequest struct {
 	Title             string                    `json:"title"`
 	Description       string                    `json:"description,omitempty"`
 	AutoTitle         bool                      `json:"auto_title,omitempty"`
-	Autopilot         bool                      `json:"autopilot,omitempty"`
 	Priority          string                    `json:"priority,omitempty"`
 	State             *v1.TaskState             `json:"state,omitempty"`
 	Repositories      []httpTaskRepositoryInput `json:"repositories,omitempty"`
@@ -763,14 +750,7 @@ type httpCreateTaskRequest struct {
 	ParentID          string                    `json:"parent_id,omitempty"`
 	WorkspacePath     string                    `json:"workspace_path,omitempty"`
 	BlockedBy         []string                  `json:"blocked_by,omitempty"`
-	// StartWhenUnblocked records the agent start as an intent consumed by
-	// dependency resolution. nil derives it from StartAgent when BlockedBy is set.
-	StartWhenUnblocked *bool  `json:"start_when_unblocked,omitempty"`
-	ProjectID          string `json:"project_id,omitempty"`
-	// ExternalID is a caller-supplied identity used for create-idempotency
-	// (docs/specs/tasks/external-id-idempotency/spec.md).
-	ExternalID string   `json:"external_id,omitempty"`
-	Labels     []string `json:"labels,omitempty"`
+	ProjectID         string                    `json:"project_id,omitempty"`
 	// Office task-handoffs phase 5 — workspace policy. Optional; same
 	// shape as the MCP create_task_kandev fields.
 	WorkspaceMode         string `json:"workspace_mode,omitempty"`
@@ -783,15 +763,6 @@ type createTaskResponse struct {
 	dto.TaskDTO
 	TaskSessionID    string `json:"session_id,omitempty"`
 	AgentExecutionID string `json:"agent_execution_id,omitempty"`
-	// Deduplicated and CreationComplete are required booleans (not
-	// presence-only markers) on every create-idempotency outcome, per
-	// docs/specs/tasks/external-id-idempotency/spec.md. Deduplicated is true
-	// for both Found outcomes. CreationComplete is false only for
-	// Found-unsettled — every other outcome (including CreatedIdentityLost)
-	// carries true, because the field means only "this task's required
-	// synchronous setup finished", not "an agent is running".
-	Deduplicated     bool `json:"deduplicated"`
-	CreationComplete bool `json:"creation_complete"`
 }
 
 const (
@@ -803,30 +774,6 @@ var allowedAttachmentTypes = map[string]struct{}{
 	"image":    {},
 	"audio":    {},
 	"resource": {},
-}
-
-func encodeTaskLabels(labels []string) (string, error) {
-	normalized := make([]string, 0, len(labels))
-	seen := make(map[string]struct{}, len(labels))
-	for _, label := range labels {
-		label = strings.TrimSpace(label)
-		if label == "" {
-			continue
-		}
-		if _, ok := seen[label]; ok {
-			continue
-		}
-		seen[label] = struct{}{}
-		normalized = append(normalized, label)
-	}
-	if len(normalized) == 0 {
-		return "", nil
-	}
-	encoded, err := json.Marshal(normalized)
-	if err != nil {
-		return "", err
-	}
-	return string(encoded), nil
 }
 
 func validateAttachments(items []v1.MessageAttachment) error {
@@ -883,12 +830,6 @@ func (h *TaskHandlers) httpCreateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
 	}
-	labels, err := encodeTaskLabels(body.Labels)
-	if err != nil {
-		h.logger.Error("failed to encode task labels", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode task labels"})
-		return
-	}
 	if err := validateAttachments(body.Attachments); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -932,7 +873,7 @@ func (h *TaskHandlers) httpCreateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": policyErr.Error()})
 		return
 	}
-	metadata := wsPolicy.MergeMetadataBlock(body.Metadata)
+	metadata := mergeWorkspaceMetadata(body.Metadata, wsPolicy.MetadataBlock())
 	var deferredLaunch map[string]interface{}
 	if body.StartAgent || body.PrepareSession {
 		intent := "prepare"
@@ -946,45 +887,29 @@ func (h *TaskHandlers) httpCreateTask(c *gin.Context) {
 		}
 	}
 
-	result, err := h.service.CreateTask(c.Request.Context(), &service.CreateTaskRequest{
-		WorkspaceID:        body.WorkspaceID,
-		WorkflowID:         body.WorkflowID,
-		WorkflowStepID:     body.WorkflowStepID,
-		Title:              title,
-		Description:        description,
-		AutoTitle:          body.AutoTitle,
-		Autopilot:          body.Autopilot,
-		Priority:           body.Priority,
-		State:              body.State,
-		Repositories:       convertToServiceRepos(repos),
-		Position:           body.Position,
-		Metadata:           metadata,
-		DeferredLaunch:     deferredLaunch,
-		PlanMode:           body.PlanMode && !body.StartAgent,
-		ParentID:           body.ParentID,
-		WorkspacePath:      body.WorkspacePath,
-		BlockedBy:          body.BlockedBy,
-		StartWhenUnblocked: body.StartWhenUnblocked,
-		ProjectID:          body.ProjectID,
-		Labels:             labels,
-		ExternalID:         body.ExternalID,
+	task, err := h.service.CreateTask(c.Request.Context(), &service.CreateTaskRequest{
+		WorkspaceID:    body.WorkspaceID,
+		WorkflowID:     body.WorkflowID,
+		WorkflowStepID: body.WorkflowStepID,
+		Title:          title,
+		Description:    description,
+		AutoTitle:      body.AutoTitle,
+		Priority:       body.Priority,
+		State:          body.State,
+		Repositories:   convertToServiceRepos(repos),
+		Position:       body.Position,
+		Metadata:       metadata,
+		DeferredLaunch: deferredLaunch,
+		PlanMode:       body.PlanMode && !body.StartAgent,
+		ParentID:       body.ParentID,
+		WorkspacePath:  body.WorkspacePath,
+		BlockedBy:      body.BlockedBy,
+		ProjectID:      body.ProjectID,
 	})
 	if err != nil {
 		handleNotFound(c, h.logger, err, "task not created")
 		return
 	}
-	// Both Found outcomes have no side effects: skip every post-create step
-	// below (attachment claim, workspace-policy attach, fresh-branch commit,
-	// session prepare/start, last-used recording, PR association) and return
-	// the existing task as-is. This is the data-loss guard's REST twin — the
-	// steps below assume a task this request just created, and running them
-	// against someone else's task would misapply attachments/policy meant for
-	// the retry payload to a task that never asked for them.
-	if result.Outcome != service.CreateTaskOutcomeCreated {
-		c.JSON(http.StatusOK, foundCreateTaskResponse(result))
-		return
-	}
-	task := result.Task
 	if err := h.service.ClaimMessageAttachments(c.Request.Context(), task.ID, "", body.Attachments); err != nil {
 		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 10*time.Second)
 		defer cancel()
@@ -1023,117 +948,17 @@ func (h *TaskHandlers) httpCreateTask(c *gin.Context) {
 	if !h.commitFreshBranch(c, task.ID, task.Title, body.WorkspaceID, body.Repositories, repos) {
 		return
 	}
-
 	taskDTO := dto.FromTask(task)
-	response := createTaskResponse{TaskDTO: taskDTO, Deduplicated: false, CreationComplete: true}
+	response := createTaskResponse{TaskDTO: taskDTO}
 	// Use the backend-resolved workflow step ID (from the created task) instead of the request's
 	resolvedStepID := taskDTO.WorkflowStepID
-
-	// Synchronous session preparation (create-sequence step 6, "required
-	// synchronous post-create work") runs before settlement, not after — see
-	// prepareTaskSession's doc comment for why. dispatch is nil unless a
-	// start_agent create genuinely prepared a session; it is only ever acted
-	// on below once settlement has succeeded.
-	// A create that declared dependencies records its start as a
-	// start-when-unblocked intent instead of launching now; dependency
-	// resolution consumes it later.
-	startWhenUnblocked := service.ResolveStartWhenUnblocked(&service.CreateTaskRequest{
-		BlockedBy: body.BlockedBy, StartWhenUnblocked: body.StartWhenUnblocked,
-	})
-	response.StartWhenUnblocked = startWhenUnblocked
-
-	// Blockers suppress the immediate launch regardless of start_when_unblocked:
-	// that flag governs the deferred launch only, so `false` must not mean
-	// "start the blocked task now".
-	dispatch := h.prepareTaskSession(c, &response, taskDTO.ID, body, resolvedStepID,
-		task.QueuedForStepID == "" && len(body.BlockedBy) == 0)
-
-	// Settlement (create-sequence step 7): after all required synchronous
-	// work above — including session prepare — and before any asynchronous
-	// dispatch below.
-	settled, survivor, settleErr := h.service.SettleExternalID(c.Request.Context(), task.ID, task.ExternalID)
-	if settleErr != nil {
-		if !isNotFound(settleErr) {
-			h.logger.Error("failed to settle external_id", zap.String("task_id", task.ID), zap.Error(settleErr))
-		}
-		handleNotFound(c, h.logger, settleErr, "task not created")
-		return
-	}
-	if !settled {
-		// CreatedIdentityLost: another actor released the identity while this
-		// create was running. The task survives holding no external_id; per
-		// the spec, no asynchronous work (session start, PR association) is
-		// dispatched for it. Any session prepared above is not launched.
-		c.JSON(http.StatusOK, createTaskResponse{
-			TaskDTO:          dto.FromTask(survivor),
-			Deduplicated:     false,
-			CreationComplete: true,
-		})
-		return
-	}
-
-	h.dispatchTaskSession(taskDTO.ID, taskDTO.Description, body, dispatch)
+	h.handlePostCreateTaskSession(c, &response, taskDTO.ID, taskDTO.Description, body, resolvedStepID, task.QueuedForStepID == "")
 	h.recordTaskCreateLastUsed(c.Request.Context(), body, repos)
 
 	// Associate PR with task if any repository input contains a PR URL
 	h.associatePRFromRepoInputs(taskDTO.ID, response.TaskSessionID, body.Repositories)
 
 	c.JSON(http.StatusOK, response)
-}
-
-// foundCreateTaskResponse builds the response for either Found outcome: the
-// existing task, deduplicated true, and creation_complete reflecting whether
-// that task's own create had finished settling.
-func foundCreateTaskResponse(result service.CreateTaskResult) createTaskResponse {
-	return createTaskResponse{
-		TaskDTO:          dto.FromTask(result.Task),
-		Deduplicated:     true,
-		CreationComplete: result.Outcome == service.CreateTaskOutcomeFoundSettled,
-	}
-}
-
-// lookupTaskResponse is the by-external-id GET route's body: the task DTO
-// plus creation_complete. Unlike createTaskResponse, it carries no
-// deduplicated field — that flag is meaningful only relative to a create
-// this request performed, and a lookup never creates anything.
-type lookupTaskResponse struct {
-	dto.TaskDTO
-	CreationComplete bool `json:"creation_complete"`
-}
-
-// httpGetTaskByExternalID is the REST lookup route
-// (docs/specs/tasks/external-id-idempotency/spec.md, "REST — lookup"): a
-// side-effect-free way to ask what holds an identity without risking a
-// create. Returns the task whether settled or not, including archived tasks.
-func (h *TaskHandlers) httpGetTaskByExternalID(c *gin.Context) {
-	task, err := h.service.GetTaskByExternalID(c.Request.Context(), c.Param("id"), c.Query("external_id"))
-	if err != nil {
-		handleNotFound(c, h.logger, err, "task not found")
-		return
-	}
-	c.JSON(http.StatusOK, lookupTaskResponse{
-		TaskDTO:          dto.FromTask(task),
-		CreationComplete: task.ExternalIDSettledAt != nil,
-	})
-}
-
-// httpReleaseTaskExternalID is the REST release route
-// (docs/specs/tasks/external-id-idempotency/spec.md, "REST — release"): an
-// operator action for an identity a human has determined is abandoned. Frees
-// the identity without deleting or otherwise modifying the task. MUST NOT be
-// called automatically in response to creation_complete:false — see "The one
-// unsafe thing a caller can do".
-func (h *TaskHandlers) httpReleaseTaskExternalID(c *gin.Context) {
-	released, err := h.service.ReleaseTaskExternalID(c.Request.Context(), c.Param("id"), c.Query("external_id"))
-	if err != nil {
-		handleNotFound(c, h.logger, err, "task not found")
-		return
-	}
-	if !released {
-		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
-		return
-	}
-	c.Status(http.StatusNoContent)
 }
 
 func (h *TaskHandlers) recordTaskCreateLastUsed(ctx context.Context, body httpCreateTaskRequest, repos []dto.TaskRepositoryInput) {
@@ -1383,50 +1208,27 @@ func (h *TaskHandlers) associatePRFromRepoInputs(taskID, sessionID string, repos
 	}
 }
 
-// startAgentDispatch carries what dispatchTaskSession needs to launch the
-// deferred agent start (create-sequence step 8) after settlement has
-// succeeded. A nil *startAgentDispatch means there is nothing to dispatch —
-// prepare-only, start_agent not requested, or prepare itself failed.
-type startAgentDispatch struct {
-	sessionID string
-}
-
-// prepareTaskSession runs the create sequence's synchronous session-setup
-// step (part of step 6, "required synchronous post-create work") — it MUST
-// run, and be allowed to fail, before settlement (step 7). Only the
-// resulting agent launch is asynchronous dispatch (step 8), which must run
-// after settlement (docs/specs/tasks/external-id-idempotency/spec.md,
-// "Settlement call site (normative, per surface)": "the helper must expose
-// preparation and dispatch separately so settlement can sit between them").
-// A prior shape settled before calling this at all, which satisfied "no
-// dispatch precedes settlement" too narrowly — a crash between settling and
-// preparing would report creation_complete:true for a task whose session
-// never got created, and a retry would never attempt session-prep again
-// since Found outcomes skip all post-create work by design. Reordering fixes
-// that: any failure or crash during prepare now leaves the row unsettled, so
-// a retry correctly reports FoundUnsettled instead.
-//
-// A prepare failure (as opposed to a crash) is not itself fatal to task
-// creation — matching the existing behavior for a request with no
-// start_agent/prepare_session at all — so it is logged and the caller
-// proceeds to settle normally; only a genuine crash before this call returns
-// leaves the row unsettled.
-func (h *TaskHandlers) prepareTaskSession(
+// handlePostCreateTaskSession prepares or starts an agent session after a task is created,
+// depending on the PrepareSession and StartAgent flags in the request body.
+func (h *TaskHandlers) handlePostCreateTaskSession(
 	c *gin.Context,
 	response *createTaskResponse,
-	taskID string,
+	taskID, description string,
 	body httpCreateTaskRequest,
 	resolvedStepID string,
 	canLaunch bool,
-) *startAgentDispatch {
-	if !canLaunch || h.orchestrator == nil || body.AgentProfileID == "" {
-		return nil
+) {
+	if !canLaunch {
+		return
+	}
+	if h.orchestrator == nil || body.AgentProfileID == "" {
+		return
 	}
 	if body.PrepareSession && !body.StartAgent {
 		// Prepare-only: no follow-up start is coming, so DeferredStart is
 		// intentionally omitted — a passthrough profile should be eagerly
 		// upgraded to a full launch here so the terminal has a PTY to attach to.
-		// (Contrast the start_agent branch below, which sets DeferredStart=true.)
+		// (Contrast startAgentForNewTask below, which sets DeferredStart=true.)
 		resp, err := h.orchestrator.LaunchSession(c.Request.Context(), &orchestrator.LaunchSessionRequest{
 			TaskID:            taskID,
 			Intent:            orchestrator.IntentPrepare,
@@ -1441,25 +1243,24 @@ func (h *TaskHandlers) prepareTaskSession(
 		} else {
 			response.TaskSessionID = resp.SessionID
 		}
-		return nil
+	} else if body.StartAgent {
+		h.startAgentForNewTask(c.Request.Context(), response, taskID, description, body, resolvedStepID)
 	}
-	if !body.StartAgent {
-		return nil
-	}
-	return h.prepareStartAgentSession(c.Request.Context(), response, taskID, body, resolvedStepID)
 }
 
-// prepareStartAgentSession runs the synchronous half of a start_agent create:
-// creates the session entry so the caller can return a session ID
-// immediately, without launching the workspace (the deferred async start
-// below handles that, avoiding a 30-60s block on remote executors).
-func (h *TaskHandlers) prepareStartAgentSession(
+// startAgentForNewTask prepares a session and launches the agent asynchronously for a
+// newly created task when start_agent is requested. It populates response.TaskSessionID
+// on success.
+func (h *TaskHandlers) startAgentForNewTask(
 	ctx context.Context,
 	response *createTaskResponse,
-	taskID string,
+	taskID, description string,
 	body httpCreateTaskRequest,
 	resolvedStepID string,
-) *startAgentDispatch {
+) {
+	// Create session entry synchronously so we can return the session ID immediately.
+	// Skip workspace launch — the start intent will handle it in the background goroutine.
+	// This prevents blocking for 30-60s on remote executors (sprites, remote_docker).
 	prepResp, err := h.orchestrator.LaunchSession(ctx, &orchestrator.LaunchSessionRequest{
 		TaskID:            taskID,
 		Intent:            orchestrator.IntentPrepare,
@@ -1467,15 +1268,14 @@ func (h *TaskHandlers) prepareStartAgentSession(
 		ExecutorID:        body.ExecutorID,
 		ExecutorProfileID: body.ExecutorProfileID,
 		WorkflowStepID:    resolvedStepID,
-		// The async IntentStartCreated dispatch below carries the prompt. Mark
-		// this as a deferred start so a passthrough profile is not eagerly
-		// launched here with an empty prompt (which would pre-empt that
-		// prompt-bearing start).
+		// The async IntentStartCreated below carries the prompt. Mark this as a
+		// deferred start so a passthrough profile is not eagerly launched here
+		// with an empty prompt (which would pre-empt that prompt-bearing start).
 		DeferredStart: true,
 	})
 	if err != nil {
 		h.logger.Error("failed to prepare session for task", zap.Error(err), zap.String("task_id", taskID))
-		return nil
+		return
 	}
 	sessionID := prepResp.SessionID
 	response.TaskSessionID = sessionID
@@ -1487,17 +1287,7 @@ func (h *TaskHandlers) prepareStartAgentSession(
 	} else {
 		response.State = updatedTask.State
 	}
-	return &startAgentDispatch{sessionID: sessionID}
-}
 
-// dispatchTaskSession launches the agent asynchronously (create-sequence
-// step 8). Callers MUST only invoke this after settlement has succeeded —
-// dispatch is nil whenever there was nothing prepared to dispatch.
-func (h *TaskHandlers) dispatchTaskSession(taskID, description string, body httpCreateTaskRequest, dispatch *startAgentDispatch) {
-	if dispatch == nil {
-		return
-	}
-	sessionID := dispatch.sessionID
 	// Launch agent asynchronously so the HTTP request can return immediately.
 	// The frontend will receive WebSocket updates when the agent actually starts.
 	go func() {
@@ -1695,7 +1485,7 @@ func (h *TaskHandlers) httpMoveTask(c *gin.Context) {
 	result, err := h.service.MoveTaskWithOptions(
 		c.Request.Context(), c.Param("id"),
 		body.WorkflowID, body.WorkflowStepID, body.Position,
-		service.MoveTaskOptions{AllowActivePrimarySession: true, StepHistoryActor: wfmodels.StepTransitionActorHuman},
+		service.MoveTaskOptions{AllowActivePrimarySession: true},
 	)
 	if err != nil {
 		handleSelectedMoveError(c, h.logger, err)
@@ -1712,14 +1502,7 @@ func (h *TaskHandlers) httpMoveTask(c *gin.Context) {
 }
 
 func (h *TaskHandlers) httpDeleteTask(c *gin.Context) {
-	// WithoutCancel, not Background: a delete tears down worktrees, containers
-	// and subtree rows, so it must survive the client navigating away — but
-	// context.Background() also dropped the caller identity the auth middleware
-	// attached, and an identity-free context reads as an internal caller, which
-	// authorizes everything. WithoutCancel keeps the request's values and drops
-	// only its cancellation.
-	deleteCtx, cancel := context.WithTimeout(
-		context.WithoutCancel(c.Request.Context()), constants.TaskDeleteTimeout)
+	deleteCtx, cancel := context.WithTimeout(context.Background(), constants.TaskDeleteTimeout)
 	defer cancel()
 	taskID := c.Param("id")
 	cascade := cascadeQueryParam(c)
@@ -1985,7 +1768,7 @@ func (h *TaskHandlers) httpStartQuickChat(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.CreateTask(ctx, &service.CreateTaskRequest{
+	task, err := h.service.CreateTask(ctx, &service.CreateTaskRequest{
 		WorkspaceID:  workspaceID,
 		Title:        params.title,
 		Description:  body.Prompt,
@@ -1998,7 +1781,6 @@ func (h *TaskHandlers) httpStartQuickChat(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create quick chat"})
 		return
 	}
-	task := result.Task
 
 	// Eager-init: launch the agent process up-front so ACP `initialize` + `session/new`
 	// fire and the agent emits available_commands/modes/models. This populates the
@@ -2141,7 +1923,7 @@ func (h *TaskHandlers) httpStartConfigChat(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.CreateTask(ctx, &service.CreateTaskRequest{
+	task, err := h.service.CreateTask(ctx, &service.CreateTaskRequest{
 		WorkspaceID: workspaceID,
 		Title:       "Config Chat",
 		Description: body.Prompt,
@@ -2153,7 +1935,6 @@ func (h *TaskHandlers) httpStartConfigChat(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create config chat"})
 		return
 	}
-	task := result.Task
 
 	resp, err := h.orchestrator.LaunchSession(ctx, &orchestrator.LaunchSessionRequest{
 		TaskID:         task.ID,

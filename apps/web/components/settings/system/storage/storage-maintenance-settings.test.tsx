@@ -46,7 +46,6 @@ const overview = {
   capabilities: {
     managed_go_cache_path: "/data/cache/go-build",
     go_cache_adoption_available: true,
-    temporary_artifacts_available: true,
     docker_available: true,
     docker_host: "",
     host_global_docker_cleanup_allowed: true,
@@ -55,18 +54,6 @@ const overview = {
     workspaces: { active_bytes: 0, candidate_bytes: 0 },
     go_cache: { path: "/data/cache/go-build", size_bytes: 0, owned: true, enabled: false },
     quarantine: { count: 0, size_bytes: 0 },
-    temporary_artifacts: {
-      available: true,
-      total_count: 0,
-      total_bytes: 0,
-      active_count: 0,
-      active_bytes: 0,
-      protected_count: 0,
-      protected_bytes: 0,
-      stale_count: 0,
-      stale_bytes: 0,
-      skipped_count: 0,
-    },
     docker: {
       available: true,
       build_cache_bytes: 0,
@@ -327,33 +314,6 @@ describe("StorageMaintenanceSettings pending policy", () => {
     render(<StorageMaintenanceSettings />, { wrapper: Providers });
 
     expect((screen.getByTestId("storage-go-cache-adopt") as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("confirms stale temporary artifact cleanup with an explicit resource selection", async () => {
-    const currentController = controller({
-      ...overview,
-      summary: {
-        ...overview.summary,
-        temporary_artifacts: {
-          ...overview.summary.temporary_artifacts,
-          total_count: 1,
-          total_bytes: 1024,
-          stale_count: 1,
-          stale_bytes: 1024,
-        },
-      },
-    });
-    mocks.useStorageMaintenance.mockReturnValue(currentController);
-
-    render(<StorageMaintenanceSettings />, { wrapper: Providers });
-
-    fireEvent.click(screen.getByTestId("storage-resource-temporary-artifacts-trigger"));
-    fireEvent.click(screen.getByTestId("storage-temporary-artifacts-clean"));
-    expect(screen.getByText("Clean stale Kandev artifacts?")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("storage-temporary-artifacts-confirm"));
-    await waitFor(() =>
-      expect(currentController.runNow).toHaveBeenCalledWith(["temporary_artifacts"]),
-    );
   });
 });
 

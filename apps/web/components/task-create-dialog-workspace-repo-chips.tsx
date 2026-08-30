@@ -26,11 +26,9 @@ import {
   type PillOption,
 } from "@/components/task-create-dialog-pill";
 import {
-  computeBranchIntent,
   computeBranchPrefix,
   computeBranchTooltip,
   computeBranchDisabledReason,
-  type BranchIntent,
 } from "@/components/task-create-dialog-branch-utils";
 import { useRepoBranchAutoselect } from "@/components/task-create-dialog-repo-branch-autoselect";
 import { useTranslation } from "react-i18next";
@@ -115,7 +113,7 @@ export function WorkspaceRepoChips({
           preferredDefaultBranchLoading={isLocalExecutor ? currentLocalBranchLoading : false}
           lastUsedBranch={lastUsedBranch}
           userSettingsLoaded={userSettingsLoaded}
-          branchIntent={computeBranchIntent({
+          branchPrefix={computeBranchPrefix({
             isLocalExecutor: !!isLocalExecutor,
             rowBranch: row.branch,
             currentLocalBranch: currentLocalBranch ?? "",
@@ -252,7 +250,7 @@ type RepoChipProps = {
    * Empty when there's no branch value yet (chip shows the "branch"
    * placeholder unprefixed).
    */
-  branchIntent?: BranchIntent;
+  branchPrefix?: string;
   onRepositoryChange: (value: string) => void;
   onBranchChange: (value: string) => void;
   onRemove: () => void;
@@ -400,7 +398,7 @@ function RepoChip({
   preferredDefaultBranchLoading,
   lastUsedBranch,
   userSettingsLoaded,
-  branchIntent,
+  branchPrefix,
   onRepositoryChange,
   onBranchChange,
   onRemove,
@@ -462,7 +460,7 @@ function RepoChip({
         icon={<IconGitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />}
         value={branchValue}
         placeholder={branchPlaceholder}
-        prefix={computeBranchPrefix(branchIntent ?? "none")}
+        prefix={branchPrefix}
         options={branchOptions}
         onSelect={onBranchChange}
         disabled={branchLocked || !hasRepo || branchesLoading || branchOptions.length === 0}
@@ -475,7 +473,7 @@ function RepoChip({
         searchPlaceholder={t("task:searchBranches")}
         emptyMessage={t("task:noBranches")}
         testId="branch-chip-trigger"
-        tooltip={computeBranchTooltip(branchIntent)}
+        tooltip={computeBranchTooltip(branchPrefix)}
         onRefresh={refreshBranches}
         refreshing={branchesLoading}
         filter={scoreBranch}

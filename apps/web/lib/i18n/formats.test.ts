@@ -3,8 +3,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { formatDate, formatNumber, formatRelative, formatRelativeTime } from "./formats";
 import { activateLocale } from "./index";
 
-const FORMAT_DATE = "2026-07-27T00:00:00Z";
-
 beforeAll(async () => {
   // Activate en so the relative-time buckets resolve from the real catalog,
   // matching the former timeAgo behavior byte-for-byte.
@@ -41,7 +39,7 @@ describe("locale-aware Intl wrappers", () => {
     await activateLocale("pseudo");
     // pseudo has no CLDR data; wrappers fall back to en formatting.
     expect(formatNumber(1000)).toBe("1,000");
-    expect(formatDate(FORMAT_DATE, { year: "numeric" })).toBe("2026");
+    expect(formatDate("2026-07-27T00:00:00Z", { year: "numeric" })).toBe("2026");
     await activateLocale("en");
   });
 
@@ -58,40 +56,13 @@ describe("locale-aware Intl wrappers", () => {
       day: "numeric",
       timeZone: "UTC",
     };
-    const date = FORMAT_DATE;
+    const date = "2026-07-27T00:00:00Z";
 
     expect(formatNumber(1234.5, numberOptions)).toBe(
       new Intl.NumberFormat("zh-cn", numberOptions).format(1234.5),
     );
     expect(formatDate(date, dateOptions)).toBe(
       new Intl.DateTimeFormat("zh-cn", dateOptions).format(new Date(date)),
-    );
-    await activateLocale("en");
-  });
-
-  it.each([
-    ["zh-tw", "TWD"],
-    ["zh-hk", "HKD"],
-  ] as const)("passes %s to number and date formatters", async (locale, currency) => {
-    await activateLocale(locale);
-    const numberOptions: Intl.NumberFormatOptions = {
-      style: "currency",
-      currency,
-      currencyDisplay: "code",
-    };
-    const dateOptions: Intl.DateTimeFormatOptions = {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      timeZone: "UTC",
-    };
-    const date = FORMAT_DATE;
-
-    expect(formatNumber(1234.5, numberOptions)).toBe(
-      new Intl.NumberFormat(locale, numberOptions).format(1234.5),
-    );
-    expect(formatDate(date, dateOptions)).toBe(
-      new Intl.DateTimeFormat(locale, dateOptions).format(new Date(date)),
     );
     await activateLocale("en");
   });
@@ -104,7 +75,7 @@ describe("locale-aware Intl wrappers", () => {
       day: "numeric",
       timeZone: "UTC",
     };
-    const date = FORMAT_DATE;
+    const date = "2026-07-27T00:00:00Z";
 
     expect(formatNumber(1234.5)).toBe(new Intl.NumberFormat("pt-pt").format(1234.5));
     expect(formatDate(date, dateOptions)).toBe(

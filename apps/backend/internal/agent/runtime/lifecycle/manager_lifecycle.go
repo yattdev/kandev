@@ -59,7 +59,7 @@ func (m *Manager) Start(ctx context.Context) error {
 				RuntimeName:          ri.RuntimeName,
 				Status:               v1.AgentStatusRunning,
 				StartedAt:            time.Now(),
-				metadata:             ri.Metadata,
+				Metadata:             ri.Metadata,
 				agentctl:             ri.Client,
 				standaloneInstanceID: ri.StandaloneInstanceID,
 				standalonePort:       ri.StandalonePort,
@@ -324,11 +324,6 @@ func (m *Manager) RemoveExecution(executionID string) {
 		m.closeStreamCoalescer(execution)
 		m.cleanupPassthroughMCPConfig(execution)
 		m.setRuntimeInterest(execution.SessionID, false)
-		// The executor has already been stopped by every legitimate removal
-		// path. Drop the ephemeral metadata grant before losing lifecycle
-		// ownership so stale execution pointers cannot be reused as policy
-		// authority after task cleanup or a later attachment.
-		execution.GitMetadataProjections = nil
 	}
 	m.executionStore.Remove(executionID)
 	m.logger.Debug("removed execution from tracking",

@@ -1,12 +1,11 @@
 "use client";
 
-import { memo, useCallback, useEffect, useId, useRef, useState } from "react";
+import { memo, useEffect, useId, useRef, useState } from "react";
 import { IconInfoCircle } from "@tabler/icons-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@kandev/ui/tooltip";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useSessionContextWindow } from "@/hooks/domains/session/use-session-context-window";
-import { useClarificationEscapeGuard } from "@/hooks/use-clarification-escape-guard";
 
 type TokenUsageDisplayProps = {
   sessionId: string | null;
@@ -47,14 +46,6 @@ function usePinnableTooltip() {
   const pinnedRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const escapeGuard = useCallback(
-    (event: KeyboardEvent) => event.key === "Escape" && pinnedRef.current,
-    [],
-  );
-  // Radix dialogs inspect Escape during document capture, before the
-  // document-bubble listener below can close the pinned tooltip.
-  useClarificationEscapeGuard(escapeGuard);
-
   useEffect(() => {
     const closePinnedTooltip = () => {
       pinnedRef.current = false;
@@ -71,13 +62,7 @@ function usePinnableTooltip() {
       closePinnedTooltip();
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !pinnedRef.current) return;
-      // Claim the key here: once the pinned tooltip is closed, nothing
-      // further up the tree (e.g. a clarification panel's own
-      // Escape-collapses handler) should also react to the same keypress.
-      event.preventDefault();
-      event.stopPropagation();
-      closePinnedTooltip();
+      if (event.key === "Escape" && pinnedRef.current) closePinnedTooltip();
     };
 
     document.addEventListener("pointerdown", closeOnOutsidePointer);

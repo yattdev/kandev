@@ -10,7 +10,6 @@ import type {
 } from "./sidebar-view-types";
 import { toApiSidebarDraft, toApiSidebarView } from "./sidebar-view-wire";
 import { createDefaultSidebarView, MAX_SIDEBAR_VIEWS } from "./sidebar-view-builtins";
-import { t } from "@/lib/i18n";
 
 type ImmerSet = (recipe: (draft: UISlice) => void, shouldReplace?: false | undefined) => void;
 
@@ -35,11 +34,10 @@ function reorderViewsById(
 
 function nextNewViewName(views: SidebarView[]): string {
   const names = new Set(views.map((view) => view.name));
-  const base = t("sidebar:newView");
-  if (!names.has(base)) return base;
+  if (!names.has("New view")) return "New view";
   let suffix = 2;
-  while (names.has(t("sidebar:newViewNumbered", { suffix }))) suffix += 1;
-  return t("sidebar:newViewNumbered", { suffix });
+  while (names.has(`New view ${suffix}`)) suffix += 1;
+  return `New view ${suffix}`;
 }
 
 const sidebarSettingsQueues = new WeakMap<ImmerSet, Promise<void>>();
@@ -108,7 +106,7 @@ function syncSidebarViewState(
   },
 ) {
   enqueueSidebarSettingsSync(set, payload).catch((err) => {
-    const message = err instanceof Error ? err.message : t("sidebar:failedToSyncSidebarViews");
+    const message = err instanceof Error ? err.message : "Failed to sync sidebar views";
     set((draft) => {
       draft.sidebarViews.syncError = message;
     });
@@ -139,7 +137,7 @@ function mutateViews(
       const rollback = syncState.failedRollback ?? snapshot;
       syncState.failedRollback = rollback;
       if (thisRequestId !== syncState.latestRequestId) return;
-      const message = err instanceof Error ? err.message : t("sidebar:failedToSyncSidebarViews");
+      const message = err instanceof Error ? err.message : "Failed to sync sidebar views";
       set((draft) => {
         draft.sidebarViews.views = rollback.views;
         const activeViewStillExists = rollback.views.some(
@@ -252,7 +250,7 @@ function buildSidebarBackendActions(set: ImmerSet, get: () => UISlice) {
         if (!s.draft) return false;
         s.views.push({
           id: makeId("view"),
-          name: name.trim() || t("sidebar:untitledView"),
+          name: name.trim() || "Untitled view",
           filters: s.draft.filters,
           sort: s.draft.sort,
           group: s.draft.group,

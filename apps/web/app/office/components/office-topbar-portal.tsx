@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 /**
- * Renders children into the #office-topbar-slot element defined by OfficeShell.
+ * Renders children into the #office-topbar-slot element defined by OfficeTopbar.
  * Used by detail pages (task, agent) to inject breadcrumbs into the topbar.
  *
  * The target lookup runs in useEffect (not useState initializer) so it sees

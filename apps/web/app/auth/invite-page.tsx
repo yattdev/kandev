@@ -14,14 +14,13 @@ type InvitePageProps = {
 };
 
 function useInvitePreview(token: string | undefined) {
-  const { t } = useTranslation();
   const [preview, setPreview] = useState<InvitePreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!token) {
-      setPreviewError(t("auth:inviteLinkMissingToken"));
+      setPreviewError("This invite link is missing its token.");
       setLoading(false);
       return;
     }
@@ -36,8 +35,8 @@ function useInvitePreview(token: string | undefined) {
         if (cancelled) return;
         setPreviewError(
           err instanceof ApiError
-            ? t("auth:inviteLinkInvalidOrExpired")
-            : t("auth:couldNotLoadInvite"),
+            ? "This invite link is invalid or has expired. Ask an admin for a new one."
+            : "Could not load this invite. Please try again.",
         );
       })
       .finally(() => {
@@ -164,8 +163,8 @@ export function InvitePage({ token }: InvitePageProps) {
       setSubmitting(false);
       setError(
         err instanceof ApiError
-          ? (err.message ?? t("auth:couldNotAcceptInvite"))
-          : t("auth:somethingWentWrong"),
+          ? (err.message ?? "Could not accept this invite.")
+          : "Something went wrong. Please try again.",
       );
     }
   }

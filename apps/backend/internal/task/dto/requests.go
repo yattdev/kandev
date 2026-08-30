@@ -77,7 +77,6 @@ type CreateRepositoryRequest struct {
 	Provider               string
 	ProviderRepoID         string
 	ProviderHost           string
-	ProviderScope          string
 	ProviderOwner          string
 	ProviderName           string
 	DefaultBranch          string
@@ -98,7 +97,6 @@ type UpdateRepositoryRequest struct {
 	Provider               *string
 	ProviderRepoID         *string
 	ProviderHost           *string
-	ProviderScope          *string
 	ProviderOwner          *string
 	ProviderName           *string
 	DefaultBranch          *string
@@ -289,7 +287,6 @@ type CreateTaskRequest struct {
 	Labels                 string
 	ParentID               string
 	BlockedBy              []string
-	Autopilot              bool
 }
 
 type UpdateTaskRequest struct {

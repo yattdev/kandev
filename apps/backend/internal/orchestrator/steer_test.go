@@ -192,7 +192,6 @@ func TestSteerTask_DoesNotOvertakeQueueWriter(t *testing.T) {
 		releaseInsert: make(chan struct{}),
 	}
 	svc.messageQueue = messagequeue.NewService(queueRepo, 10, testLogger())
-	svc.messageQueue.SetAutoMergeEnabled(false)
 
 	ordinaryDone := make(chan error, 1)
 	go func() {

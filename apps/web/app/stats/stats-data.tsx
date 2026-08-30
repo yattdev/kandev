@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type {
-  ModelUsageDTO,
+  AgentUsageDTO,
   CompletedTaskActivityDTO,
   DailyActivityDTO,
   GitStatsDTO,
@@ -12,7 +12,7 @@ import type {
   TaskStatsDTO,
 } from "@/lib/types/http";
 import {
-  fetchModelUsage,
+  fetchAgentUsage,
   fetchCompletedActivity,
   fetchDailyActivity,
   fetchGitStats,
@@ -22,7 +22,6 @@ import {
   type TaskStatsResponse,
 } from "@/lib/api/domains/stats-api";
 import type { RangeKey } from "./stats-utils";
-import { t } from "@/lib/i18n";
 
 export type SectionStatus<T> =
   | { kind: "loading" }
@@ -34,7 +33,7 @@ export type StatsSections = {
   tasks: SectionStatus<TaskStatsResponse>;
   daily: SectionStatus<DailyActivityDTO[]>;
   completed: SectionStatus<CompletedTaskActivityDTO[]>;
-  models: SectionStatus<ModelUsageDTO[]>;
+  agents: SectionStatus<AgentUsageDTO[]>;
   repos: SectionStatus<RepositoryStatsDTO[]>;
   git: SectionStatus<GitStatsDTO>;
 };
@@ -46,13 +45,13 @@ const INITIAL_SECTIONS: StatsSections = {
   tasks: LOADING,
   daily: LOADING,
   completed: LOADING,
-  models: LOADING,
+  agents: LOADING,
   repos: LOADING,
   git: LOADING,
 };
 
 function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : t("stats:failedToLoadSection");
+  return e instanceof Error ? e.message : "Failed to load section";
 }
 
 export function useStatsSections(workspaceId: string | undefined, range: RangeKey): StatsSections {
@@ -97,7 +96,7 @@ export function useStatsSections(workspaceId: string | undefined, range: RangeKe
     run("tasks", fetchTaskStats(workspaceId, opts, range));
     run("daily", fetchDailyActivity(workspaceId, opts, range));
     run("completed", fetchCompletedActivity(workspaceId, opts, range));
-    run("models", fetchModelUsage(workspaceId, opts, range));
+    run("agents", fetchAgentUsage(workspaceId, opts, range));
     run("repos", fetchRepositoryStats(workspaceId, opts, range));
     run("git", fetchGitStats(workspaceId, opts, range));
 
@@ -112,7 +111,7 @@ export function readyGlobal(sections: StatsSections): GlobalStatsDTO | null {
 }
 
 // firstError returns the message of the first errored section in object-iteration
-// order (insertion order: global → tasks → daily → completed → models → repos →
+// order (insertion order: global → tasks → daily → completed → agents → repos →
 // git). Callers use it only as a boolean "any section failed?" signal driving
 // the header's "Failed to load stats" subtitle, so the deterministic ordering
 // is fine — surface a specific section's error inside its own panel instead.
@@ -127,13 +126,13 @@ export function firstError(sections: StatsSections): string | null {
 // composeStatsResponse builds a full StatsResponse when every section is ready.
 // Returns null otherwise — used to gate the Copy Stats button.
 export function composeStatsResponse(sections: StatsSections): StatsResponse | null {
-  const { global, tasks, daily, completed, models, repos, git } = sections;
+  const { global, tasks, daily, completed, agents, repos, git } = sections;
   if (
     global.kind !== "ready" ||
     tasks.kind !== "ready" ||
     daily.kind !== "ready" ||
     completed.kind !== "ready" ||
-    models.kind !== "ready" ||
+    agents.kind !== "ready" ||
     repos.kind !== "ready" ||
     git.kind !== "ready"
   ) {
@@ -144,7 +143,7 @@ export function composeStatsResponse(sections: StatsSections): StatsResponse | n
     task_stats: tasks.data.task_stats,
     daily_activity: daily.data,
     completed_activity: completed.data,
-    model_usage: models.data,
+    agent_usage: agents.data,
     repository_stats: repos.data,
     git_stats: git.data,
   };

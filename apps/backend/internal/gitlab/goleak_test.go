@@ -7,6 +7,5 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	clearAmbientGitLabEnv()
 	goleak.VerifyTestMain(m)
 }

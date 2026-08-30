@@ -1,6 +1,7 @@
 package statussummary
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -50,7 +51,6 @@ type RebuildInput struct {
 	Sessions         []RebuildSession
 	PendingActions   map[string]string
 	ActivityObserved bool
-	LastActivityAt   *time.Time
 	Git              []RebuildGit
 	GitObserved      bool
 	PullRequests     []PullRequestInput
@@ -111,14 +111,33 @@ func BuildFromAuthoritative(input RebuildInput) TaskStatusSummary {
 		}
 		state.git[repository] = git.Summary
 	}
-	applyPullRequestInputs(state, input.PullRequests)
-	state.queuedCount = maxInt(input.QueuedPromptCount, 0)
-	summary := deriveSummary(state)
-	if input.LastActivityAt != nil {
-		lastActivityAt := input.LastActivityAt.UTC()
-		summary.LastActivityAt = &lastActivityAt
+	for index, pullRequest := range input.PullRequests {
+		key := strings.TrimSpace(pullRequest.Key)
+		if key == "" {
+			key = strings.TrimSpace(pullRequest.URL)
+		}
+		if key == "" && pullRequest.Number > 0 {
+			key = strconv.Itoa(pullRequest.Number)
+		}
+		if key == "" {
+			key = strconv.Itoa(index)
+		}
+		state.prs[key] = pullRequestObservation{
+			state:                 pullRequest.State,
+			number:                maxInt(pullRequest.Number, 0),
+			url:                   pullRequest.URL,
+			reviewState:           pullRequest.ReviewState,
+			checksState:           pullRequest.ChecksState,
+			mergeableState:        pullRequest.MergeableState,
+			unresolvedReviewCount: maxInt(pullRequest.UnresolvedReviewCount, 0),
+			pendingReviewCount:    maxInt(pullRequest.PendingReviewCount, 0),
+			requiredReviews:       maxInt(pullRequest.RequiredReviews, 0),
+			checksTotal:           maxInt(pullRequest.ChecksTotal, 0),
+			checksPassing:         maxInt(pullRequest.ChecksPassing, 0),
+		}
 	}
-	return summary
+	state.queuedCount = maxInt(input.QueuedPromptCount, 0)
+	return deriveSummary(state)
 }
 
 func normalizeRebuildError(input *ActiveErrorSummary, now time.Time) *ActiveErrorSummary {

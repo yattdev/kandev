@@ -86,7 +86,6 @@ export function useComposerProps(args: ComposerPropsArgs) {
     submitKey: panelState.chatSubmitKey,
     hasAgentCommands: !!(panelState.agentCommands && panelState.agentCommands.length > 0),
     isFailed: panelState.isFailed,
-    isCompleted: panelState.isCompleted,
     needsRecovery,
     executorUnavailable: executor.unavailable,
     executorUnavailableReason: executor.reason,

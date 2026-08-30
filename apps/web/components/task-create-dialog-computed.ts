@@ -26,7 +26,6 @@ import type { RemoteAuthSpec } from "@/lib/api/domains/settings-api";
 import type { AgentProfileOption } from "@/lib/state/slices/settings/types";
 import { isSelectableAgentProfile } from "@/lib/state/slices/settings/types";
 import { getMultiRepoExecutorDisabledReason } from "@/components/task-create-dialog-multi-repo-guard";
-import { t } from "@/lib/i18n";
 
 /**
  * Worktree executor needs a repository to create the worktree from. Disable
@@ -35,7 +34,7 @@ import { t } from "@/lib/i18n";
  */
 function worktreeDisabledReason(profile: ExecutorProfile): string | null {
   if ((profile.executor_type ?? "") !== "worktree") return null;
-  return t("task:worktreeExecutorRequiresRepository");
+  return "Worktree executor requires a repository.";
 }
 
 /**

@@ -32,10 +32,7 @@ test.describe("Mobile coarse RUNNING busy signal", () => {
     await expect(testPage.getByText("Kicking off background work")).toBeVisible({
       timeout: 20_000,
     });
-    // No wait is needed here; see busy-signal.spec.ts for the measurement. The
-    // activity_changed frames for the turn land before the marker text is
-    // visible, so the assertions below already run against the post-transition
-    // state and `waitForActiveSessionForegroundActivity` is the real check.
+    await testPage.waitForTimeout(500);
 
     await waitForActiveSessionForegroundActivity(testPage, "generating");
     await expect(session.idleInput()).not.toBeVisible();

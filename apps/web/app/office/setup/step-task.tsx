@@ -3,7 +3,7 @@
 import { Input } from "@kandev/ui/input";
 import { Label } from "@kandev/ui/label";
 import { Textarea } from "@kandev/ui/textarea";
-import { useTaskTitleSelectionRestore } from "@/hooks/use-task-title-selection-restore";
+import { clampTaskTitleInput } from "@/lib/task-title";
 import {
   DEFAULT_ONBOARDING_TASK_DESCRIPTION,
   DEFAULT_ONBOARDING_TASK_TITLE,
@@ -19,7 +19,6 @@ type StepTaskProps = {
 
 export function StepTask({ agentName, taskTitle, taskDescription, onChange }: StepTaskProps) {
   const { t } = useTranslation();
-  const { inputRef, clampChange } = useTaskTitleSelectionRestore(taskTitle);
   // The coordinator step requires a non-empty agentName before advancing,
   // so by the time this step renders we always have a real value.
   const name = agentName.trim() || "coordinator";
@@ -36,10 +35,9 @@ export function StepTask({ agentName, taskTitle, taskDescription, onChange }: St
         <div>
           <Label htmlFor="task-title">{t("office:taskTitle")}</Label>
           <Input
-            ref={inputRef}
             id="task-title"
             value={taskTitle}
-            onChange={(e) => onChange({ taskTitle: clampChange(e) })}
+            onChange={(e) => onChange({ taskTitle: clampTaskTitleInput(e.target.value) })}
             placeholder={DEFAULT_ONBOARDING_TASK_TITLE}
             className="mt-1"
             autoFocus

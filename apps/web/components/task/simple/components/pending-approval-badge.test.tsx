@@ -36,11 +36,9 @@ const baseTask: Task = {
   updatedAt: TS,
 };
 
-const SEED_WORKSPACE_ID = "ws-1";
-
 function SeedAgents({ agents }: { agents: AgentProfile[] }) {
   const setAgents = useAppStore((s) => s.setOfficeAgentProfiles);
-  useEffect(() => setAgents(SEED_WORKSPACE_ID, agents), [setAgents, agents]);
+  useEffect(() => setAgents(agents), [setAgents, agents]);
   return null;
 }
 
@@ -76,9 +74,7 @@ function makeAgent(id: string, name: string): AgentProfile {
 
 function Wrapper({ children, agents }: { children: ReactNode; agents: AgentProfile[] }) {
   return (
-    // The office collections are workspace-keyed, so the badge only resolves
-    // the seeded agents when that workspace is the active one.
-    <StateProvider initialState={{ workspaces: { items: [], activeId: SEED_WORKSPACE_ID } }}>
+    <StateProvider>
       <TooltipProvider>
         <SeedAgents agents={agents} />
         {children}

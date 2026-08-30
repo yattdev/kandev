@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/kandev/kandev/internal/agent/runtime/lifecycle"
 	"github.com/kandev/kandev/internal/common/logger"
 	ws "github.com/kandev/kandev/pkg/websocket"
 	"go.uber.org/zap"
@@ -20,13 +21,13 @@ type TunnelController interface {
 
 // PortHandlers provides WebSocket handlers for port listing and tunnel operations.
 type PortHandlers struct {
-	lifecycleMgr ExecutionLookup
+	lifecycleMgr *lifecycle.Manager
 	tunnelCtrl   TunnelController
 	logger       *logger.Logger
 }
 
 // NewPortHandlers creates a new PortHandlers instance.
-func NewPortHandlers(lifecycleMgr ExecutionLookup, tunnelCtrl TunnelController, log *logger.Logger) *PortHandlers {
+func NewPortHandlers(lifecycleMgr *lifecycle.Manager, tunnelCtrl TunnelController, log *logger.Logger) *PortHandlers {
 	return &PortHandlers{
 		lifecycleMgr: lifecycleMgr,
 		tunnelCtrl:   tunnelCtrl,

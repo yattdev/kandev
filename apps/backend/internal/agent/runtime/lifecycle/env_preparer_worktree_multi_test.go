@@ -245,16 +245,6 @@ func TestWorktreePreparer_MultiRepo_CreatesWorktreePerRepo(t *testing.T) {
 		if _, err := os.Stat(w.WorktreePath); err != nil {
 			t.Errorf("worktree dir missing for %s: %v", w.RepositoryID, err)
 		}
-		if w.GitMetadataProjection == nil {
-			t.Errorf("missing Git metadata projection for %s", w.RepositoryID)
-			continue
-		}
-		if err := w.GitMetadataProjection.Revalidate(); err != nil {
-			t.Errorf("invalid Git metadata projection for %s: %v", w.RepositoryID, err)
-		}
-	}
-	if res.Worktrees[0].GitMetadataProjection.GitDir == res.Worktrees[1].GitMetadataProjection.GitDir {
-		t.Fatal("independent repositories must receive distinct owned Git metadata directories")
 	}
 }
 
@@ -286,9 +276,6 @@ func TestWorktreePreparer_MultiRepo_RollbackOnPartialFailure(t *testing.T) {
 	}
 	if res.ErrorMessage == "" {
 		t.Error("expected non-empty error message")
-	}
-	if res.Error == nil {
-		t.Error("expected failed multi-repo result to retain its error cause")
 	}
 
 	// Rollback: no worktrees should remain in the store after partial failure.

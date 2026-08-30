@@ -198,8 +198,6 @@ export type RecoveryMetadata = StatusMetadata & {
   model_id?: string;
   reset_at?: string;
   error_output?: string;
-  failure_code?: string;
-  failure_details?: string;
 };
 
 export type MessageAction = {

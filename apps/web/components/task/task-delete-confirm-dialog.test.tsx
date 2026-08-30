@@ -25,7 +25,6 @@ function renderDialog(ui: ReactNode, tasks: SeedTask[] = []) {
           steps: [],
           tasks: tasks.map((t) => ({
             id: t.id,
-            workflowId: "wf-1",
             workflowStepId: "step-1",
             title: t.id,
             position: 0,

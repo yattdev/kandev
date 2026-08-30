@@ -17,34 +17,7 @@ type SettingsSearchProps = {
   query: string;
   onQueryChange: (query: string) => void;
   onSelect: () => void;
-  /**
-   * Where the field sits.
-   *
-   * - `inline` — sticky at the top of the tree, which is where the desktop
-   *   sidebar wants it: above the list it filters.
-   * - `floating` — pinned near the bottom of the viewport for the `/settings`
-   *   index on a phone, inside thumb reach. Results still render in the page
-   *   flow above it, so the list reads top-down while the field stays put.
-   */
-  layout?: "inline" | "floating";
 };
-
-/**
- * Where the floating field sits.
- *
- * The bottom offset and the `h-12` height are the config-chat button's own
- * (`bottom-[calc(1.5rem+var(--app-status-bar-height))]`, `h-12`), so the two
- * share a centre line by construction rather than by arithmetic that would
- * drift the moment either moved.
- *
- * The side insets are equal, which keeps the field centred, and each is wide
- * enough to clear that button: it occupies 4.5rem of the right edge, plus a gap.
- * Mirroring it on the left costs width rather than centring — on a phone the
- * field has room to spare, and a centred field that never collides beats a wider
- * offset one.
- */
-const FLOATING_POSITION =
-  "bottom-[calc(1.5rem+var(--app-status-bar-height))] left-20 right-20 mx-auto h-12 max-w-[26rem]";
 
 type ResultGroup = {
   id: string;
@@ -52,17 +25,10 @@ type ResultGroup = {
   items: ResolvedSettingsDiscoveryItem[];
 };
 
-export function SettingsSearch({
-  items,
-  query,
-  onQueryChange,
-  onSelect,
-  layout = "inline",
-}: SettingsSearchProps) {
+export function SettingsSearch({ items, query, onQueryChange, onSelect }: SettingsSearchProps) {
   const { t } = useTranslation();
   const trimmedQuery = query.trim();
   const results = trimmedQuery ? searchSettingsDiscovery(items, trimmedQuery) : [];
-  const floating = layout === "floating";
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Escape" || query.length === 0) return;
@@ -74,14 +40,10 @@ export function SettingsSearch({
   return (
     <>
       <div
-        className={
-          floating
-            ? `fixed z-30 rounded-xl border border-border bg-background shadow-lg shadow-black/20 ${FLOATING_POSITION}`
-            : "sticky top-0 z-10 bg-background pb-2 md:bg-sidebar md:pb-1.5"
-        }
+        className="sticky top-0 z-10 bg-background pb-2 md:bg-sidebar md:pb-1.5"
         data-testid="settings-search"
       >
-        <div className={floating ? "relative h-full" : "relative"}>
+        <div className="relative">
           <IconSearch
             aria-hidden="true"
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground md:left-2.5 md:size-3.5"
@@ -95,11 +57,7 @@ export function SettingsSearch({
             spellCheck={false}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onQueryChange(event.target.value)}
             onKeyDown={handleKeyDown}
-            className={
-              floating
-                ? "h-full appearance-none border-0 bg-transparent pl-9 pr-11 text-base shadow-none [&::-webkit-search-cancel-button]:hidden"
-                : "h-11 appearance-none bg-background pl-9 pr-11 text-base md:h-8 md:pl-8 md:pr-8 md:text-xs [&::-webkit-search-cancel-button]:hidden"
-            }
+            className="h-11 appearance-none bg-background pl-9 pr-11 text-base md:h-8 md:pl-8 md:pr-8 md:text-xs [&::-webkit-search-cancel-button]:hidden"
           />
           {query && (
             <Button
@@ -108,11 +66,7 @@ export function SettingsSearch({
               size="icon"
               aria-label={t("settings:clearSettingsSearch")}
               onClick={() => onQueryChange("")}
-              className={
-                floating
-                  ? "absolute right-0 top-1/2 size-11 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  : "absolute right-0 top-0 size-11 text-muted-foreground hover:text-foreground md:size-8"
-              }
+              className="absolute right-0 top-0 size-11 text-muted-foreground hover:text-foreground md:size-8"
             >
               <IconX className="size-4 md:size-3.5" />
             </Button>

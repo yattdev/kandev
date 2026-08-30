@@ -23,7 +23,6 @@ import { agentProfileId as toAgentProfileId } from "@/lib/types/ids";
 import { useAppStore } from "@/components/state-provider";
 import { useAvailableAgents } from "@/hooks/domains/settings/use-available-agents";
 import { deleteAgentAction } from "@/app/actions/agents";
-import { SettingsRedirect } from "@/src/settings-route-helpers";
 import { saveNewAgent, saveExistingAgent, isProfileDirty } from "./agent-save-helpers";
 import type { DraftProfile, DraftAgent } from "./agent-save-helpers";
 import { AgentHeader, ProfilesCard } from "./agent-setup-parts";
@@ -363,20 +362,6 @@ function useAgentSaveRevision(agent: DraftAgent) {
   return { revision, saved, setSaved };
 }
 
-/**
- * Explains why the shared Save control is blocked, or undefined when it is not.
- * Extracted so AgentSetupForm stays within the file's function-length limit.
- */
-function resolveSaveInvalidReason(
-  t: (key: string) => string,
-  profilesValid: boolean,
-  hasInvalidMcpConfig: boolean,
-): string | undefined {
-  if (!profilesValid) return t("agents:everyProfileNeedsNameAndModel");
-  if (hasInvalidMcpConfig) return t("agents:fixInvalidMcpConfig");
-  return undefined;
-}
-
 function AgentSetupForm({
   initialAgent,
   savedAgent,
@@ -434,7 +419,9 @@ function AgentSetupForm({
     if (savedDraft) saveRevision.setSaved(JSON.stringify(savedDraft));
   };
   const profilesValid = areAgentProfilesValid(draftAgent);
-  const saveInvalidReason = resolveSaveInvalidReason(t, profilesValid, hasInvalidMcpConfig);
+  let saveInvalidReason: string | undefined;
+  if (!profilesValid) saveInvalidReason = t("agents:everyProfileNeedsNameAndModel");
+  else if (hasInvalidMcpConfig) saveInvalidReason = t("agents:fixInvalidMcpConfig");
   useSettingsSaveContributor({
     id: `agent:${draftAgent.id}`,
     revision: saveRevision.revision,
@@ -566,13 +553,6 @@ export default function AgentSetupPage() {
       variant: "error",
     });
   };
-
-  // Saved agents have no page of their own — the Agents index shows each
-  // agent with its profiles inline. The route only serves creation (new agent
-  // from browse, or ?mode=create for a new profile).
-  if (savedAgent && !isCreateMode) {
-    return <SettingsRedirect to="/settings/agents" />;
-  }
 
   return (
     <AgentSetupForm

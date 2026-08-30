@@ -1,30 +1,30 @@
 "use client";
-import { type ReactNode, type RefObject } from "react";
+import { type ReactNode, type RefObject, useRef, useState } from "react";
+import { useRouter } from "@/lib/routing/client-router";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@kandev/ui/sheet";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@kandev/ui/drawer";
 import { Checkbox } from "@kandev/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@kandev/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@kandev/ui/toggle-group";
 import { IconLayoutKanban, IconList, IconTimeline } from "@tabler/icons-react";
-import { MobileWorkspaceActionsSection } from "@/components/app-sidebar/app-sidebar-workspace-actions";
 import { AppSidebarWorkspacePicker } from "@/components/app-sidebar/app-sidebar-workspace-picker";
-import {
-  AppNavSections,
-  useAppNavDialogs,
-  type AppNavDialogControls,
-} from "@/components/navigation/app-nav-sections";
+import { MobileIntegrationsSection } from "@/components/integrations/integrations-menu";
+import { MobilePluginNavSection } from "@/components/plugins/mobile-plugin-nav-section";
 import { TaskSearchInput } from "./task-search-input";
 import {
   MobileTasksListOptions,
   type TasksListDisplayOptions,
 } from "./mobile-menu-task-list-options";
+import { useKanbanDisplaySettings } from "@/hooks/use-kanban-display-settings";
+import { linkToTask, linkToTaskOverview, linkToTasks } from "@/lib/links";
 import { cn } from "@/lib/utils";
-import type { Repository } from "@/lib/types/http";
+import type { Repository, Task } from "@/lib/types/http";
 import type { WorkflowsState } from "@/lib/state/slices";
+import { useResponsiveBreakpoint } from "@/hooks/use-responsive-breakpoint";
+import { ImproveKandevDialog } from "@/components/improve-kandev-dialog";
 import { useTranslation } from "react-i18next";
 import { getRepositoryPlaceholderKey } from "@/lib/kanban/repository-placeholder";
-import { useMobileMenuSheetState } from "@/hooks/use-mobile-menu-sheet-state";
-import { ColumnsMenu, type ColumnsMenuStep } from "./columns-menu";
+import { MobileUtilityActions } from "./mobile-menu-utility-actions";
 import {
   mobileControlClass,
   mobileControlIconClass,
@@ -33,7 +33,7 @@ import {
   mobileSectionClass,
   mobileSectionTitleClass,
 } from "./mobile-menu-styles";
-export type MobileMenuSheetProps = {
+type MobileMenuSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId?: string;
@@ -42,9 +42,11 @@ export type MobileMenuSheetProps = {
   onSearchChange?: (query: string) => void;
   isSearchLoading?: boolean;
   tasksListOptions?: TasksListDisplayOptions;
+  showHealthIndicator: boolean;
+  onOpenHealthDialog: () => void;
 };
 
-export type MobileDisplayOptionsProps = {
+type MobileDisplayOptionsProps = {
   activeWorkflowId: string | null;
   workflows: WorkflowsState["items"];
   onWorkflowChange: (id: string | null) => void;
@@ -59,19 +61,6 @@ export type MobileDisplayOptionsProps = {
   showTaskDetails: boolean;
   showWorkflow: boolean;
   tasksListOptions?: TasksListDisplayOptions;
-  /**
-   * Column visibility for the workflow the phone board is focused on. Null off
-   * the phone kanban, where the lane header owns the control instead.
-   */
-  columnsSection: MobileColumnsSection | null;
-};
-
-export type MobileColumnsSection = {
-  workflowId: string;
-  workflowName: string;
-  steps: ColumnsMenuStep[];
-  hiddenStepIds: string[];
-  onToggle: (workflowId: string, stepId: string) => void;
 };
 
 function MobileDisplaySelects({
@@ -91,7 +80,6 @@ function MobileDisplaySelects({
   | "onToggleTasksListShowDetails"
   | "showTaskDetails"
   | "tasksListOptions"
-  | "columnsSection"
 >) {
   const { t } = useTranslation();
   return (
@@ -155,19 +143,12 @@ function MobileDisplayOptions(props: MobileDisplayOptionsProps) {
     onToggleTasksListShowDetails,
     showTaskDetails,
     tasksListOptions,
-    columnsSection,
     ...selectProps
   } = props;
   return (
     <div className="space-y-4">
       <label className={mobileSectionTitleClass}>{t("kanban:displayOptions")}</label>
       <MobileDisplaySelects {...selectProps} />
-      {columnsSection && (
-        <div className={mobileFieldClass}>
-          <label className={mobileFieldLabelClass}>{t("kanban:columns")}</label>
-          <ColumnsMenu {...columnsSection} touchTargets />
-        </div>
-      )}
       <div className={mobileFieldClass}>
         <label className={mobileFieldLabelClass}>{t("kanban:previewPanel")}</label>
         <label className="flex h-10 cursor-pointer items-center gap-3 rounded-md px-0 text-sm font-medium">
@@ -352,7 +333,6 @@ function ResponsiveMenuSurface({
 }
 
 function MobileMenuContent({
-  workspaceId,
   searchQuery,
   onSearchChange,
   isSearchLoading,
@@ -361,16 +341,23 @@ function MobileMenuContent({
   onViewChange,
   showPipeline,
   displayOptions,
-  navControls,
+  showHealthIndicator,
+  onOpenHealthDialog,
+  onOpenImproveKandev,
 }: Pick<
   MobileMenuSheetProps,
-  "workspaceId" | "searchQuery" | "onSearchChange" | "isSearchLoading" | "onOpenChange"
+  | "searchQuery"
+  | "onSearchChange"
+  | "isSearchLoading"
+  | "onOpenChange"
+  | "showHealthIndicator"
+  | "onOpenHealthDialog"
 > & {
   viewValue: string;
   onViewChange: (value: string) => void;
   showPipeline: boolean;
   displayOptions: MobileDisplayOptionsProps;
-  navControls: AppNavDialogControls;
+  onOpenImproveKandev: () => void;
 }) {
   return (
     <div className="flex min-h-full flex-col gap-6 p-4">
@@ -386,14 +373,13 @@ function MobileMenuContent({
         showPipeline={showPipeline}
       />
       <MobileDisplayOptions {...displayOptions} />
-      {/* Home and Tasks are omitted here on purpose: the mobile header's brand
-          link is this surface's home affordance and the View toggle above
-          switches between Kanban and List. */}
-      <AppNavSections
-        onNavigate={() => onOpenChange(false)}
-        omitSections={["primary"]}
-        workspaceActions={<MobileWorkspaceActionsSection workspaceId={workspaceId} />}
-        controls={navControls}
+      <MobilePluginNavSection onNavigate={() => onOpenChange(false)} />
+      <MobileIntegrationsSection onNavigate={() => onOpenChange(false)} />
+      <MobileUtilityActions
+        showHealthIndicator={showHealthIndicator}
+        onOpenHealthDialog={onOpenHealthDialog}
+        onOpenImproveKandev={onOpenImproveKandev}
+        onOpenChange={onOpenChange}
       />
     </div>
   );
@@ -408,10 +394,73 @@ export function MobileMenuSheet({
   onSearchChange,
   isSearchLoading = false,
   tasksListOptions,
+  showHealthIndicator,
+  onOpenHealthDialog,
 }: MobileMenuSheetProps) {
-  const navControls = useAppNavDialogs(() => onOpenChange(false));
-  const { contentRef, isMobile, viewValue, handleViewChange, displayOptions, focusMenu } =
-    useMobileMenuSheetState({ open, onOpenChange, workspaceId, currentPage, tasksListOptions });
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const router = useRouter();
+  const [improveOpen, setImproveOpen] = useState(false);
+  const { isMobile } = useResponsiveBreakpoint();
+  const {
+    workflows,
+    activeWorkflowId,
+    repositories,
+    repositoriesLoading,
+    allRepositoriesSelected,
+    selectedRepositoryId,
+    enablePreviewOnClick,
+    tasksListShowDetails,
+    onWorkflowChange,
+    onRepositoryChange,
+    onTogglePreviewOnClick,
+    onToggleTasksListShowDetails,
+    effectiveTaskListingView,
+    onViewModeChange,
+  } = useKanbanDisplaySettings();
+  const repositoryValue = allRepositoriesSelected ? "all" : (selectedRepositoryId ?? "all");
+  const viewValue = currentPage === "tasks" ? "list" : effectiveTaskListingView;
+  const handleViewChange = (value: string) => {
+    if (!value) return;
+    if (value === "list") {
+      onViewModeChange("list");
+      if (currentPage !== "tasks") router.push(linkToTasks(workspaceId));
+      onOpenChange(false);
+    } else if (value === "kanban") {
+      onViewModeChange("kanban");
+      if (currentPage !== "kanban")
+        router.push(linkToTaskOverview({ workspaceId, workflowId: activeWorkflowId ?? undefined }));
+      onOpenChange(false);
+    } else if (value === "pipeline" && !isMobile) {
+      onViewModeChange("pipeline");
+      if (currentPage !== "kanban")
+        router.push(linkToTaskOverview({ workspaceId, workflowId: activeWorkflowId ?? undefined }));
+      onOpenChange(false);
+    }
+  };
+  const displayOptions = {
+    activeWorkflowId,
+    workflows,
+    onWorkflowChange,
+    repositoryValue,
+    repositories,
+    repositoriesLoading,
+    onRepositoryChange,
+    enablePreviewOnClick,
+    onTogglePreviewOnClick,
+    tasksListShowDetails,
+    onToggleTasksListShowDetails,
+    showTaskDetails: currentPage === "tasks",
+    showWorkflow: !isMobile || currentPage !== "kanban",
+    tasksListOptions: isMobile && currentPage === "tasks" ? tasksListOptions : undefined,
+  };
+  const focusMenu = (event: Event) => {
+    event.preventDefault();
+    contentRef.current?.focus({ preventScroll: true });
+  };
+  const openImproveKandev = () => {
+    onOpenChange(false);
+    requestAnimationFrame(() => setImproveOpen(true));
+  };
 
   return (
     <MobileMenuRender
@@ -420,14 +469,19 @@ export function MobileMenuSheet({
       onOpenChange={onOpenChange}
       contentRef={contentRef}
       onOpenAutoFocus={focusMenu}
-      workspaceId={workspaceId}
       searchQuery={searchQuery}
       onSearchChange={onSearchChange}
       isSearchLoading={isSearchLoading}
       viewValue={viewValue}
       onViewChange={handleViewChange}
       displayOptions={displayOptions}
-      navControls={navControls}
+      showHealthIndicator={showHealthIndicator}
+      onOpenHealthDialog={onOpenHealthDialog}
+      onOpenImproveKandev={openImproveKandev}
+      improveOpen={improveOpen}
+      onImproveOpenChange={setImproveOpen}
+      workspaceId={workspaceId ?? null}
+      onTaskCreated={(task) => router.push(linkToTask(task.id))}
     />
   );
 }
@@ -435,7 +489,13 @@ export function MobileMenuSheet({
 function MobileMenuRender(
   props: Pick<
     MobileMenuSheetProps,
-    "open" | "onOpenChange" | "workspaceId" | "searchQuery" | "onSearchChange" | "isSearchLoading"
+    | "open"
+    | "onOpenChange"
+    | "searchQuery"
+    | "onSearchChange"
+    | "isSearchLoading"
+    | "showHealthIndicator"
+    | "onOpenHealthDialog"
   > & {
     isMobile: boolean;
     contentRef: RefObject<HTMLDivElement | null>;
@@ -443,16 +503,25 @@ function MobileMenuRender(
     viewValue: string;
     onViewChange: (value: string) => void;
     displayOptions: MobileDisplayOptionsProps;
-    navControls: AppNavDialogControls;
+    onOpenImproveKandev: () => void;
+    improveOpen: boolean;
+    onImproveOpenChange: (open: boolean) => void;
+    workspaceId: string | null;
+    onTaskCreated: (task: Task) => void;
   },
 ) {
-  const { isMobile, navControls } = props;
+  const { isMobile, improveOpen, onImproveOpenChange, workspaceId, onTaskCreated } = props;
   return (
     <>
       <ResponsiveMenuSurface {...props} isMobile={isMobile}>
         <MobileMenuContent {...props} showPipeline={!isMobile} />
       </ResponsiveMenuSurface>
-      {navControls.dialogs}
+      <ImproveKandevDialog
+        open={improveOpen}
+        onOpenChange={onImproveOpenChange}
+        workspaceId={workspaceId}
+        onSuccess={onTaskCreated}
+      />
     </>
   );
 }

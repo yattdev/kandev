@@ -1,7 +1,6 @@
 import { describeSchedule } from "@/components/automations/schedule-expression";
 import type { Automation, AutomationRun, AutomationSummary } from "@/lib/types/automation";
 import { formatNextFiring, nextFiringInstant, scheduleBinding } from "./automation-schedule";
-import { t } from "@/lib/i18n";
 
 /**
  * What the row's dot says about health. Deliberately three words, not the run
@@ -17,18 +16,16 @@ export type AutomationActivityState = "running" | "idle" | "paused";
  */
 export type NextFiring = { kind: "time"; text: string } | { kind: "reason"; text: string };
 
-// Catalog keys, not copy: these are module-scope constants, so a `t()` here
-// would pin the reason text to the boot locale. Callers resolve them.
-export const AUTOMATION_OFF_REASON_KEY = "automations:nextFiringSwitchedOff";
-export const NO_SCHEDULE_REASON_KEY = "automations:nextFiringNoSchedule";
-export const SCHEDULE_OFF_REASON_KEY = "automations:nextFiringScheduleOff";
+export const AUTOMATION_OFF_REASON = "Switched off — it will not fire";
+export const NO_SCHEDULE_REASON = "No schedule — only runs when you trigger it";
+export const SCHEDULE_OFF_REASON = "Schedule trigger is switched off";
 
 /**
  * The concurrency cap states its own number. "Paused" alone reads as something
  * the user did; naming the cap points at the setting that would change it.
  */
 export function concurrencyReason(maxConcurrentRuns: number): string {
-  return t("automations:nextFiringConcurrencyPaused", { max: Math.max(1, maxConcurrentRuns) });
+  return `Paused — a run is still open (max ${Math.max(1, maxConcurrentRuns)} at a time)`;
 }
 
 export const STATE_DOT_CLASS: Record<AutomationActivityState, string> = {
@@ -91,10 +88,10 @@ export function nextFiring(
   openRuns: number,
   now: Date = new Date(),
 ): NextFiring {
-  if (!automation.enabled) return { kind: "reason", text: t(AUTOMATION_OFF_REASON_KEY) };
+  if (!automation.enabled) return { kind: "reason", text: AUTOMATION_OFF_REASON };
   const { trigger, expression } = scheduleBinding(automation);
-  if (!trigger || !expression) return { kind: "reason", text: t(NO_SCHEDULE_REASON_KEY) };
-  if (!trigger.enabled) return { kind: "reason", text: t(SCHEDULE_OFF_REASON_KEY) };
+  if (!trigger || !expression) return { kind: "reason", text: NO_SCHEDULE_REASON };
+  if (!trigger.enabled) return { kind: "reason", text: SCHEDULE_OFF_REASON };
   if (atConcurrencyCap(automation, openRuns)) {
     return { kind: "reason", text: concurrencyReason(automation.max_concurrent_runs) };
   }

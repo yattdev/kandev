@@ -5,7 +5,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -109,9 +108,7 @@ func TestOptimize_StartsJobAndSucceeds(t *testing.T) {
 }
 
 func TestMaintenanceOperationsRejectPostgres(t *testing.T) {
-	svc := NewService(
-		newFakePostgresStatsPool(t), filepath.Join(t.TempDir(), "kandev.db"), ResetDirs{}, nil, nil,
-	)
+	svc := NewService(newFakePostgresStatsPool(t), t.TempDir(), ResetDirs{}, nil, nil)
 	shutdownCalled := false
 	svc.OrchestratorShutdown = func() { shutdownCalled = true }
 
@@ -160,9 +157,7 @@ func TestMaintenanceOperationsRejectPostgres(t *testing.T) {
 }
 
 func TestMaintenanceOperationsRejectNilWriter(t *testing.T) {
-	svc := NewService(
-		db.NewPool(nil, nil), filepath.Join(t.TempDir(), "kandev.db"), ResetDirs{}, nil, nil,
-	)
+	svc := NewService(db.NewPool(nil, nil), t.TempDir(), ResetDirs{}, nil, nil)
 
 	_, err := svc.runVacuum(context.Background())
 	if err == nil || err.Error() != "vacuum: no database pool" {

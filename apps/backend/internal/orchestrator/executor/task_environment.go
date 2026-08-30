@@ -20,10 +20,30 @@ type environmentSource struct {
 	workspaceID string
 }
 
+type environmentSourceResolver func(context.Context, environmentSource) (string, error)
+
 // Keep the historical executor error names as aliases while the lifecycle and
 // orchestrator share one source-aware resolver.
 type EnvironmentConflictError = runtimeenv.ConflictError
 type EnvironmentSecretError = runtimeenv.SecretError
+
+func resolveEnvironmentSources(
+	ctx context.Context, sources []environmentSource, resolve environmentSourceResolver,
+) (map[string]string, error) {
+	definitions := make([]runtimeenv.Definition, 0, len(sources))
+	for _, source := range sources {
+		definitions = append(definitions, runtimeenv.Definition{
+			Key: source.key, Literal: source.literal, SecretID: source.secretID,
+			Origin: source.origin, WorkspaceID: source.workspaceID,
+		})
+	}
+	return runtimeenv.Resolve(ctx, definitions, func(ctx context.Context, definition runtimeenv.Definition) (string, error) {
+		return resolve(ctx, environmentSource{
+			key: definition.Key, literal: definition.Literal, secretID: definition.SecretID,
+			origin: definition.Origin, workspaceID: definition.WorkspaceID,
+		})
+	})
+}
 
 func (e *Executor) taskEnvironmentSources(
 	workspaceID string,
@@ -40,14 +60,11 @@ func (e *Executor) taskEnvironmentSources(
 	}
 	sort.Strings(managedKeys)
 	for _, key := range managedKeys {
-		sources = append(sources, environmentSource{key: key, literal: managed[key], origin: runtimeenv.OriginManagedRuntime})
+		sources = append(sources, environmentSource{key: key, literal: managed[key], origin: "managed runtime"})
 	}
 	for _, envVar := range profileEnvVars {
-		if envVar.SecretID == "" && envVar.Value == "" {
-			continue
-		}
 		sources = append(sources, environmentSource{
-			key: envVar.Key, literal: envVar.Value, secretID: envVar.SecretID, origin: runtimeenv.OriginExecutorProfile,
+			key: envVar.Key, literal: envVar.Value, secretID: envVar.SecretID, origin: "executor profile",
 		})
 	}
 	for _, info := range repositories {
@@ -57,7 +74,10 @@ func (e *Executor) taskEnvironmentSources(
 		if info.Repository.WorkspaceID != workspaceID {
 			return nil, fmt.Errorf("repository environment belongs to a different workspace")
 		}
-		origin := runtimeenv.RepositoryOrigin(info.Repository.Name)
+		origin := "repository"
+		if name := strings.TrimSpace(info.Repository.Name); name != "" {
+			origin = "repository " + name
+		}
 		for _, binding := range info.Repository.SecretBindings {
 			sources = append(sources, environmentSource{
 				key: binding.Key, secretID: binding.SecretID, origin: origin, workspaceID: workspaceID,

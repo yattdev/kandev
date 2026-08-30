@@ -52,7 +52,7 @@ test.describe("PR switcher changes panel", () => {
         number: 101,
         title: "Fix auth bug",
         state: "open",
-        head_branch: "main",
+        head_branch: "fix/auth",
         base_branch: "main",
         author_login: "test-user",
         repo_owner: "testorg",
@@ -64,7 +64,7 @@ test.describe("PR switcher changes panel", () => {
         number: 202,
         title: "Add dashboard",
         state: "open",
-        head_branch: "main",
+        head_branch: "feat/dashboard",
         base_branch: "main",
         author_login: "test-user",
         repo_owner: "testorg",
@@ -112,13 +112,13 @@ test.describe("PR switcher changes panel", () => {
       workflow_id: workflow.id,
       workflow_step_id: inboxStep.id,
       agent_profile_id: seedData.agentProfileId,
-      repositories: [{ repository_id: seedData.repositoryId, checkout_branch: "main" }],
+      repository_ids: [seedData.repositoryId],
     });
     const taskB = await apiClient.createTask(seedData.workspaceId, "Dashboard Task", {
       workflow_id: workflow.id,
       workflow_step_id: inboxStep.id,
       agent_profile_id: seedData.agentProfileId,
-      repositories: [{ repository_id: seedData.repositoryId, checkout_branch: "main" }],
+      repository_ids: [seedData.repositoryId],
     });
     const taskC = await apiClient.createTask(seedData.workspaceId, "No PR Task", {
       workflow_id: workflow.id,
@@ -134,24 +134,12 @@ test.describe("PR switcher changes panel", () => {
     const kanban = new KanbanPage(testPage);
     await kanban.goto();
 
-    // Move tasks to Working one at a time so their shared E2E checkout stays
-    // on the branch used by the PR fixtures.
+    // Move all tasks to Working → auto_start → mock agent completes → Done
     await apiClient.moveTask(taskA.id, workflow.id, workingStep.id);
-    await expect(kanban.taskCardInColumn("Auth Fix Task", doneStep.id)).toBeVisible({
-      timeout: 45_000,
-    });
-
     await apiClient.moveTask(taskB.id, workflow.id, workingStep.id);
-    await expect(kanban.taskCardInColumn("Dashboard Task", doneStep.id)).toBeVisible({
-      timeout: 45_000,
-    });
-
     await apiClient.moveTask(taskC.id, workflow.id, workingStep.id);
-    await expect(kanban.taskCardInColumn("No PR Task", doneStep.id)).toBeVisible({
-      timeout: 45_000,
-    });
 
-    // Associate PRs with tasks (Task C has no PR).
+    // Associate PRs with tasks (Task C has no PR)
     await apiClient.mockGitHubAssociateTaskPR({
       task_id: taskA.id,
       owner: "testorg",
@@ -159,7 +147,7 @@ test.describe("PR switcher changes panel", () => {
       pr_number: 101,
       pr_url: "https://github.com/testorg/testrepo/pull/101",
       pr_title: "Fix auth bug",
-      head_branch: "main",
+      head_branch: "fix/auth",
       base_branch: "main",
       author_login: "test-user",
       additions: 35,
@@ -172,11 +160,22 @@ test.describe("PR switcher changes panel", () => {
       pr_number: 202,
       pr_url: "https://github.com/testorg/testrepo/pull/202",
       pr_title: "Add dashboard",
-      head_branch: "main",
+      head_branch: "feat/dashboard",
       base_branch: "main",
       author_login: "test-user",
       additions: 125,
       deletions: 5,
+    });
+
+    // Wait for all three tasks to reach Done
+    await expect(kanban.taskCardInColumn("Auth Fix Task", doneStep.id)).toBeVisible({
+      timeout: 45_000,
+    });
+    await expect(kanban.taskCardInColumn("Dashboard Task", doneStep.id)).toBeVisible({
+      timeout: 45_000,
+    });
+    await expect(kanban.taskCardInColumn("No PR Task", doneStep.id)).toBeVisible({
+      timeout: 45_000,
     });
 
     // --- Click Task A to enter session view ---

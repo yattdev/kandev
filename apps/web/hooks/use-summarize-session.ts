@@ -2,7 +2,6 @@ import { useCallback, useState } from "react";
 import { executeUtilityPrompt } from "@/lib/api/domains/utility-api";
 import { listTaskSessionMessages } from "@/lib/api/domains/session-api";
 import type { Message } from "@/lib/types/http";
-import { t } from "@/lib/i18n";
 
 export type SummarizeSessionResult = {
   summary: string | null;
@@ -13,7 +12,6 @@ function formatTranscript(messages: Message[]): string {
   return messages
     .filter((m) => m.type === "message" || m.type === "content")
     .map((m) => {
-      // i18n-exempt: transcript role markers sent verbatim to the summarizing model, not shown to a user.
       const role = m.author_type === "user" ? "User" : "Agent";
       return `${role}: ${m.content}`;
     })
@@ -41,13 +39,13 @@ export function useSummarizeSession() {
         conversation_history: transcript,
       });
       if (!result.success) {
-        return { summary: null, error: result.error || t("task:summarizeReturnedNoResult") };
+        return { summary: null, error: result.error || "Summarize utility returned no result" };
       }
       return { summary: result.response ?? null };
     } catch (error) {
       return {
         summary: null,
-        error: error instanceof Error ? error.message : t("task:couldNotGenerateSummary"),
+        error: error instanceof Error ? error.message : "Could not generate a summary",
       };
     } finally {
       setIsSummarizing(false);

@@ -13,7 +13,6 @@ import (
 
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/common/subproc"
-	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/task/models"
 	"go.uber.org/zap"
 )
@@ -42,24 +41,23 @@ type McpServerConfig struct {
 
 // CreateInstanceRequest contains the parameters for creating a new agent instance.
 type CreateInstanceRequest struct {
-	ID                     string              `json:"id,omitempty"`
-	WorkspacePath          string              `json:"workspace_path"`
-	AgentCommand           string              `json:"agent_command,omitempty"`
-	Protocol               string              `json:"protocol,omitempty"`       // Protocol adapter to use (acp, rest, mcp, codex)
-	AgentType              string              `json:"agent_type,omitempty"`     // Agent type ID for debug file naming (e.g., "codex", "auggie")
-	WorkspaceFlag          string              `json:"workspace_flag,omitempty"` // CLI flag for workspace path (e.g., "--workspace-root")
-	Env                    map[string]string   `json:"env,omitempty"`
-	AutoStart              bool                `json:"auto_start,omitempty"`
-	AutoApprovePermissions *bool               `json:"auto_approve_permissions,omitempty"`
-	McpServers             []McpServerConfig   `json:"mcp_servers,omitempty"`
-	SessionID              string              `json:"session_id,omitempty"`           // Task session ID for MCP tool calls
-	TaskID                 string              `json:"task_id,omitempty"`              // Task ID for MCP plan tool calls (server-side injection)
-	DisableAskQuestion     bool                `json:"disable_ask_question,omitempty"` // Disable ask_user_question MCP tool (TUI agents)
-	AssumeMcpSse           bool                `json:"assume_mcp_sse,omitempty"`       // Assume agent supports SSE MCP servers
-	AssumeMcpHttp          bool                `json:"assume_mcp_http,omitempty"`      // Assume agent supports HTTP MCP servers
-	McpMode                string              `json:"mcp_mode,omitempty"`             // MCP tool mode: "task" (default), "config", or "office"
-	McpProviders           []string            `json:"mcp_providers,omitempty"`        // Supported review-automation providers
-	McpProfile             *mcpprofile.Context `json:"mcp_profile,omitempty"`          // Backend-owned typed MCP tool profile
+	ID                     string            `json:"id,omitempty"`
+	WorkspacePath          string            `json:"workspace_path"`
+	AgentCommand           string            `json:"agent_command,omitempty"`
+	Protocol               string            `json:"protocol,omitempty"`       // Protocol adapter to use (acp, rest, mcp, codex)
+	AgentType              string            `json:"agent_type,omitempty"`     // Agent type ID for debug file naming (e.g., "codex", "auggie")
+	WorkspaceFlag          string            `json:"workspace_flag,omitempty"` // CLI flag for workspace path (e.g., "--workspace-root")
+	Env                    map[string]string `json:"env,omitempty"`
+	AutoStart              bool              `json:"auto_start,omitempty"`
+	AutoApprovePermissions *bool             `json:"auto_approve_permissions,omitempty"`
+	McpServers             []McpServerConfig `json:"mcp_servers,omitempty"`
+	SessionID              string            `json:"session_id,omitempty"`           // Task session ID for MCP tool calls
+	TaskID                 string            `json:"task_id,omitempty"`              // Task ID for MCP plan tool calls (server-side injection)
+	DisableAskQuestion     bool              `json:"disable_ask_question,omitempty"` // Disable ask_user_question MCP tool (TUI agents)
+	AssumeMcpSse           bool              `json:"assume_mcp_sse,omitempty"`       // Assume agent supports SSE MCP servers
+	AssumeMcpHttp          bool              `json:"assume_mcp_http,omitempty"`      // Assume agent supports HTTP MCP servers
+	McpMode                string            `json:"mcp_mode,omitempty"`             // MCP tool mode: "task" (default), "config", or "office"
+	McpProviders           []string          `json:"mcp_providers,omitempty"`        // Supported review-automation providers
 	// RequiresProcessKill tells agentctl to skip the graceful stdin-close wait
 	// and reap the agent process group immediately. Required for agents whose
 	// runtime keeps child processes (e.g. MCP servers) alive when stdin closes
@@ -79,8 +77,7 @@ type CreateInstanceRequest struct {
 	// RemoteContributions maps an agentctl workspace repository subpath to the
 	// server-authored contribution binding for that checkout. The empty key is
 	// the workspace root.
-	RemoteContributions      map[string]models.RemoteContribution      `json:"remote_contributions,omitempty"`
-	ContributionDestinations map[string]models.ContributionDestination `json:"contribution_destinations,omitempty"`
+	RemoteContributions map[string]models.RemoteContribution `json:"remote_contributions,omitempty"`
 	// WorkspaceSourceRoots are canonical host roots explicitly attached to the
 	// workspace. Agentctl permits file operations through links only beneath
 	// these roots.

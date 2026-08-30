@@ -2,9 +2,6 @@
 
 import { useMemo } from "react";
 import { PluginSlot } from "@/components/plugins/plugin-slot";
-import type { MainTopBarSlotProps } from "@/lib/plugins/types";
-
-export type { MainTopBarSlotProps } from "@/lib/plugins/types";
 
 /**
  * Props forwarded to every plugin component registered for the `main-top-bar`
@@ -18,6 +15,15 @@ export type { MainTopBarSlotProps } from "@/lib/plugins/types";
  * context a plugin gets is the active workspace and which listing view is
  * showing.
  */
+export type MainTopBarSlotProps = {
+  /** Workspace the top bar is currently showing, or null on the global home. */
+  workspaceId: string | null;
+  /** Human-readable label of that workspace, when known. */
+  workspaceLabel?: string;
+  /** Which listing the top bar belongs to. */
+  currentPage: "kanban" | "tasks";
+};
+
 /**
  * Plugin extension point in the default app top bar (Home / Kanban / Tasks),
  * rendered alongside the first-party controls (metrics, view toggle, display
@@ -30,24 +36,13 @@ export function MainTopBarPluginActions(props: {
   workspaceId?: string;
   workspaceLabel?: string;
   currentPage: "kanban" | "tasks";
-  presentation?: MainTopBarSlotProps["presentation"];
 }) {
-  const { workspaceId, workspaceLabel, currentPage, presentation = "desktop" } = props;
+  const { workspaceId, workspaceLabel, currentPage } = props;
 
   const slotProps = useMemo<MainTopBarSlotProps>(
-    () => ({ workspaceId: workspaceId ?? null, workspaceLabel, currentPage, presentation }),
-    [workspaceId, workspaceLabel, currentPage, presentation],
+    () => ({ workspaceId: workspaceId ?? null, workspaceLabel, currentPage }),
+    [workspaceId, workspaceLabel, currentPage],
   );
 
-  const content = <PluginSlot name="main-top-bar" slotProps={slotProps} />;
-  if (presentation === "desktop") return content;
-
-  return (
-    <div
-      className="flex shrink-0 items-center gap-2 [&_[data-slot=button]]:!size-8 [&_[data-slot=button]]:!p-0 [&_[data-slot=button]_svg]:!size-4"
-      data-testid="mobile-main-top-bar-plugin-actions"
-    >
-      {content}
-    </div>
-  );
+  return <PluginSlot name="main-top-bar" slotProps={slotProps} />;
 }

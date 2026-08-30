@@ -128,10 +128,7 @@ test.describe("Onboarding", () => {
     });
 
     await testPage.getByRole("button", { name: "Cancel" }).click();
-    // Cancelling lands on home, and home for an active Office workspace is the
-    // Office dashboard — `/` redirects there rather than rendering a kanban
-    // board for a workspace that has none.
-    await expect(testPage).toHaveURL(/\/office(\?|$)/, { timeout: 10_000 });
+    await expect(testPage).toHaveURL((url) => url.pathname === "/", { timeout: 10_000 });
   });
 
   test("cancel button returns to homepage when adding a new workspace", async ({
@@ -145,10 +142,7 @@ test.describe("Onboarding", () => {
 
     await testPage.getByRole("button", { name: "Cancel" }).click();
 
-    // Cancelling lands on home, and home for an active Office workspace is the
-    // Office dashboard — `/` redirects there rather than rendering a kanban
-    // board for a workspace that has none.
-    await expect(testPage).toHaveURL(/\/office(\?|$)/, { timeout: 10_000 });
+    await expect(testPage).toHaveURL((url) => url.pathname === "/", { timeout: 10_000 });
   });
 
   test("inline CLI profile creation selects the profile for the new agent", async ({

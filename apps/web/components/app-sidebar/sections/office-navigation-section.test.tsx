@@ -13,16 +13,11 @@ const state = {
     } as Record<string, boolean>,
   },
   office: {
-    dashboardByWorkspaceId: {
-      "ws-1": {
-        task_count: 7,
-        routine_count: 2,
-        skill_count: 3,
-      },
-    } as Record<string, unknown>,
-  },
-  workspaces: {
-    activeId: "ws-1" as string | null,
+    dashboard: {
+      task_count: 7,
+      routine_count: 2,
+      skill_count: 3,
+    },
   },
   toggleAppSidebarSection: vi.fn(),
   setAppSidebarCollapsed: vi.fn(),

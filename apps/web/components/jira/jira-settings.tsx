@@ -5,7 +5,6 @@ import { IconTicket } from "@tabler/icons-react";
 import { Button } from "@kandev/ui/button";
 import { CardContent } from "@kandev/ui/card";
 import { Input } from "@kandev/ui/input";
-import { settingsCredentialClassName } from "@/components/settings/settings-control";
 import { Label } from "@kandev/ui/label";
 import { Separator } from "@kandev/ui/separator";
 import { Alert, AlertDescription } from "@kandev/ui/alert";
@@ -275,7 +274,6 @@ function SecretField({
         data-settings-dirty={form.secret !== baseline.secret}
         onChange={(e) => update("secret", e.target.value)}
         disabled={loading}
-        className={settingsCredentialClassName()}
       />
       {method === "session_cookie" && hasSavedSecret && secretExpiresAt && (
         <CookieExpiry expiresAt={secretExpiresAt} />
@@ -575,7 +573,7 @@ export function JiraConnectionSection({ workspaceId }: { workspaceId: string }) 
       icon={<IconTicket className="h-5 w-5" />}
       title={t("jira:jiraIntegration")}
       description={t("jira:connectThisWorkspaceToAtlassianCloud")}
-      action={<JiraEnabledControl workspaceId={workspaceId} />}
+      action={<JiraEnabledControl />}
     >
       <SettingsCard isDirty={dirty}>
         <CardContent className="space-y-4 pt-6">

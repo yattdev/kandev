@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { SSH_E2E_IMAGE_TAG } from "../fixtures/ssh-image";
-import { E2E_DOCKER_SCOPE } from "../fixtures/docker-probe";
 import type { SSHServerHandle } from "./ssh";
 
 /**
@@ -37,7 +36,7 @@ const BASTION_BASE_PORT = 23000;
 
 export function startBastionAndTarget(workerIndex: number, workDir: string): SSHBastionHandles {
   fs.mkdirSync(workDir, { recursive: true });
-  const networkName = `kandev-e2e-ssh-net-${E2E_DOCKER_SCOPE}-${workerIndex}`;
+  const networkName = `kandev-e2e-ssh-net-${workerIndex}`;
   ensureNetwork(networkName);
 
   // The SSH executor's ProxyJump string doesn't carry a separate identity for
@@ -49,7 +48,7 @@ export function startBastionAndTarget(workerIndex: number, workDir: string): SSH
 
   const bastionPort = BASTION_BASE_PORT + workerIndex * 2;
   const bastion = launchInNetwork({
-    name: `kandev-bastion-${E2E_DOCKER_SCOPE}-${workerIndex}`,
+    name: `kandev-bastion-${workerIndex}`,
     role: "bastion",
     networkName,
     hostPort: bastionPort,
@@ -58,7 +57,7 @@ export function startBastionAndTarget(workerIndex: number, workDir: string): SSH
   });
 
   const target = launchInNetwork({
-    name: `kandev-target-${E2E_DOCKER_SCOPE}-${workerIndex}`,
+    name: `kandev-target-${workerIndex}`,
     role: "target",
     networkName,
     hostPort: null, // not reachable from host
@@ -119,8 +118,6 @@ function launchInNetwork(opts: LaunchOpts): SSHServerHandle {
     opts.networkName,
     "--label",
     "kandev.managed=true",
-    "--label",
-    `kandev.e2e.run=${E2E_DOCKER_SCOPE}`,
     "--label",
     `kandev.e2e.role=ssh-${opts.role}`,
     "--cap-add",

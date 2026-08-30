@@ -433,7 +433,6 @@ function NativeMessageListBody({
  * via {@link useNativeScrollManagement}.
  */
 export const NativeMessageList = memo(
-  // eslint-disable-next-line max-lines-per-function -- native transcript composition owns scrolling.
   forwardRef<MessageListHandle, MessageListProps>(function NativeMessageList(
     {
       items,

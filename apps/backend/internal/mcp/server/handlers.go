@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	ws "github.com/kandev/kandev/pkg/websocket"
@@ -25,21 +24,19 @@ var askQuestionKeepAliveInterval = 20 * time.Second
 // Argument-name constants used across the ask_user_question_kandev handler.
 // Pulled out so goconst stays happy and renames stay safe.
 const (
-	promptArg            = "prompt"
-	questionsArg         = "questions"
-	optionsArg           = "options"
-	idArg                = "id"
-	titleArg             = "title"
-	labelArg             = "label"
-	descriptionArg       = "description"
-	optionIDFieldName    = "option_id"
-	questionIDFieldKey   = "question_id"
-	answeredFieldKey     = "answered"
-	rejectedFieldKey     = "rejected"
-	documentArg          = "document"
-	messageArg           = "message"
-	autopilotArg         = "autopilot"
-	contextParagraphsArg = "context_paragraphs"
+	promptArg          = "prompt"
+	questionsArg       = "questions"
+	optionsArg         = "options"
+	idArg              = "id"
+	titleArg           = "title"
+	labelArg           = "label"
+	descriptionArg     = "description"
+	optionIDFieldName  = "option_id"
+	questionIDFieldKey = "question_id"
+	answeredFieldKey   = "answered"
+	rejectedFieldKey   = "rejected"
+	documentArg        = "document"
+	messageArg         = "message"
 )
 
 func (s *Server) listWorkspacesHandler() server.ToolHandlerFunc {
@@ -176,33 +173,10 @@ func (s *Server) createTaskHandler() server.ToolHandlerFunc {
 			"workspace_mode":      req.GetString("workspace_mode", ""),
 			"title":               title,
 			"description":         req.GetString("prompt", ""),
-			autopilotArg:          req.GetBool(autopilotArg, false),
 			"agent_profile_id":    req.GetString("agent_profile_id", ""),
 			"executor_profile_id": req.GetString("executor_profile_id", ""),
 			"source_task_id":      s.taskID,
 			"start_agent":         startAgent,
-		}
-		if s.sessionID != "" && s.taskID != "" {
-			payload["source_session_id"] = s.sessionID
-		}
-		if externalID := req.GetString("external_id", ""); externalID != "" {
-			payload["external_id"] = externalID
-		}
-
-		// Dependency edges declared at create time. The handler already read
-		// blocked_by from its payload before this feature, but the tool schema
-		// never declared the parameter, so no agent could reach it.
-		if blockedBy := stringArrayArg(req, "blocked_by"); len(blockedBy) > 0 {
-			payload["blocked_by"] = blockedBy
-		}
-		// Omitted means "derive": with blocked_by set, a start request becomes a
-		// start-when-unblocked intent. start_agent defaults to true and agents
-		// pass it by habit, so deriving is what makes an agent-built chain run in
-		// order instead of launching every step at once.
-		if args := req.GetArguments(); args["start_when_unblocked"] != nil {
-			if v, ok := args["start_when_unblocked"].(bool); ok {
-				payload["start_when_unblocked"] = v
-			}
 		}
 
 		// Add repository info. For subtasks an explicit repo overrides the
@@ -263,9 +237,6 @@ func (s *Server) updateTaskHandler() server.ToolHandlerFunc {
 		}
 		if state := req.GetString("state", ""); state != "" {
 			payload["state"] = state
-		}
-		if launchPrompt := req.GetString("deferred_launch_prompt", ""); launchPrompt != "" {
-			payload["deferred_launch_prompt"] = launchPrompt
 		}
 		var result map[string]interface{}
 		if err := s.backend.RequestPayload(ctx, ws.ActionMCPUpdateTask, payload, &result); err != nil {
@@ -411,7 +382,6 @@ func (s *Server) messageTaskHandler() server.ToolHandlerFunc {
 		}
 		copyOptionalStringArg(payload, req, "delivery_mode")
 		copyOptionalStringArg(payload, req, "session_id")
-		copyOptionalStringArg(payload, req, "reply_to_question_id")
 		var result map[string]interface{}
 		if err := s.backend.RequestPayload(ctx, ws.ActionMCPMessageTask, payload, &result); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -567,7 +537,7 @@ func (s *Server) askUserQuestionHandler() server.ToolHandlerFunc {
 			return errResult, nil
 		}
 
-		questionCtx := readQuestionContext(req)
+		questionCtx := req.GetString("context", "")
 		payload := map[string]interface{}{
 			"session_id": s.sessionID,
 			questionsArg: questions,
@@ -598,35 +568,6 @@ func (s *Server) askUserQuestionHandler() server.ToolHandlerFunc {
 
 		return extractQuestionAnswers(result, questions), nil
 	}
-}
-
-func (s *Server) askParentQuestionHandler() server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		questions, errResult := parseQuestions(req)
-		if errResult != nil {
-			return errResult, nil
-		}
-		payload := map[string]interface{}{
-			"task_id":    s.taskID,
-			"session_id": s.sessionID,
-			questionsArg: questions,
-			"context":    readQuestionContext(req),
-		}
-		var result map[string]interface{}
-		if err := s.backend.RequestPayload(ctx, ws.ActionMCPAskParentQuestion, payload, &result); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		data, _ := json.MarshalIndent(result, "", "  ")
-		return mcp.NewToolResultText(string(data)), nil
-	}
-}
-
-func readQuestionContext(req mcp.CallToolRequest) string {
-	paragraphs := req.GetStringSlice(contextParagraphsArg, nil)
-	if len(paragraphs) > 0 {
-		return strings.Join(paragraphs, "\n\n")
-	}
-	return req.GetString("context", "")
 }
 
 // emitKeepAlivePings invokes send on every interval tick until stop is closed or
@@ -840,11 +781,11 @@ func extractQuestionAnswers(result map[string]interface{}, questions []map[strin
 	if len(out) == 0 {
 		// Nothing matched by id — surface the raw payload so the agent can still inspect it.
 		data, _ := json.MarshalIndent(result, "", "  ")
-		return mcp.NewToolResultStructured(result, string(data))
+		return mcp.NewToolResultText(string(data))
 	}
 
 	data, _ := json.MarshalIndent(out, "", "  ")
-	return mcp.NewToolResultStructured(out, string(data))
+	return mcp.NewToolResultText(string(data))
 }
 
 // simplifyAnswer normalizes the answer map. Single-choice per question, but

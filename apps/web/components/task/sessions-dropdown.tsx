@@ -25,8 +25,6 @@ import { performLayoutSwitch } from "@/lib/state/dockview-store";
 import type { ForegroundActivity, TaskSession, TaskSessionState } from "@/lib/types/http";
 import { getSessionStateIcon } from "@/lib/ui/state-icons";
 import { getWebSocketClient } from "@/lib/ws/connection";
-import { deleteTask } from "@/lib/api/domains/kanban-api";
-import { resolveSessionDeletionTarget } from "@/lib/session/session-deletion";
 import { useSessionPendingInput, type PendingInput } from "@/hooks/use-task-pending-input";
 import { buildAgentLabelsById, resolveAgentLabelFor, sortSessions } from "./session-sort";
 import { resolveComposerWorkspaceId } from "./chat/composer-workspace";
@@ -143,12 +141,10 @@ function useSessionSelectionHandlers(taskId: string | null) {
   return { handleSelectSession };
 }
 
-export function useSessionLifecycleActions(
+function useSessionLifecycleActions(
   taskId: string | null,
   loadSessions: (force?: boolean) => void,
 ) {
-  const removeQuickChatSession = useAppStore((state) => state.removeQuickChatSession);
-  const appStore = useAppStoreApi();
   const handleResumeSession = useCallback(
     async (sessionId: string) => {
       if (!taskId) return;
@@ -170,27 +166,16 @@ export function useSessionLifecycleActions(
 
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
-      if (!taskId) return;
+      const client = getWebSocketClient();
+      if (!client) return;
       try {
-        const deletionTarget = resolveSessionDeletionTarget(
-          sessionId,
-          taskId,
-          appStore.getState().quickChat.sessions,
-        );
-        if (deletionTarget.kind === "quick-chat-task") {
-          await deleteTask(deletionTarget.taskId);
-        } else {
-          const client = getWebSocketClient();
-          if (!client) return;
-          await client.request("session.delete", { session_id: deletionTarget.sessionId }, 15000);
-        }
-        removeQuickChatSession(sessionId);
+        await client.request("session.delete", { session_id: sessionId }, 15000);
         loadSessions(true);
       } catch (error) {
         console.error("Failed to delete session:", error);
       }
     },
-    [appStore, loadSessions, removeQuickChatSession, taskId],
+    [loadSessions],
   );
 
   const handleSetPrimary = useCallback(

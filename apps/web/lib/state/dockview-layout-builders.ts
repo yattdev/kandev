@@ -17,7 +17,6 @@ import type { LayoutGroupIds } from "./layout-manager";
 import { getGlobalSidebarWidth } from "@/lib/local-storage";
 import { resolveResponsiveRightWidth } from "./layout-manager/right-width";
 import { createDebugLogger, isDebug } from "@/lib/debug/log";
-import { t } from "@/lib/i18n";
 
 // Re-export for consumers that import from this module
 export { getRootSplitview } from "./layout-manager";
@@ -73,9 +72,9 @@ export function applyLayoutFixups(
   captureSidebarTarget(api, sv);
 
   const oldChanges = api.getPanel("diff-files");
-  if (oldChanges) oldChanges.api.setTitle(t("task:changes"));
+  if (oldChanges) oldChanges.api.setTitle("Changes");
   const oldFiles = api.getPanel("all-files");
-  if (oldFiles) oldFiles.api.setTitle(t("common:files"));
+  if (oldFiles) oldFiles.api.setTitle("Files");
 
   captureRightTarget(api, sv, manualRightWidth);
 

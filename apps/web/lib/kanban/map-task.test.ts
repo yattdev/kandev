@@ -15,7 +15,7 @@ const BASE_SCALARS = {
   description: "Do it well",
   position: 3,
   state: "TODO" as const,
-  priority: "critical",
+  priority: 0,
   is_ephemeral: false,
   created_at: "2026-04-22T10:00:00Z",
   updated_at: "2026-04-22T10:05:00Z",
@@ -182,14 +182,6 @@ describe("toKanbanTask — HTTP DTO / WS payload parity", () => {
   });
 });
 
-describe("toKanbanTask — autopilot", () => {
-  it("preserves the immutable task creation mode for HTTP and websocket payloads", () => {
-    expect(toKanbanTask(httpDTO({ autopilot: true }))).toMatchObject({ autopilot: true });
-    expect(toKanbanTask(wsPayload({ autopilot: true }))).toMatchObject({ autopilot: true });
-    expect(toKanbanTask(httpDTO()).autopilot).toBeUndefined();
-  });
-});
-
 describe("toKanbanTask — state normalization", () => {
   it("maps the task-wide active subagent count for future status surfaces", () => {
     const mapped = toKanbanTask(
@@ -264,12 +256,5 @@ describe("toKanbanTask — state normalization", () => {
 
     expect(detached.parentTaskId).toBeUndefined();
     expect(detached.workspaceMode).toBe("shared_group");
-  });
-});
-
-describe("toKanbanTask priority", () => {
-  it("preserves the canonical priority from HTTP and WebSocket payloads", () => {
-    expect(toKanbanTask(httpDTO()).priority).toBe("critical");
-    expect(toKanbanTask(wsPayload()).priority).toBe("critical");
   });
 });

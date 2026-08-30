@@ -12,13 +12,8 @@ import type {
   StartGitHubAppManifestResponse,
 } from "@/lib/types/github";
 
-export async function fetchGitHubStatus(
-  workspaceId: string,
-  options?: ApiRequestOptions,
-  refreshRateLimit = false,
-) {
+export async function fetchGitHubStatus(workspaceId: string, options?: ApiRequestOptions) {
   const query = new URLSearchParams({ workspace_id: workspaceId });
-  if (refreshRateLimit) query.set("refresh_rate_limit", "true");
   return fetchJson<GitHubStatusResponse>(`/api/v1/github/status?${query}`, options);
 }
 

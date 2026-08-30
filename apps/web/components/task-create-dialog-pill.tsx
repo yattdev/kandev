@@ -17,7 +17,6 @@ import type { Branch } from "@/lib/types/http";
 import { BranchRefreshButton } from "@/components/branch-refresh-button";
 import { useTaskCreateDialogPopoverContainer } from "@/hooks/use-task-create-dialog-popover-container";
 import { useTooltipMountGate } from "@/hooks/use-tooltip-mount-gate";
-import { t } from "@/lib/i18n";
 
 export type PillOption = {
   value: string;
@@ -622,6 +621,6 @@ export function computeBranchPlaceholder(
 ): string {
   if (!hasRepo) return "branch";
   if (loading) return "loading…";
-  if (optionCount === 0) return t("task:noBranchesShort");
+  if (optionCount === 0) return "no branches";
   return "branch";
 }

@@ -283,7 +283,7 @@ type WorkflowSectionProps = {
   workflowLocked?: boolean;
 };
 
-function renderWorkflowSection({
+export const WorkflowSection = memo(function WorkflowSection({
   isCreateMode,
   isTaskStarted,
   workflows: allWorkflows,
@@ -351,11 +351,6 @@ function renderWorkflowSection({
   }
 
   return null;
-}
-
-export const WorkflowSection = memo(function WorkflowSection(workflowProps: WorkflowSectionProps) {
-  if (!workflowProps.isCreateMode || workflowProps.isTaskStarted) return null;
-  return renderWorkflowSection(workflowProps);
 });
 
 export type DialogPromptSectionProps = {
@@ -381,8 +376,8 @@ export type DialogPromptSectionProps = {
    * description should pass `false` so the name field wins focus.
    */
   autoFocusDescription?: boolean;
-  /** Submits the form for a plugin composer action that finished producing text. */
-  onComposerSubmit?: () => boolean | Promise<boolean>;
+  /** Called after a non-empty voice transcript is inserted and auto-send is on. */
+  onVoiceAutoSend?: () => void;
 };
 
 // importBindings collapses the optional Jira/Linear import callbacks into the
@@ -413,7 +408,7 @@ export function DialogPromptSection({
   descriptionPlaceholder,
   aboveDescriptionSlot,
   autoFocusDescription,
-  onComposerSubmit,
+  onVoiceAutoSend,
 }: DialogPromptSectionProps) {
   const importsEnabled = !isSessionMode && !isTaskStarted;
   const ws = workspaceId ?? null;
@@ -438,7 +433,7 @@ export function DialogPromptSection({
         isUtilityConfigured={enhance?.isConfigured}
         jiraImport={importBindings(importsEnabled, ws, onJiraImport)}
         linearImport={importBindings(importsEnabled, ws, onLinearImport)}
-        onComposerSubmit={onComposerSubmit}
+        onVoiceAutoSend={onVoiceAutoSend}
       />
       <PromptResultRecovery
         pendingResult={enhance?.pendingResult ?? null}

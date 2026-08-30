@@ -27,7 +27,7 @@ function TaskBadges({ item }: { item: RecentTaskDisplayItem }) {
         data-testid="recent-task-switcher-badge-status"
         className="max-w-full"
       >
-        {t(item.statusBadge.labelKey)}
+        {item.statusBadge.label}
       </Badge>
       {item.repositoryPath && (
         <Badge

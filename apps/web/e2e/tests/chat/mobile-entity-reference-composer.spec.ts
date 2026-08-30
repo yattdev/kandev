@@ -83,14 +83,12 @@ async function expectPersistedReference(
           );
         });
       },
-      { timeout: 45_000, message: `Wait for mobile reference ${referenceId}` },
+      { timeout: 15_000, message: `Wait for mobile reference ${referenceId}` },
     )
     .toBe(true);
 }
 
 test.describe("Mobile entity reference composer", () => {
-  test.describe.configure({ timeout: 90_000 });
-
   test("touch selection stays viewport-contained, excludes Kandev tasks, and persists", async ({
     testPage,
     apiClient,

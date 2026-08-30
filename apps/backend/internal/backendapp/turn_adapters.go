@@ -6,12 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	"go.uber.org/zap"
-
 	settingsstore "github.com/kandev/kandev/internal/agent/settings/store"
 	"github.com/kandev/kandev/internal/automation"
 	"github.com/kandev/kandev/internal/azuredevops"
-	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/github"
 	"github.com/kandev/kandev/internal/task/models"
 	taskrepo "github.com/kandev/kandev/internal/task/repository/sqlite"
@@ -28,33 +25,6 @@ func (a *turnServiceAdapter) StartTurn(ctx context.Context, sessionID string) (*
 	return a.svc.StartTurn(ctx, sessionID)
 }
 
-func (a *turnServiceAdapter) ReserveTurn(
-	ctx context.Context,
-	sessionID string,
-	recovery *models.PromptDispatchRecovery,
-) (*models.Turn, error) {
-	return a.svc.ReserveTurn(ctx, sessionID, recovery)
-}
-
-func (a *turnServiceAdapter) PublishReservedTurn(ctx context.Context, turn *models.Turn) error {
-	return a.svc.PublishReservedTurn(ctx, turn)
-}
-
-func (a *turnServiceAdapter) MarkReservedTurnDispatchAttempted(ctx context.Context, turn *models.Turn) error {
-	return a.svc.MarkReservedTurnDispatchAttempted(ctx, turn)
-}
-
-func (a *turnServiceAdapter) RollbackReservedTurn(
-	ctx context.Context,
-	sessionID, turnID string,
-) (bool, error) {
-	return a.svc.RollbackReservedTurn(ctx, sessionID, turnID)
-}
-
-func (a *turnServiceAdapter) ReconcileUnpublishedPromptTurns(ctx context.Context) (int, error) {
-	return a.svc.ReconcileUnpublishedPromptTurns(ctx)
-}
-
 func (a *turnServiceAdapter) CompleteTurn(ctx context.Context, turnID string) error {
 	return a.svc.CompleteTurn(ctx, turnID)
 }
@@ -69,14 +39,6 @@ func (a *turnServiceAdapter) GetActiveTurn(ctx context.Context, sessionID string
 
 func (a *turnServiceAdapter) UpdateTurn(ctx context.Context, turn *models.Turn) error {
 	return a.svc.UpdateTurn(ctx, turn)
-}
-
-func (a *turnServiceAdapter) PatchTurnMetadata(
-	ctx context.Context,
-	sessionID, turnID string,
-	updates map[string]interface{},
-) error {
-	return a.svc.PatchTurnMetadata(ctx, sessionID, turnID, updates)
 }
 
 func (a *turnServiceAdapter) AbandonOpenTurns(ctx context.Context, sessionID string) error {
@@ -226,36 +188,6 @@ func (a *automationTaskDeleterAdapter) DeleteTask(ctx context.Context, taskID st
 		return fmt.Errorf("%w: %w", automation.ErrTaskNotFound, err)
 	}
 	return err
-}
-
-// taskOriginGetter is the minimal read interface automationTaskOriginLookupAdapter
-// needs from the task service — extracted so the adapter is testable without a
-// full service instance.
-type taskOriginGetter interface {
-	GetTask(ctx context.Context, id string) (*models.Task, error)
-}
-
-// automationTaskOriginLookupAdapter satisfies automation.TaskOriginLookup.
-// It resolves a task's workspace and whether it was created by an automation
-// run so the github_pr_merged subscriber can skip automation-spawned tasks
-// (loop-guard) and scope workspace matching without importing the task service
-// into the automation package.
-type automationTaskOriginLookupAdapter struct {
-	svc taskOriginGetter
-	log *logger.Logger
-}
-
-func (a *automationTaskOriginLookupAdapter) TaskWorkspaceAndAutomationOrigin(ctx context.Context, taskID string) (string, bool, bool) {
-	task, err := a.svc.GetTask(ctx, taskID)
-	if err != nil {
-		a.log.Warn("task origin lookup failed", zap.String("task_id", taskID), zap.Error(err))
-		return "", false, false
-	}
-	if task == nil {
-		a.log.Debug("task not found for origin lookup", zap.String("task_id", taskID))
-		return "", false, false
-	}
-	return task.WorkspaceID, task.Origin == models.TaskOriginAutomationRun, true
 }
 
 // repositoryLookupAdapter satisfies the linear/jira/sentry RepositoryLookup

@@ -51,12 +51,14 @@ type CompletedTaskActivityDTO struct {
 	CompletedTasks int    `json:"completed_tasks"`
 }
 
-// ModelUsageDTO represents usage statistics for a single model
-type ModelUsageDTO struct {
-	Model           string `json:"model"`
-	SessionCount    int    `json:"session_count"`
-	TurnCount       int    `json:"turn_count"`
-	TotalDurationMs int64  `json:"total_duration_ms"`
+// AgentUsageDTO represents usage statistics for a single agent profile
+type AgentUsageDTO struct {
+	AgentProfileID   string `json:"agent_profile_id"`
+	AgentProfileName string `json:"agent_profile_name"`
+	AgentModel       string `json:"agent_model"`
+	SessionCount     int    `json:"session_count"`
+	TurnCount        int    `json:"turn_count"`
+	TotalDurationMs  int64  `json:"total_duration_ms"`
 }
 
 // RepositoryStatsDTO represents usage statistics for a repository
@@ -93,7 +95,7 @@ type StatsResponse struct {
 	TaskStatsHasMore  bool                       `json:"task_stats_has_more"`
 	DailyActivity     []DailyActivityDTO         `json:"daily_activity"`
 	CompletedActivity []CompletedTaskActivityDTO `json:"completed_activity"`
-	ModelUsage        []ModelUsageDTO            `json:"model_usage"`
+	AgentUsage        []AgentUsageDTO            `json:"agent_usage"`
 	RepositoryStats   []RepositoryStatsDTO       `json:"repository_stats"`
 	GitStats          GitStatsDTO                `json:"git_stats"`
 }

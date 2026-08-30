@@ -76,22 +76,6 @@ describe("readBootPayload", () => {
     expect(readBootPayload(win).runtime?.debug).toBe(true);
     expect(win.__KANDEV_DEBUG).toBe(true);
   });
-
-  it("reads the browser tab title prefix from the runtime block", () => {
-    const win = {
-      __KANDEV_BOOT_PAYLOAD__: { runtime: { titlePrefix: "TEST" } },
-    } as unknown as Window;
-
-    expect(readBootPayload(win).runtime?.titlePrefix).toBe("TEST");
-  });
-
-  it("leaves the title prefix undefined when the runtime block omits it", () => {
-    const win = {
-      __KANDEV_BOOT_PAYLOAD__: { runtime: { apiPrefix: "/api/v1" } },
-    } as unknown as Window;
-
-    expect(readBootPayload(win).runtime?.titlePrefix).toBeUndefined();
-  });
 });
 
 describe("readBootPayload plugins", () => {
@@ -104,7 +88,6 @@ describe("readBootPayload plugins", () => {
             name: "Jira",
             bundleUrl: JIRA_BUNDLE_URL,
             styleUrls: ["/api/plugins/jira/style.css"],
-            repositoryProviderIds: ["jira"],
           },
           { id: "hello", name: "Hello", bundleUrl: "/api/plugins/hello/bundle" },
         ],
@@ -117,7 +100,6 @@ describe("readBootPayload plugins", () => {
         name: "Jira",
         bundleUrl: JIRA_BUNDLE_URL,
         styleUrls: ["/api/plugins/jira/style.css"],
-        repositoryProviderIds: ["jira"],
       },
       { id: "hello", name: "Hello", bundleUrl: "/api/plugins/hello/bundle", styleUrls: undefined },
     ]);
@@ -128,25 +110,13 @@ describe("readBootPayload plugins", () => {
       __KANDEV_BOOT_PAYLOAD__: {
         plugins: [
           { id: "no-bundle-url", name: "Missing bundleUrl" },
-          {
-            id: "jira",
-            name: "Jira",
-            bundleUrl: JIRA_BUNDLE_URL,
-            styleUrls: ["ok.css", 3],
-            repositoryProviderIds: ["jira", 3, null, "azure_devops"],
-          },
+          { id: "jira", name: "Jira", bundleUrl: JIRA_BUNDLE_URL, styleUrls: ["ok.css", 3] },
         ],
       },
     } as unknown as Window;
 
     expect(readBootPayload(win).plugins).toEqual([
-      {
-        id: "jira",
-        name: "Jira",
-        bundleUrl: JIRA_BUNDLE_URL,
-        styleUrls: ["ok.css"],
-        repositoryProviderIds: ["jira", "azure_devops"],
-      },
+      { id: "jira", name: "Jira", bundleUrl: JIRA_BUNDLE_URL, styleUrls: ["ok.css"] },
     ]);
   });
 

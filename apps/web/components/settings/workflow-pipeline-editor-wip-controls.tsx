@@ -33,13 +33,6 @@ export function StepWipControls({
   const otherSteps = steps.filter((s) => s.id !== step.id);
   const pullFromValue = step.pull_from_step_id || "none";
   const pullFromSelectID = `${step.id}-pull-from-step`;
-  const pullFromGuidance = step.pull_from_step_id
-    ? t("workflows:pullFromGuidanceWithFeeder", {
-        feeder:
-          otherSteps.find((candidate) => candidate.id === step.pull_from_step_id)?.name ??
-          t("workflows:noFeederStep"),
-      })
-    : t("workflows:pullFromGuidanceWithoutFeeder");
 
   return (
     <div className="grid grid-cols-1 gap-3 pt-3 sm:grid-cols-2 xl:grid-cols-[180px_minmax(220px,320px)]">
@@ -75,15 +68,7 @@ export function StepWipControls({
           <Label htmlFor={pullFromSelectID} className="text-xs font-medium">
             {t("workflows:pullFrom")}
           </Label>
-          <HelpTip
-            testId={`${step.id}-pull-from-guidance-help`}
-            text={
-              <div className="space-y-2">
-                <p>{pullFromGuidance}</p>
-                <p>{t("workflows:wipLimitsNote")}</p>
-              </div>
-            }
-          />
+          <HelpTip text={t("workflows:pullFromHelp")} />
         </div>
         <Select
           value={pullFromValue}
@@ -117,6 +102,7 @@ export function StepWipControls({
           </SelectContent>
         </Select>
       </div>
+      <p className="text-xs text-muted-foreground sm:col-span-2">{t("workflows:wipLimitsNote")}</p>
     </div>
   );
 }

@@ -3,8 +3,6 @@ import type { ForegroundActivity, TaskPendingAction, TaskSessionState } from "./
 export type TaskStatusSummary = {
   revision: number;
   updated_at: string;
-  /** Semantic task activity, separate from summary projection freshness. */
-  last_activity_at?: string;
   primary_session?: {
     id: string;
     state: TaskSessionState;

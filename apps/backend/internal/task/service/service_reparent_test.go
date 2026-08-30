@@ -24,13 +24,12 @@ func reparentFixture(t *testing.T) (*Service, *MockEventBus, *sqliterepo.Reposit
 	}
 	create := func(title string) *models.Task {
 		t.Helper()
-		taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+		task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 			WorkspaceID:    "ws-1",
 			WorkflowID:     "wf-1",
 			WorkflowStepID: "step-1",
 			Title:          title,
 		})
-		task := taskResult.Task
 		if err != nil {
 			t.Fatalf("create task %q: %v", title, err)
 		}

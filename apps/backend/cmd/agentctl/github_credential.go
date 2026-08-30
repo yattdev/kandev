@@ -17,16 +17,13 @@ import (
 )
 
 type githubBrokerResolveRequest struct {
-	Lease            string `json:"lease"`
-	TaskID           string `json:"task_id"`
-	SessionID        string `json:"session_id"`
-	RepositoryID     string `json:"repository_id"`
-	Owner            string `json:"owner"`
-	Repo             string `json:"repo"`
-	Host             string `json:"host"`
-	Path             string `json:"path,omitempty"`
-	ProviderID       string `json:"provider_id,omitempty"`
-	ParentProviderID string `json:"parent_provider_id,omitempty"`
+	Lease        string `json:"lease"`
+	TaskID       string `json:"task_id"`
+	SessionID    string `json:"session_id"`
+	RepositoryID string `json:"repository_id"`
+	Owner        string `json:"owner"`
+	Repo         string `json:"repo"`
+	Host         string `json:"host"`
 }
 
 type githubBrokerCredential struct {
@@ -157,11 +154,9 @@ func runGitHubCredentialHelper(
 	if err != nil {
 		return err
 	}
-	request, err := gitCredentialRequestForInput(input, client.request)
-	if err != nil {
+	if err := validateGitCredentialScope(input, client.request); err != nil {
 		return err
 	}
-	client.request = request
 	credential, err := client.resolve(ctx)
 	if err != nil {
 		return err
@@ -184,9 +179,8 @@ func newGitHubCredentialBrokerClientForInput(
 		return nil, fmt.Errorf("GitHub credential scopes are invalid: %w", err)
 	}
 	for _, scope := range scopes {
-		request, err := gitCredentialRequestForInput(input, scope)
-		if err == nil {
-			return newGitHubCredentialBrokerClientForRequest(getenv, httpClient, request)
+		if validateGitCredentialScope(input, scope) == nil {
+			return newGitHubCredentialBrokerClientForRequest(getenv, httpClient, scope)
 		}
 	}
 	return nil, fmt.Errorf("git repository does not match any credential lease scope")
@@ -236,45 +230,22 @@ func readGitCredentialInput(input io.Reader) (map[string]string, error) {
 	return values, nil
 }
 
-// gitCredentialRequestForInput validates the Git credential helper request
-// against its issued lease scope, then carries the issued repository path
-// through to the broker. Git uses owner/repo fields on this compatibility
-// endpoint, so Repo retains any provider namespace after the first segment.
-func gitCredentialRequestForInput(input map[string]string, scope githubBrokerResolveRequest) (githubBrokerResolveRequest, error) {
+func validateGitCredentialScope(input map[string]string, scope githubBrokerResolveRequest) error {
 	protocol := strings.TrimSpace(input["protocol"])
 	if !strings.EqualFold(protocol, "https") {
-		return githubBrokerResolveRequest{}, fmt.Errorf("git credential protocol %q is not supported", protocol)
+		return fmt.Errorf("git credential protocol %q is not supported", protocol)
 	}
 	host := strings.TrimSpace(input["host"])
 	if host == "" || !strings.EqualFold(host, scope.Host) {
-		return githubBrokerResolveRequest{}, fmt.Errorf("git credential host does not match credential lease scope")
+		return fmt.Errorf("git credential host does not match credential lease scope")
 	}
-	path, err := url.PathUnescape(strings.TrimSpace(input["path"]))
+	path, err := url.PathUnescape(strings.Trim(input["path"], "/"))
 	if err != nil {
-		return githubBrokerResolveRequest{}, fmt.Errorf("decode git credential path: %w", err)
+		return fmt.Errorf("decode git credential path: %w", err)
 	}
-	path = "/" + strings.TrimLeft(path, "/")
-	if path == "/" {
-		return githubBrokerResolveRequest{}, fmt.Errorf("git repository does not match credential lease scope")
+	path = strings.TrimSuffix(path, ".git")
+	if path == "" || !strings.EqualFold(path, scope.Owner+"/"+scope.Repo) {
+		return fmt.Errorf("git repository does not match credential lease scope")
 	}
-	if scope.Path != "" {
-		// The scope path comes from a clone URL and keeps its ".git" suffix,
-		// while the gh CLI shim asks for a bare "/<owner>/<repo>". Compare the
-		// canonical spelling so both reach the same lease. The broker compares
-		// the same way, so the exact issued path is what travels onward.
-		if githubauth.CanonicalCredentialPath(path) != githubauth.CanonicalCredentialPath(scope.Path) {
-			return githubBrokerResolveRequest{}, fmt.Errorf("git repository does not match credential lease scope")
-		}
-		path = scope.Path
-	} else {
-		legacyPath := strings.TrimSuffix(strings.Trim(path, "/"), ".git")
-		owner, repo, found := strings.Cut(legacyPath, "/")
-		if !found || owner == "" || repo == "" || legacyPath != scope.Owner+"/"+scope.Repo {
-			return githubBrokerResolveRequest{}, fmt.Errorf("git repository does not match credential lease scope")
-		}
-		scope.Owner = owner
-		scope.Repo = repo
-	}
-	scope.Path = path
-	return scope, nil
+	return nil
 }

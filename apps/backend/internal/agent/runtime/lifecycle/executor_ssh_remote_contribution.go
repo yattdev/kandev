@@ -9,7 +9,6 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/kandev/kandev/internal/githubauth"
 	"github.com/kandev/kandev/internal/task/models"
 )
 
@@ -68,8 +67,8 @@ func sshRemoteContributionEnv(req *ExecutorCreateRequest, agentctlBin string) ma
 	}
 	count := sshRemoteGitConfigCount(env)
 	managedBroker := hasManagedGitHubBrokerEnv(req.Env)
-	foundManagedHelper := rewriteSSHManagedGitCredentialHelpers(env, count, managedBroker, agentctlBin)
-	if managedBroker && !foundManagedHelper && agentctlBin != "" {
+	foundGitHubHelper := rewriteSSHManagedGitHubHelper(env, count, managedBroker, agentctlBin)
+	if managedBroker && !foundGitHubHelper && agentctlBin != "" {
 		count = appendSSHGitConfig(env, count, gitHubCredentialHelperConfigKey, "!"+agentctlBin+" git-credential")
 	}
 	if !managedBroker && (env[envKeyGHToken] != "" || env[envKeyGitHubToken] != "") && count < 64 {
@@ -89,33 +88,19 @@ func sshRemoteGitConfigCount(env map[string]string) int {
 	return count
 }
 
-func rewriteSSHManagedGitCredentialHelpers(env map[string]string, count int, managed bool, agentctlBin string) bool {
+func rewriteSSHManagedGitHubHelper(env map[string]string, count int, managed bool, agentctlBin string) bool {
 	found := false
 	for index := 0; index < count; index++ {
 		keySuffix := strconv.Itoa(index)
-		key := strings.ToLower(strings.TrimSpace(env["GIT_CONFIG_KEY_"+keySuffix]))
-		if !strings.HasPrefix(key, "credential.https://") || !strings.HasSuffix(key, ".helper") {
-			continue
-		}
-		valueKey := "GIT_CONFIG_VALUE_" + keySuffix
-		if !managed || !isManagedSSHGitCredentialHelper(env[valueKey]) {
+		if !strings.EqualFold(env["GIT_CONFIG_KEY_"+keySuffix], gitHubCredentialHelperConfigKey) {
 			continue
 		}
 		found = true
-		env[valueKey] = "!" + agentctlBin + " git-credential"
+		if managed && strings.Contains(env["GIT_CONFIG_VALUE_"+keySuffix], "git-credential") {
+			env["GIT_CONFIG_VALUE_"+keySuffix] = "!" + agentctlBin + " git-credential"
+		}
 	}
 	return found
-}
-
-func isManagedSSHGitCredentialHelper(value string) bool {
-	switch value {
-	case githubauth.ManagedGitCredentialHelper,
-		githubauth.LegacyShimGitCredentialHelper,
-		githubauth.LegacyGitCredentialHelper:
-		return true
-	default:
-		return false
-	}
 }
 
 func appendSSHGitConfig(env map[string]string, count int, key, value string) int {

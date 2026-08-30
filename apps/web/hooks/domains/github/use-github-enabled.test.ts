@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { useGitHubEnabled } from "./use-github-enabled";
-import { makeLocalStorageMock } from "../../local-storage-mock.test-helpers";
-import { resetIntegrationEnabledMigrations } from "../integrations/use-integration-enabled";
+import { makeLocalStorageMock } from "../integrations/local-storage-mock.test-helpers";
 
 const STORAGE_KEY = "kandev:github:enabled:v1";
 
@@ -16,7 +15,6 @@ Object.defineProperty(window, "localStorage", {
 describe("useGitHubEnabled", () => {
   beforeEach(() => {
     localStorageMock.clear();
-    resetIntegrationEnabledMigrations();
   });
   afterEach(() => {
     localStorageMock.clear();
@@ -70,19 +68,14 @@ describe("useGitHubEnabled", () => {
     await waitFor(() => expect(result.current.enabled).toBe(false));
   });
 
-  it("restores a legacy per-workspace key to that workspace's own key", async () => {
-    // The pre-scoping keys were `kandev:github:enabled:<workspaceId>:v1`, one per
-    // workspace, so each is restored to the workspace it came from rather than
-    // folded into a single install-wide value.
-    window.localStorage.setItem("kandev:github:enabled:ws-123:v1", "false");
+  it("migrates a legacy per-workspace key onto the canonical storage key", async () => {
+    window.localStorage.setItem("kandev:github:enabled:ws-123", "false");
 
-    const { result } = renderHook(() => useGitHubEnabled("ws-123"));
+    const { result } = renderHook(() => useGitHubEnabled());
 
     await waitFor(() => expect(result.current.loaded).toBe(true));
     expect(result.current.enabled).toBe(false);
-    expect(window.localStorage.getItem(`${STORAGE_KEY}:ws-123`)).toBe("false");
-    expect(window.localStorage.getItem("kandev:github:enabled:ws-123:v1")).toBeNull();
-    // Another workspace is untouched by that migration.
-    expect(renderHook(() => useGitHubEnabled("ws-other")).result.current.enabled).toBe(true);
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("false");
+    expect(window.localStorage.getItem("kandev:github:enabled:ws-123")).toBeNull();
   });
 });

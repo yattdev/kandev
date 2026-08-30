@@ -86,13 +86,6 @@ describe("useGitHubStatus workspace scoping", () => {
 
     act(() => result.current.refresh());
     await waitFor(() => expect(fetchGitHubStatusMock).toHaveBeenCalledTimes(2));
-
-    expect(fetchGitHubStatusMock).toHaveBeenNthCalledWith(
-      2,
-      WORKSPACE_A,
-      { cache: "no-store" },
-      true,
-    );
     await act(async () =>
       second.resolve({
         workspace_id: WORKSPACE_A,

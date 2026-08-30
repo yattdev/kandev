@@ -77,13 +77,12 @@ func TestLoadTaskGitObservationsSkipsSessionsWithoutSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list workflow steps: %v", err)
 	}
-	taskResult, err := harness.taskSvc.CreateTask(ctx, &service.CreateTaskRequest{
+	task, err := harness.taskSvc.CreateTask(ctx, &service.CreateTaskRequest{
 		WorkspaceID:    workspaces[0].ID,
 		WorkflowID:     workflows[0].ID,
 		WorkflowStepID: steps[0].ID,
 		Title:          "Git observation hydration",
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}

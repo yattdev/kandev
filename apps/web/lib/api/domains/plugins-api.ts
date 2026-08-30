@@ -60,10 +60,8 @@ export async function installPluginUpload(
   const formData = new FormData();
   formData.append("package", file);
 
-  // Do NOT set Content-Type: the browser picks multipart/form-data with the
-  // right boundary for a FormData body. Spread caller init *first* so
-  // method/body always win, or a caller passing a stale method or body would
-  // silently break the upload.
+  // Spread caller init *first* so method/body always win, matching the
+  // convention in lib/api/domains/voice-api.ts.
   const response = await fetch(`${baseUrl}${BASE}/install`, {
     ...options?.init,
     method: "POST",

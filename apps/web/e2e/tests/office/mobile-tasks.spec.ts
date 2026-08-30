@@ -140,19 +140,16 @@ async function waitForRoutingProfile(
   workspaceId: string,
   profileId: string,
 ): Promise<{ id: string; model: string }> {
-  let profile: { id: string; model: string } | undefined;
-  await expect
-    .poll(
-      async () => {
-        const routing = await officeApi.getRouting(workspaceId);
-        profile = routing.execution_profiles.find((candidate) => candidate.id === profileId);
-        return Boolean(profile);
-      },
-      { timeout: ROUTING_PROFILE_WAIT_MS, message: `routing profile ${profileId} did not appear` },
-    )
-    .toBe(true);
-  if (!profile) throw new Error(`Routing profile ${profileId} did not appear`);
-  return profile;
+  const deadline = Date.now() + ROUTING_PROFILE_WAIT_MS;
+  while (Date.now() < deadline) {
+    const routing = await officeApi.getRouting(workspaceId);
+    const profile = routing.execution_profiles.find((candidate) => candidate.id === profileId);
+    if (profile) return profile;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(
+    `Routing profile ${profileId} did not appear within ${ROUTING_PROFILE_WAIT_MS}ms`,
+  );
 }
 
 type TestableApiClient = {

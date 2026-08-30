@@ -134,7 +134,6 @@ func setupQueueHandlersWithDrainer(t *testing.T, drainer QueueDrainer) (*QueueHa
 	})
 	require.NoError(t, err)
 	svc := messagequeue.NewServiceMemory(log)
-	svc.SetAutoMergeEnabled(false)
 	return NewQueueHandlers(svc, &mockEventBus{}, log, drainer, allowQueueAccess{}, nil), svc
 }
 
@@ -147,7 +146,6 @@ func setupQueueHandlersWithValidator(t *testing.T, validator entityrefs.Submissi
 	})
 	require.NoError(t, err)
 	svc := messagequeue.NewServiceMemory(log)
-	svc.SetAutoMergeEnabled(false)
 	return NewQueueHandlers(svc, &mockEventBus{}, log, nil, allowQueueAccess{}, nil, validator), svc
 }
 
@@ -192,9 +190,6 @@ func TestQueueHandlersDenyUnauthorizedSessionActions(t *testing.T) {
 		{name: "merge", action: ws.ActionMessageQueueMerge, call: (*QueueHandlers).wsMergeIntoAbove, body: func(id string) map[string]interface{} {
 			return map[string]interface{}{"session_id": "s", "entry_id": id}
 		}},
-		{name: "reorder", action: ws.ActionMessageQueueReorder, call: (*QueueHandlers).wsReorder, body: func(id string) map[string]interface{} {
-			return map[string]interface{}{"session_id": "s", "ordered_ids": []string{id, "q-other"}}
-		}},
 	}
 
 	for _, tc := range tests {
@@ -202,7 +197,6 @@ func TestQueueHandlersDenyUnauthorizedSessionActions(t *testing.T) {
 			log, err := logger.NewLogger(logger.LoggingConfig{Level: "error", Format: "console", OutputPath: "stderr"})
 			require.NoError(t, err)
 			svc := messagequeue.NewServiceMemory(log)
-			svc.SetAutoMergeEnabled(false)
 			_, err = svc.QueueMessage(context.Background(), "s", "t", "first", "", messagequeue.QueuedByUser, false, nil)
 			require.NoError(t, err)
 			second, err := svc.QueueMessage(context.Background(), "s", "t", "second", "", messagequeue.QueuedByUser, false, nil)

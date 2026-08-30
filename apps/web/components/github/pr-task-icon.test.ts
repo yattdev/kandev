@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  canAttemptPRMerge,
   aggregatePRStatusColor,
   getPRAggregateStatusColor,
   areAllOpenPRsReadyToMerge,
   getPRStatusColor,
+  getPRTooltip,
   isPRAwaitingReview,
   isPRReadyToMerge,
   isPRWaitingOnBranchProtection,
@@ -124,7 +124,7 @@ describe("isPRReadyToMerge", () => {
     ).toBe(false);
   });
 
-  it("does not claim readiness for GitHub's overloaded blocked state", () => {
+  it("is false when mergeable_state is blocked", () => {
     expect(
       isPRReadyToMerge(
         makePR({
@@ -165,21 +165,6 @@ describe("isPRReadyToMerge", () => {
       ).toBe(false);
     },
   );
-});
-
-describe("canAttemptPRMerge", () => {
-  it("allows GitHub to decide whether a locally green blocked PR enters a queue", () => {
-    expect(
-      canAttemptPRMerge(
-        makePR({
-          state: "open",
-          review_state: "approved",
-          checks_state: "success",
-          mergeable_state: "blocked",
-        }),
-      ),
-    ).toBe(true);
-  });
 });
 
 describe("isPRReadyToMerge — aggregate counts", () => {
@@ -277,7 +262,9 @@ describe("getPRStatusColor", () => {
     expect(getPRStatusColor(pr)).toBe(EMERALD_400);
   });
 
-  it("keeps an approved blocked PR neutral until GitHub accepts it", () => {
+  it("returns muted for approved+success but mergeable_state blocked (branch protection)", () => {
+    // Branch protection is a normal repository-rule wait after CI passes, not
+    // a warning state.
     const pr = makePR({
       state: "open",
       review_state: "approved",
@@ -668,5 +655,35 @@ describe("pickDefaultPR", () => {
     const merged = makePR({ id: "merged", state: "merged" });
     const closed = makePR({ id: "closed", state: "closed" });
     expect(pickDefaultPR([merged, closed])?.id).toBe("merged");
+  });
+});
+
+describe("getPRTooltip", () => {
+  it("includes 'Ready to merge' when ready", () => {
+    const pr = makePR({
+      state: "open",
+      review_state: "approved",
+      checks_state: "success",
+      mergeable_state: "clean",
+    });
+    expect(getPRTooltip(pr)).toContain("Ready to merge");
+  });
+
+  it("includes 'Mergeable: blocked' when blocked", () => {
+    const pr = makePR({
+      state: "open",
+      review_state: "approved",
+      checks_state: "success",
+      mergeable_state: "blocked",
+    });
+    expect(getPRTooltip(pr)).toContain("Mergeable: blocked");
+    expect(getPRTooltip(pr)).not.toContain("Ready to merge");
+  });
+
+  it("omits mergeable when state is empty or unknown", () => {
+    const empty = makePR({ state: "open", mergeable_state: "" });
+    const unknown = makePR({ state: "open", mergeable_state: "unknown" });
+    expect(getPRTooltip(empty)).not.toContain("Mergeable:");
+    expect(getPRTooltip(unknown)).not.toContain("Mergeable:");
   });
 });

@@ -60,9 +60,9 @@ func (s *Service) CreateChildTask(
 		Origin:                 models.TaskOriginAgentCreated,
 		ProjectID:              parent.ProjectID,
 	}
-	result, err := s.CreateTask(ctx, req)
+	task, err := s.CreateTask(ctx, req)
 	if err != nil {
 		return "", err
 	}
-	return result.Task.ID, nil
+	return task.ID, nil
 }

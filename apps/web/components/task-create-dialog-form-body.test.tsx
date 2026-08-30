@@ -1,6 +1,6 @@
 import { createRef } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import {
   CreateEditSelectors,
   DialogPromptSection,
@@ -8,19 +8,9 @@ import {
 } from "./task-create-dialog-form-body";
 import type { DialogFormState, TaskFormInputsHandle } from "./task-create-dialog-types";
 
-afterEach(cleanup);
-
 vi.mock("@/components/workflow-selector-row", () => ({
   WorkflowSelectorRow: ({ selectedWorkflowId }: { selectedWorkflowId: string | null }) => (
     <button type="button">Workflow selector {selectedWorkflowId ?? "none"}</button>
-  ),
-}));
-
-vi.mock("@/components/task-create-dialog-dependencies", () => ({
-  TaskCreateDependencies: ({ value }: { value: string[] }) => (
-    <button type="button" data-testid="task-create-dependencies-trigger">
-      {value.length > 0 ? `${value.length} dependencies` : "No dependency"}
-    </button>
   ),
 }));
 
@@ -56,7 +46,7 @@ function renderWorkflowSection(effectiveWorkflowId: string | null) {
   );
 }
 
-describe("WorkflowSection workflow rendering", () => {
+describe("WorkflowSection", () => {
   it("keeps the selector reachable when no effective workflow is selected", () => {
     renderWorkflowSection(null);
 
@@ -64,62 +54,15 @@ describe("WorkflowSection workflow rendering", () => {
   });
 
   it("does not show redundant selector for a selected single workflow without overrides", () => {
-    renderWorkflowSection("wf-1");
+    const { container } = renderWorkflowSection("wf-1");
 
-    expect(screen.queryByRole("button", { name: /workflow selector wf-1/i })).toBeNull();
-    expect(screen.queryByTestId("task-create-dependencies-trigger")).toBeNull();
-  });
-});
-
-describe("WorkflowSection", () => {
-  const secondWorkflow = { id: "wf-2", name: "Support" };
-
-  function renderWorkflowSection(
-    effectiveWorkflowId: string | null,
-    workflows = [workflow, secondWorkflow],
-  ) {
-    return render(
-      <WorkflowSection
-        isCreateMode
-        isTaskStarted={false}
-        workflows={workflows}
-        snapshots={{}}
-        effectiveWorkflowId={effectiveWorkflowId}
-        onWorkflowChange={() => {}}
-        agentProfiles={[]}
-      />,
-    );
-  }
-
-  it("renders the workflow selector without an inline dependency slot", () => {
-    renderWorkflowSection("wf-1");
-
-    expect(screen.getByRole("button", { name: /workflow selector wf-1/i })).toBeTruthy();
-    expect(screen.queryByTestId("task-create-dependencies-trigger")).toBeNull();
-  });
-
-  it("does not render a workflow row for a single workflow without overrides", () => {
-    renderWorkflowSection("wf-1", [workflow]);
-
-    expect(screen.queryByRole("button", { name: /workflow selector wf-1/i })).toBeNull();
-    expect(screen.queryByTestId("task-create-dependencies-trigger")).toBeNull();
-  });
-
-  it("keeps the workflow section independent from advanced dependencies", () => {
-    renderWorkflowSection("wf-1");
-
-    expect(screen.getByRole("button", { name: /workflow selector wf-1/i })).toBeTruthy();
-    expect(screen.queryByTestId("task-create-dependency-slot")).toBeNull();
+    expect(container.textContent).toBe("");
   });
 });
 
 function makeFs(): DialogFormState {
   return {
-    blockedBy: [],
-    setBlockedBy: () => undefined,
     taskName: "",
-    autopilot: false,
-    setAutopilot: () => {},
     setTaskName: () => {},
     hasTitle: false,
     setHasTitle: () => {},
@@ -173,7 +116,6 @@ function makeFs(): DialogFormState {
     prInfoByUrl: {
       info: () => undefined,
       loading: () => false,
-      settled: () => true,
       error: () => undefined,
       ensure: () => undefined,
       clear: () => undefined,
@@ -271,9 +213,9 @@ describe("DialogPromptSection (CLI-mode parity)", () => {
     expect((last.linearImport as { disabled: boolean } | undefined)?.disabled).toBe(false);
   });
 
-  it("forwards onComposerSubmit to TaskFormInputs", () => {
+  it("forwards onVoiceAutoSend to TaskFormInputs", () => {
     taskFormInputsCalls.length = 0;
-    const onComposerSubmit = () => true;
+    const onVoiceAutoSend = () => {};
     render(
       <DialogPromptSection
         isSessionMode={false}
@@ -281,12 +223,12 @@ describe("DialogPromptSection (CLI-mode parity)", () => {
         initialDescription=""
         fs={makeFs()}
         handleKeyDown={(() => {}) as never}
-        onComposerSubmit={onComposerSubmit}
+        onVoiceAutoSend={onVoiceAutoSend}
       />,
     );
 
     const last = taskFormInputsCalls.at(-1)!;
-    expect(last.onComposerSubmit).toBe(onComposerSubmit);
+    expect(last.onVoiceAutoSend).toBe(onVoiceAutoSend);
   });
 });
 

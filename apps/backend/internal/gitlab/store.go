@@ -235,10 +235,7 @@ func (s *Store) createTables() error {
 	if err := s.migrateMRWatchUniqueKey(); err != nil {
 		return err
 	}
-	if err := s.ensureMRWatchIndexes(); err != nil {
-		return err
-	}
-	return s.healTaskOwnedOrphans()
+	return s.ensureMRWatchIndexes()
 }
 
 // migrateTaskMRAutomationFields adds the reviewer/merge-readiness columns
@@ -250,10 +247,10 @@ func (s *Store) createTables() error {
 // TABLE above (which is a no-op on an existing table).
 func (s *Store) migrateTaskMRAutomationFields() error {
 	columns := []struct{ name, ddl string }{
-		{"detailed_merge_status", sqlTextDefaultEmpty},
-		{"reviewer_count", sqlIntegerDefaultZero},
-		{"unapproved_reviewers", sqlIntegerDefaultZero},
-		{"unresolved_discussions", sqlIntegerDefaultZero},
+		{"detailed_merge_status", "TEXT NOT NULL DEFAULT ''"},
+		{"reviewer_count", "INTEGER NOT NULL DEFAULT 0"},
+		{"unapproved_reviewers", "INTEGER NOT NULL DEFAULT 0"},
+		{"unresolved_discussions", "INTEGER NOT NULL DEFAULT 0"},
 	}
 	return addMissingColumns(s, "gitlab_task_mrs", columns)
 }
@@ -370,13 +367,13 @@ func (s *Store) migrateWatchColumns() error {
 		name string
 		ddl  string
 	}{
-		{"repository_id", sqlTextDefaultEmpty},
-		{"base_branch", sqlTextDefaultEmpty},
+		{"repository_id", "TEXT NOT NULL DEFAULT ''"},
+		{"base_branch", "TEXT NOT NULL DEFAULT ''"},
 		{"max_inflight_tasks", "INTEGER"},
-		{"last_error", sqlTextDefaultEmpty},
-		{"last_error_at", sqlDateTime},
+		{"last_error", "TEXT NOT NULL DEFAULT ''"},
+		{"last_error_at", "DATETIME"},
 		{"generation", "INTEGER NOT NULL DEFAULT 1"},
-		{"deleting", sqlBooleanDefaultFalse},
+		{"deleting", "BOOLEAN NOT NULL DEFAULT 0"},
 	}
 	for _, table := range []string{"gitlab_review_watches", "gitlab_issue_watches"} {
 		existing, err := s.tableColumns(table)

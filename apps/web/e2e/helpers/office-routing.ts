@@ -1,6 +1,5 @@
 import type { ApiClient } from "./api-client";
 import type { OfficeApiClient } from "./office-api-client";
-import { dwell } from "./causal-waits";
 
 const PROFILE_WAIT_MS = 20_000;
 
@@ -27,11 +26,7 @@ export async function balancedExecutionProfileRouting(
       }),
     );
     if (profiles.some((profile) => profile === undefined)) {
-      await dwell(
-        250,
-        "poll-interval",
-        "sampling interval for the profile-creation retry above; no Page exists in this helper, and profile availability is read back over HTTP rather than pushed",
-      );
+      await new Promise((resolve) => setTimeout(resolve, 250));
       continue;
     }
     const routing = await officeApi.getRouting(workspaceId);
@@ -57,11 +52,7 @@ export async function balancedExecutionProfileRouting(
         ),
       };
     }
-    await dwell(
-      250,
-      "poll-interval",
-      "sampling interval for the routing-readiness loop above; no Page exists in this helper, and the routing config is read back over HTTP rather than pushed",
-    );
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`execution profiles did not become available for ${providerOrder.join(", ")}`);
 }

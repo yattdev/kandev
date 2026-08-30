@@ -5,7 +5,6 @@ import { Button } from "@kandev/ui/button";
 import { Input } from "@kandev/ui/input";
 import type { KeyValue } from "@/lib/settings/types";
 import { generateUUID } from "@/lib/utils";
-import { t } from "@/lib/i18n";
 
 type KeyValueInputProps = {
   items: KeyValue[];
@@ -19,9 +18,9 @@ type KeyValueInputProps = {
 export function KeyValueInput({
   items,
   onChange,
-  keyPlaceholder = t("settings:keyValueKeyPlaceholder"),
-  valuePlaceholder = t("settings:keyValueValuePlaceholder"),
-  addButtonLabel = t("settings:keyValueAddItem"),
+  keyPlaceholder = "Key",
+  valuePlaceholder = "Value",
+  addButtonLabel = "Add Item",
   masked = false,
 }: KeyValueInputProps) {
   const handleAdd = () => {

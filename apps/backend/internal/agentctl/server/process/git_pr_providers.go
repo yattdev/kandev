@@ -438,16 +438,7 @@ func (g *GitOperator) createGitHubPR(
 	branch, title, body, baseBranch string,
 	draft bool,
 ) (*PRCreateResult, error) {
-	head := branch
-	args := []string{"pr", prCreateSubcommand, repositoryFlagTitle, title, repositoryFlagBody, body}
-	if g.contributionDestination != nil {
-		parts := strings.Split(g.contributionDestination.TargetRepository.Path, "/")
-		if len(parts) == 2 {
-			head = parts[0] + ":" + branch
-			args = append(args, "--repo", g.contributionDestination.SourceRepository.Path)
-		}
-	}
-	args = append(args, repositoryFlagHead, head)
+	args := []string{"pr", prCreateSubcommand, repositoryFlagTitle, title, repositoryFlagBody, body, repositoryFlagHead, branch}
 	if cleanBase := cleanBaseBranch(baseBranch); cleanBase != "" {
 		args = append(args, "--base", cleanBase)
 	}

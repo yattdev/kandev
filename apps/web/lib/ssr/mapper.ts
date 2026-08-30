@@ -31,23 +31,11 @@ export function snapshotToState(snapshot: WorkflowSnapshot): Partial<AppState> {
       const primary = primaryTaskRepository(task.repositories);
       return {
         id: task.id,
-        workflowId: snapshot.workflow.id,
         workflowStepId,
         title: task.title,
         description: task.description ?? undefined,
-        autopilot: task.autopilot ?? false,
         position: task.position ?? 0,
         state: task.state,
-        // Preserve WIP admission and queue metadata during HTTP snapshot
-        // refreshes. The Go boot mapper, WebSocket handler, and canonical
-        // task mapper already carry these fields. This path must keep the
-        // same values so queue classification and ordering stay consistent
-        // after a workflow switch or reconnect.
-        priority: task.priority,
-        createdAt: task.created_at,
-        wipAdmitted: task.wip_admitted,
-        queuedForStepId: task.queued_for_step_id,
-        queuedAt: task.queued_at,
         repositoryId: primary?.repository_id ?? undefined,
         repositories: task.repositories?.map((r) => ({
           id: r.id,
@@ -64,7 +52,6 @@ export function snapshotToState(snapshot: WorkflowSnapshot): Partial<AppState> {
         activeSubagentCount: task.active_subagent_count ?? undefined,
         sessionCount: task.session_count ?? undefined,
         reviewStatus: task.review_status ?? undefined,
-        statusSummary: task.status_summary,
         parentTaskId: task.parent_id ?? undefined,
         metadata: task.metadata,
         workspaceMode: workspaceModeFromMetadata(task.metadata),
@@ -112,7 +99,6 @@ export function taskToState(
       activeSessionId: resolvedSessionId,
       pinnedSessionId: null,
       lastSessionByTaskId: resolvedSessionId ? { [task.id]: resolvedSessionId } : {},
-      resumeSkippedSessionIds: {},
     },
     messages:
       resolvedSessionId && messages

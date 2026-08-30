@@ -117,10 +117,9 @@ test.describe("Task environment", () => {
     expect(env).not.toBeNull();
     const { sessions } = await apiClient.listTaskSessions(task.id);
 
-    // If the session has a worktree_path, it should match the environment's
-    // repository worktree row.
+    // If the session has a worktree_path, it should match the environment's worktree
     if (sessions[0].worktree_path) {
-      expect(env!.repos?.[0]?.worktree_path).toBe(sessions[0].worktree_path);
+      expect(env!.worktree_path).toBe(sessions[0].worktree_path);
     }
   });
 });

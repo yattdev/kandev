@@ -1,5 +1,4 @@
 import { test, expect } from "../../fixtures/test-base";
-import { dwell } from "../../helpers/causal-waits";
 import { SessionPage } from "../../pages/session-page";
 import type { ApiClient } from "../../helpers/api-client";
 import type { SeedData } from "../../fixtures/test-base";
@@ -126,12 +125,7 @@ async function hoverUntilGutterSlotAppears(testPage: Page) {
         };
       });
       if (geometry) return geometry;
-      await dwell(
-        testPage,
-        50,
-        "poll-interval",
-        "sampling interval for the hover-geometry loop above; the utility slot is rendered by a hover handler that publishes nothing, so the loop re-reads the DOM rather than awaiting an event",
-      );
+      await testPage.waitForTimeout(50);
     }
   }
 

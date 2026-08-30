@@ -14,14 +14,8 @@ import {
 } from "@kandev/ui/dialog";
 import { Input } from "@kandev/ui/input";
 import { Label } from "@kandev/ui/label";
-import { MCPStrategySelect, useMCPStrategies } from "./mcp-strategy-select";
 
-type TUIAgentFormData = {
-  display_name: string;
-  model?: string;
-  command: string;
-  mcp_strategy?: string;
-};
+type TUIAgentFormData = { display_name: string; model?: string; command: string };
 
 // The placeholder kandev substitutes into the TUI command. The user types it
 // verbatim, so it is interpolated as a value rather than written into the
@@ -38,7 +32,6 @@ type DialogHandlersParams = {
   displayName: string;
   model: string;
   command: string;
-  mcpStrategy: string;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
   onSubmit: (data: TUIAgentFormData) => Promise<void>;
@@ -50,7 +43,6 @@ function useDialogHandlers({
   displayName,
   model,
   command,
-  mcpStrategy,
   setError,
   setLoading,
   onSubmit,
@@ -73,7 +65,6 @@ function useDialogHandlers({
         display_name: displayName.trim(),
         model: model.trim() || undefined,
         command: command.trim(),
-        mcp_strategy: mcpStrategy || undefined,
       });
       reset();
       onOpenChange(false);
@@ -97,18 +88,13 @@ export function AddTUIAgentDialog({ open, onOpenChange, onSubmit }: AddTUIAgentD
   const [displayName, setDisplayName] = useState("");
   const [model, setModel] = useState("");
   const [command, setCommand] = useState("");
-  const [mcpStrategy, setMcpStrategy] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Only fetch the strategy list while the dialog is open.
-  const strategies = useMCPStrategies(open);
 
   const reset = () => {
     setDisplayName("");
     setModel("");
     setCommand("");
-    setMcpStrategy("");
     setError(null);
     setLoading(false);
   };
@@ -117,7 +103,6 @@ export function AddTUIAgentDialog({ open, onOpenChange, onSubmit }: AddTUIAgentD
     displayName,
     model,
     command,
-    mcpStrategy,
     setError,
     setLoading,
     onSubmit,
@@ -168,12 +153,6 @@ export function AddTUIAgentDialog({ open, onOpenChange, onSubmit }: AddTUIAgentD
               </Trans>
             </p>
           </div>
-          <MCPStrategySelect
-            id="tui-mcp-strategy"
-            value={mcpStrategy}
-            onChange={setMcpStrategy}
-            strategies={strategies}
-          />
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>

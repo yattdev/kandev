@@ -5,18 +5,12 @@ import { SessionPage } from "../../pages/session-page";
 
 const FULL_QUEUE_SIZE = 10;
 
-export type FullQueueSeed = {
-  taskId: string;
-  sessionId: string;
-  session: SessionPage;
-};
-
 export async function seedFullQueueTask(
   page: Page,
   apiClient: ApiClient,
   seedData: SeedData,
   title: string,
-): Promise<FullQueueSeed> {
+): Promise<SessionPage> {
   const task = await apiClient.createTask(seedData.workspaceId, title, {
     description: "Queue scrolling regression",
     workflow_id: seedData.workflowId,
@@ -40,7 +34,7 @@ export async function seedFullQueueTask(
   await page.goto(`/t/${task.id}`);
   const session = new SessionPage(page);
   await session.waitForLoad();
-  return { taskId: task.id, sessionId, session };
+  return session;
 }
 
 export async function expectFullQueueScrolls(session: SessionPage): Promise<void> {

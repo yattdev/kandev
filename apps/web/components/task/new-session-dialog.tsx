@@ -32,7 +32,7 @@ import { Trans, useTranslation } from "react-i18next";
 
 export type { HandoffPreset } from "./handoff-types";
 
-const PROGRAMMATIC_SUBMIT_EVENT = { preventDefault: () => {} } as unknown as FormEvent;
+const VOICE_SUBMIT_EVENT = { preventDefault: () => {} } as unknown as FormEvent;
 
 type NewSessionDialogProps = {
   open: boolean;
@@ -49,7 +49,6 @@ function agentProfileDisplayLabel(profile: AgentProfileOption): string {
 }
 
 function useNewSessionDialogState(taskId: string) {
-  const { t } = useTranslation();
   const resolvedWorkspaceId = useAppStore((state) =>
     resolveComposerWorkspaceId({
       sessionId: null,
@@ -62,8 +61,8 @@ function useNewSessionDialogState(taskId: string) {
     }),
   );
   const taskTitle = useAppStore((state) => {
-    const task = state.kanban.tasks.find((entry: { id: string }) => entry.id === taskId);
-    return task?.title ?? t("common:task");
+    const task = state.kanban.tasks.find((t: { id: string }) => t.id === taskId);
+    return task?.title ?? "Task";
   });
   const agentProfiles = useAppStore((state) => state.agentProfiles.items);
   const activeSessionId = useAppStore((state) => state.tasks.activeSessionId);
@@ -132,7 +131,6 @@ function activateNewSession(
 }
 
 function useSessionOptions(taskId: string) {
-  const { t } = useTranslation();
   const { sessions, loadSessions } = useTaskSessions(taskId);
   const agentProfiles = useAppStore((s) => s.agentProfiles.items);
   useEffect(() => {
@@ -145,10 +143,10 @@ function useSessionOptions(taskId: string) {
     );
     return sorted.map((s, idx) => {
       const profile = agentProfiles.find((p: { id: string }) => p.id === s.agent_profile_id);
-      const name = profile ? agentProfileDisplayLabel(profile) : t("task:panelAgent");
+      const name = profile ? agentProfileDisplayLabel(profile) : "Agent";
       return { id: s.id, label: name, index: idx + 1, agentName: profile?.agent_name };
     });
-  }, [sessions, agentProfiles, t]);
+  }, [sessions, agentProfiles]);
 }
 
 function isMissingCompatibleProfile(
@@ -376,7 +374,6 @@ function NewSessionForm({
   const [selectedProfileId, setSelectedProfileId] = useState(
     handoffInitial?.selectedProfileId ?? initialProfileId ?? defaultProfileId,
   );
-  const [profileExplicit, setProfileExplicit] = useState(Boolean(handoff));
   const [hasPrompt, setHasPrompt] = useState(false);
   const [hasPendingAttachmentUploads, setHasPendingAttachmentUploads] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -408,7 +405,6 @@ function NewSessionForm({
     promptRef,
     taskId,
     selectedProfileId,
-    profileExplicit,
     executorId,
     contextValue,
     initialPrompt,
@@ -436,10 +432,7 @@ function NewSessionForm({
         profileOptions={profileSelection.profileOptions}
         selectedProfileId={selectedProfileId}
         isCreating={isCreating}
-        onProfileChange={(value) => {
-          setProfileExplicit(true);
-          setSelectedProfileId(value);
-        }}
+        onProfileChange={setSelectedProfileId}
       />
       <ContextSelect
         value={contextValue}
@@ -450,7 +443,6 @@ function NewSessionForm({
       />
       <TaskFormInputs
         isSessionMode
-        taskId={taskId}
         workspaceId={workspaceId}
         autoFocus
         initialDescription=""
@@ -474,12 +466,9 @@ function NewSessionForm({
         onEnhancePrompt={handleEnhancePrompt}
         isEnhancingPrompt={isEnhancingPrompt}
         isUtilityConfigured={isUtilityConfigured}
-        onComposerSubmit={() => {
-          if (isBusyState || hasPendingAttachmentUploads || !profileSelection.hasProfiles) {
-            return false;
-          }
-          void handleSubmit(PROGRAMMATIC_SUBMIT_EVENT);
-          return true;
+        onVoiceAutoSend={() => {
+          if (isBusyState || hasPendingAttachmentUploads || !profileSelection.hasProfiles) return;
+          void handleSubmit(VOICE_SUBMIT_EVENT);
         }}
       />
       <PromptResultRecovery

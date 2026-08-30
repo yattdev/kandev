@@ -1,5 +1,4 @@
 import { useCallback } from "react";
-import { useTranslation } from "react-i18next";
 import { getWebSocketClient } from "@/lib/ws/connection";
 import type { WebSocketClient } from "@/lib/ws/client";
 import { createFile, deleteFile, renameFile, requestFileContent } from "@/lib/ws/workspace-files";
@@ -9,6 +8,7 @@ import { useToast } from "@/components/toast-provider";
 type ToastFn = ReturnType<typeof useToast>["toast"];
 
 const ERROR_VARIANT = "error" as const;
+const UNKNOWN_ERROR = "An unknown error occurred";
 
 type DownloadResult = { ok: true } | { ok: false; error?: string };
 
@@ -20,7 +20,6 @@ export async function downloadFileContent(
   client: WebSocketClient,
   sessionId: string,
   path: string,
-  unknownError: string,
 ): Promise<DownloadResult> {
   try {
     const response = await requestFileContent(client, sessionId, path);
@@ -32,25 +31,24 @@ export async function downloadFileContent(
     });
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : unknownError };
+    return { ok: false, error: error instanceof Error ? error.message : UNKNOWN_ERROR };
   }
 }
 
 async function runFileOp<T extends { success: boolean; error?: string }>(
   op: () => Promise<T>,
   title: string,
-  unknownError: string,
   toast: ToastFn,
 ): Promise<boolean> {
   try {
     const response = await op();
     if (!response.success) {
-      toast({ title, description: response.error || unknownError, variant: ERROR_VARIANT });
+      toast({ title, description: response.error || UNKNOWN_ERROR, variant: ERROR_VARIANT });
       return false;
     }
     return true;
   } catch (error) {
-    const description = error instanceof Error ? error.message : unknownError;
+    const description = error instanceof Error ? error.message : UNKNOWN_ERROR;
     toast({ title, description, variant: ERROR_VARIANT });
     return false;
   }
@@ -58,35 +56,23 @@ async function runFileOp<T extends { success: boolean; error?: string }>(
 
 export function useFileOperations(sessionId: string | null) {
   const { toast } = useToast();
-  const { t } = useTranslation("task");
-  const unknownError = t("common:anUnknownErrorOccurred");
 
   const handleCreateFile = useCallback(
     async (path: string): Promise<boolean> => {
       const client = getWebSocketClient();
       if (!client || !sessionId) return false;
-      return runFileOp(
-        () => createFile(client, sessionId, path),
-        t("task:failedToCreateFile"),
-        unknownError,
-        toast,
-      );
+      return runFileOp(() => createFile(client, sessionId, path), "Failed to create file", toast);
     },
-    [sessionId, t, toast, unknownError],
+    [sessionId, toast],
   );
 
   const handleDeleteFile = useCallback(
     async (path: string): Promise<boolean> => {
       const client = getWebSocketClient();
       if (!client || !sessionId) return false;
-      return runFileOp(
-        () => deleteFile(client, sessionId, path),
-        t("task:failedToDeleteItem"),
-        unknownError,
-        toast,
-      );
+      return runFileOp(() => deleteFile(client, sessionId, path), "Failed to delete item", toast);
     },
-    [sessionId, t, toast, unknownError],
+    [sessionId, toast],
   );
 
   const handleRenameFile = useCallback(
@@ -95,30 +81,29 @@ export function useFileOperations(sessionId: string | null) {
       if (!client || !sessionId) return false;
       return runFileOp(
         () => renameFile(client, sessionId, oldPath, newPath),
-        t("task:failedToRenameItem"),
-        unknownError,
+        "Failed to rename item",
         toast,
       );
     },
-    [sessionId, t, toast, unknownError],
+    [sessionId, toast],
   );
 
   const handleDownloadFile = useCallback(
     async (path: string): Promise<boolean> => {
       const client = getWebSocketClient();
       if (!client || !sessionId) return false;
-      const result = await downloadFileContent(client, sessionId, path, unknownError);
+      const result = await downloadFileContent(client, sessionId, path);
       if (!result.ok) {
         toast({
-          title: t("task:failedToDownloadFile"),
-          description: result.error || unknownError,
+          title: "Failed to download file",
+          description: result.error || UNKNOWN_ERROR,
           variant: ERROR_VARIANT,
         });
         return false;
       }
       return true;
     },
-    [sessionId, t, toast, unknownError],
+    [sessionId, toast],
   );
 
   return {

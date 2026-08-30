@@ -426,21 +426,17 @@ test.describe("Chat model selector — persistence", () => {
 
     // Change both model and effort. The closed task trigger lists every
     // changed value in ACP order while omitting the baseline Medium value.
-    // Switching to the Smart mock model also changes its provider-specific
-    // effort default to High, so wait for the complete runtime snapshot
-    // instead of asserting the transient model-only label.
+    // Model changes refresh the provider's full option snapshot, so wait for
+    // that convergence before applying a dependent option.
     await testPage.getByRole("option", { name: /Mock Smart/ }).click();
-    await expect(trigger).toContainText("Mock Smart", { timeout: 5_000 });
+    await expect(trigger).toHaveText("Mock Smart", { timeout: 5_000 });
     await expect
       .poll(async () => {
         const { sessions } = await apiClient.listTaskSessions(task.id);
-        const runtime = sessions[0]?.metadata?.runtime_config as
-          | { model?: string; config_options?: Record<string, string> }
-          | undefined;
-        return `${runtime?.model}/${runtime?.config_options?.effort}`;
+        const runtime = sessions[0]?.metadata?.runtime_config as { model?: string } | undefined;
+        return runtime?.model;
       })
-      .toBe("mock-smart/high");
-    await expect(trigger).toHaveText("Mock Smart / High", { timeout: 15_000 });
+      .toBe("mock-smart");
     await testPage.keyboard.press("Escape");
     await expect(testPage.getByRole("option", { name: /Mock Smart/ })).toBeHidden();
     await trigger.click();

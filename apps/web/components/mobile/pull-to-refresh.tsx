@@ -8,14 +8,13 @@ import {
   pullDistance,
   shouldRefreshAfterPull,
 } from "@/lib/mobile/pull-to-refresh";
-import { t } from "@/lib/i18n";
 
 type PullState = { x: number; y: number; eligible: boolean } | null;
 
 function refreshLabel(refreshing: boolean, distance: number): string {
-  if (refreshing) return t("kanban:pullToRefreshRefreshing");
-  if (distance >= PULL_TO_REFRESH_THRESHOLD) return t("kanban:pullToRefreshRelease");
-  return t("kanban:pullToRefreshPull");
+  if (refreshing) return "Refreshing tasks";
+  if (distance >= PULL_TO_REFRESH_THRESHOLD) return "Release to refresh";
+  return "Pull to refresh";
 }
 
 export function PullToRefresh({

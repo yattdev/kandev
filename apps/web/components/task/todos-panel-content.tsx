@@ -31,10 +31,7 @@ export function TodosContent() {
 
   if (todos.length === 0) {
     return (
-      <div
-        data-testid="todos-panel-empty-state"
-        className="flex h-full min-h-0 flex-col p-4 text-sm text-muted-foreground"
-      >
+      <div data-testid="todos-panel-empty-state" className="p-4 text-sm text-muted-foreground">
         {t("chat:noTodosYet")}
       </div>
     );
@@ -43,8 +40,8 @@ export function TodosContent() {
   const completed = todos.filter((todo) => resolveStatus(todo) === "completed").length;
   const progress = Math.round((completed / todos.length) * 100);
   return (
-    <div data-testid="todos-panel" className="flex h-full min-h-0 flex-col p-3">
-      <TodoIndicatorContent todos={todos} completed={completed} progress={progress} fillHeight />
+    <div data-testid="todos-panel" className="p-3">
+      <TodoIndicatorContent todos={todos} completed={completed} progress={progress} />
     </div>
   );
 }

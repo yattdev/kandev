@@ -60,19 +60,13 @@ test.describe("mobile quick terminal tabs", () => {
     try {
       const terminalButton = testPage.getByTestId("mobile-quick-terminal-button");
       const quickChatButton = testPage.getByTestId("mobile-quick-chat-button");
-      const menuButton = testPage.getByTestId("mobile-topbar-menu");
       await expect(terminalButton).toBeVisible();
       await expect(quickChatButton).toBeVisible();
-      await expect(menuButton).toBeVisible();
-      const headerMenuBox = await menuButton.boundingBox();
-      expect(headerMenuBox).not.toBeNull();
-      if (!headerMenuBox) throw new Error("mobile menu geometry unavailable");
       for (const button of [terminalButton, quickChatButton]) {
         const buttonBox = await button.boundingBox();
         expect(buttonBox).not.toBeNull();
-        if (!buttonBox) throw new Error("mobile launcher geometry unavailable");
-        expect(buttonBox.width).toBeCloseTo(headerMenuBox.width, 1);
-        expect(buttonBox.height).toBeCloseTo(headerMenuBox.height, 1);
+        expect(buttonBox!.width).toBeGreaterThanOrEqual(44);
+        expect(buttonBox!.height).toBeGreaterThanOrEqual(44);
       }
 
       await terminalButton.tap();

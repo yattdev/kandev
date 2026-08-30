@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useRouter } from "@/lib/routing/client-router";
 import { useTheme } from "@/components/theme/app-theme";
-import { getThemeToggleLabelKey, getThemeToggleTarget } from "@/components/theme/theme-toggle";
 import { IconSun, IconMoon, IconMessageCircle, IconSparkles } from "@tabler/icons-react";
 import { useStaticDestinations } from "@/hooks/use-app-destinations";
 import { PALETTE_NAVIGATION_GROUP_KEY } from "@/lib/navigation/surface-policy";
@@ -99,11 +98,10 @@ function buildThemeCommand(
   t: TFunction,
 ): CommandItem {
   const isDark = resolvedTheme === "dark";
-  const currentTheme = isDark ? "dark" : "light";
-  const destinationTheme = getThemeToggleTarget(currentTheme);
+  const destinationTheme = isDark ? "light" : "dark";
   return {
     id: "pref-theme",
-    label: t(getThemeToggleLabelKey(currentTheme)),
+    label: isDark ? t("common:commandSwitchToLightMode") : t("common:commandSwitchToDarkMode"),
     group: t("common:commandGroupPreferences"),
     icon: isDark ? <IconSun className="size-3.5" /> : <IconMoon className="size-3.5" />,
     keywords: searchKeywords(t, "common:commandThemeKeywords"),

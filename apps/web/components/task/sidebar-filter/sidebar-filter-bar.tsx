@@ -13,7 +13,6 @@ import { SidebarViewChips } from "./sidebar-view-chips";
 import { SidebarFilterPopover } from "./sidebar-filter-popover";
 import { useSidebarViewPopover } from "./use-sidebar-view-popover";
 import { useTranslation } from "react-i18next";
-import { sidebarViewName } from "@/lib/state/slices/ui/sidebar-view-builtins";
 
 // `group` is the command-palette bucket shared with `components/session-commands.tsx`;
 // it is grouping taxonomy rather than this surface's copy, so it migrates with
@@ -37,9 +36,9 @@ function useSidebarCommands(
     for (const view of views) {
       list.push({
         id: `sidebar-switch-view-${view.id}`,
-        label: t("task:switchSidebarView", { name: sidebarViewName(view, t) }),
+        label: t("task:switchSidebarView", { name: view.name }),
         group: "Sidebar",
-        keywords: ["view", "switch", "sidebar", sidebarViewName(view, t).toLowerCase()],
+        keywords: ["view", "switch", "sidebar", view.name.toLowerCase()],
         action: () => setActiveView(view.id),
       });
     }

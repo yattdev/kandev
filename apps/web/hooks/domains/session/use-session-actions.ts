@@ -1,11 +1,8 @@
 "use client";
 
 import { useCallback } from "react";
-import { useTranslation } from "react-i18next";
 import { useAppStore, useAppStoreApi } from "@/components/state-provider";
 import { useToast } from "@/components/toast-provider";
-import { deleteTask } from "@/lib/api/domains/kanban-api";
-import { resolveSessionDeletionTarget } from "@/lib/session/session-deletion";
 import { getWebSocketClient } from "@/lib/ws/connection";
 import type { TaskSessionState } from "@/lib/types/http";
 
@@ -32,59 +29,39 @@ export type RemoveSessionOptions = {
   feedback?: SessionActionFeedback;
 };
 
-type WsActionOptions = {
-  timeout?: number;
-  feedback?: SessionActionFeedback;
-  requestOverride?: () => Promise<unknown>;
-};
-
 type WsActionFn = (
   action: string,
   label: string,
   payload: Record<string, unknown>,
-  options?: WsActionOptions,
+  timeout?: number,
+  feedback?: SessionActionFeedback,
 ) => Promise<boolean>;
 
 function useWsAction(): WsActionFn {
   const { toast, updateToast } = useToast();
-  const { t } = useTranslation("task");
   return useCallback(
-    async (
-      action,
-      labelKey,
-      payload,
-      { timeout = 15000, feedback = "toast", requestOverride }: WsActionOptions = {},
-    ) => {
+    async (action, label, payload, timeout = 15000, feedback = "toast") => {
       const client = getWebSocketClient();
-      if (!client && !requestOverride) return false;
+      if (!client) return false;
       const toastId =
-        feedback === "toast"
-          ? toast({
-              title: t("task:sessionActionProgress", { action: t(labelKey) }),
-              variant: "loading",
-            })
-          : null;
+        feedback === "toast" ? toast({ title: `${label}...`, variant: "loading" }) : null;
       try {
-        await (requestOverride ? requestOverride() : client!.request(action, payload, timeout));
+        await client.request(action, payload, timeout);
         if (toastId) {
-          updateToast(toastId, {
-            title: t("task:sessionActionSuccessful", { action: t(labelKey) }),
-            variant: "success",
-          });
+          updateToast(toastId, { title: `${label} successful`, variant: "success" });
         }
         return true;
       } catch (error) {
-        const msg = error instanceof Error ? error.message : t("common:unknownError");
-        const title = t("task:sessionActionFailed", { action: t(labelKey) });
+        const msg = error instanceof Error ? error.message : "Unknown error";
         if (toastId) {
-          updateToast(toastId, { title, description: msg, variant: "error" });
+          updateToast(toastId, { title: `${label} failed`, description: msg, variant: "error" });
         } else {
-          toast({ title, description: msg, variant: "error" });
+          toast({ title: `${label} failed`, description: msg, variant: "error" });
         }
         return false;
       }
     },
-    [t, toast, updateToast],
+    [toast, updateToast],
   );
 }
 
@@ -96,24 +73,17 @@ function useWsAction(): WsActionFn {
 export function useSessionActions({ sessionId, taskId, onDeleted }: SessionActionsArgs) {
   const wsAction = useWsAction();
   const removeTaskSession = useAppStore((state) => state.removeTaskSession);
-  const removeQuickChatSession = useAppStore((state) => state.removeQuickChatSession);
   const appStoreApi = useAppStoreApi();
 
   const setPrimary = useCallback(
     () =>
       sessionId &&
-      wsAction(
-        "session.set_primary",
-        "task:sessionActionSetPrimary",
-        { session_id: sessionId },
-        { timeout: 15000, feedback: "inline" },
-      ),
+      wsAction("session.set_primary", "Set primary", { session_id: sessionId }, 15000, "inline"),
     [sessionId, wsAction],
   );
 
   const stop = useCallback(
-    () =>
-      sessionId && wsAction("session.stop", "task:sessionActionStop", { session_id: sessionId }),
+    () => sessionId && wsAction("session.stop", "Stopping session", { session_id: sessionId }),
     [sessionId, wsAction],
   );
 
@@ -123,9 +93,9 @@ export function useSessionActions({ sessionId, taskId, onDeleted }: SessionActio
       taskId &&
       wsAction(
         "session.launch",
-        "task:sessionActionResume",
+        "Resuming session",
         { task_id: taskId, intent: "resume", session_id: sessionId },
-        { timeout: 30000 },
+        30000,
       ),
     [sessionId, taskId, wsAction],
   );
@@ -133,23 +103,12 @@ export function useSessionActions({ sessionId, taskId, onDeleted }: SessionActio
   const remove = useCallback(
     async (options: RemoveSessionOptions = {}) => {
       if (!sessionId || !taskId) return false;
-      const deletionTarget = resolveSessionDeletionTarget(
-        sessionId,
-        taskId,
-        appStoreApi.getState().quickChat.sessions,
-      );
       const ok = await wsAction(
         "session.delete",
-        "task:sessionActionDelete",
+        "Deleting session",
         { session_id: sessionId },
-        {
-          timeout: 15000,
-          feedback: options.feedback,
-          requestOverride:
-            deletionTarget.kind === "quick-chat-task"
-              ? () => deleteTask(deletionTarget.taskId)
-              : undefined,
-        },
+        15000,
+        options.feedback,
       );
       if (!ok) return false;
 
@@ -169,19 +128,10 @@ export function useSessionActions({ sessionId, taskId, onDeleted }: SessionActio
       }
 
       removeTaskSession(taskId, sessionId);
-      removeQuickChatSession(sessionId);
       onDeleted?.();
       return true;
     },
-    [
-      sessionId,
-      taskId,
-      wsAction,
-      removeTaskSession,
-      removeQuickChatSession,
-      appStoreApi,
-      onDeleted,
-    ],
+    [sessionId, taskId, wsAction, removeTaskSession, appStoreApi, onDeleted],
   );
 
   return { setPrimary, stop, resume, remove };

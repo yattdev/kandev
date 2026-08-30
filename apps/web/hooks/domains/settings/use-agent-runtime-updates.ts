@@ -52,9 +52,9 @@ export function useAgentRuntimeUpdates() {
   );
 
   const startUpdate = useCallback(
-    async (agentName: string, targetVersion: string) => {
+    async (agentName: string) => {
       try {
-        const job = await updateAgent(agentName, targetVersion);
+        const job = await updateAgent(agentName);
         store.getState().upsertAgentUpdateJob(job);
         return job;
       } catch (error) {
@@ -69,8 +69,7 @@ export function useAgentRuntimeUpdates() {
   );
 
   const previewUpdate = useCallback(
-    (agentName: string, targetVersion?: string) =>
-      previewAgentUpdate(agentName, targetVersion, { cache: "no-store" }),
+    (agentName: string) => previewAgentUpdate(agentName, { cache: "no-store" }),
     [],
   );
 

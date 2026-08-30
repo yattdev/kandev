@@ -98,13 +98,7 @@ function useWorkflowDraftPersistence(args: WorkflowDraftContributorArgs) {
     });
   };
 
-  return {
-    revision,
-    latestRevisionRef,
-    persistSubmittedDraft,
-    saveProgressRef,
-    saveFailedRef,
-  };
+  return { revision, persistSubmittedDraft, saveProgressRef, saveFailedRef };
 }
 
 export function useWorkflowDraftContributor(args: WorkflowDraftContributorArgs) {
@@ -156,18 +150,12 @@ export function useWorkflowDraftContributor(args: WorkflowDraftContributorArgs) 
       guardReturned = true;
       if (!operationStarted) throw new SettingsSaveCancelledError();
     },
-    discard: async (submittedRevision) => {
+    discard: async () => {
       const persistedDraft = persistence.saveProgressRef.current.workflow;
       if (workflow.id.startsWith(TEMP_WORKFLOW_PREFIX) && persistedDraft) {
         await deleteWorkflowAction(persistedDraft.id);
       } else if (persistence.saveFailedRef.current) {
         throw new Error(t("workflows:retryPartialSaveBeforeLeaving"));
-      }
-      if (
-        submittedRevision !== undefined &&
-        !Object.is(submittedRevision, persistence.latestRevisionRef.current)
-      ) {
-        return;
       }
       args.setWorkflowSteps(savedWorkflowSteps);
       args.onDiscardWorkflow();

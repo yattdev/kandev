@@ -1,9 +1,8 @@
 "use client";
 
 import { Badge } from "@kandev/ui/badge";
-import { SEVERITY_LABEL_KEYS } from "@/lib/review/format";
+import { severityLabel } from "@/lib/review/format";
 import type { ReviewSeverity } from "@/lib/types/review";
-import { t } from "@/lib/i18n";
 
 /**
  * Severity styling. `blocker` and `major` carry destructive weight because they
@@ -26,7 +25,7 @@ export function ReviewFindingSeverityBadge({ severity }: { severity: ReviewSever
       }`}
       data-testid={`review-finding-severity-${severity}`}
     >
-      {t(SEVERITY_LABEL_KEYS[severity] ?? severity)}
+      {severityLabel(severity)}
     </Badge>
   );
 }

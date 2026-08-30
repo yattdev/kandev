@@ -32,28 +32,6 @@ func TestGitHubCredentialBrokerConfigEnvironmentBinding(t *testing.T) {
 	}
 }
 
-func TestWebTitlePrefixEnvironmentBinding(t *testing.T) {
-	t.Setenv("KANDEV_WEB_TITLE_PREFIX", "TEST")
-	cfg, err := LoadWithPath(t.TempDir())
-	if err != nil {
-		t.Fatalf("LoadWithPath: %v", err)
-	}
-	if got := cfg.Server.WebTitlePrefix; got != "TEST" {
-		t.Fatalf("web title prefix = %q, want %q", got, "TEST")
-	}
-}
-
-func TestWebTitlePrefixDefaultsEmpty(t *testing.T) {
-	t.Setenv("KANDEV_WEB_TITLE_PREFIX", "")
-	cfg, err := LoadWithPath(t.TempDir())
-	if err != nil {
-		t.Fatalf("LoadWithPath: %v", err)
-	}
-	if got := cfg.Server.WebTitlePrefix; got != "" {
-		t.Fatalf("web title prefix = %q, want empty", got)
-	}
-}
-
 // minimalValidConfig returns a Config that passes validate() out of the box.
 // Tests modify a copy to exercise individual validation branches.
 func minimalValidConfig() *Config {
@@ -205,6 +183,7 @@ func TestFeatures_ProductionDefaults(t *testing.T) {
 	// Force a clean env so KANDEV_FEATURES_* and profile-selector vars from the
 	// host shell cannot change the production-profile defaults under test.
 	t.Setenv("KANDEV_FEATURES_OFFICE", "")
+	unsetEnv(t, "KANDEV_FEATURES_APP_STATUS_BAR")
 	unsetEnv(t, "KANDEV_FEATURES_AUTH")
 	unsetEnv(t, "KANDEV_FEATURES_CLAUDE_BACKGROUND_PROMPT_HANDOFF")
 	t.Setenv("KANDEV_DEBUG_DEV_MODE", "")
@@ -218,6 +197,9 @@ func TestFeatures_ProductionDefaults(t *testing.T) {
 	}
 	if cfg.Features.Office {
 		t.Errorf("Features.Office = true, want false (production default must be off)")
+	}
+	if cfg.Features.AppStatusBar {
+		t.Error("Features.AppStatusBar = true, want false (status surface must remain opt-in by default)")
 	}
 	if cfg.Features.Auth {
 		t.Error("Features.Auth = true, want false (authentication must remain opt-in by default)")
@@ -256,23 +238,15 @@ func TestFeatures_ClaudeBackgroundPromptHandoffEnabledByEnv(t *testing.T) {
 	}
 }
 
-func TestFeaturesConfigIgnoresRetiredAppStatusBarEnv(t *testing.T) {
-	t.Setenv("KANDEV_FEATURES_APP_STATUS_BAR", "true")
+func TestFeatures_AppStatusBarDisabledByEnv(t *testing.T) {
+	t.Setenv("KANDEV_FEATURES_APP_STATUS_BAR", "false")
 
 	cfg, err := LoadWithPath(t.TempDir())
 	if err != nil {
 		t.Fatalf("LoadWithPath: %v", err)
 	}
-	raw, err := json.Marshal(cfg.Features)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	var response map[string]bool
-	if err := json.Unmarshal(raw, &response); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-	if _, ok := response["appStatusBar"]; ok {
-		t.Fatal("retired KANDEV_FEATURES_APP_STATUS_BAR still affects the feature response")
+	if cfg.Features.AppStatusBar {
+		t.Error("Features.AppStatusBar = true, want false (KANDEV_FEATURES_APP_STATUS_BAR=false must hide it)")
 	}
 }
 
@@ -501,8 +475,5 @@ func TestFeaturesConfig_JSONShape(t *testing.T) {
 		if got, ok := decoded[jsonName]; !ok || !got {
 			t.Errorf("FeaturesConfig JSON missing true field %q: %#v", jsonName, decoded)
 		}
-	}
-	if _, ok := decoded["appStatusBar"]; ok {
-		t.Fatal("retired appStatusBar remains in FeaturesConfig JSON")
 	}
 }

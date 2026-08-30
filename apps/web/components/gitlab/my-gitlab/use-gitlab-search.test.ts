@@ -23,14 +23,14 @@ const CUSTOM_QUERY = "labels=bug";
 const PRESETS: PresetOption[] = [
   {
     value: PRESET_REVIEW,
-    labelKey: "gitlab:presetReviewRequested",
+    label: "Review requested",
     filter: PRESET_REVIEW,
     group: "inbox",
     icon: IconInbox,
   },
   {
     value: PRESET_ASSIGNED,
-    labelKey: "gitlab:presetAssigned",
+    label: "Assigned",
     filter: "assigned_to_me",
     group: "inbox",
     icon: IconInbox,

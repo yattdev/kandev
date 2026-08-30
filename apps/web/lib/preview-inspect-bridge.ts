@@ -69,12 +69,6 @@ interface InspectorReadyMessage {
   payload: Record<string, never>;
 }
 
-interface PreviewConsoleReadyMessage {
-  source: typeof INSPECTOR_SOURCE;
-  type: "console-ready";
-  payload: Record<string, never>;
-}
-
 export type PreviewConsoleLevel = "log" | "warn" | "error" | "info" | "debug";
 const PREVIEW_CONSOLE_LEVELS: ReadonlySet<string> = new Set([
   "log",
@@ -94,7 +88,6 @@ export type InspectorMessage =
   | AnnotationAddedMessage
   | InspectExitedMessage
   | InspectorReadyMessage
-  | PreviewConsoleReadyMessage
   | PreviewConsoleMessage;
 
 // Narrows past the union — and validates that `level` is one we handle and
@@ -107,12 +100,6 @@ export function isPreviewConsoleMessage(msg: InspectorMessage): msg is PreviewCo
   return (
     typeof p.level === "string" && PREVIEW_CONSOLE_LEVELS.has(p.level) && Array.isArray(p.args)
   );
-}
-
-export function isPreviewConsoleReadyMessage(
-  msg: InspectorMessage,
-): msg is PreviewConsoleReadyMessage {
-  return msg.type === "console-ready";
 }
 
 export function isInspectorMessage(data: unknown): data is InspectorMessage {
@@ -156,17 +143,6 @@ export function sendRemoveMarker(iframe: HTMLIFrameElement, number: number): voi
       payload: { number },
     } satisfies InspectorRemoveMarkerCommand,
     "*",
-  );
-}
-
-export function sendConsoleBind(iframe: HTMLIFrameElement, targetOrigin: string): void {
-  iframe.contentWindow?.postMessage(
-    {
-      source: INSPECTOR_SOURCE,
-      type: "console-bind",
-      payload: {},
-    },
-    targetOrigin,
   );
 }
 

@@ -1,4 +1,3 @@
-import { t } from "@/lib/i18n";
 export type GitCredentialDisplay = {
   source: string;
   detail: string;
@@ -12,23 +11,17 @@ type GitCredentialSnapshot = {
   transport?: unknown;
 };
 
-// Catalog keys, resolved per call: this module is imported once, so a `t()`
-// here would freeze at the boot locale (docs/i18n.md).
-const workspaceMethodKeys: Record<string, string> = {
-  pat: "task:credentialWorkspacePat",
-  gh_cli: "task:credentialWorkspaceGhCli",
-  github_app_installation: "task:credentialWorkspaceGithubApp",
+const workspaceMethodLabels: Record<string, string> = {
+  pat: "workspace personal access token",
+  gh_cli: "workspace GitHub CLI account",
+  github_app_installation: "workspace GitHub App",
 };
 
-const transportKeys: Record<string, string> = {
-  managed_https: "task:credentialTransportManagedHttps",
-  profile_token: "task:credentialTransportProfileToken",
-  executor_selected: "task:credentialTransportExecutorSelected",
+const transportLabels: Record<string, string> = {
+  managed_https: "Kandev-managed GitHub HTTPS and gh",
+  profile_token: "executor-profile token",
+  executor_selected: "executor Git and gh credentials",
 };
-
-function label(keys: Record<string, string>, id: string, fallbackKey: string): string {
-  return t(keys[id] ?? fallbackKey);
-}
 
 function readSnapshot(
   metadata: Record<string, unknown> | null | undefined,
@@ -51,21 +44,21 @@ export function getGitCredentialDisplay(
   switch (snapshot.source) {
     case "workspace":
       return {
-        source: t("task:credentialSourceWorkspace"),
-        detail: label(workspaceMethodKeys, workspaceMethod, "task:credentialWorkspaceFallback"),
-        transport: label(transportKeys, transport, "task:credentialTransportManagedFallback"),
+        source: "Managed workspace identity",
+        detail: workspaceMethodLabels[workspaceMethod] ?? "workspace GitHub credentials",
+        transport: transportLabels[transport] ?? "Kandev-managed task credentials",
       };
     case "executor_profile":
       return {
-        source: t("task:credentialSourceExecutorProfile"),
-        detail: actor || t("task:credentialExplicitToken"),
-        transport: label(transportKeys, transport, "task:credentialTransportProfileToken"),
+        source: "Executor-profile token",
+        detail: actor || "An explicit GH_TOKEN or GITHUB_TOKEN",
+        transport: transportLabels[transport] ?? "executor-profile token",
       };
     case "executor":
       return {
-        source: t("task:credentialSourceExecutor"),
-        detail: actor || t("task:credentialsAvailableInExecutor"),
-        transport: label(transportKeys, transport, "task:credentialTransportExecutorSelected"),
+        source: "Executor credentials",
+        detail: actor || "Credentials available in the selected executor",
+        transport: transportLabels[transport] ?? "executor Git and gh credentials",
       };
     default:
       return null;

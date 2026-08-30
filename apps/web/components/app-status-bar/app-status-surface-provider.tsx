@@ -4,7 +4,6 @@ import {
   createContext,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useState,
   type ComponentProps,
@@ -15,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@kandev/ui/button";
 import { cn } from "@kandev/ui/lib/utils";
 import { useAppStore } from "@/components/state-provider";
+import { useFeature } from "@/hooks/domains/features/use-feature";
 import { useResponsiveBreakpoint } from "@/hooks/use-responsive-breakpoint";
 import { usePathname } from "@/lib/routing/client-router";
 import { AppStatusBar } from "./app-status-bar";
@@ -33,7 +33,6 @@ type AppStatusDrawerContextValue = {
 };
 
 const AppStatusDrawerContext = createContext<AppStatusDrawerContextValue | null>(null);
-const STATUS_BAR_VISIBLE_ATTRIBUTE = "data-app-status-bar-visible";
 const unavailableDrawer: AppStatusDrawerContextValue = {
   enabled: false,
   issueSeverity: "none",
@@ -117,22 +116,11 @@ export function AppStatusSurfaceProvider({ children }: { children: ReactNode }) 
   const activeTaskId = useAppStore((state) => state.tasks.activeTaskId);
   const activeSessionId = useAppStore((state) => state.tasks.activeSessionId);
   const issueSeverity = useAppStore((state) => state.connection.issueSeverity);
-  const appStatusBarEnabled = useAppStore((state) => state.userSettings.appStatusBarEnabled);
+  const appStatusBarEnabled = useFeature("appStatusBar");
   const { isMobile, isTablet, isFullDesktop } = useResponsiveBreakpoint();
   const connectionOnly = !appStatusBarEnabled && issueSeverity !== "none";
   const useDrawerSurface = isMobile || (isTablet && connectionOnly);
   const drawerEnabled = useDrawerSurface && (appStatusBarEnabled || connectionOnly);
-  const inlineStatusBarVisible = !useDrawerSurface && appStatusBarEnabled;
-
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    if (inlineStatusBarVisible) {
-      root.setAttribute(STATUS_BAR_VISIBLE_ATTRIBUTE, "true");
-    } else {
-      root.removeAttribute(STATUS_BAR_VISIBLE_ATTRIBUTE);
-    }
-    return () => root.removeAttribute(STATUS_BAR_VISIBLE_ATTRIBUTE);
-  }, [inlineStatusBarVisible]);
 
   useEffect(() => {
     if (!drawerEnabled) setStatusDrawerOpen(false);
@@ -163,7 +151,7 @@ export function AppStatusSurfaceProvider({ children }: { children: ReactNode }) 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AgentRuntimeUnavailableAlert />
         {children}
-        {(useDrawerSurface ? drawerEnabled : inlineStatusBarVisible) &&
+        {(useDrawerSurface ? drawerEnabled : appStatusBarEnabled) &&
           (useDrawerSurface ? (
             <AppStatusDrawer
               {...surfaceProps}

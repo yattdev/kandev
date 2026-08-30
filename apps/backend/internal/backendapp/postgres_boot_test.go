@@ -164,7 +164,7 @@ func TestParsePostgresConnInfo(t *testing.T) {
 	want := postgresConnInfo{
 		Host:     "postgres",
 		Port:     5433,
-		User:     kandevName,
+		User:     "kandev",
 		Password: "secret",
 		SSLMode:  "require",
 	}

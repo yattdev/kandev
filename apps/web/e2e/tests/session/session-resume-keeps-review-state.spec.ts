@@ -1,7 +1,6 @@
 import { test, expect } from "../../fixtures/test-base";
 import { KanbanPage } from "../../pages/kanban-page";
 import { SessionPage } from "../../pages/session-page";
-import { dwell } from "../../helpers/causal-waits";
 
 // Regression: when the backend restarts and auto-resumes a task whose
 // session was WAITING_FOR_INPUT, the task must NEVER transition into the
@@ -73,12 +72,7 @@ test.describe("Session resume — task state stability", () => {
         0,
       );
       polls++;
-      await dwell(
-        testPage,
-        100,
-        "poll-interval",
-        "sampling interval for the fixed probe window above, not a settle; the assertion is that the task never flickers into Running, so the loop keeps sampling across the whole window and the polls >= 50 check guards against it degenerating",
-      );
+      await testPage.waitForTimeout(100);
     }
     // Ensure we actually polled meaningfully across the window.
     expect(polls).toBeGreaterThanOrEqual(50);

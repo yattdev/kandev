@@ -162,11 +162,7 @@ func (r *DockerExecutor) HealthCheck(_ context.Context) error {
 }
 
 func (r *DockerExecutor) CreateInstance(ctx context.Context, req *ExecutorCreateRequest) (instance *ExecutorInstance, err error) {
-	baseCtx := preparationContext(ctx)
 	if _, err := validateRemoteContributions(req.RemoteContributions); err != nil {
-		return nil, err
-	}
-	if _, err := validateContributionDestinations(req.ContributionDestinations); err != nil {
 		return nil, err
 	}
 	dockerClient, containerMgr, err := r.ensureClient()
@@ -178,11 +174,11 @@ func (r *DockerExecutor) CreateInstance(ctx context.Context, req *ExecutorCreate
 		defer reportCreateInstanceProgress(req, &err)()
 	}
 
-	if reconnected, ok := r.tryReconnect(baseCtx, dockerClient, req); ok {
+	if reconnected, ok := r.tryReconnect(ctx, dockerClient, req); ok {
 		return reconnected, nil
 	}
 
-	r.seedSessionDir(baseCtx, req)
+	r.seedSessionDir(ctx, req)
 
 	containerCfg, err := r.buildContainerLaunchConfig(req)
 	if err != nil {
@@ -193,25 +189,13 @@ func (r *DockerExecutor) CreateInstance(ctx context.Context, req *ExecutorCreate
 		return nil, fmt.Errorf("failed to launch container: %w", err)
 	}
 
-	containerIP, _ := dockerClient.GetContainerIP(baseCtx, result.ContainerID)
+	containerIP, _ := dockerClient.GetContainerIP(ctx, result.ContainerID)
 	r.logger.Info("docker instance created",
 		zap.String("instance_id", req.InstanceID),
 		zap.String("container_id", result.ContainerID),
 		zap.String("container_ip", containerIP))
 
 	return r.buildCreatedInstance(req, result, containerIP), nil
-}
-
-// PrepareGitMetadataProjection proves this executor can compile the exact
-// layered mount plan before a container or child process is created. The
-// container builder compiles the same plan again immediately before launch;
-// that final compilation closes the normal resolve-to-mount freshness window.
-func (r *DockerExecutor) PrepareGitMetadataProjection(_ context.Context, req *ExecutorCreateRequest) error {
-	if requiresCloneGitMetadataPolicy(req) {
-		return validateRemoteGitMetadataRequest(req)
-	}
-	_, err := gitMetadataMounts(req.GitMetadataProjections)
-	return err
 }
 
 // reportCreateInstanceProgress wires the "Waiting for Docker container" step
@@ -234,7 +218,7 @@ func reportCreateInstanceProgress(req *ExecutorCreateRequest, errPtr *error) fun
 // container that's healthy enough to resume; otherwise (nil, false) and the
 // caller falls back to provisioning a fresh container.
 func (r *DockerExecutor) tryReconnect(ctx context.Context, dockerClient *docker.Client, req *ExecutorCreateRequest) (*ExecutorInstance, bool) {
-	if req.PreviousExecutionID == "" || requiresCloneGitMetadataPolicy(req) {
+	if req.PreviousExecutionID == "" {
 		return nil, false
 	}
 	reconnected, reconnectErr := r.reconnectToContainer(ctx, dockerClient, req)
@@ -247,8 +231,8 @@ func (r *DockerExecutor) tryReconnect(ctx context.Context, dockerClient *docker.
 	return nil, false
 }
 
-// seedSessionDir copies the agent's auth files and selected configuration
-// bundles into the per-container session dir. Replaces the older pattern of
+// seedSessionDir copies the agent's auth files (auth.json / config.toml /
+// etc.) into the per-container session dir. Replaces the older pattern of
 // bind-mounting the host's whole ~/.<agent>, which leaked absolute host
 // paths into agent state DBs and broke resume on codex.
 func (r *DockerExecutor) seedSessionDir(ctx context.Context, req *ExecutorCreateRequest) {
@@ -256,17 +240,7 @@ func (r *DockerExecutor) seedSessionDir(ctx context.Context, req *ExecutorCreate
 		return
 	}
 	instanceRoot := InstanceSessionRoot(r.kandevHomeDir, req.InstanceID)
-	selectedBundles := selectedPortableConfigBundleIDs(req.Metadata)
-	if err := seedAgentSessionDir(
-		ctx,
-		req.AgentConfig,
-		instanceRoot,
-		r.logger,
-		selectedBundles,
-		func(warnings []PortableConfigWarning) {
-			reportPortableConfigWarnings(req.OnProgress, warnings)
-		},
-	); err != nil {
+	if err := SeedAgentSessionDir(ctx, req.AgentConfig, instanceRoot, r.logger); err != nil {
 		r.logger.Warn("failed to seed agent session dir (continuing)",
 			zap.String("instance_id", req.InstanceID),
 			zap.String("agent_id", req.AgentConfig.ID()),
@@ -279,9 +253,6 @@ func (r *DockerExecutor) buildContainerLaunchConfig(req *ExecutorCreateRequest) 
 	if err != nil {
 		return ContainerConfig{}, err
 	}
-	if requiresCloneGitMetadataPolicy(req) {
-		prepareScript = cloneGitMetadataPrepareScript(prepareScript)
-	}
 	return ContainerConfig{
 		AgentConfig:                    req.AgentConfig,
 		WorkspacePath:                  "", // Empty = no workspace mount; we clone inside container.
@@ -291,30 +262,17 @@ func (r *DockerExecutor) buildContainerLaunchConfig(req *ExecutorCreateRequest) 
 		SessionID:                      req.SessionID,
 		ExecutorProfileID:              getMetadataString(req.Metadata, "executor_profile_id"),
 		InstanceID:                     req.InstanceID,
-		GitMetadataProjections:         req.GitMetadataProjections,
-		RequiresCloneGitMetadataPolicy: requiresCloneGitMetadataPolicy(req),
-		WorkspaceSourceRoots:           []string{dockerWorkspacePath},
 		Credentials:                    req.Env,
 		AutoApprovePermissions:         req.AutoApprovePermissions,
 		AutoApprovePermissionsOverride: req.AutoApprovePermissionsOverride,
 		McpServers:                     req.McpServers,
 		McpProviders:                   req.McpProviders,
-		McpProfile:                     req.McpProfile,
 		PrepareScript:                  prepareScript,
 		ImageTagOverride:               getMetadataString(req.Metadata, MetadataKeyImageTagOverride),
 		LocalClonePath:                 localCloneMountPath(req.Metadata),
 		BaseBranches:                   getMetadataStringMap(req.Metadata, MetadataKeyBaseBranches),
 		RemoteContributions:            req.RemoteContributions,
-		ContributionDestinations:       req.ContributionDestinations,
 	}, nil
-}
-
-// cloneGitMetadataPrepareScript makes the container bootstrap prove the
-// checkout produced by its own prepare command is the canonical regular clone
-// before agentctl can accept a mutable agent session. It intentionally embeds
-// only the in-container /workspace path.
-func cloneGitMetadataPrepareScript(prepareScript string) string {
-	return prepareScript + "\n" + remoteRegularGitMetadataProbeScript(dockerWorkspacePath)
 }
 
 func (r *DockerExecutor) buildCreatedInstance(req *ExecutorCreateRequest, result *LaunchResult, containerIP string) *ExecutorInstance {
@@ -327,18 +285,17 @@ func (r *DockerExecutor) buildCreatedInstance(req *ExecutorCreateRequest, result
 		metadata["worktree_branch"] = getMetadataString(req.Metadata, MetadataKeyWorktreeBranch)
 	}
 	return &ExecutorInstance{
-		InstanceID:           req.InstanceID,
-		TaskID:               req.TaskID,
-		SessionID:            req.SessionID,
-		RuntimeName:          r.Name(),
-		Client:               result.Client,
-		ContainerID:          result.ContainerID,
-		ContainerIP:          containerIP,
-		WorkspacePath:        dockerWorkspacePath,
-		WorkspaceSourceRoots: []string{dockerWorkspacePath},
-		Metadata:             metadata,
-		AuthToken:            result.AuthToken,
-		BootstrapNonce:       result.BootstrapNonce,
+		InstanceID:     req.InstanceID,
+		TaskID:         req.TaskID,
+		SessionID:      req.SessionID,
+		RuntimeName:    r.Name(),
+		Client:         result.Client,
+		ContainerID:    result.ContainerID,
+		ContainerIP:    containerIP,
+		WorkspacePath:  dockerWorkspacePath,
+		Metadata:       metadata,
+		AuthToken:      result.AuthToken,
+		BootstrapNonce: result.BootstrapNonce,
 	}
 }
 
@@ -377,15 +334,14 @@ func (r *DockerExecutor) reconnectToContainer(ctx context.Context, dockerClient 
 		refreshedAuthToken = conn.authToken
 	}
 	return &ExecutorInstance{
-		InstanceID:           req.InstanceID,
-		TaskID:               req.TaskID,
-		SessionID:            req.SessionID,
-		RuntimeName:          r.Name(),
-		Client:               client,
-		ContainerID:          info.ID,
-		ContainerIP:          containerIP,
-		WorkspacePath:        dockerWorkspacePath,
-		WorkspaceSourceRoots: []string{dockerWorkspacePath},
+		InstanceID:    req.InstanceID,
+		TaskID:        req.TaskID,
+		SessionID:     req.SessionID,
+		RuntimeName:   r.Name(),
+		Client:        client,
+		ContainerID:   info.ID,
+		ContainerIP:   containerIP,
+		WorkspacePath: dockerWorkspacePath,
 		Metadata: map[string]interface{}{
 			MetadataKeyIsRemote:      true,
 			MetadataKeyContainerID:   info.ID,
@@ -585,7 +541,7 @@ func buildReconnectCreateInstanceRequest(req *ExecutorCreateRequest, instanceID 
 	var stripEnv []string
 	if req.AgentConfig != nil {
 		agentType = req.AgentConfig.ID()
-		disableAskQuestion = !agents.SupportsInteractiveMCPTools(req.AgentConfig)
+		disableAskQuestion = agents.IsPassthroughOnly(req.AgentConfig)
 		if rt := req.AgentConfig.Runtime(); rt != nil {
 			assumeMcpSse = rt.AssumeMcpSse
 			assumeMcpHttp = rt.AssumeMcpHttp
@@ -602,21 +558,19 @@ func buildReconnectCreateInstanceRequest(req *ExecutorCreateRequest, instanceID 
 			req.AutoApprovePermissions,
 			req.AutoApprovePermissionsOverride,
 		),
-		AutoStart:                false,
-		McpServers:               req.McpServers,
-		McpProviders:             req.McpProviders,
-		McpProfile:               req.McpProfile,
-		SessionID:                req.SessionID,
-		TaskID:                   req.TaskID,
-		DisableAskQuestion:       disableAskQuestion,
-		AssumeMcpSse:             assumeMcpSse,
-		AssumeMcpHttp:            assumeMcpHttp,
-		McpMode:                  req.McpMode,
-		RequiresProcessKill:      requiresProcessKill,
-		StripEnv:                 stripEnv,
-		BaseBranches:             getMetadataStringMap(req.Metadata, MetadataKeyBaseBranches),
-		RemoteContributions:      req.RemoteContributions,
-		ContributionDestinations: req.ContributionDestinations,
+		AutoStart:           false,
+		McpServers:          req.McpServers,
+		McpProviders:        req.McpProviders,
+		SessionID:           req.SessionID,
+		TaskID:              req.TaskID,
+		DisableAskQuestion:  disableAskQuestion,
+		AssumeMcpSse:        assumeMcpSse,
+		AssumeMcpHttp:       assumeMcpHttp,
+		McpMode:             req.McpMode,
+		RequiresProcessKill: requiresProcessKill,
+		StripEnv:            stripEnv,
+		BaseBranches:        getMetadataStringMap(req.Metadata, MetadataKeyBaseBranches),
+		RemoteContributions: req.RemoteContributions,
 	}
 }
 
@@ -701,11 +655,10 @@ func (r *DockerExecutor) StopInstance(ctx context.Context, instance *ExecutorIns
 
 	// On destructive stop reasons (task/session deleted/archived), clean up
 	// the kandev-managed per-container session dir so we don't leak GBs of
-	// agent state on disk. Plain stops and stale execution cleanup preserve the
-	// dir because a resume may re-attach to the same container and its bind
-	// mounts.
+	// agent state on disk. Plain stops preserve the dir so resume re-attaches
+	// to the same agent state, mirroring the Sprites preserve-on-stop rule.
 	teardownContainer := shouldTeardownDockerContainer(instance.StopReason)
-	if shouldRunExecutorCleanup(instance.StopReason) && r.kandevHomeDir != "" && instance.InstanceID != "" {
+	if teardownContainer && r.kandevHomeDir != "" && instance.InstanceID != "" {
 		CleanupAgentSessionDir(InstanceSessionRoot(r.kandevHomeDir, instance.InstanceID), r.logger)
 	}
 
@@ -765,10 +718,10 @@ func (r *DockerExecutor) StopInstance(ctx context.Context, instance *ExecutorIns
 }
 
 // shouldTeardownDockerContainer extends terminal cleanup with stale execution
-// cleanup for Docker only. Stale cleanup must stop the old container before a
-// retry/resume launch, but its per-instance session dir must remain available
-// because the stopped container still references its bind mounts. Destructive
-// task/session lifecycle reasons own removal; see shouldRunExecutorCleanup.
+// cleanup for Docker only. A stale Docker execution owns a local container and
+// per-instance session dir that become untracked before retry/resume launches a
+// replacement. Sprites intentionally keep stale sandboxes; see
+// shouldRunExecutorCleanup for that shared runtime policy.
 func shouldTeardownDockerContainer(reason string) bool {
 	if shouldRunExecutorCleanup(reason) {
 		return true
@@ -839,13 +792,6 @@ func (r *DockerExecutor) resolvePrepareScript(req *ExecutorCreateRequest) (strin
 			return "", err
 		}
 		script += contributionScript
-	}
-	if destination, ok := req.ContributionDestinations[""]; ok {
-		destinationScript, err := scriptengine.ContributionDestinationSetupScript(&destination)
-		if err != nil {
-			return "", err
-		}
-		script += destinationScript
 	}
 
 	resolver := scriptengine.NewResolver().

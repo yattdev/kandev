@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@kandev/ui/tabs";
 import { SettingsPageTemplate } from "@/components/settings/settings-page-template";
 import { useAutoUpdateSettings } from "@/hooks/domains/plugins/use-auto-update-settings";
 import { usePlugins } from "@/hooks/domains/plugins/use-plugins";
-import { usePluginSetupStatus } from "@/hooks/domains/plugins/use-plugin-setup-status";
 import { usePluginUpdates } from "@/hooks/domains/plugins/use-plugin-updates";
 import type { MarketplaceEntry } from "@/lib/types/plugins";
 import { InstallPluginDialog } from "./install-plugin-dialog";
@@ -17,7 +16,6 @@ import { MarketplaceBrowser } from "./marketplace-browser";
 import { PluginRow } from "./plugin-row";
 import { UninstallPluginDialog } from "./uninstall-plugin-dialog";
 import { usePluginActions } from "./use-plugin-actions";
-import { settingsActionClassName } from "@/components/settings/settings-control";
 
 /**
  * Operator UI to browse, install, enable, disable, uninstall, and update kandev
@@ -125,15 +123,15 @@ function InstalledTab({
     <>
       <GlobalAutoUpdateToggle settings={autoUpdate} />
 
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div className="text-sm font-medium text-foreground">{t("plugins:installedPlugins")}</div>
-        <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
+        <div className="flex items-center gap-2">
           <Button
             data-testid="plugins-sync-button"
             variant="secondary"
             disabled={actions.syncBusy}
             onClick={actions.handleSync}
-            className={settingsActionClassName("cursor-pointer")}
+            className="cursor-pointer"
           >
             <IconRefresh className={`h-4 w-4 ${actions.syncBusy ? "animate-spin" : ""}`} />
             {t("plugins:sync")}
@@ -141,7 +139,7 @@ function InstalledTab({
           <Button
             data-testid="install-plugin-trigger"
             onClick={actions.openInstall}
-            className={settingsActionClassName("cursor-pointer")}
+            className="cursor-pointer"
           >
             {t("plugins:installPlugin")}
           </Button>
@@ -226,7 +224,6 @@ function PluginList({
 }: PluginListProps) {
   const { t } = useTranslation();
   const { items, loaded, loading, error } = list;
-  const needsSetup = usePluginSetupStatus(items);
 
   if (error) {
     return (
@@ -262,7 +259,6 @@ function PluginList({
           update={updates.get(plugin.id)}
           autoUpdateDefault={autoUpdateDefault}
           autoUpdateBusy={actions.autoUpdateBusyId === plugin.id}
-          needsSetup={needsSetup.has(plugin.id)}
           onEnable={actions.handleEnable}
           onDisable={actions.handleDisable}
           onUninstall={actions.openUninstall}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/kandev/kandev/internal/clarification"
 	"github.com/kandev/kandev/internal/task/models"
 )
 
@@ -93,12 +92,6 @@ func sessionScopeCases() []deniedCase {
 		{"SteerTask", func(s *Service) error {
 			_, err := s.SteerTask(context.Background(), taskID, sessionID, "steer", "", false, nil)
 			return err
-		}},
-		{"ResumeDetachedClarification", func(s *Service) error {
-			return s.ResumeDetachedClarification(
-				context.Background(),
-				clarification.DetachedClarificationResume{TaskID: taskID, SessionID: sessionID},
-			)
 		}},
 	}
 }

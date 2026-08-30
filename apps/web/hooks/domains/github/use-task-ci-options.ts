@@ -7,10 +7,9 @@ import {
 } from "@/lib/api/domains/github-api";
 import { useAppStore } from "@/components/state-provider";
 import type { TaskCIAutomationPatch, TaskCIAutomationOptions } from "@/lib/types/github";
-import { t } from "@/lib/i18n";
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : t("github:failedToLoadCiAutomationOptions");
+  return error instanceof Error ? error.message : "Failed to load CI automation options.";
 }
 
 export function useTaskCIAutomationOptions(taskId: string | null) {

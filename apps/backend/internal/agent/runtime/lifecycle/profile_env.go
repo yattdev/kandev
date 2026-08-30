@@ -39,16 +39,20 @@ func (m *Manager) cacheResolvedProfileEnv(execution *AgentExecution, resolved ma
 	if execution == nil || len(resolved) == 0 {
 		return
 	}
-	execution.setMetadataValue(metadataKeyProfileEnvResolved, cloneStringMap(resolved))
+	if execution.Metadata == nil {
+		execution.Metadata = make(map[string]interface{})
+	}
+	execution.Metadata[metadataKeyProfileEnvResolved] = cloneStringMap(resolved)
 }
 
 func (m *Manager) mergeAgentProfileEnvForExecution(ctx context.Context, execution *AgentExecution, env map[string]string) {
-	if execution == nil {
-		return
+	if execution != nil {
+		if cached, ok := execution.Metadata[metadataKeyProfileEnvResolved].(map[string]string); ok && len(cached) > 0 {
+			mergeEnvFillMissing(env, cached)
+			return
+		}
 	}
-	value, _ := execution.metadataValue(metadataKeyProfileEnvResolved)
-	if cached, ok := value.(map[string]string); ok && len(cached) > 0 {
-		mergeEnvFillMissing(env, cached)
+	if execution == nil {
 		return
 	}
 	m.mergeAgentProfileEnv(ctx, execution.AgentProfileID, env)

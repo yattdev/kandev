@@ -4,15 +4,13 @@ export const TERMINAL_TYPE_DEV_SERVER = "dev-server";
 export const BOTTOM_PANEL_TERMINAL_ID = "bottom-panel";
 
 import type { Terminal, TerminalType } from "./use-terminals-types";
-import { t } from "@/lib/i18n";
 
 export function deriveLabel(shell: UserShellInfo): string {
   if (shell.customName && shell.customName !== "") return shell.customName;
   if (shell.displayName) return shell.displayName;
   if (shell.label) return shell.label;
-  if (shell.kind === "ordinary" && shell.seq)
-    return t("common:terminalNumbered", { seq: shell.seq });
-  return shell.terminalId.startsWith("script-") ? t("common:script") : t("common:terminal");
+  if (shell.kind === "ordinary" && shell.seq) return `Terminal ${shell.seq}`;
+  return shell.terminalId.startsWith("script-") ? "Script" : "Terminal";
 }
 
 export function isOrdinary(shell: UserShellInfo): boolean {
@@ -116,7 +114,7 @@ export function syncDevTerminal(prev: Terminal[], previewOpen: boolean): Termina
       {
         id: TERMINAL_TYPE_DEV_SERVER,
         type: TERMINAL_TYPE_DEV_SERVER as TerminalType,
-        label: t("task:devServer"),
+        label: "Dev Server",
         closable: true,
       },
       ...prev,

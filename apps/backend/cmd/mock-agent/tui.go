@@ -66,9 +66,9 @@ func processTUIPrompt(prompt, model string) {
 // tuiDelay returns the thinking delay in milliseconds based on the model.
 func tuiDelay(model string) int {
 	switch model {
-	case modelFast:
+	case "mock-fast":
 		return 100
-	case modelSlow:
+	case "mock-slow":
 		return 2000
 	default:
 		return 500

@@ -26,31 +26,7 @@ type CommitPayload = {
   enablePreviewOnClick?: boolean;
   tasksListShowDetails?: boolean;
   kanbanViewMode?: string | null;
-  hiddenWorkflowStepIds?: Record<string, string[]>;
 };
-
-export function normalizeHiddenStepIds(raw: Record<string, string[]>): Record<string, string[]> {
-  const result: Record<string, string[]> = {};
-  for (const [workflowId, ids] of Object.entries(raw)) {
-    const sorted = Array.from(new Set(ids)).sort();
-    if (sorted.length > 0) {
-      result[workflowId] = sorted;
-    }
-  }
-  return result;
-}
-
-function hiddenStepIdsEqual(a: Record<string, string[]>, b: Record<string, string[]>): boolean {
-  const aKeys = Object.keys(a).sort();
-  const bKeys = Object.keys(b).sort();
-  if (aKeys.length !== bKeys.length) return false;
-  return aKeys.every((key, i) => {
-    if (key !== bKeys[i]) return false;
-    const aIds = [...a[key]].sort();
-    const bIds = [...b[key]].sort();
-    return aIds.length === bIds.length && aIds.every((id, j) => id === bIds[j]);
-  });
-}
 
 function buildNormalizedSettings(next: CommitPayload, current: DisplaySettings): DisplaySettings {
   return {
@@ -61,9 +37,6 @@ function buildNormalizedSettings(next: CommitPayload, current: DisplaySettings):
     preferredShell: next.preferredShell ?? current.preferredShell,
     enablePreviewOnClick: next.enablePreviewOnClick ?? current.enablePreviewOnClick,
     tasksListShowDetails: next.tasksListShowDetails ?? current.tasksListShowDetails,
-    hiddenWorkflowStepIds: normalizeHiddenStepIds(
-      next.hiddenWorkflowStepIds ?? current.hiddenWorkflowStepIds ?? {},
-    ),
     loaded: true,
   };
 }
@@ -79,20 +52,8 @@ export function isSettingsUnchanged(
     normalized.enablePreviewOnClick === current.enablePreviewOnClick &&
     normalized.tasksListShowDetails === current.tasksListShowDetails &&
     normalized.repositoryIds.length === current.repositoryIds.length &&
-    normalized.repositoryIds.every((id, index) => id === current.repositoryIds[index]) &&
-    hiddenStepIdsEqual(normalized.hiddenWorkflowStepIds ?? {}, current.hiddenWorkflowStepIds ?? {})
+    normalized.repositoryIds.every((id, index) => id === current.repositoryIds[index])
   );
-}
-
-export function buildSettingsUpdatePayload(normalized: DisplaySettings): Record<string, unknown> {
-  return {
-    workspace_id: normalized.workspaceId ?? "",
-    workflow_filter_id: normalized.workflowId ?? "",
-    repository_ids: normalized.repositoryIds,
-    enable_preview_on_click: normalized.enablePreviewOnClick,
-    tasks_list_show_details: normalized.tasksListShowDetails,
-    kanban_hidden_step_ids: normalized.hiddenWorkflowStepIds,
-  };
 }
 
 function persistSettingsPayload(payload: Record<string, unknown>) {
@@ -171,7 +132,14 @@ export function useUserDisplaySettings({
       const normalized = buildNormalizedSettings(next, current);
       if (isSettingsUnchanged(normalized, current)) return;
       setUserSettings(normalized);
-      persistSettingsPayload(buildSettingsUpdatePayload(normalized));
+      const payload = {
+        workspace_id: normalized.workspaceId ?? "",
+        workflow_filter_id: normalized.workflowId ?? "",
+        repository_ids: normalized.repositoryIds,
+        enable_preview_on_click: normalized.enablePreviewOnClick,
+        tasks_list_show_details: normalized.tasksListShowDetails,
+      };
+      persistSettingsPayload(payload);
     },
     [setUserSettings, userSettingsRef],
   );

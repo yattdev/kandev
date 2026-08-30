@@ -2,7 +2,6 @@ import { test, expect } from "../../fixtures/test-base";
 import { useRegularMode } from "../../helpers/regular-mode";
 import { KanbanPage } from "../../pages/kanban-page";
 import { SessionPage } from "../../pages/session-page";
-import { dwell } from "../../helpers/causal-waits";
 
 // Exercises the regular task-create dialog (New Task in the sidebar); run with office off.
 useRegularMode();
@@ -217,12 +216,8 @@ test.describe("Workflow start step placement", () => {
     });
 
     // --- Toggle off plan mode ---
-    await dwell(
-      testPage,
-      1_000,
-      "unverified",
-      "pre-existing spacing before the plan-mode shortcut; the editor's readiness was not tied to an identified timer or event, so this is labelled as debt rather than given a cause it does not have",
-    );
+    // Wait for the editor to be fully interactive before sending the shortcut
+    await testPage.waitForTimeout(1_000);
     await session.togglePlanMode();
     await expect(session.planPanel).not.toBeVisible({ timeout: 15_000 });
 

@@ -62,10 +62,7 @@ describe("AgentConfigurationTab", () => {
       <StateProvider
         initialState={{
           workspaces: { activeId: "ws-1", items: [] },
-          office: {
-            ...defaultOfficeState.office,
-            agentProfilesByWorkspaceId: { "ws-1": [baseAgent] },
-          },
+          office: { ...defaultOfficeState.office, agentProfiles: [baseAgent] },
           agentProfiles: { items: [PROFILE_OPTION], version: 0 },
         }}
       >
@@ -86,10 +83,7 @@ describe("AgentConfigurationTab", () => {
       <StateProvider
         initialState={{
           workspaces: { activeId: "ws-1", items: [] },
-          office: {
-            ...defaultOfficeState.office,
-            agentProfilesByWorkspaceId: { "ws-1": [baseAgent] },
-          },
+          office: { ...defaultOfficeState.office, agentProfiles: [baseAgent] },
           agentProfiles: { items: [PROFILE_OPTION], version: 0 },
         }}
       >
@@ -111,10 +105,7 @@ describe("AgentConfigurationTab", () => {
       <StateProvider
         initialState={{
           workspaces: { activeId: "ws-1", items: [] },
-          office: {
-            ...defaultOfficeState.office,
-            agentProfilesByWorkspaceId: { "ws-1": [worker] },
-          },
+          office: { ...defaultOfficeState.office, agentProfiles: [worker] },
           agentProfiles: { items: [PROFILE_OPTION], version: 0 },
         }}
       >

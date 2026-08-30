@@ -16,7 +16,6 @@ export type EnsureSessionErrorInfo = {
 };
 
 // Matches the backend's exact validation message in task_http_handlers.go / task_ws_handlers.go.
-// i18n-exempt: matches the backend's exact validation message. See the comment above.
 const AGENT_PROFILE_MISSING_HINT = "agent_profile_id is required";
 
 export function describeEnsureError(
@@ -32,10 +31,7 @@ export function describeEnsureError(
       detail: t("task:noAgentProfileConfiguredDetail"),
       isAgentProfileMissing: true,
       action: workspaceId
-        ? {
-            label: t("task:openWorkspaceSettings"),
-            href: `/settings/workspaces/${workspaceId}`,
-          }
+        ? { label: t("task:openWorkspaceSettings"), href: `/settings/workspace/${workspaceId}` }
         : null,
     };
   }

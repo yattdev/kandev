@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/components/state-provider";
 import { useToast } from "@/components/toast-provider";
 import { requestCommitDiff } from "@/components/task/commit-diff-request";
@@ -30,7 +29,6 @@ export function useCommitDiff(commitSha: string, repo?: string): UseCommitDiffRe
       : false,
   );
   const { toast } = useToast();
-  const { t } = useTranslation("task");
 
   const [files, setFiles] = useState<Record<string, FileInfo> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -59,8 +57,8 @@ export function useCommitDiff(commitSha: string, repo?: string): UseCommitDiffRe
     } catch (err) {
       if (requestSeq !== requestSeqRef.current) return;
       toast({
-        title: t("task:failedToLoadCommitDiff"),
-        description: err instanceof Error ? err.message : t("common:anUnexpectedErrorOccurred"),
+        title: "Failed to load commit diff",
+        description: err instanceof Error ? err.message : "An unexpected error occurred",
         variant: "error",
       });
     } finally {
@@ -68,7 +66,7 @@ export function useCommitDiff(commitSha: string, repo?: string): UseCommitDiffRe
         setLoading(false);
       }
     }
-  }, [activeSessionId, activeTaskId, agentctlReady, commitSha, repo, sessionTaskId, t, toast]);
+  }, [activeSessionId, activeTaskId, agentctlReady, commitSha, repo, sessionTaskId, toast]);
 
   useEffect(() => {
     fetchDiff();

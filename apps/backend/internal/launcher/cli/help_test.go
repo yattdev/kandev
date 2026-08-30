@@ -5,18 +5,13 @@ import (
 	"testing"
 )
 
-func TestHelpDescribesPublicCommands(t *testing.T) {
+func TestHelpDoesNotExposeHiddenBackendMode(t *testing.T) {
 	help := Help()
-	for _, want := range []string{
-		"kandev run",
-		"kandev dev",
-		"kandev start",
-		"--dev",
-		"--web-internal-port",
-	} {
-		if !strings.Contains(help, want) {
-			t.Fatalf("help does not describe %q:\n%s", want, help)
-		}
+	if !strings.Contains(help, "kandev run") {
+		t.Fatalf("help does not describe public run command:\n%s", help)
+	}
+	if strings.Contains(help, "kandev dev") || strings.Contains(help, "--dev") {
+		t.Fatalf("help exposes unsupported dev mode:\n%s", help)
 	}
 	if strings.Contains(help, "__backend") {
 		t.Fatalf("help exposes hidden backend mode:\n%s", help)

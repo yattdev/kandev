@@ -13,11 +13,6 @@ let popstateInstalled = false;
 let historyMutationsTracked = false;
 let allowedPop = false;
 let restoringPop = false;
-// Position of a blocked-pop restoration whose traversal is still in flight
-// when the intent was cancelled. The delayed popstate for that position must
-// be consumed without touching currentPosition, so a newer navigation (e.g. a
-// push performed right after cancel) is not clobbered.
-let canceledRestorationPosition: number | null = null;
 
 type BlockedPop = {
   delta: number;
@@ -101,7 +96,6 @@ export function clearNavigationBlockerForTests(): void {
   allowedPop = false;
   restoringPop = false;
   blockedPop = null;
-  canceledRestorationPosition = null;
 }
 
 function ensureHistoryTracking(): void {
@@ -135,14 +129,6 @@ function handlePopState(event: PopStateEvent): void {
       // tagged settings entry. Restore the current entry before prompting.
       blockPop(event, -1, currentPosition);
     }
-    return;
-  }
-
-  if (targetPosition === canceledRestorationPosition) {
-    // Popstate for a blocked-pop restoration whose intent was cancelled: a
-    // newer navigation may have happened since, so consume it without
-    // updating currentPosition.
-    canceledRestorationPosition = null;
     return;
   }
 
@@ -186,7 +172,6 @@ function blockPop(event: PopStateEvent, delta: number, restorePosition: number):
   };
   blockedPop = pending;
   restoringPop = true;
-  canceledRestorationPosition = null; // a new block supersedes any stale one
   window.history.go(-delta);
 
   blocker({
@@ -204,16 +189,11 @@ function trackNativeHistoryMutations(): void {
     const position = readPosition(state) ?? (currentPosition ?? 0) + 1;
     pushState(withPosition(state, position), title, url);
     currentPosition = position;
-    // A new navigation supersedes any blocked-pop traversal still in flight;
-    // without this the cancelled restoration position could eat a later
-    // legitimate popstate to the same position.
-    canceledRestorationPosition = null;
   };
   window.history.replaceState = (state, title, url) => {
     const position = readPosition(state) ?? currentPosition ?? 0;
     replaceState(withPosition(state, position), title, url);
     currentPosition = position;
-    canceledRestorationPosition = null;
   };
 }
 
@@ -231,14 +211,7 @@ function proceedBlockedPop(pending: BlockedPop): void {
 function cancelBlockedPop(pending: BlockedPop): void {
   if (blockedPop !== pending) return;
   pending.canceled = true;
-  if (!pending.restored) {
-    // The history.go(-delta) restoration is still in flight. Its popstate
-    // must not overwrite a newer currentPosition (e.g. a push performed
-    // right after cancel), so consume that exact position when it arrives.
-    canceledRestorationPosition = pending.restorePosition;
-    restoringPop = false;
-  }
-  blockedPop = null;
+  if (pending.restored) blockedPop = null;
 }
 
 function finishPopRestoration(): void {

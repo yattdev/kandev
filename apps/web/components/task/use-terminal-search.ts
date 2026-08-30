@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import type { SearchAddon } from "@xterm/addon-search";
-import { t } from "@/lib/i18n";
 
 type UseTerminalSearchOptions = {
   xtermRef: React.RefObject<Terminal | null>;
@@ -113,7 +112,7 @@ export function useTerminalSearch({
   const { addon } = useSearchAddon(xtermRef, isTerminalReady, handleResults);
 
   const hasError = regex && query.length > 0 && !isValidRegex(query);
-  const errorText = hasError ? t("task:invalidRegex") : undefined;
+  const errorText = hasError ? "Invalid regex" : undefined;
 
   const buildOptions = useCallback(
     () => ({

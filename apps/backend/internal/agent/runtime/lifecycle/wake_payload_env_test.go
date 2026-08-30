@@ -32,15 +32,13 @@ func TestSpillLargeWakePayloadEnv_UsesFallbackFileIDWhenRunIDMissing(t *testing.
 
 func TestEnsureWakePayloadGitExclude_WorktreeGitFile(t *testing.T) {
 	workspace := t.TempDir()
-	commonDir := t.TempDir()
-	gitDir := filepath.Join(commonDir, "worktrees", "task")
+	gitDir := filepath.Join(t.TempDir(), "worktrees", "task", ".git")
 	if err := os.MkdirAll(filepath.Join(gitDir, "info"), 0o700); err != nil {
-		t.Fatalf("create linked git info dir: %v", err)
+		t.Fatalf("create git info dir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(workspace, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o600); err != nil {
 		t.Fatalf("write .git file: %v", err)
 	}
-	writeValidLinkedWakePayloadGitMetadata(t, workspace, gitDir, commonDir)
 
 	if err := ensureWakePayloadGitExclude(workspace); err != nil {
 		t.Fatalf("ensureWakePayloadGitExclude: %v", err)
@@ -57,8 +55,7 @@ func TestEnsureWakePayloadGitExclude_WorktreeGitFile(t *testing.T) {
 
 func TestEnsureWakePayloadGitExclude_WorktreeInfoPathIsFile(t *testing.T) {
 	workspace := t.TempDir()
-	commonDir := t.TempDir()
-	gitDir := filepath.Join(commonDir, "worktrees", "task")
+	gitDir := filepath.Join(t.TempDir(), "worktrees", "task", ".git")
 	if err := os.MkdirAll(gitDir, 0o700); err != nil {
 		t.Fatalf("create git dir: %v", err)
 	}
@@ -68,13 +65,12 @@ func TestEnsureWakePayloadGitExclude_WorktreeInfoPathIsFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workspace, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o600); err != nil {
 		t.Fatalf("write .git file: %v", err)
 	}
-	writeValidLinkedWakePayloadGitMetadata(t, workspace, gitDir, commonDir)
 
 	err := ensureWakePayloadGitExclude(workspace)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
-	if !strings.Contains(err.Error(), "not a directory") {
+	if !strings.Contains(err.Error(), "git info path is not a directory") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -84,9 +80,6 @@ func TestEnsureWakePayloadGitExclude_NormalGitDirWithoutInfo(t *testing.T) {
 	gitDir := filepath.Join(workspace, ".git")
 	if err := os.Mkdir(gitDir, 0o700); err != nil {
 		t.Fatalf("create .git dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
-		t.Fatalf("write HEAD: %v", err)
 	}
 
 	if err := ensureWakePayloadGitExclude(workspace); err != nil {
@@ -100,41 +93,6 @@ func TestEnsureWakePayloadGitExclude_NormalGitDirWithoutInfo(t *testing.T) {
 	}
 	if !strings.Contains(string(data), wakePayloadExcludeLine) {
 		t.Fatalf("exclude missing %q: %s", wakePayloadExcludeLine, string(data))
-	}
-}
-
-func TestEnsureWakePayloadGitExclude_RejectsForgedLinkedGitPointer(t *testing.T) {
-	workspace := t.TempDir()
-	forgedGitDir := filepath.Join(t.TempDir(), "unrelated")
-	if err := os.MkdirAll(forgedGitDir, 0o700); err != nil {
-		t.Fatalf("create forged gitdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(workspace, ".git"), []byte("gitdir: "+forgedGitDir+"\n"), 0o600); err != nil {
-		t.Fatalf("write .git file: %v", err)
-	}
-
-	err := ensureWakePayloadGitExclude(workspace)
-	if err == nil || !strings.Contains(err.Error(), "git metadata projection invalid") {
-		t.Fatalf("ensureWakePayloadGitExclude error = %v, want projection failure", err)
-	}
-	if _, err := os.Stat(filepath.Join(forgedGitDir, "info", "exclude")); !os.IsNotExist(err) {
-		t.Fatalf("forged gitdir was modified: %v", err)
-	}
-}
-
-func writeValidLinkedWakePayloadGitMetadata(t *testing.T, workspace, gitDir, commonDir string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(gitDir, "gitdir"), []byte(filepath.Join(workspace, ".git")+"\n"), 0o600); err != nil {
-		t.Fatalf("write reciprocal gitdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte("../..\n"), 0o600); err != nil {
-		t.Fatalf("write commondir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
-		t.Fatalf("write HEAD: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(commonDir, "objects"), 0o700); err != nil {
-		t.Fatalf("create common objects: %v", err)
 	}
 }
 

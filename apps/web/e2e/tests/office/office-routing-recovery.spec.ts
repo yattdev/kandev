@@ -54,17 +54,14 @@ test.describe("Office provider routing — recovery", () => {
     await officeApi.assignTask(degradeTask.id!, officeSeed.agentId);
 
     // Wait for claude-acp to enter degraded state.
-    await expect
-      .poll(
-        async () => {
-          const health = await officeApi.listRoutingHealth(officeSeed.workspaceId);
-          return health.health.some(
-            (h) => h.provider_id === "claude-acp" && h.state === "degraded",
-          );
-        },
-        { timeout: 20_000, message: "claude-acp never became degraded" },
-      )
-      .toBe(true);
+    const degradedDeadline = Date.now() + 20_000;
+    while (Date.now() < degradedDeadline) {
+      const health = await officeApi.listRoutingHealth(officeSeed.workspaceId);
+      if (health.health.some((h) => h.provider_id === "claude-acp" && h.state === "degraded")) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
 
     // Step 2: clear injection and call /routing/retry to fast-forward
     // the recovery probe.
@@ -80,15 +77,17 @@ test.describe("Office provider routing — recovery", () => {
     // E2E mock providers register a ProviderProber wired to the
     // injection map, so /routing/retry flips the row without needing
     // a follow-up launch.
-    await expect
-      .poll(
-        async () => {
-          const health = await officeApi.listRoutingHealth(officeSeed.workspaceId);
-          const claude = health.health.find((h) => h.provider_id === "claude-acp");
-          return !claude || claude.state === "healthy";
-        },
-        { timeout: 20_000, message: "claude-acp never recovered to healthy" },
-      )
-      .toBe(true);
+    const healthyDeadline = Date.now() + 20_000;
+    let recovered = false;
+    while (Date.now() < healthyDeadline) {
+      const health = await officeApi.listRoutingHealth(officeSeed.workspaceId);
+      const claude = health.health.find((h) => h.provider_id === "claude-acp");
+      if (!claude || claude.state === "healthy") {
+        recovered = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    expect(recovered).toBe(true);
   });
 });

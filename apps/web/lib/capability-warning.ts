@@ -1,6 +1,5 @@
 import { IconAlertTriangle, IconLock } from "@tabler/icons-react";
 import type { CapabilityStatus } from "@/lib/types/http";
-import { t } from "@/lib/i18n";
 
 export type CapabilityWarning = {
   Icon: typeof IconLock;
@@ -17,19 +16,19 @@ export function getCapabilityWarning(
       return {
         Icon: IconLock,
         color: "text-amber-600 dark:text-amber-400",
-        title: error || t("agents:authenticationRequired"),
+        title: error || "Authentication required",
       };
     case "not_installed":
       return {
         Icon: IconAlertTriangle,
         color: "text-muted-foreground",
-        title: error || t("task:agentCliNotInstalled"),
+        title: error || "Agent CLI not installed",
       };
     case "failed":
       return {
         Icon: IconAlertTriangle,
         color: "text-red-600 dark:text-red-400",
-        title: error || t("task:agentProbeFailed"),
+        title: error || "Agent probe failed",
       };
     default:
       return null;

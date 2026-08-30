@@ -173,7 +173,6 @@ function extractObjectText(
   return value instanceof Error ? bounded(value.message, TEXT_LIMIT) : "[object]";
 }
 
-// i18n-exempt: builds the telemetry payload posted to the error-log endpoint.
 function errorDetails(value: unknown): FrontendErrorReport["error"] | undefined {
   if (!(value instanceof Error)) return undefined;
   return {

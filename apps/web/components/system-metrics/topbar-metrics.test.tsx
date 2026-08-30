@@ -7,17 +7,21 @@ import { defaultSystemState } from "@/lib/state/slices/system/system-slice";
 import type { AppState } from "@/lib/state/store";
 import { TopbarMetrics } from "./topbar-metrics";
 
+const featureState = vi.hoisted(() => ({ appStatusBar: false }));
 const subscribeMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/hooks/domains/features/use-feature", () => ({
+  useFeature: () => featureState.appStatusBar,
+}));
 
 vi.mock("@/hooks/use-system-metrics-subscription", () => ({
   useSystemMetricsSubscription: subscribeMock,
 }));
 
-function renderMetrics(appStatusBarEnabled: boolean, mobile = false) {
+function renderMetrics() {
   const initialState = {
     userSettings: {
       ...defaultSettingsState.userSettings,
-      appStatusBarEnabled,
       systemMetricsDisplay: { showInTopbar: true, simplified: false },
     },
     system: {
@@ -40,40 +44,33 @@ function renderMetrics(appStatusBarEnabled: boolean, mobile = false) {
   return render(
     <StateProvider initialState={initialState}>
       <TooltipProvider>
-        <TopbarMetrics mobile={mobile} />
+        <TopbarMetrics />
       </TooltipProvider>
     </StateProvider>,
   );
 }
 
-describe("TopbarMetrics preference fallback", () => {
+describe("TopbarMetrics feature fallback", () => {
   beforeEach(() => {
+    featureState.appStatusBar = false;
     subscribeMock.mockClear();
   });
 
   afterEach(cleanup);
 
   it("keeps existing metrics visible while the app status bar is disabled", () => {
-    renderMetrics(false);
+    renderMetrics();
 
     expect(screen.getByTestId("topbar-metrics")).toBeTruthy();
-    expect(screen.getByTestId("topbar-metrics").className).toContain("h-8");
     expect(screen.getByLabelText("CPU 42%")).toBeTruthy();
     expect(subscribeMock).toHaveBeenCalledWith(true);
   });
 
   it("yields metrics ownership to the app status bar when enabled", () => {
-    renderMetrics(true);
+    featureState.appStatusBar = true;
+    renderMetrics();
 
     expect(screen.queryByTestId("topbar-metrics")).toBeNull();
     expect(subscribeMock).not.toHaveBeenCalled();
-  });
-
-  it("uses 16px metric icons in the mobile topbar", () => {
-    renderMetrics(false, true);
-
-    expect(screen.getByLabelText("CPU 42%").querySelector("svg")?.getAttribute("class")).toContain(
-      "size-4",
-    );
   });
 });

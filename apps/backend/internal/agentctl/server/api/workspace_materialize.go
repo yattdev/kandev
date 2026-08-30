@@ -23,53 +23,19 @@ import (
 // agentctl workspace. RepositoryURL must be a credential-free Git locator;
 // destination is always a direct child of the current workspace root.
 type MaterializeRepositoryRequest struct {
-	RepositoryURL           string                          `json:"repository_url"`
-	Destination             string                          `json:"destination"`
-	BaseBranch              string                          `json:"base_branch"`
-	CheckoutBranch          string                          `json:"checkout_branch,omitempty"`
-	RemoteContribution      *models.RemoteContribution      `json:"remote_contribution,omitempty"`
-	ContributionDestination *models.ContributionDestination `json:"contribution_destination,omitempty"`
+	RepositoryURL      string                     `json:"repository_url"`
+	Destination        string                     `json:"destination"`
+	BaseBranch         string                     `json:"base_branch"`
+	CheckoutBranch     string                     `json:"checkout_branch,omitempty"`
+	RemoteContribution *models.RemoteContribution `json:"remote_contribution,omitempty"`
 }
 
 // MaterializeRepositoryResponse deliberately contains no remote locator so a
 // credential accidentally supplied by an untrusted caller cannot be echoed.
 type MaterializeRepositoryResponse struct {
-	Destination         string `json:"destination"`
-	Reused              bool   `json:"reused,omitempty"`
-	GitMetadataAttested bool   `json:"git_metadata_attested,omitempty"`
-	Error               string `json:"error,omitempty"`
-}
-
-// GitMetadataAttestationResponse carries only agentctl-approved executor paths
-// over the authenticated lifecycle control channel. It is never surfaced in a
-// user-facing launch error.
-type GitMetadataAttestationResponse struct {
-	Attested  bool                     `json:"attested"`
-	Checkouts []GitMetadataAttestation `json:"checkouts,omitempty"`
-	Error     string                   `json:"error,omitempty"`
-}
-
-// GitMetadataAttestation is an executor-visible checkout/gitdir pair approved
-// by agentctl immediately before lifecycle renders a mutable clone policy.
-// It is returned only over the authenticated control channel, never copied to
-// a user-facing launch error.
-type GitMetadataAttestation struct {
-	CheckoutPath string `json:"checkout_path"`
-	GitDir       string `json:"git_dir"`
-}
-
-// handleWorkspaceGitMetadataAttestation batch-validates every task-owned
-// checkout that agentctl is currently authorized to expose. Clone executors
-// call this immediately before ConfigureAgent/Start, so lifecycle renders from
-// final executor-side proof rather than host paths or derived .git paths.
-func (s *Server) handleWorkspaceGitMetadataAttestation(c *gin.Context) {
-	checkouts, err := attestWorkspaceGitMetadata(c.Request.Context(), s.procMgr.WorkspaceSourceRoots())
-	if err != nil {
-		s.logger.Warn("workspace Git metadata attestation failed", zap.Error(err))
-		c.JSON(http.StatusUnprocessableEntity, GitMetadataAttestationResponse{Error: "workspace Git metadata validation failed"})
-		return
-	}
-	c.JSON(http.StatusOK, GitMetadataAttestationResponse{Attested: true, Checkouts: checkouts})
+	Destination string `json:"destination"`
+	Reused      bool   `json:"reused,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // RemoveMaterializedRepositoryRequest identifies a previously materialized,
@@ -113,14 +79,8 @@ func (s *Server) handleWorkspaceMaterializeRepository(c *gin.Context) {
 			return
 		}
 	}
-	if req.ContributionDestination != nil {
-		if err := req.ContributionDestination.Validate(); err != nil {
-			c.JSON(http.StatusBadRequest, MaterializeRepositoryResponse{Error: "invalid contribution destination"})
-			return
-		}
-	}
 
-	reused, err := materializeRepositoryWithDestination(c.Request.Context(), req.RepositoryURL, destination, req.BaseBranch, req.CheckoutBranch, req.RemoteContribution, req.ContributionDestination)
+	reused, err := materializeRepository(c.Request.Context(), req.RepositoryURL, destination, req.BaseBranch, req.CheckoutBranch, req.RemoteContribution)
 	if err != nil {
 		if errors.Is(err, errMaterializeCollision) {
 			c.JSON(http.StatusConflict, MaterializeRepositoryResponse{Error: "destination already exists"})
@@ -134,66 +94,11 @@ func (s *Server) handleWorkspaceMaterializeRepository(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, MaterializeRepositoryResponse{Error: "repository materialization failed"})
 		return
 	}
-	if err := attestMaterializedGitMetadata(c.Request.Context(), destination); err != nil {
-		s.logger.Warn("workspace repository Git metadata attestation failed", zap.String("destination", req.Destination), zap.Error(err))
-		c.JSON(http.StatusUnprocessableEntity, MaterializeRepositoryResponse{Error: "repository Git metadata validation failed"})
-		return
-	}
 	status := http.StatusCreated
 	if reused {
 		status = http.StatusOK
 	}
-	c.JSON(status, MaterializeRepositoryResponse{Destination: req.Destination, Reused: reused, GitMetadataAttested: true})
-}
-
-// attestMaterializedGitMetadata proves a materialized checkout remains a
-// regular repository under agentctl's canonical workspace before lifecycle can
-// grant its .git directory to a mutable Codex session. It returns no path to
-// the caller, keeping executor filesystem details out of API errors.
-func attestMaterializedGitMetadata(ctx context.Context, destination string) error {
-	_, err := attestRegularGitMetadata(ctx, destination)
-	return err
-}
-
-// attestWorkspaceGitMetadata revalidates every agentctl-authorized source
-// root as an exact regular checkout. It intentionally uses the process
-// manager's canonical allowlist, never caller-supplied paths.
-func attestWorkspaceGitMetadata(ctx context.Context, roots []string) ([]GitMetadataAttestation, error) {
-	if len(roots) == 0 {
-		return nil, errors.New("workspace source roots are unavailable")
-	}
-	checkouts := make([]GitMetadataAttestation, 0, len(roots))
-	for _, root := range roots {
-		attestation, err := attestRegularGitMetadata(ctx, root)
-		if err != nil {
-			return nil, err
-		}
-		checkouts = append(checkouts, attestation)
-	}
-	return checkouts, nil
-}
-
-func attestRegularGitMetadata(ctx context.Context, destination string) (GitMetadataAttestation, error) {
-	resolved, err := filepath.EvalSymlinks(destination)
-	if err != nil || resolved != destination {
-		return GitMetadataAttestation{}, errors.New("checkout path is not canonical")
-	}
-	gitDir := filepath.Join(destination, ".git")
-	for _, path := range []string{gitDir, filepath.Join(gitDir, "objects")} {
-		info, statErr := os.Lstat(path)
-		if statErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return GitMetadataAttestation{}, errors.New("git directory is not a regular directory")
-		}
-	}
-	head, err := os.Lstat(filepath.Join(gitDir, "HEAD"))
-	if err != nil || !head.Mode().IsRegular() || head.Mode()&os.ModeSymlink != 0 {
-		return GitMetadataAttestation{}, errors.New("git HEAD is not a regular file")
-	}
-	actualGitDir, err := materializeGitOutput(ctx, "-C", destination, "rev-parse", "--absolute-git-dir")
-	if err != nil || filepath.Clean(strings.TrimSpace(actualGitDir)) != gitDir {
-		return GitMetadataAttestation{}, errors.New("git checkout does not own its metadata")
-	}
-	return GitMetadataAttestation{CheckoutPath: destination, GitDir: gitDir}, nil
+	c.JSON(status, MaterializeRepositoryResponse{Destination: req.Destination, Reused: reused})
 }
 
 func (s *Server) handleWorkspaceRemoveMaterializedRepository(c *gin.Context) {
@@ -308,15 +213,7 @@ func materializeRepository(ctx context.Context, locator, destination, baseBranch
 	if len(bindings) > 0 {
 		binding = bindings[0]
 	}
-	return materializeRepositoryInternal(ctx, locator, destination, baseBranch, checkoutBranch, binding, nil)
-}
-
-func materializeRepositoryWithDestination(ctx context.Context, locator, destination, baseBranch, checkoutBranch string, binding *models.RemoteContribution, contributionDestination *models.ContributionDestination) (bool, error) {
-	return materializeRepositoryInternal(ctx, locator, destination, baseBranch, checkoutBranch, binding, contributionDestination)
-}
-
-func materializeRepositoryInternal(ctx context.Context, locator, destination, baseBranch, checkoutBranch string, binding *models.RemoteContribution, contributionDestination *models.ContributionDestination) (bool, error) {
-	if reused, err := matchingCheckoutWithDestination(ctx, destination, locator, baseBranch, checkoutBranch, binding, contributionDestination); err != nil || reused {
+	if reused, err := matchingCheckout(ctx, destination, locator, baseBranch, checkoutBranch, binding); err != nil || reused {
 		return reused, err
 	}
 	// codeql[go/path-injection] destination is a direct child of the canonical workspace root; Lstat rejects links before use.
@@ -343,11 +240,6 @@ func materializeRepositoryInternal(ctx context.Context, locator, destination, ba
 	} else if err := checkoutMaterializedBranch(ctx, checkout, baseBranch, checkoutBranch); err != nil {
 		return false, err
 	}
-	if contributionDestination != nil {
-		if err := configureContributionDestination(ctx, checkout, contributionDestination); err != nil {
-			return false, err
-		}
-	}
 	// codeql[go/path-injection] checkout is newly created beneath the trusted workspace root; destination is its direct child.
 	if err := os.Rename(checkout, destination); err != nil {
 		if os.IsExist(err) {
@@ -356,62 +248,6 @@ func materializeRepositoryInternal(ctx context.Context, locator, destination, ba
 		return false, err
 	}
 	return false, nil
-}
-
-func matchingCheckoutWithDestination(ctx context.Context, destination, locator, baseBranch, checkoutBranch string, binding *models.RemoteContribution, contributionDestination *models.ContributionDestination) (bool, error) {
-	reused, err := matchingCheckout(ctx, destination, locator, baseBranch, checkoutBranch, binding)
-	if err != nil || !reused || contributionDestination == nil {
-		return reused, err
-	}
-	return true, configureContributionDestination(ctx, destination, contributionDestination)
-}
-
-func configureContributionDestination(ctx context.Context, checkout string, destination *models.ContributionDestination) error {
-	if destination == nil {
-		return nil
-	}
-	if err := destination.Validate(); err != nil {
-		return err
-	}
-	remoteName := destination.ContributionRemoteName()
-	configured, err := materializeGitOutput(ctx, "-C", checkout, "config", "--get", "remote."+remoteName+".url")
-	if err == nil {
-		if strings.TrimSpace(configured) != destination.TargetRepository.RemoteURL {
-			return errors.New("contribution destination identity conflict")
-		}
-	} else if _, err := materializeGitOutput(ctx, "-C", checkout, "remote", "add", remoteName, destination.TargetRepository.RemoteURL); err != nil {
-		return errors.New("contribution destination could not be configured")
-	}
-	pushURLs, pushErr := materializeGitOutput(ctx, "-C", checkout, "config", "--get-all", "remote."+remoteName+".pushurl")
-	if pushErr == nil && !contributionDestinationPushURLsMatch(pushURLs, destination.TargetRepository.RemoteURL) {
-		return errors.New("contribution destination push identity conflict")
-	}
-	if pushErr != nil {
-		if _, err := materializeGitOutput(ctx, "-C", checkout, "config", "--add", "remote."+remoteName+".pushurl", destination.TargetRepository.RemoteURL); err != nil {
-			return errors.New("contribution destination push URL could not be configured")
-		}
-	}
-	branch, err := materializeGitOutput(ctx, "-C", checkout, "branch", "--show-current")
-	if err != nil || strings.TrimSpace(branch) == "" {
-		return errors.New("contribution destination branch could not be identified")
-	}
-	if _, err := materializeGitOutput(ctx, "-C", checkout, "config", "branch."+strings.TrimSpace(branch)+".pushRemote", remoteName); err != nil {
-		return errors.New("contribution destination push remote could not be configured")
-	}
-	return nil
-}
-
-func contributionDestinationPushURLsMatch(configured, target string) bool {
-	urls := strings.Split(strings.TrimSpace(configured), "\n")
-	if len(urls) == 0 || (len(urls) == 1 && urls[0] == "") {
-		return false
-	}
-	for _, configuredURL := range urls {
-		if strings.TrimSpace(configuredURL) != target {
-			return false
-		}
-	}
-	return true
 }
 
 func checkoutMaterializedBranch(ctx context.Context, checkout, baseBranch, checkoutBranch string) error {

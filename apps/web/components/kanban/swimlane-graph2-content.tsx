@@ -12,13 +12,12 @@ import { useTranslation } from "react-i18next";
 export function getGraph2DisplayState(
   tasks: Task[],
   steps: WorkflowStep[],
-  orphanStepTitle: string,
 ): { displayTasks: Task[]; displaySteps: WorkflowStep[] } {
   const stepIds = new Set(steps.map((step) => step.id));
   const { tasks: displayTasks, hasOrphans } = remapOrphanTasks(tasks, stepIds, ORPHAN_STEP_ID);
   return {
     displayTasks,
-    displaySteps: hasOrphans ? [...steps, { ...ORPHAN_STEP, title: orphanStepTitle }] : steps,
+    displaySteps: hasOrphans ? [...steps, ORPHAN_STEP] : steps,
   };
 }
 
@@ -43,8 +42,8 @@ export function SwimlaneGraph2Content({
   });
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
   const { displayTasks, displaySteps } = useMemo(
-    () => getGraph2DisplayState(tasks, steps, t("kanban:needsReassignment")),
-    [tasks, steps, t],
+    () => getGraph2DisplayState(tasks, steps),
+    [tasks, steps],
   );
 
   const sortedTasks = useMemo(

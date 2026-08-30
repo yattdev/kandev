@@ -29,12 +29,11 @@ func TestArchiveTaskTree_FreshTask_PreservesCascadeColumn(t *testing.T) {
 	// Create a fresh office task with the same path the CLI / UI use.
 	// ProjectID resolves the office workflow + start step (mirrors the
 	// CLI's `tasks create` payload).
-	taskResult, err := svc.CreateTask(ctx, &CreateTaskRequest{
+	task, err := svc.CreateTask(ctx, &CreateTaskRequest{
 		WorkspaceID: "ws-1",
 		Title:       "Repro target",
 		ProjectID:   "proj-1",
 	})
-	task := taskResult.Task
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}

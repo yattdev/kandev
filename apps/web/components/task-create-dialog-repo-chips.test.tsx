@@ -73,7 +73,6 @@ function makeFs(overrides: Partial<DialogFormState>): DialogFormState {
     prInfoByUrl: {
       info: () => undefined,
       loading: () => false,
-      settled: () => true,
       error: () => undefined,
       ensure: () => undefined,
       clear: () => undefined,

@@ -21,7 +21,6 @@ import {
 } from "@/components/task-create-dialog-autopick";
 import { useRepositoryAutoSelectEffect } from "@/components/task-create-dialog-repository-autopick";
 import { createDebugLogger, isDebug } from "@/lib/debug/log";
-import { t } from "@/lib/i18n";
 
 // Re-export autopick hooks for callers that imported them from this module.
 export { useWorkflowAgentProfileEffect };
@@ -93,8 +92,8 @@ export function useDiscoverReposEffect(
       })
       .catch((e) => {
         toast({
-          title: t("task:failedToDiscoverRepositories"),
-          description: e instanceof Error ? e.message : t("common:requestFailed"),
+          title: "Failed to discover repositories",
+          description: e instanceof Error ? e.message : "Request failed",
           variant: "error",
         });
         setDiscoveredRepositories([]);
@@ -554,7 +553,7 @@ export function useGitHubUrlErrorEffect(fs: DialogFormState, open: boolean) {
     }
     const parsed = parseGitHubAnyUrl(trimmed);
     if (!parsed) {
-      setGitHubUrlError(t("task:invalidGitHubUrl"));
+      setGitHubUrlError("Invalid GitHub URL — expected github.com/owner/repo or .../pull/123");
       return;
     }
     setGitHubUrlError(null);

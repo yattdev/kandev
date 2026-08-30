@@ -8,7 +8,6 @@ import (
 	"github.com/kandev/kandev/internal/agent/executor"
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/task/models"
-	"github.com/kandev/kandev/internal/worktree"
 )
 
 // PrepareStepStatus represents the status of a preparation step.
@@ -27,23 +26,21 @@ const (
 // carried at the top level. When EnvPrepareRequest.Repositories is non-empty,
 // each entry produces one prepared worktree under the shared TaskDirName.
 type RepoPrepareSpec struct {
-	RepositoryID            string
-	RepositoryPath          string
-	RepoName                string
-	BaseBranch              string
-	DefaultBranch           string // Repository's default_branch, used as fallback when BaseBranch is missing
-	CheckoutBranch          string
-	PRNumber                int // GitHub PR number when CheckoutBranch is a PR head; enables refs/pull/<N>/head fetch for fork PRs.
-	RemoteContribution      *models.RemoteContribution
-	WorktreeID              string
-	WorktreeBranch          string
-	WorktreeBranchPrefix    string
-	WorktreeBranchTemplate  string
-	WorktreeBranchTicket    string
-	PullBeforeWorktree      bool
-	RemoteSyncHandled       bool
-	RepoSetupScript         string
-	ContributionDestination *models.ContributionDestination
+	RepositoryID           string
+	RepositoryPath         string
+	RepoName               string
+	BaseBranch             string
+	DefaultBranch          string // Repository's default_branch, used as fallback when BaseBranch is missing
+	CheckoutBranch         string
+	PRNumber               int // GitHub PR number when CheckoutBranch is a PR head; enables refs/pull/<N>/head fetch for fork PRs.
+	RemoteContribution     *models.RemoteContribution
+	WorktreeID             string
+	WorktreeBranch         string
+	WorktreeBranchPrefix   string
+	WorktreeBranchTemplate string
+	WorktreeBranchTicket   string
+	PullBeforeWorktree     bool
+	RepoSetupScript        string
 	// BranchSlug, when set, suffixes the worktree path as
 	// {RepoName}-{BranchSlug} so two specs sharing a RepositoryID don't collide
 	// on disk.
@@ -56,32 +53,30 @@ type RepoPrepareSpec struct {
 
 // EnvPrepareRequest contains the parameters for environment preparation.
 type EnvPrepareRequest struct {
-	TaskID                  string
-	WorkspaceID             string
-	SessionID               string
-	TaskTitle               string
-	ExecutionID             string
-	ExecutorType            executor.Name
-	WorkspacePath           string
-	RepositoryPath          string
-	RepositoryID            string
-	UseWorktree             bool
-	SetupScript             string
-	RepoSetupScript         string // Repository-level setup script (e.g. "make install")
-	BaseBranch              string
-	DefaultBranch           string // Repository's default_branch, used as fallback when BaseBranch is missing
-	CheckoutBranch          string
-	PRNumber                int // GitHub PR number when CheckoutBranch is a PR head; enables refs/pull/<N>/head fetch for fork PRs.
-	RemoteContribution      *models.RemoteContribution
-	ContributionDestination *models.ContributionDestination
-	WorktreeID              string
-	WorktreeBranch          string
+	TaskID             string
+	WorkspaceID        string
+	SessionID          string
+	TaskTitle          string
+	ExecutionID        string
+	ExecutorType       executor.Name
+	WorkspacePath      string
+	RepositoryPath     string
+	RepositoryID       string
+	UseWorktree        bool
+	SetupScript        string
+	RepoSetupScript    string // Repository-level setup script (e.g. "make install")
+	BaseBranch         string
+	DefaultBranch      string // Repository's default_branch, used as fallback when BaseBranch is missing
+	CheckoutBranch     string
+	PRNumber           int // GitHub PR number when CheckoutBranch is a PR head; enables refs/pull/<N>/head fetch for fork PRs.
+	RemoteContribution *models.RemoteContribution
+	WorktreeID         string
+	WorktreeBranch     string
 
 	WorktreeBranchPrefix   string
 	WorktreeBranchTemplate string
 	WorktreeBranchTicket   string
 	PullBeforeWorktree     bool
-	RemoteSyncHandled      bool
 
 	TaskDirName string // Per-task directory name within the workspace (e.g. "task-abc123")
 	RepoName    string // Repository slug used with TaskDirName to locate checkouts
@@ -112,25 +107,23 @@ func (r *EnvPrepareRequest) RepoSpecs() []RepoPrepareSpec {
 		return nil
 	}
 	return []RepoPrepareSpec{{
-		RepositoryID:            r.RepositoryID,
-		RepositoryPath:          r.RepositoryPath,
-		RepoName:                r.RepoName,
-		BaseBranch:              r.BaseBranch,
-		DefaultBranch:           r.DefaultBranch,
-		CheckoutBranch:          r.CheckoutBranch,
-		PRNumber:                r.PRNumber,
-		RemoteContribution:      r.RemoteContribution,
-		WorktreeID:              r.WorktreeID,
-		WorktreeBranch:          r.WorktreeBranch,
-		WorktreeBranchPrefix:    r.WorktreeBranchPrefix,
-		WorktreeBranchTemplate:  r.WorktreeBranchTemplate,
-		WorktreeBranchTicket:    r.WorktreeBranchTicket,
-		PullBeforeWorktree:      r.PullBeforeWorktree,
-		RemoteSyncHandled:       r.RemoteSyncHandled,
-		RepoSetupScript:         r.RepoSetupScript,
-		BranchSlug:              r.BranchSlug,
-		BranchIdentitySlug:      r.BranchIdentitySlug,
-		ContributionDestination: r.ContributionDestination,
+		RepositoryID:           r.RepositoryID,
+		RepositoryPath:         r.RepositoryPath,
+		RepoName:               r.RepoName,
+		BaseBranch:             r.BaseBranch,
+		DefaultBranch:          r.DefaultBranch,
+		CheckoutBranch:         r.CheckoutBranch,
+		PRNumber:               r.PRNumber,
+		RemoteContribution:     r.RemoteContribution,
+		WorktreeID:             r.WorktreeID,
+		WorktreeBranch:         r.WorktreeBranch,
+		WorktreeBranchPrefix:   r.WorktreeBranchPrefix,
+		WorktreeBranchTemplate: r.WorktreeBranchTemplate,
+		WorktreeBranchTicket:   r.WorktreeBranchTicket,
+		PullBeforeWorktree:     r.PullBeforeWorktree,
+		RepoSetupScript:        r.RepoSetupScript,
+		BranchSlug:             r.BranchSlug,
+		BranchIdentitySlug:     r.BranchIdentitySlug,
 	}}
 }
 
@@ -156,11 +149,8 @@ type RepoWorktreeResult struct {
 	WorktreeID     string `json:"worktree_id,omitempty"`
 	WorktreeBranch string `json:"worktree_branch,omitempty"`
 	WorktreePath   string `json:"worktree_path,omitempty"`
-	// GitMetadataProjection is computed from the materialized checkout, never
-	// from the source repository. It is runtime-only authorization data.
-	GitMetadataProjection *worktree.GitMetadataProjection `json:"-"`
-	MainRepoGitDir        string                          `json:"main_repo_git_dir,omitempty"`
-	ErrorMessage          string                          `json:"error_message,omitempty"`
+	MainRepoGitDir string `json:"main_repo_git_dir,omitempty"`
+	ErrorMessage   string `json:"error_message,omitempty"`
 }
 
 // EnvPrepareResult contains the result of environment preparation.
@@ -173,33 +163,14 @@ type EnvPrepareResult struct {
 
 	// Worktree fields (populated when worktree preparer runs).
 	// Legacy single-worktree fields; for multi-repo results they mirror Worktrees[0].
-	WorktreeID            string                          `json:"worktree_id,omitempty"`
-	WorktreeBranch        string                          `json:"worktree_branch,omitempty"`
-	MainRepoGitDir        string                          `json:"main_repo_git_dir,omitempty"`
-	GitMetadataProjection *worktree.GitMetadataProjection `json:"-"`
+	WorktreeID     string `json:"worktree_id,omitempty"`
+	WorktreeBranch string `json:"worktree_branch,omitempty"`
+	MainRepoGitDir string `json:"main_repo_git_dir,omitempty"`
 
 	// Worktrees is the per-repository outcome list when the preparer ran in
 	// multi-repo mode. Empty for single-repo or repo-less results.
 	Worktrees []RepoWorktreeResult `json:"worktrees,omitempty"`
-
-	// Error carries the underlying typed error chain when Success is false.
-	// Populated alongside ErrorMessage so that callers wrapping the result
-	// can use %w to preserve errors.Is/errors.As reachability for sentinels
-	// like worktree.ErrBranchCheckedOut. ErrorMessage remains the canonical
-	// human-readable string; Error is the typed chain for programmatic use.
-	Error error `json:"-"`
 }
-
-// prepareResultError keeps the display message separate from the typed cause.
-// The display message can be sanitized while errors.Is/errors.As still reach
-// the original cause through Unwrap.
-type prepareResultError struct {
-	message string
-	cause   error
-}
-
-func (e *prepareResultError) Error() string { return e.message }
-func (e *prepareResultError) Unwrap() error { return e.cause }
 
 // PrepareProgressCallback is called when a preparation step changes status.
 type PrepareProgressCallback func(step PrepareStep, stepIndex int, totalSteps int)

@@ -3,8 +3,6 @@ import { type Page } from "@playwright/test";
 import { test, expect } from "../../fixtures/test-base";
 import type { SeedData } from "../../fixtures/test-base";
 import type { ApiClient } from "../../helpers/api-client";
-import { waitForLatestSessionDone } from "../../helpers/session";
-import { waitForSessionAgentctlReady } from "../../helpers/session-store";
 import { SessionPage } from "../../pages/session-page";
 
 // ---------------------------------------------------------------------------
@@ -29,13 +27,6 @@ async function seedTaskWithSession(
       repository_ids: [seedData.repositoryId],
     },
   );
-  await waitForLatestSessionDone(
-    apiClient,
-    task.id,
-    1,
-    `wait for terminal keyboard session ${task.id} to finish its initial turn`,
-    60_000,
-  );
 
   await testPage.goto(`/t/${task.id}`);
   const session = new SessionPage(testPage);
@@ -43,23 +34,20 @@ async function seedTaskWithSession(
   // waitForChatIdle (not a raw idleInput wait) rides out the WS-subscribe race:
   // the mock agent can settle RUNNING->WAITING_FOR_INPUT before the client's WS
   // subscription registers, so the idle placeholder never renders without a reload.
-  await session.waitForChatIdle({ timeout: 60_000 });
-  if (!task.session_id) throw new Error("seedTaskWithSession did not return a session_id");
-  await waitForSessionAgentctlReady(testPage, task.session_id);
+  await session.waitForChatIdle({ timeout: 30_000 });
   return session;
 }
 
 /** Focus the terminal and wait for the shell to be ready (prompt visible). */
 async function focusTerminal(page: Page, session: SessionPage): Promise<void> {
   await expect(session.terminal).toBeVisible({ timeout: 15_000 });
-  await session.expectTerminalConnected(60_000);
   await expect
     .poll(
       async () => {
         const buf = await readTerminalBuffer(page);
         return buf.length > 0;
       },
-      { timeout: 60_000, message: "Waiting for terminal shell to connect" },
+      { timeout: 15_000, message: "Waiting for terminal shell to connect" },
     )
     .toBe(true);
 

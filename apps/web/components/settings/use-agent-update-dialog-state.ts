@@ -10,8 +10,8 @@ function errorMessage(error: unknown) {
 type UseAgentUpdateDialogStateOptions = {
   agentName: string;
   job?: AgentUpdateJob;
-  onPreview: (agentName: string, targetVersion?: string) => Promise<AgentUpdatePreview>;
-  onUpdate: (agentName: string, targetVersion: string) => Promise<AgentUpdateJob>;
+  onPreview: (agentName: string) => Promise<AgentUpdatePreview>;
+  onUpdate: (agentName: string) => Promise<AgentUpdateJob>;
 };
 
 export function useAgentUpdateDialogState({
@@ -26,7 +26,6 @@ export function useAgentUpdateDialogState({
   const [approveError, setApproveError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [selectedTarget, setSelectedTarget] = useState("");
   const [activeJobID, setActiveJobID] = useState<string | null>(null);
   const previewRequestID = useRef(0);
   const activeJob = activeJobID === job?.job_id ? job : undefined;
@@ -38,39 +37,24 @@ export function useAgentUpdateDialogState({
     setApproveError(null);
     setLoading(false);
     setStarting(false);
-    setSelectedTarget("");
     setActiveJobID(null);
   }, []);
 
-  const loadPreview = useCallback(
-    async (targetVersion?: string) => {
-      const requestID = ++previewRequestID.current;
-      setLoading(true);
-      setPreviewError(null);
-      setApproveError(null);
-      try {
-        const nextPreview = await onPreview(agentName, targetVersion);
-        if (requestID === previewRequestID.current) {
-          setPreview(nextPreview);
-          setSelectedTarget(nextPreview.target_version);
-        }
-      } catch (error) {
-        if (requestID === previewRequestID.current) setPreviewError(errorMessage(error));
-      } finally {
-        if (requestID === previewRequestID.current) setLoading(false);
-      }
-    },
-    [agentName, onPreview],
-  );
-
-  const selectTarget = useCallback(
-    (targetVersion: string) => {
-      setActiveJobID(null);
-      setSelectedTarget(targetVersion);
-      void loadPreview(targetVersion);
-    },
-    [loadPreview],
-  );
+  const loadPreview = useCallback(async () => {
+    const requestID = ++previewRequestID.current;
+    setLoading(true);
+    setPreview(null);
+    setPreviewError(null);
+    setApproveError(null);
+    try {
+      const nextPreview = await onPreview(agentName);
+      if (requestID === previewRequestID.current) setPreview(nextPreview);
+    } catch (error) {
+      if (requestID === previewRequestID.current) setPreviewError(errorMessage(error));
+    } finally {
+      if (requestID === previewRequestID.current) setLoading(false);
+    }
+  }, [agentName, onPreview]);
 
   useEffect(() => {
     if (open) void loadPreview();
@@ -83,12 +67,10 @@ export function useAgentUpdateDialogState({
 
   const approve = async () => {
     const requestID = previewRequestID.current;
-    const targetVersion = selectedTarget || preview?.target_version || "";
-    if (!targetVersion) return;
     setStarting(true);
     setApproveError(null);
     try {
-      const nextJob = await onUpdate(agentName, targetVersion);
+      const nextJob = await onUpdate(agentName);
       if (requestID === previewRequestID.current) setActiveJobID(nextJob.job_id);
     } catch (error) {
       if (requestID === previewRequestID.current) setApproveError(errorMessage(error));
@@ -107,8 +89,6 @@ export function useAgentUpdateDialogState({
     open,
     preview,
     previewError,
-    selectTarget,
-    selectedTarget,
     starting,
   };
 }

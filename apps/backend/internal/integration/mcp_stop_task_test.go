@@ -181,12 +181,11 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 
 	parent, err := ts.TaskRepo.GetTask(context.Background(), parentTaskID)
 	require.NoError(t, err)
-	childResult, err := ts.TaskSvc.CreateTask(context.Background(), &taskservice.CreateTaskRequest{
+	child, err := ts.TaskSvc.CreateTask(context.Background(), &taskservice.CreateTaskRequest{
 		WorkspaceID: parent.WorkspaceID, WorkflowID: parent.WorkflowID, WorkflowStepID: parent.WorkflowStepID,
 		Title: "Long-running child", Description: "Keep working until the parent stops this task.",
 		Priority: "medium", ParentID: parentTaskID,
 	})
-	child := childResult.Task
 	require.NoError(t, err)
 
 	running := make(chan struct{})

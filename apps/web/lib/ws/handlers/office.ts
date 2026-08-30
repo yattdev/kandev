@@ -134,20 +134,11 @@ function buildAgentHandlers(
   triggerRefetch: (type: string) => void,
   isCurrentWorkspace: WorkspaceCheck,
 ): WsHandlers {
-  // Which workspace's agent list this event mutates. `isCurrentWorkspace` has
-  // already passed, so a payload carrying no `workspace_id` (legacy events) is
-  // by definition about the active one.
-  const targetWorkspaceId = (payload: Record<string, unknown>): string | null =>
-    (payload.workspace_id as string | undefined) ?? store.getState().workspaces.activeId;
-
   return {
     "office.agent.completed": (message) => {
       if (!isCurrentWorkspace(message.payload)) return;
       const agentId = message.payload.agent_profile_id as string | undefined;
-      const workspaceId = targetWorkspaceId(message.payload);
-      if (agentId && workspaceId) {
-        store.getState().updateOfficeAgentProfile(workspaceId, agentId, { status: "idle" });
-      }
+      if (agentId) store.getState().updateOfficeAgentProfile(agentId, { status: "idle" });
       triggerRefetch("dashboard");
       triggerRefetch("agents");
       triggerRefetch("activity");
@@ -156,10 +147,7 @@ function buildAgentHandlers(
     "office.agent.failed": (message) => {
       if (!isCurrentWorkspace(message.payload)) return;
       const agentId = message.payload.agent_profile_id as string | undefined;
-      const workspaceId = targetWorkspaceId(message.payload);
-      if (agentId && workspaceId) {
-        store.getState().updateOfficeAgentProfile(workspaceId, agentId, { status: "idle" });
-      }
+      if (agentId) store.getState().updateOfficeAgentProfile(agentId, { status: "idle" });
       triggerRefetch("dashboard");
       triggerRefetch("agents");
     },

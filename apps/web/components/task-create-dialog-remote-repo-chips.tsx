@@ -11,7 +11,6 @@ import {
   type RemoteRepoChipProps,
 } from "@/components/task-create-dialog-remote-repo-chip";
 import { useRemoteRepositories } from "@/hooks/domains/integrations/use-remote-repositories";
-import type { RepositoryInspection } from "@/lib/plugins/types";
 import { useTranslation } from "react-i18next";
 
 /**
@@ -57,16 +56,6 @@ export function RemoteRepoChipsRow({
     }
   }, [fs.remoteRepos, ensureBranches, ensurePRInfo]);
 
-  const inspection = fs.prInfoByUrl.inspection;
-  useEffect(() => {
-    if (!inspection) return;
-    for (const row of fs.remoteRepos) {
-      const resolved = inspection(row.url);
-      const update = resolved ? inspectedRemoteRepositoryUpdate(resolved, row) : undefined;
-      if (update && remoteRepositoryUpdateNeeded(row, update)) onUpdateRow(row.key, update);
-    }
-  }, [fs.remoteRepos, inspection, onUpdateRow]);
-
   // Hoist the accessible-repos hook to the row level so a single backend
   // request serves every chip's popover. Previously each chip called the
   // hook independently and every open popover fired its own request. Each
@@ -106,37 +95,6 @@ export function RemoteRepoChipsRow({
   );
 }
 
-function inspectedRemoteRepositoryUpdate(
-  inspection: RepositoryInspection,
-  row: TaskRemoteRepoRow,
-): Partial<TaskRemoteRepoRow> {
-  return {
-    remoteUrl: inspection.cloneUrl,
-    provider: inspection.providerId,
-    providerHost: inspection.providerHost,
-    providerScope: inspection.providerScope,
-    providerRepoId: inspection.repositoryId,
-    providerOwner: inspection.ownerOrProject,
-    providerName: inspection.repositoryName,
-    fullName: `${inspection.ownerOrProject}/${inspection.repositoryName}`,
-    prNumber: inspection.pullRequest?.number,
-    prBaseBranch: inspection.baseBranch,
-    prHeadBranch: inspection.headBranch,
-    ...(!row.branch && (inspection.headBranch || inspection.defaultBranch)
-      ? { branch: inspection.headBranch || inspection.defaultBranch }
-      : {}),
-  };
-}
-
-function remoteRepositoryUpdateNeeded(
-  row: TaskRemoteRepoRow,
-  update: Partial<TaskRemoteRepoRow>,
-): boolean {
-  return Object.entries(update).some(
-    ([key, value]) => row[key as keyof TaskRemoteRepoRow] !== value,
-  );
-}
-
 function retryRemoteResolution(fs: DialogFormState, url: string): void {
   fs.branchesByUrl.clear(url);
   fs.prInfoByUrl.clear(url);
@@ -162,9 +120,6 @@ function makeURLChange(
         url,
         source,
         provider: metadata.provider,
-        remoteUrl: metadata.remoteUrl,
-        providerHost: metadata.providerHost,
-        providerScope: metadata.providerScope,
         fullName: metadata.fullName,
         providerRepoId: metadata.providerRepoId,
         providerOwner: metadata.providerOwner,
@@ -177,9 +132,6 @@ function makeURLChange(
       url,
       source,
       provider: undefined,
-      remoteUrl: undefined,
-      providerHost: undefined,
-      providerScope: undefined,
       fullName: undefined,
       providerRepoId: undefined,
       providerOwner: undefined,

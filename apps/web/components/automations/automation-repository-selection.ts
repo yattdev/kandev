@@ -52,7 +52,7 @@ export function buildRepositoryItems(
   }
   for (const r of discoveredRepos) {
     if (registeredPaths.has(r.path.replace(/\/+$/, ""))) continue;
-    items.push({ id: DISCOVERED_PREFIX + r.path, label: `${r.name} - ${r.path}` });
+    items.push({ id: DISCOVERED_PREFIX + r.path, label: `${r.name} — ${r.path}` });
   }
   return items;
 }
@@ -66,7 +66,6 @@ export function pickSelectionFromOptionId(
   if (optionId.startsWith(DISCOVERED_PREFIX)) {
     const path = optionId.slice(DISCOVERED_PREFIX.length);
     const match = discoveredRepos.find((r) => r.path === path);
-    // i18n-exempt: persisted repository name. See the comment below.
     return {
       kind: "discovered",
       path,
