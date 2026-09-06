@@ -1562,8 +1562,9 @@ func TestHandleMessageTask_DispatchErrorAfterSessionSwitchRestoresReviewSession(
 	require.True(t, ok)
 	assert.Equal(t, true, primary.Metadata["plan_mode"])
 
-	_, err = svc.GetTaskSession(ctx, replacementID)
-	assert.ErrorIs(t, err, models.ErrTaskSessionNotFound)
+	replacement, err := svc.GetTaskSession(ctx, replacementID)
+	require.NoError(t, err)
+	require.NotNil(t, replacement.ArchivedAt)
 
 	assert.Empty(t, orch.promptCalls)
 	require.Len(t, orch.startCreatedCalls, 1)
@@ -1714,8 +1715,9 @@ func TestHandleMessageTask_DispatchErrorRollsBackTurnStartOutsideReview(t *testi
 	require.NoError(t, err)
 	assert.Equal(t, sess.ID, primary.ID)
 	assert.Equal(t, models.TaskSessionStateWaitingForInput, primary.State)
-	_, err = svc.GetTaskSession(ctx, replacementID)
-	assert.ErrorIs(t, err, models.ErrTaskSessionNotFound)
+	replacement, err := svc.GetTaskSession(ctx, replacementID)
+	require.NoError(t, err)
+	require.NotNil(t, replacement.ArchivedAt)
 	status := orch.queue.GetStatus(ctx, sess.ID)
 	require.Equal(t, 1, status.Count)
 	assert.Equal(t, "original queued", status.Entries[0].Content)

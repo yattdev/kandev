@@ -200,6 +200,11 @@ type Repository interface {
 	// to newSessionID. Used on workflow session switches.
 	TransferSession(ctx context.Context, oldSessionID, newSessionID string) error
 
+	// RecoverSessionQueue atomically moves the complete source FIFO to the tail
+	// of the destination queue and returns the exact pre-move source snapshot.
+	// Durable rows reserved by a crashed delivery are made pending again.
+	RecoverSessionQueue(ctx context.Context, oldSessionID, newSessionID string) ([]QueuedMessage, error)
+
 	// ReplaceSession replaces a session's queued entries and pending move with
 	// the supplied snapshot, preserving queued-message identity fields.
 	ReplaceSession(ctx context.Context, sessionID string, entries []QueuedMessage, pendingMove *PendingMove) error

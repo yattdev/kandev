@@ -233,6 +233,27 @@ type MessageQueuer interface {
 type CoordinatorQueueManager interface {
 	Census(ctx context.Context, sessionID string) (*messagequeue.QueueCensus, error)
 	DisposeExact(ctx context.Context, sessionID string, claims []messagequeue.QueueEntryClaim) (*messagequeue.QueueDispositionResult, error)
+	RecoverySnapshot(ctx context.Context, sessionID string) ([]messagequeue.QueueRecoveryEntry, error)
+	RecoverSessionQueue(ctx context.Context, sourceSessionID, destinationSessionID string) ([]messagequeue.QueueRecoveryEntry, error)
+}
+
+type SessionCloser interface {
+	DeleteSession(ctx context.Context, sessionID string) error
+}
+
+type sessionCleanupReceiptReader interface {
+	GetTaskSessionCleanupReceipt(ctx context.Context, taskID, sessionID string) (*models.TaskSessionCleanupReceipt, error)
+}
+
+// sessionQueueRecoveryCoordinator owns the task/session authorization and
+// queue transfer transaction. The handler's preflight remains useful for fast
+// feedback, but this boundary must revalidate the current primary immediately
+// before the queue mutation commits.
+type sessionQueueRecoveryCoordinator interface {
+	RecoverTaskSessionQueue(
+		ctx context.Context,
+		scope messagequeue.QueueRecoveryScope,
+	) (*messagequeue.QueueRecoveryResult, error)
 }
 
 // messageMetadataQueuer is an optional extension implemented by the
@@ -276,6 +297,7 @@ type Handlers struct {
 	planService          *service.PlanService
 	walkthroughService   *service.WalkthroughService
 	sessionLauncher      SessionLauncher
+	sessionCloser        SessionCloser
 	taskStopper          TaskStopper
 	titleBranchRenamer   TaskTitleBranchRenamer
 	stopTaskGetter       func(context.Context, string) (*models.Task, error)
@@ -368,6 +390,9 @@ func NewHandlers(
 	}
 	if stopper, ok := sessionLauncher.(TaskStopper); ok {
 		h.taskStopper = stopper
+	}
+	if closer, ok := sessionLauncher.(SessionCloser); ok {
+		h.sessionCloser = closer
 	}
 	return h
 }
@@ -467,6 +492,7 @@ func (h *Handlers) registerTaskReadHandlers(d *guardedMCPDispatcher) {
 	d.RegisterFunc(ws.ActionMCPGetTaskConversation, h.handleGetTaskConversation)
 	d.RegisterFunc(ws.ActionMCPListTaskSessions, h.handleListTaskSessions)
 	d.RegisterFunc(ws.ActionMCPGetMessageQueueCensus, h.handleGetMessageQueueCensus)
+	d.RegisterFunc(ws.ActionMCPRecoverSessionQueue, h.handleRecoverSessionQueue)
 	d.RegisterFunc(ws.ActionMCPListPendingAgentPermissions, h.handleListPendingAgentPermissions)
 	d.RegisterFunc(ws.ActionMCPResolveAgentPermission, h.handleResolveAgentPermission)
 }
@@ -484,6 +510,7 @@ func (h *Handlers) registerTaskMutationHandlers(d *guardedMCPDispatcher) {
 	d.RegisterFunc(ws.ActionMCPMessageTask, h.handleMessageTask)
 	d.RegisterFunc(ws.ActionMCPStopTask, h.handleStopTask)
 	d.RegisterFunc(ws.ActionMCPDisposeMessageQueueEntries, h.handleDisposeMessageQueueEntries)
+	d.RegisterFunc(ws.ActionMCPCloseTaskSession, h.handleCloseTaskSession)
 	d.RegisterFunc(ws.ActionMCPSpawnSession, h.handleSpawnSession)
 }
 

@@ -54,6 +54,7 @@ vi.mock("@/hooks/domains/session/use-session-actions", () => ({
 }));
 
 const PILL_TESTID = "mobile-sessions-pill";
+const HISTORY_TOGGLE_TESTID = "mobile-session-history-toggle";
 const ICON_CIRCLE_CHECK = "tabler-icon-circle-check";
 const SESSION_ACTIONS_LABEL = "Session actions";
 const SESSION_A = "session-a";
@@ -193,6 +194,25 @@ describe("MobileSessionsPicker selection", () => {
   });
 });
 
+describe("MobileSessionsPicker history", () => {
+  it("hides archived helpers until the touch-sized history control is tapped", () => {
+    mocks.sessions = [
+      session(SESSION_A, "profile-a", START_TIME, { is_primary: true }),
+      session("session-history", "profile-b", SECOND_TIME, {
+        state: "COMPLETED",
+        archived_at: SECOND_TIME,
+      }),
+    ];
+    render(<MobileSessionsPicker taskId={TASK_ID} sessionId={SESSION_A} fullWidth />);
+    fireEvent.click(screen.getByTestId(PILL_TESTID));
+
+    expect(screen.queryByTestId("mobile-session-row-session-history")).toBeNull();
+    fireEvent.click(screen.getByTestId(HISTORY_TOGGLE_TESTID));
+    expect(screen.getByTestId("mobile-session-row-session-history")).toBeTruthy();
+    expect(screen.getByTestId(HISTORY_TOGGLE_TESTID).className).toContain("min-h-11");
+  });
+});
+
 describe("MobileSessionsPicker activity precedence", () => {
   it("renders background-running distinctly — matching desktop, not a done check", () => {
     // A session whose
@@ -218,6 +238,7 @@ describe("MobileSessionsPicker activity precedence", () => {
     ];
     render(<MobileSessionsPicker taskId={TASK_ID} sessionId={SESSION_BG} fullWidth />);
     fireEvent.click(screen.getByTestId(PILL_TESTID));
+    fireEvent.click(screen.getByTestId(HISTORY_TOGGLE_TESTID));
 
     const bg = screen.getByTestId("mobile-session-state-session-bg");
     const gen = screen.getByTestId("mobile-session-state-session-gen");
@@ -285,6 +306,7 @@ describe("MobileSessionsPicker activity precedence", () => {
 
     render(<MobileSessionsPicker taskId={TASK_ID} sessionId={SESSION_A} fullWidth />);
     fireEvent.click(screen.getByTestId(PILL_TESTID));
+    fireEvent.click(screen.getByTestId(HISTORY_TOGGLE_TESTID));
 
     const state = screen.getByTestId("mobile-session-state-session-a");
     expect(state.textContent).toMatch(/permission requested/i);
@@ -315,6 +337,7 @@ describe("MobileSessionsPicker pending lifecycle", () => {
 
     render(<MobileSessionsPicker taskId={TASK_ID} sessionId={SESSION_A} fullWidth />);
     fireEvent.click(screen.getByTestId(PILL_TESTID));
+    fireEvent.click(screen.getByTestId(HISTORY_TOGGLE_TESTID));
 
     expect(screen.getByTestId("mobile-session-state-session-a").textContent).toMatch(/starting/i);
     expect(screen.getByTestId("mobile-session-state-session-done").textContent).toMatch(
@@ -370,7 +393,7 @@ describe("MobileSessionsPicker session delete confirmation", () => {
 
     const confirmation = screen.getByRole("group", { name: /delete session/i });
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(confirmation.textContent).toContain("permanently delete the conversation history");
+    expect(confirmation.textContent).toContain("removes the session from active views");
     expect(confirmation.textContent).toContain("task workspace and its files are kept");
     expect(confirmation.textContent).toContain("only session for this task");
     const confirm = within(confirmation).getByTestId("mobile-session-delete-confirm");

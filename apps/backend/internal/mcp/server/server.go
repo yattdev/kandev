@@ -1335,6 +1335,28 @@ func (s *Server) registerKanbanTools() {
 		s.wrapHandler("dispose_message_queue_entries_kandev", s.disposeMessageQueueEntriesHandler()),
 	)
 	s.mcpServer.AddTool(
+		mcp.NewTool("recover_session_queue_kandev",
+			mcp.WithDescription("Atomically recover every queued entry from a terminal non-primary session of the calling task into the current primary session. Returns a durable receipt with the exact original FIFO payloads and hashes, restores crashed in-flight durable rows to pending, and preserves entry identity. An exact retry returns the same receipt and snapshot. Current-primary authorization is revalidated in the recovery transaction."),
+			mcp.WithReadOnlyHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(false),
+			mcp.WithString("target_session_id", mcp.Required(), mcp.Description("A terminal non-primary session on the calling task")),
+		),
+		s.wrapHandler("recover_session_queue_kandev", s.recoverSessionQueueHandler()),
+	)
+	s.mcpServer.AddTool(
+		mcp.NewTool("close_task_session_kandev",
+			mcp.WithDescription("Safely close one terminal non-primary session on the calling task. The operation fails closed if unread queue entries or a pending lifecycle action remain, archives transcript evidence, hard-deletes only disposable empty sessions, and returns an exact durable cleanup receipt. Retrying returns the same receipt."),
+			mcp.WithReadOnlyHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(false),
+			mcp.WithString("target_session_id", mcp.Required(), mcp.Description("A terminal non-primary session on the calling task")),
+		),
+		s.wrapHandler("close_task_session_kandev", s.closeTaskSessionHandler()),
+	)
+	s.mcpServer.AddTool(
 		mcp.NewTool("stop_task_kandev",
 			mcp.WithDescription(`Stop all live sessions on a direct child task. Only its direct parent may call this halt-only tool; self, sibling, parent, grandparent, unrelated, and cross-workspace requests fail. It does not send a prompt or start a replacement turn; use message_task_kandev with delivery_mode="interrupt" to stop and steer. Accepted sessions become CANCELLED and teardown runs asynchronously; an eligible active task moves to REVIEW. If nothing is running, returns status="not_running" without changing state. Worktrees, commits, records, descendants, and queued messages are preserved. CANCELLED sessions cannot be resumed; use spawn_session_kandev with a new prompt to restart in the same workspace.`),
 			mcp.WithReadOnlyHintAnnotation(false),

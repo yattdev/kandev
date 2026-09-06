@@ -588,6 +588,45 @@ session, and the backend verifies that binding against the task workspace. If
 the tools are unavailable, preserve the queue and wait for normal FIFO delivery
 or use the authenticated queue UI. Do not use database edits as a fallback.
 
+### Recover queued work and close a helper session
+
+The current primary session can recover a terminal helper session's queue on
+its own task with `recover_session_queue_kandev(target_session_id)`. The
+operation atomically moves the complete source FIFO to the tail of the current
+primary's queue and returns the exact pre-move message bodies, attachments,
+delivery fields, immutable IDs, source positions, SHA-256 hashes, and prior
+in-flight state. Durable rows left reserved by a crashed delivery are included
+in the readback and restored to pending as part of the same transaction.
+The response also includes a durable recovery receipt with a stable ID,
+source and destination identities, entry count, snapshot hash, and timestamp.
+Retrying the same recovery returns that same receipt and exact FIFO snapshot
+without duplicating entries. Kandev revalidates that the caller is still the
+task's current primary, and that the source is still terminal and non-primary,
+inside the queue-transfer transaction; a concurrent promotion or resumed
+source is denied without moving any row.
+
+Recovery bodies have bounded retention: once the destination queue reaches zero
+after successful exact disposition or delivery acknowledgement, Kandev replaces
+the receipt snapshot with a body-free tombstone in the same transaction and
+appends an auditable cleanup event. The receipt ID, original count, hash, and
+task/workspace/session fences remain for retry and late-admission checks; a late
+replay after redaction fails closed instead of returning an empty queue. Hard
+task purge performs the same audited redaction for every recovery receipt.
+
+After recording the recovery response, call
+`close_task_session_kandev(target_session_id)`. Cleanup rejects the current
+primary, live or non-terminal sessions, cross-task targets, pending lifecycle
+actions, and every non-empty queue. An empty session is hard-deleted only when
+it has no retained transcript evidence; otherwise Kandev archives it. The
+response is a durable, body-free receipt containing the exact task, workspace,
+session, disposition, queue count, evidence decision, and timestamp. Retrying a
+completed cleanup returns the same receipt.
+
+Archived and terminal helper sessions are hidden from ordinary session tabs and
+pickers. Use **Show session history** in the desktop session controls or mobile
+session sheet to inspect them. No cleanup tool accepts a task or workspace
+override, clear-all switch, or force option.
+
 Trusted scheduled automation messages use the same durable queue with an
 additional guard. The Host derives routine identity from the authenticated
 workspace, routine type/name, policy generation, and semantic scope

@@ -164,7 +164,7 @@ func TestClaimInitialPromptFallbackSerializesPromptAdmission(t *testing.T) {
 	}
 }
 
-func TestDeleteTaskSessionRemovesPromptHistoryClaim(t *testing.T) {
+func TestDeleteTaskSessionArchivesPromptHistoryEvidence(t *testing.T) {
 	repo := newRepoForSessionTests(t)
 	ctx := context.Background()
 	seedForMsgTest(t, repo, "task-session-reuse", "session-session-reuse", "turn-session-reuse")
@@ -178,12 +178,15 @@ func TestDeleteTaskSessionRemovesPromptHistoryClaim(t *testing.T) {
 		t.Fatalf("delete session: %v", err)
 	}
 
-	seedForMsgTest(t, repo, "task-session-reuse", "session-session-reuse", "turn-session-reuse-new")
 	hasHistory, err := repo.HasUserPromptHistory(ctx, "session-session-reuse")
 	if err != nil {
 		t.Fatalf("read reused session history: %v", err)
 	}
-	if hasHistory {
-		t.Fatal("reused session inherited prompt history from deleted session")
+	if !hasHistory {
+		t.Fatal("archived session lost its prompt history evidence")
+	}
+	session, err := repo.GetTaskSession(ctx, "session-session-reuse")
+	if err != nil || session.ArchivedAt == nil {
+		t.Fatalf("cleanup did not archive evidence-bearing session: session=%+v err=%v", session, err)
 	}
 }

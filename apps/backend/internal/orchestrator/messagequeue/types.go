@@ -66,6 +66,16 @@ const MetadataLifecycleGeneration = "lifecycle_queue_generation"
 // compatibility.
 const MetadataLifecycleReserved = "lifecycle_reserved_in_flight"
 
+// MetadataRecoverySourceSessionID preserves the first session identity from
+// which a terminal-session recovery moved this entry. The active session_id
+// must change so the replacement can drain the row, while this immutable
+// provenance remains attached to the recovered queue entry.
+const MetadataRecoverySourceSessionID = "recovery_source_session_id"
+
+// MetadataRecoverySourcePosition preserves the entry's FIFO position in its
+// original session before recovery appends the batch to the replacement.
+const MetadataRecoverySourcePosition = "recovery_source_position"
+
 // MetadataSenderTaskID identifies the task that produced an agent message. Two
 // agent entries may only merge when their sender task ids match, so the merge
 // never mixes prompts issued by different agents.
@@ -136,7 +146,48 @@ var (
 	// ErrLifecycleCancelled means an archive/delete purge invalidated a
 	// previously accepted lifecycle entry before it could be retried.
 	ErrLifecycleCancelled = errors.New("lifecycle queue entry cancelled")
+	// ErrQueueRecoveryConflict means a source queue was already recovered to a
+	// different replacement session. A source may have exactly one destination.
+	ErrQueueRecoveryConflict = errors.New("queue source already recovered to a different session")
+	// ErrQueueRecoveryUnauthorized means task/session ownership changed before
+	// the transfer transaction acquired its authorization locks.
+	ErrQueueRecoveryUnauthorized = errors.New("queue recovery authorization is no longer valid")
+	// ErrQueueRecoveryTargetNotTerminal means the source session resumed before
+	// the transfer transaction acquired its authorization locks.
+	ErrQueueRecoveryTargetNotTerminal = errors.New("queue recovery source session is not terminal")
+	// ErrQueueRecoverySnapshotExpired is returned when an idempotent replay is
+	// requested after the audited retention cleanup has removed message bodies.
+	ErrQueueRecoverySnapshotExpired = errors.New("queue recovery snapshot has expired")
 )
+
+// QueueRecoveryScope is the server-derived ownership fence stored with one
+// committed source-to-destination recovery.
+type QueueRecoveryScope struct {
+	TaskID               string
+	WorkspaceID          string
+	SourceSessionID      string
+	DestinationSessionID string
+}
+
+// QueueRecoveryReceipt is the durable audit identity for one committed queue
+// recovery. Snapshot bodies stay in Entries and are never duplicated here.
+type QueueRecoveryReceipt struct {
+	ID                   string    `db:"id" json:"id"`
+	TaskID               string    `db:"task_id" json:"task_id"`
+	WorkspaceID          string    `db:"workspace_id" json:"workspace_id"`
+	SourceSessionID      string    `db:"source_session_id" json:"source_session_id"`
+	DestinationSessionID string    `db:"destination_session_id" json:"destination_session_id"`
+	EntryCount           int       `db:"entry_count" json:"entry_count"`
+	SnapshotSHA256       string    `db:"snapshot_sha256" json:"snapshot_sha256"`
+	OccurredAt           time.Time `db:"occurred_at" json:"occurred_at"`
+}
+
+// QueueRecoveryResult combines the stable receipt with the exact pre-move
+// snapshot. Exact retries return the same receipt and entries.
+type QueueRecoveryResult struct {
+	Receipt QueueRecoveryReceipt
+	Entries []QueuedMessage
+}
 
 // QueuedMessage represents a single FIFO entry queued for a session.
 type QueuedMessage struct {

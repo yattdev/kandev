@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { IconDotsVertical, IconPlus, IconStar } from "@tabler/icons-react";
+import { IconDotsVertical, IconHistory, IconPlus, IconStar } from "@tabler/icons-react";
 import { Button } from "@kandev/ui/button";
 import {
   DropdownMenu,
@@ -44,7 +44,14 @@ type SessionRow = {
   isPrimary: boolean;
   index: number;
   startedAt: string;
+  isHistory: boolean;
 };
+
+const TERMINAL_HISTORY_STATES = new Set<TaskSessionState>(["COMPLETED", "FAILED", "CANCELLED"]);
+
+function isHistorySession(session: TaskSession, isPrimary: boolean): boolean {
+  return !!session.archived_at || (!isPrimary && TERMINAL_HISTORY_STATES.has(session.state));
+}
 
 function buildSessionRows(
   sessions: TaskSession[],
@@ -58,6 +65,7 @@ function buildSessionRows(
   return sorted.map((s, idx) => {
     const profile = agentProfiles.find((p) => p.id === s.agent_profile_id);
     const labelParts = profile?.label.split(" • ") ?? [];
+    const isPrimary = primarySessionId ? s.id === primarySessionId : !!s.is_primary;
     return {
       id: s.id,
       agentName: profile?.agent_name ?? null,
@@ -67,7 +75,8 @@ function buildSessionRows(
       repositoryLabel: s.repository_id ? (repositoryLabelsById.get(s.repository_id) ?? null) : null,
       state: (s.state as TaskSessionState | undefined) ?? null,
       foregroundActivity: s.foreground_activity ?? null,
-      isPrimary: primarySessionId ? s.id === primarySessionId : !!s.is_primary,
+      isPrimary,
+      isHistory: isHistorySession(s, isPrimary),
       index: idx + 1,
       startedAt: s.started_at,
     };
@@ -405,6 +414,11 @@ const MobileSessionsList = memo(function MobileSessionsList({
   const { rows, isLoading } = useSessionRows(taskId);
   const [launchOpen, setLaunchOpen] = useState(false);
   const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const visibleRows = useMemo(
+    () => rows.filter((row) => showHistory || !row.isHistory || row.id === activeSessionId),
+    [activeSessionId, rows, showHistory],
+  );
 
   useEffect(() => {
     if (!open) setConfirmDeleteSessionId(null);
@@ -432,7 +446,7 @@ const MobileSessionsList = memo(function MobileSessionsList({
     <div className="flex flex-col gap-2 px-1">
       <div className="flex items-center justify-between px-1">
         <span className="text-xs font-medium text-muted-foreground">
-          {t("task:sessionCount", { count: rows.length })}
+          {t("task:sessionCount", { count: visibleRows.length })}
         </span>
         <Button
           size="sm"
@@ -446,23 +460,23 @@ const MobileSessionsList = memo(function MobileSessionsList({
         </Button>
       </div>
       <div className="flex flex-col gap-0.5">
-        {isLoading && rows.length === 0 && (
+        {isLoading && visibleRows.length === 0 && (
           <div className="text-xs text-muted-foreground px-2 py-4 text-center">
             {t("task:loadingSessions")}
           </div>
         )}
-        {!isLoading && rows.length === 0 && (
+        {!isLoading && visibleRows.length === 0 && (
           <div className="text-xs text-muted-foreground px-2 py-4 text-center">
             {t("task:noSessionsYetLaunchOneTo")}
           </div>
         )}
-        {rows.map((row) => (
+        {visibleRows.map((row) => (
           <SessionRowItem
             key={row.id}
             row={row}
             taskId={taskId}
             isActive={row.id === activeSessionId}
-            totalSessions={rows.length}
+            totalSessions={visibleRows.length}
             isConfirming={row.id === confirmDeleteSessionId}
             onAskDelete={() => setConfirmDeleteSessionId(row.id)}
             onCancelDelete={() => setConfirmDeleteSessionId(null)}
@@ -470,6 +484,15 @@ const MobileSessionsList = memo(function MobileSessionsList({
           />
         ))}
       </div>
+      <Button
+        variant={showHistory ? "secondary" : "ghost"}
+        className="min-h-11 w-full justify-start gap-2"
+        onClick={() => setShowHistory((current) => !current)}
+        data-testid="mobile-session-history-toggle"
+      >
+        <IconHistory className="h-4 w-4" />
+        {showHistory ? t("task:hideSessionHistory") : t("task:showSessionHistory")}
+      </Button>
       {launchOpen && (
         <NewSessionDialog open={launchOpen} onOpenChange={setLaunchOpen} taskId={taskId} />
       )}

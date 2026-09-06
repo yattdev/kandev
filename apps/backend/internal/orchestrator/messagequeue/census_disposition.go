@@ -73,6 +73,91 @@ type QueueCensus struct {
 	AutoRun     bool               `json:"auto_run"`
 }
 
+// QueueRecoveryEntry is the exact, task-scoped readback a replacement primary
+// uses to reconstruct a retired helper session's FIFO. Arbitrary metadata is
+// intentionally excluded; only stable delivery fields and safe provenance are
+// exposed.
+type QueueRecoveryEntry struct {
+	ID               string              `json:"id"`
+	SessionID        string              `json:"session_id"`
+	TaskID           string              `json:"task_id"`
+	Position         int64               `json:"position"`
+	Content          string              `json:"content"`
+	ContentSHA256    string              `json:"content_sha256"`
+	ContentBytes     int                 `json:"content_bytes"`
+	Model            string              `json:"model"`
+	PlanMode         bool                `json:"plan_mode"`
+	Attachments      []MessageAttachment `json:"attachments"`
+	QueuedAt         string              `json:"queued_at"`
+	QueuedBy         string              `json:"queued_by"`
+	Origin           string              `json:"origin,omitempty"`
+	SenderTaskID     string              `json:"sender_task_id,omitempty"`
+	ReservedInFlight bool                `json:"reserved_in_flight"`
+}
+
+// RecoverySnapshot returns the complete persisted FIFO, including entries
+// reserved by a predecessor that can no longer finish delivery. Authorization
+// belongs to the MCP handler; this service only owns queue consistency.
+func (s *Service) RecoverySnapshot(ctx context.Context, sessionID string) ([]QueueRecoveryEntry, error) {
+	entries, err := s.repo.ListBySession(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list queue recovery snapshot: %w", err)
+	}
+	return RecoveryEntries(entries), nil
+}
+
+// RecoverSessionQueue atomically moves every source row to the replacement
+// session while returning the exact pre-move FIFO. This is distinct from a
+// workflow session transfer: stale durable reservations are cleared so a row
+// left in flight by a crashed helper becomes deliverable again.
+func (s *Service) RecoverSessionQueue(
+	ctx context.Context,
+	sourceSessionID, destinationSessionID string,
+) ([]QueueRecoveryEntry, error) {
+	if sourceSessionID == "" || destinationSessionID == "" || sourceSessionID == destinationSessionID {
+		return nil, fmt.Errorf("%w: distinct source and destination session ids are required", ErrInvalidQueueDisposition)
+	}
+	entries, err := s.repo.RecoverSessionQueue(ctx, sourceSessionID, destinationSessionID)
+	if err != nil {
+		return nil, fmt.Errorf("recover session queue: %w", err)
+	}
+	s.logger.Info("recovered queue between sessions",
+		zap.String("from_session_id", sourceSessionID),
+		zap.String("to_session_id", destinationSessionID),
+		zap.Int("entries", len(entries)))
+	return RecoveryEntries(entries), nil
+}
+
+// RecoveryEntries converts persisted queue snapshots into the guarded recovery
+// response shape without exposing unfiltered metadata.
+func RecoveryEntries(entries []QueuedMessage) []QueueRecoveryEntry {
+	result := make([]QueueRecoveryEntry, 0, len(entries))
+	for i := range entries {
+		entry := &entries[i]
+		digest := sha256.Sum256([]byte(entry.Content))
+		result = append(result, QueueRecoveryEntry{
+			ID: entry.ID, SessionID: entry.SessionID, TaskID: entry.TaskID,
+			Position: entry.Position, Content: entry.Content,
+			ContentSHA256: hex.EncodeToString(digest[:]), ContentBytes: len(entry.Content),
+			Model: entry.Model, PlanMode: entry.PlanMode, Attachments: entry.Attachments,
+			QueuedAt: entry.QueuedAt.UTC().Format(time.RFC3339Nano), QueuedBy: entry.QueuedBy,
+			Origin:           metadataString(entry.Metadata, "origin"),
+			SenderTaskID:     metadataString(entry.Metadata, MetadataSenderTaskID),
+			ReservedInFlight: entry.IsReservedInFlight(),
+		})
+	}
+	return result
+}
+
+func recoveryMetadata(metadata map[string]interface{}, sourceSessionID string, sourcePosition int64) map[string]interface{} {
+	recovered := clearReservedMetadata(metadata)
+	if _, exists := recovered[MetadataRecoverySourceSessionID]; !exists {
+		recovered[MetadataRecoverySourceSessionID] = sourceSessionID
+		recovered[MetadataRecoverySourcePosition] = sourcePosition
+	}
+	return recovered
+}
+
 // Census returns a content-free FIFO snapshot for one session.
 func (s *Service) Census(ctx context.Context, sessionID string) (*QueueCensus, error) {
 	entries, err := s.repo.ListBySession(ctx, sessionID)

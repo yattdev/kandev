@@ -51,6 +51,10 @@ func (r *Repository) migrateSessionsAddCostColumns() {
 
 // runMigrations applies idempotent ALTER TABLE migrations for schema evolution.
 func (r *Repository) runMigrations() error {
+	r.migrate.Apply("queue_session_locks.table", `
+		CREATE TABLE IF NOT EXISTS queue_session_locks (
+			session_id TEXT PRIMARY KEY
+		)`)
 	if err := r.migrateTaskPriorityToTextPostgres(); err != nil {
 		return err
 	}
@@ -297,6 +301,40 @@ func (r *Repository) runMigrations() error {
 	// frontend snapshots the prior value before the advance to position the
 	// "New" divider (see models.TaskSession.LastReadMessageID).
 	r.migrate.Apply("task_sessions.last_read_message_id", `ALTER TABLE task_sessions ADD COLUMN last_read_message_id TEXT DEFAULT ''`)
+	r.migrate.Apply("task_sessions.archived_at", `ALTER TABLE task_sessions ADD COLUMN archived_at TIMESTAMP`)
+	r.migrate.Apply("task_session_cleanup_receipts.table", `
+		CREATE TABLE IF NOT EXISTS task_session_cleanup_receipts (
+			task_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			disposition TEXT NOT NULL,
+			queue_before_count INTEGER NOT NULL,
+			evidence_retained BOOLEAN NOT NULL,
+			occurred_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (task_id, session_id),
+			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+		)`)
+	r.migrate.Apply("queue_recovery_receipts.table", `
+		CREATE TABLE IF NOT EXISTS queue_recovery_receipts (
+			id                     TEXT PRIMARY KEY,
+			task_id                TEXT NOT NULL DEFAULT '',
+			workspace_id           TEXT NOT NULL DEFAULT '',
+			source_session_id      TEXT NOT NULL UNIQUE,
+			destination_session_id TEXT NOT NULL,
+			entry_count            INTEGER NOT NULL,
+			snapshot_sha256        TEXT NOT NULL,
+			snapshot_json          TEXT NOT NULL,
+			snapshot_redacted      INTEGER NOT NULL DEFAULT 0,
+			redacted_at            TIMESTAMP,
+			occurred_at            TIMESTAMP NOT NULL
+		)`)
+	r.migrate.Apply("queue_recovery_receipts.snapshot_redacted", `ALTER TABLE queue_recovery_receipts ADD COLUMN snapshot_redacted INTEGER NOT NULL DEFAULT 0`)
+	r.migrate.Apply("queue_recovery_receipts.redacted_at", `ALTER TABLE queue_recovery_receipts ADD COLUMN redacted_at TIMESTAMP`)
+	r.migrate.Apply("queue_recovery_cleanup_events.table", `CREATE TABLE IF NOT EXISTS queue_recovery_cleanup_events (
+		receipt_id TEXT NOT NULL, task_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+		source_session_id TEXT NOT NULL, destination_session_id TEXT NOT NULL,
+		reason TEXT NOT NULL, occurred_at TIMESTAMP NOT NULL
+	)`)
 	r.migrate.Apply("task_session_turns.execution_profile_id", `ALTER TABLE task_session_turns ADD COLUMN execution_profile_id TEXT NOT NULL DEFAULT ''`)
 	r.migrate.Apply("task_session_turns.route_generation", `ALTER TABLE task_session_turns ADD COLUMN route_generation BIGINT NOT NULL DEFAULT 0`)
 

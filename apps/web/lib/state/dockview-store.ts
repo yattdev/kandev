@@ -185,6 +185,8 @@ export type ApplyCustomLayoutOptions = {
 type DockviewStore = {
   api: DockviewApi | null;
   setApi: (api: DockviewApi | null) => void;
+  sessionHistoryVisibleByTaskId: Record<string, boolean>;
+  setSessionHistoryVisible: (taskId: string, visible: boolean) => void;
   openFiles: Map<string, FileEditorState>;
   setFileState: (path: string, state: FileEditorState) => void;
   updateFileState: (path: string, updates: Partial<FileEditorState>) => void;
@@ -336,6 +338,30 @@ function nextChatInitialPlacementToken(): number {
 
 function createChatInitialPlacement(sessionId: string | null) {
   return sessionId ? { sessionId, token: nextChatInitialPlacementToken() } : null;
+}
+
+function buildSessionHistoryActions(set: StoreSet) {
+  return {
+    setSessionHistoryVisible: (taskId: string, visible: boolean) =>
+      set((state) => ({
+        sessionHistoryVisibleByTaskId: {
+          ...state.sessionHistoryVisibleByTaskId,
+          [taskId]: visible,
+        },
+      })),
+  };
+}
+
+function buildPendingChatActions(set: StoreSet) {
+  return {
+    setPendingChatScrollTop: (value: number | null) => set({ pendingChatScrollTop: value }),
+    completePendingChatInitialPlacement: (token: number) =>
+      set((state) =>
+        state.pendingChatInitialPlacement?.token === token
+          ? { pendingChatInitialPlacement: null }
+          : {},
+      ),
+  };
 }
 
 /**
@@ -1376,6 +1402,8 @@ function resolveActiveFile(api: DockviewApi, panelId: string | undefined): Activ
 
 export const useDockviewStore = create<DockviewStore>((set, get) => ({
   api: null,
+  sessionHistoryVisibleByTaskId: {},
+  ...buildSessionHistoryActions(set),
   activeFilePath: null,
   activeFileRepo: null,
   activePanelComponent: null,
@@ -1476,14 +1504,8 @@ export const useDockviewStore = create<DockviewStore>((set, get) => ({
   buildDefaultLayout: (api, intentName) => performBuildDefault(api, set, get, intentName),
   resetLayout: () => resetToEffectiveDefault(set, get),
   pendingChatScrollTop: null,
-  setPendingChatScrollTop: (value) => set({ pendingChatScrollTop: value }),
   pendingChatInitialPlacement: null,
-  completePendingChatInitialPlacement: (token) =>
-    set((state) =>
-      state.pendingChatInitialPlacement?.token === token
-        ? { pendingChatInitialPlacement: null }
-        : {},
-    ),
+  ...buildPendingChatActions(set),
   preMaximizeLayout: null,
   maximizedGroupId: null,
   ...buildMaximizeActions(set, get),

@@ -2,12 +2,64 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/kandev/kandev/internal/orchestrator/executor"
 	"github.com/kandev/kandev/internal/task/models"
 )
+
+func TestDeleteSession_PreservesSessionWhenExecutionLookupFails(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedTaskAndSession(t, repo, "task-lookup-failure", "session-lookup-failure", models.TaskSessionStateCompleted)
+
+	lookupErr := errors.New("lifecycle store unavailable")
+	manager := &mockAgentManager{
+		getExecutionIDForSessionFunc: func(context.Context, string) (string, error) {
+			return "", lookupErr
+		},
+	}
+	svc := createTestServiceWithAgent(repo, newMockStepGetter(), newMockTaskRepo(), manager)
+	svc.executor = executor.NewExecutor(manager, repo, testLogger(), executor.ExecutorConfig{})
+
+	err := svc.DeleteSession(ctx, "session-lookup-failure")
+	if !errors.Is(err, lookupErr) {
+		t.Fatalf("DeleteSession error = %v, want execution lookup failure", err)
+	}
+	if _, err := repo.GetTaskSession(ctx, "session-lookup-failure"); err != nil {
+		t.Fatalf("session was removed after execution lookup failure: %v", err)
+	}
+}
+
+func TestDeleteSessionRejectsCurrentPrimary(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedTaskAndSession(t, repo, "task-primary-close", "session-primary", models.TaskSessionStateCompleted)
+	if err := repo.CreateTaskSession(ctx, &models.TaskSession{
+		ID: "session-helper", TaskID: "task-primary-close", State: models.TaskSessionStateCompleted,
+	}); err != nil {
+		t.Fatalf("CreateTaskSession helper: %v", err)
+	}
+	if err := repo.SetSessionPrimary(ctx, "session-primary"); err != nil {
+		t.Fatalf("SetSessionPrimary: %v", err)
+	}
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+
+	err := svc.DeleteSession(ctx, "session-primary")
+	if err == nil || !strings.Contains(err.Error(), "primary") {
+		t.Fatalf("DeleteSession error = %v, want actionable primary-session rejection", err)
+	}
+	primary, err := repo.GetPrimarySessionByTaskID(ctx, "task-primary-close")
+	if err != nil {
+		t.Fatalf("GetPrimarySessionByTaskID: %v", err)
+	}
+	if primary.ID != "session-primary" {
+		t.Fatalf("primary session changed after rejected close: %s", primary.ID)
+	}
+}
 
 func TestDeleteSession_PreservesTaskWorkspaceAndNeverEnqueuesCleanup(t *testing.T) {
 	ctx := context.Background()

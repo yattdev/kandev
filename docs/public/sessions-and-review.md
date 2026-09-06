@@ -34,11 +34,11 @@ The profile picker shows only profiles compatible with the task executor. If non
 
 ### Choose starting context
 
-| Option | What the new session receives | When to use it |
-|---|---|---|
-| **Blank** | Only the prompt you enter | Independent work that needs no earlier discussion |
+| Option                  | What the new session receives                                                                  | When to use it                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Blank**               | Only the prompt you enter                                                                      | Independent work that needs no earlier discussion                                                                     |
 | **Copy initial prompt** | Copies the first user message from the currently active session into the editable prompt field | A parallel approach; it is not guaranteed to be the task's original description, so inspect and edit it before launch |
-| **Summarize a session** | Inserts a utility-agent summary of the selected conversation into the editable prompt field | Continue or branch from work already discussed |
+| **Summarize a session** | Inserts a utility-agent summary of the selected conversation into the editable prompt field    | Continue or branch from work already discussed                                                                        |
 
 **Handoff** from an existing session opens the same dialog and selects a summary of that session. Summarization requires a working `summarize-session` utility agent. Review generated summaries: they can omit constraints or decisions.
 
@@ -48,16 +48,16 @@ Prompts support pasted, dropped, or selected attachments. A prompt can contain a
 
 Right-click an agent tab on desktop to manage it. Available actions depend on its current state.
 
-| Action | Effect |
-|---|---|
-| **Rename** | Changes the session's display name |
-| **Set as Primary** | Makes a stoppable session the task's primary target |
-| **Stop** | Cancels the active agent turn for this session |
-| **Resume** | Attempts to continue a completed, failed, or cancelled session |
-| **Delete** | Permanently removes the conversation; if it was primary, another session is promoted when possible. The task workspace and its files are kept; a later session reuses them |
-| **Share** | Opens the publishing preview for an eligible session |
-| **Handoff** | Starts another session with a generated summary of this conversation |
-| **Close Others** | Closes other visible agent panels without deleting their sessions |
+| Action             | Effect                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Rename**         | Changes the session's display name                                                                                                                                                                      |
+| **Set as Primary** | Makes a stoppable session the task's primary target                                                                                                                                                     |
+| **Stop**           | Cancels the active agent turn for this session                                                                                                                                                          |
+| **Resume**         | Attempts to continue a completed, failed, or cancelled session                                                                                                                                          |
+| **Delete**         | Closes a terminal non-primary session. Kandev archives it when transcript evidence must be retained; otherwise it permanently removes the disposable session. The task workspace and its files are kept |
+| **Share**          | Opens the publishing preview for an eligible session                                                                                                                                                    |
+| **Handoff**        | Starts another session with a generated summary of this conversation                                                                                                                                    |
+| **Close Others**   | Closes other visible agent panels without deleting their sessions                                                                                                                                       |
 
 Stopping is not deletion. Resume succeeds only while the executor still has the session record needed to continue. A removed worktree, expired remote environment, restarted executor, removed profile, or missing runtime record can force a fresh session instead. The failure banner offers **Start fresh** when continuation is unavailable.
 
@@ -77,7 +77,7 @@ Use **Threads** to read active task conversations side by side without opening e
 
 Threads shows one column for each task with an active primary agent session. The column header shows the task status, workflow context, and any explicit permission or question that needs your attention. A normal waiting state does not mean that the agent asked a question.
 
-On desktop, use the session tabs in a column to switch between any existing session for that task. On a phone, tap the session control and choose a session from the bottom sheet. The selected conversation keeps its normal reply controls, so you can answer the agent without leaving Threads.
+On desktop, use the session tabs in a column to switch between current sessions for that task. On a phone, tap the session control and choose a session from the bottom sheet. Archived and terminal helper sessions stay out of these ordinary lists; choose **Show session history** to reveal them. The selected conversation keeps its normal reply controls, so you can answer the agent without leaving Threads.
 
 Select **Open task** in a column when you need the complete task workbench. To link directly to a task and session, use a Threads URL with `taskId` and `sessionId` query parameters.
 
@@ -86,11 +86,13 @@ Select **Open task** in a column when you need the complete task workbench. To l
 
 ## Let agents coordinate sessions
 
-Task MCP gives an agent three session-coordination operations:
+Task MCP gives an agent five session-coordination operations:
 
 - `spawn_session_kandev` starts another session on the current task by default. It can select a profile and name, and can target another task in the same workspace. The new session shares the target task's environment; its supplied prompt is its initial context.
 - `message_task_kandev` sends work to a task's primary session or to an explicit session ID. A same-task sibling must be addressed by session ID, and a session cannot message itself.
 - `stop_task_kandev` asks the current task to halt all live sessions on one same-workspace direct child. It sends no prompt and has no session-specific option. A stopped session is `CANCELLED` and cannot be resumed, so `spawn_session_kandev` is how the task is put back to work.
+- `recover_session_queue_kandev` lets the task's current primary atomically move the exact FIFO from one terminal non-primary sibling into its own queue before cleanup, including durable rows left reserved by a crashed delivery. It returns a durable recovery receipt, and an exact retry returns the same receipt and FIFO snapshot. Recovery bodies are retained only until the destination queue is drained/dispositioned, then replaced by an audited body-free tombstone while identity, count, hash, and authorization fences remain; hard task purge applies the same cleanup.
+- `close_task_session_kandev` closes that exact sibling only when its queue and lifecycle state are safe, archiving transcript evidence and returning a durable cleanup receipt.
 
 Delivery follows the target state:
 

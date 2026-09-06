@@ -7,6 +7,7 @@ import {
   IconTerminal2,
   IconPlayerPlay,
   IconLayoutSidebarRightCollapse,
+  IconHistory,
 } from "@tabler/icons-react";
 import { Button } from "@kandev/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@kandev/ui/tooltip";
@@ -74,6 +75,27 @@ function useLeftHeaderState(
     hasFiles,
     portForwarding,
   };
+}
+
+function SessionHistoryToggle({ taskId }: { taskId: string }) {
+  const { t } = useTranslation();
+  const visible = useDockviewStore((store) => store.sessionHistoryVisibleByTaskId[taskId] ?? false);
+  const setVisible = useDockviewStore((store) => store.setSessionHistoryVisible);
+  const label = visible ? t("task:hideSessionHistory") : t("task:showSessionHistory");
+
+  return (
+    <Button
+      size="sm"
+      variant={visible ? "secondary" : "ghost"}
+      className={HEADER_ACTION_BUTTON_CLASS}
+      data-testid="dockview-session-history-toggle"
+      aria-label={label}
+      title={label}
+      onClick={() => setVisible(taskId, !visible)}
+    >
+      <IconHistory className={HEADER_ICON_CLASS} />
+    </Button>
+  );
 }
 
 export function LeftHeaderActions(props: IDockviewHeaderActionsProps) {
@@ -188,6 +210,7 @@ export function LeftHeaderActions(props: IDockviewHeaderActionsProps) {
           />
         </DropdownMenuContent>
       </DropdownMenu>
+      {state.isCenterGroup && state.taskId && <SessionHistoryToggle taskId={state.taskId} />}
       {state.taskId && (
         <NewSessionDialog
           open={showNewSessionDialog}

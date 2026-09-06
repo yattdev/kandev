@@ -963,6 +963,7 @@ const sessionWorktreeSchemaDDL = `
 		metadata TEXT DEFAULT '{}',
 		started_at TIMESTAMP NOT NULL,
 		completed_at TIMESTAMP,
+		archived_at TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL,
 		is_primary INTEGER DEFAULT 0,
 		is_passthrough INTEGER DEFAULT 0,
@@ -979,6 +980,42 @@ const sessionWorktreeSchemaDDL = `
 	CREATE INDEX IF NOT EXISTS idx_task_sessions_task_id ON task_sessions(task_id);
 	CREATE INDEX IF NOT EXISTS idx_task_sessions_state ON task_sessions(state);
 	CREATE INDEX IF NOT EXISTS idx_task_sessions_task_state ON task_sessions(task_id, state);
+
+	CREATE TABLE IF NOT EXISTS queue_session_locks (
+		session_id TEXT PRIMARY KEY
+	);
+
+	CREATE TABLE IF NOT EXISTS queue_recovery_receipts (
+		id                     TEXT PRIMARY KEY,
+		task_id                TEXT NOT NULL DEFAULT '',
+		workspace_id           TEXT NOT NULL DEFAULT '',
+		source_session_id      TEXT NOT NULL UNIQUE,
+		destination_session_id TEXT NOT NULL,
+		entry_count            INTEGER NOT NULL,
+		snapshot_sha256        TEXT NOT NULL,
+		snapshot_json          TEXT NOT NULL,
+		snapshot_redacted      INTEGER NOT NULL DEFAULT 0,
+		redacted_at            TIMESTAMP,
+		occurred_at            TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS queue_recovery_cleanup_events (
+		receipt_id TEXT NOT NULL, task_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+		source_session_id TEXT NOT NULL, destination_session_id TEXT NOT NULL,
+		reason TEXT NOT NULL, occurred_at TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS task_session_cleanup_receipts (
+		task_id TEXT NOT NULL,
+		workspace_id TEXT NOT NULL,
+		session_id TEXT NOT NULL,
+		disposition TEXT NOT NULL,
+		queue_before_count INTEGER NOT NULL,
+		evidence_retained BOOLEAN NOT NULL,
+		occurred_at TIMESTAMP NOT NULL,
+		PRIMARY KEY (task_id, session_id),
+		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+	);
 
 	CREATE TABLE IF NOT EXISTS task_environments (
 		id TEXT PRIMARY KEY,

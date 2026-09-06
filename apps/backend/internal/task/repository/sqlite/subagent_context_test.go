@@ -455,9 +455,9 @@ func TestUpsertSubagentContextCrossExecutionToolCallIDDoesNotClobber(t *testing.
 	}
 }
 
-// TestUpsertSubagentContextCascadeDeletesWithSession covers AC-16: deleting
-// the parent session removes its subagent context rows.
-func TestUpsertSubagentContextCascadeDeletesWithSession(t *testing.T) {
+// TestUpsertSubagentContextSurvivesSessionArchive keeps subagent evidence with
+// the transcript when cleanup cannot safely hard-delete the parent session.
+func TestUpsertSubagentContextSurvivesSessionArchive(t *testing.T) {
 	repo := newSubagentContextTestRepo(t, "task-12", "session-12", "turn-12")
 	ctx := context.Background()
 	ts := time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC)
@@ -476,8 +476,12 @@ func TestUpsertSubagentContextCascadeDeletesWithSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list after cascade: %v", err)
 	}
-	if len(rows) != 0 {
-		t.Fatalf("row count after session delete = %d, want 0 (FK cascade)", len(rows))
+	if len(rows) != 1 {
+		t.Fatalf("row count after session archive = %d, want 1 retained", len(rows))
+	}
+	session, err := repo.GetTaskSession(ctx, "session-12")
+	if err != nil || session.ArchivedAt == nil {
+		t.Fatalf("evidence-bearing session was not archived: session=%+v err=%v", session, err)
 	}
 }
 

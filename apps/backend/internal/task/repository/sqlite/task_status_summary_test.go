@@ -170,6 +170,12 @@ func TestTaskLastActivityBatch(t *testing.T) {
 	seedTaskAt("task-activity-active", base.Add(2*time.Hour), base.Add(3*time.Hour))
 	seedTaskAt("task-activity-no-session", base.Add(4*time.Hour), base.Add(5*time.Hour))
 	seedTaskAt("task-activity-queued", base.Add(4*time.Hour), base.Add(5*time.Hour))
+	if err := repo.CreateTaskSession(ctx, &models.TaskSession{
+		ID: "session-activity-queued", TaskID: "task-activity-queued",
+		State: models.TaskSessionStateCompleted, StartedAt: base, UpdatedAt: base,
+	}); err != nil {
+		t.Fatalf("seed queued session: %v", err)
+	}
 
 	queueRepo, err := messagequeue.NewSQLiteRepository(db, db)
 	if err != nil {

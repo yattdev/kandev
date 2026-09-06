@@ -924,6 +924,28 @@ func TestMessageQueueCensusToolsBindCurrentTaskAndSession(t *testing.T) {
 	assert.Equal(t, entries, payload["entries"])
 }
 
+func TestSessionCleanupToolsBindCurrentTaskAndSession(t *testing.T) {
+	backend := &testBackend{response: map[string]interface{}{"entries": []interface{}{}}}
+	s := newTaskModeServer(t, backend, "task-current")
+
+	result := callTool(t, s, "recover_session_queue_kandev", map[string]interface{}{"target_session_id": "session-target"})
+	assert.False(t, result.IsError)
+	assert.Equal(t, ws.ActionMCPRecoverSessionQueue, backend.lastAction)
+	payload, ok := backend.lastPayload.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "task-current", payload["task_id"])
+	assert.Equal(t, "test-session", payload["caller_session_id"])
+	assert.Equal(t, "session-target", payload["target_session_id"])
+
+	result = callTool(t, s, "close_task_session_kandev", map[string]interface{}{"target_session_id": "session-target"})
+	assert.False(t, result.IsError)
+	assert.Equal(t, ws.ActionMCPCloseTaskSession, backend.lastAction)
+	payload, ok = backend.lastPayload.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "task-current", payload["task_id"])
+	assert.Equal(t, "test-session", payload["caller_session_id"])
+}
+
 func TestMessageQueueCensusToolSchemasExposeNoScopeOrMessageBodyControls(t *testing.T) {
 	s := newTaskModeServer(t, &testBackend{}, "task-current")
 	tools := s.mcpServer.ListTools()
