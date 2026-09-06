@@ -125,6 +125,68 @@ func TestTaskSessionWorkspacePathFallsBackWithoutEnvironment(t *testing.T) {
 	}
 }
 
+func TestDeleteTaskSessionArchivesTranscriptEvidence(t *testing.T) {
+	repo := newRepoForSessionTests(t)
+	ctx := context.Background()
+	seedForMsgTest(t, repo, "task-session-evidence", "session-with-evidence", "turn-with-evidence")
+	require.NoError(t, repo.UpdateTaskSessionState(
+		ctx, "session-with-evidence", models.TaskSessionStateCompleted, "",
+	))
+	require.NoError(t, repo.CreateMessage(ctx, &models.Message{
+		ID: "message-evidence", TaskSessionID: "session-with-evidence",
+		TaskID: "task-session-evidence", TurnID: "turn-with-evidence",
+		AuthorType: models.MessageAuthorAgent, Content: "finished work",
+		Type: models.MessageTypeMessage,
+	}))
+
+	require.NoError(t, repo.DeleteTaskSession(ctx, "session-with-evidence"))
+	archived, err := repo.GetTaskSession(ctx, "session-with-evidence")
+	if err != nil {
+		t.Fatalf("session transcript evidence was hard deleted: %v", err)
+	}
+	require.NotNil(t, archived.ArchivedAt)
+	messages, err := repo.ListMessages(ctx, "session-with-evidence")
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	require.Equal(t, "finished work", messages[0].Content)
+	claim, err := repo.ClaimPromptableTaskSessionIfActive(ctx, "session-with-evidence")
+	require.NoError(t, err)
+	require.Equal(t, models.PromptableTaskSessionInactive, claim.Status)
+}
+
+func TestDeleteTaskSessionPersistsExactCleanupReceipt(t *testing.T) {
+	repo := newRepoForSessionTests(t)
+	ctx := context.Background()
+	const (
+		taskID      = "task-cleanup-receipt"
+		workspaceID = "workspace-cleanup-receipt"
+		sessionID   = "session-cleanup-receipt"
+	)
+	if err := repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: workspaceID, Title: "Cleanup receipt"}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := repo.CreateTaskSession(ctx, &models.TaskSession{ID: sessionID, TaskID: taskID}); err != nil {
+		t.Fatalf("CreateTaskSession: %v", err)
+	}
+	if err := repo.DeleteTaskSession(ctx, sessionID); err != nil {
+		t.Fatalf("DeleteTaskSession: %v", err)
+	}
+
+	receipt, err := repo.GetTaskSessionCleanupReceipt(ctx, taskID, sessionID)
+	if err != nil {
+		t.Fatalf("GetTaskSessionCleanupReceipt: %v", err)
+	}
+	if receipt.TaskID != taskID || receipt.WorkspaceID != workspaceID || receipt.SessionID != sessionID {
+		t.Fatalf("receipt identity = %#v", receipt)
+	}
+	if receipt.Disposition != "deleted" || receipt.QueueBeforeCount != 0 || receipt.EvidenceRetained {
+		t.Fatalf("receipt outcome = %#v", receipt)
+	}
+	if receipt.OccurredAt.IsZero() {
+		t.Fatal("receipt occurred_at is zero")
+	}
+}
+
 func TestCreateOfficeTaskSessionMarksOnlyTheFirstConcurrentSessionAsOrigin(t *testing.T) {
 	repo := newRepoForSessionTests(t)
 	ctx := context.Background()

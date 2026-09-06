@@ -1291,6 +1291,8 @@
   "sessionContext": "工作階段上下文",
   "sessionCount_one": "{{count}} 個工作階段",
   "sessionCount_other": "{{count}} 個工作階段",
+  "showSessionHistory": "顯示工作階段記錄",
+  "hideSessionHistory": "隱藏工作階段記錄",
   "sessionFallbackLabel": "工作階段",
   "sessionModelSettings": "工作階段模型設定",
   "sessionNotReady": "工作階段未就緒",

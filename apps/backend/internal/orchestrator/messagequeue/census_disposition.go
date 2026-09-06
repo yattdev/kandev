@@ -73,6 +73,55 @@ type QueueCensus struct {
 	AutoRun     bool               `json:"auto_run"`
 }
 
+// QueueRecoveryEntry is the exact, task-scoped readback a replacement primary
+// uses to reconstruct a retired helper session's FIFO. Arbitrary metadata is
+// intentionally excluded; only stable delivery fields and safe provenance are
+// exposed.
+type QueueRecoveryEntry struct {
+	ID            string              `json:"id"`
+	SessionID     string              `json:"session_id"`
+	TaskID        string              `json:"task_id"`
+	Position      int64               `json:"position"`
+	Content       string              `json:"content"`
+	ContentSHA256 string              `json:"content_sha256"`
+	ContentBytes  int                 `json:"content_bytes"`
+	Model         string              `json:"model"`
+	PlanMode      bool                `json:"plan_mode"`
+	Attachments   []MessageAttachment `json:"attachments"`
+	QueuedAt      string              `json:"queued_at"`
+	QueuedBy      string              `json:"queued_by"`
+	Origin        string              `json:"origin,omitempty"`
+	SenderTaskID  string              `json:"sender_task_id,omitempty"`
+}
+
+// RecoverySnapshot returns exact visible FIFO payloads for an already-scoped
+// caller. Authorization belongs to the MCP handler; this service only owns the
+// queue-consistency boundary.
+func (s *Service) RecoverySnapshot(ctx context.Context, sessionID string) ([]QueueRecoveryEntry, error) {
+	entries, err := s.repo.ListBySession(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list queue recovery snapshot: %w", err)
+	}
+	result := make([]QueueRecoveryEntry, 0, len(entries))
+	for i := range entries {
+		entry := &entries[i]
+		if entry.IsReservedInFlight() {
+			continue
+		}
+		digest := sha256.Sum256([]byte(entry.Content))
+		result = append(result, QueueRecoveryEntry{
+			ID: entry.ID, SessionID: entry.SessionID, TaskID: entry.TaskID,
+			Position: entry.Position, Content: entry.Content,
+			ContentSHA256: hex.EncodeToString(digest[:]), ContentBytes: len(entry.Content),
+			Model: entry.Model, PlanMode: entry.PlanMode, Attachments: entry.Attachments,
+			QueuedAt: entry.QueuedAt.UTC().Format(time.RFC3339Nano), QueuedBy: entry.QueuedBy,
+			Origin:       metadataString(entry.Metadata, "origin"),
+			SenderTaskID: metadataString(entry.Metadata, MetadataSenderTaskID),
+		})
+	}
+	return result, nil
+}
+
 // Census returns a content-free FIFO snapshot for one session.
 func (s *Service) Census(ctx context.Context, sessionID string) (*QueueCensus, error) {
 	entries, err := s.repo.ListBySession(ctx, sessionID)

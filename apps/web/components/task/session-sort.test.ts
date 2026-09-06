@@ -4,6 +4,7 @@ import {
   isSessionActive,
   pickActiveSessionId,
   resolveAgentLabelFor,
+  filterSessionHistory,
   sortSessions,
 } from "./session-sort";
 import {
@@ -53,6 +54,26 @@ describe("sortSessions", () => {
       makeSession({ id: "new", state: "RUNNING", started_at: "2025-01-05T00:00:00Z" }),
     ];
     expect(sortSessions(sessions).map((s) => s.id)).toEqual(["new", "old"]);
+  });
+});
+
+describe("filterSessionHistory", () => {
+  const sessions = [
+    makeSession({ id: "primary-complete", state: "COMPLETED", is_primary: true }),
+    makeSession({ id: "active-helper", state: "WAITING_FOR_INPUT" }),
+    makeSession({ id: "completed-helper", state: "COMPLETED" }),
+    makeSession({ id: "archived-helper", state: "FAILED", archived_at: EPOCH }),
+  ];
+
+  it("hides archived and terminal helper sessions by default", () => {
+    expect(filterSessionHistory(sessions, false).map((session) => session.id)).toEqual([
+      "primary-complete",
+      "active-helper",
+    ]);
+  });
+
+  it("returns the full session history when requested", () => {
+    expect(filterSessionHistory(sessions, true)).toEqual(sessions);
   });
 });
 

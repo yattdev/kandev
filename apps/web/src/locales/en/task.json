@@ -1357,6 +1357,8 @@
   "sessionStatusPermissionRequested": "Permission requested",
   "sessionStatusRunning": "Running",
   "sessionStatusWaitingForInput": "Waiting for input",
+  "showSessionHistory": "Show session history",
+  "hideSessionHistory": "Hide session history",
   "sessions": "Sessions",
   "setAsDefaultLayout": "Set as default layout",
   "setAsPrimary": "Set as Primary",

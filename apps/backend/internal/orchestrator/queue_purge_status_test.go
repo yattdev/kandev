@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,7 +61,7 @@ func TestArchiveTaskPublishesQueueStatusWithTaskID(t *testing.T) {
 	}
 }
 
-func TestDeleteSessionCancelsQueuedPromptsAndPublishesStatus(t *testing.T) {
+func TestDeleteSessionRejectsAndPreservesQueuedPrompts(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
 	seedTaskAndSession(t, repo, "task-session-queue", "session-keep", models.TaskSessionStateIdle)
@@ -102,19 +103,18 @@ func TestDeleteSessionCancelsQueuedPromptsAndPublishesStatus(t *testing.T) {
 		t.Fatalf("pending before delete = %d err=%v, want 2", got, err)
 	}
 
-	if err := svc.DeleteSession(ctx, "session-drop"); err != nil {
-		t.Fatalf("DeleteSession: %v", err)
+	if err := svc.DeleteSession(ctx, "session-drop"); err == nil || !strings.Contains(err.Error(), "pending queue") {
+		t.Fatalf("DeleteSession error = %v, want pending queue rejection", err)
 	}
 
-	if got := svc.messageQueue.GetStatus(ctx, "session-drop").Count; got != 0 {
-		t.Fatalf("session-drop queue count = %d, want 0", got)
+	if got := svc.messageQueue.GetStatus(ctx, "session-drop").Count; got != 1 {
+		t.Fatalf("session-drop queue count = %d, want 1 preserved", got)
 	}
-	if got, err := svc.messageQueue.CountPendingByTask(ctx, "task-session-queue"); err != nil || got != 1 {
-		t.Fatalf("pending after delete = %d err=%v, want 1 (kept session only)", got, err)
+	if got, err := svc.messageQueue.CountPendingByTask(ctx, "task-session-queue"); err != nil || got != 2 {
+		t.Fatalf("pending after rejected delete = %d err=%v, want 2", got, err)
 	}
-	// MemoryEventBus.Publish is synchronous, so the subscriber already ran.
-	if saw.Load() == 0 {
-		t.Fatal("expected message.queue.status_changed with task_id after session delete")
+	if saw.Load() != 0 {
+		t.Fatal("rejected delete published a queue status change")
 	}
 }
 

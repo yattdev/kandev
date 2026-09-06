@@ -3415,6 +3415,9 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	if err != nil {
 		return fmt.Errorf("session not found: %w", err)
 	}
+	if session.IsPrimary {
+		return fmt.Errorf("cannot close the primary session %s; promote a replacement first", sessionID)
+	}
 
 	// Prevent deleting active sessions
 	switch session.State {
@@ -3423,7 +3426,6 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	}
 
 	taskID := session.TaskID
-	wasPrimary := session.IsPrimary
 
 	// A settled DB state can still own a workspace execution or detached
 	// background work. Quiesce that runtime boundary before removing the row.
@@ -3434,10 +3436,9 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	s.logger.Info("deleting session",
 		zap.String("session_id", sessionID),
 		zap.String("task_id", taskID),
-		zap.String("state", string(session.State)),
-		zap.Bool("was_primary", wasPrimary))
+		zap.String("state", string(session.State)))
 
-	if err := s.deleteSessionAndPublishError(ctx, taskID, sessionID); err != nil {
+	if err := s.deleteSessionWithQueueGuard(ctx, taskID, sessionID); err != nil {
 		return fmt.Errorf("failed to delete session: %w", err)
 	}
 
@@ -3456,18 +3457,32 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	// through a stale activity pointer.
 	s.clearTurnActivity(sessionID)
 
-	// Pending queue rows are keyed by session_id but counted for the sidebar
-	// badge by task_id. Cancel them after the session row is gone and publish
-	// queue-status so the status-summary projector drops the orphaned count.
-	// Best-effort: the session delete already committed.
-	s.cancelDeletedSessionQueue(ctx, taskID, sessionID)
-
-	// Auto-promote another session if we deleted the primary
-	if wasPrimary {
-		s.promoteNextPrimaryAfterRemoval(ctx, taskID, sessionID)
+	disposition := "deleted"
+	if retained, readErr := s.repo.GetTaskSession(ctx, sessionID); readErr == nil && retained.ArchivedAt != nil {
+		disposition = "archived"
 	}
+	s.logger.Info("session cleanup committed",
+		zap.String("task_id", taskID),
+		zap.String("session_id", sessionID),
+		zap.String("disposition", disposition))
 
 	return nil
+}
+
+func (s *Service) deleteSessionWithQueueGuard(ctx context.Context, taskID, sessionID string) error {
+	if s.messageQueue == nil {
+		return s.deleteSessionAndPublishError(ctx, taskID, sessionID)
+	}
+	return s.messageQueue.WithSessionAdmission(ctx, sessionID, func(admittedCtx context.Context) error {
+		census, err := s.messageQueue.Census(admittedCtx, sessionID)
+		if err != nil {
+			return fmt.Errorf("inspect pending queue: %w", err)
+		}
+		if census.BeforeCount > 0 {
+			return fmt.Errorf("cannot delete session %s: %d pending queue entries remain; inspect and dispose or recover them first", sessionID, census.BeforeCount)
+		}
+		return s.deleteSessionAndPublishError(admittedCtx, taskID, sessionID)
+	})
 }
 
 func (s *Service) deleteSessionAndPublishError(ctx context.Context, taskID, sessionID string) error {
@@ -3580,21 +3595,6 @@ func (s *Service) publishTaskSessionErrorEvent(
 		"orchestrator",
 		eventData,
 	))
-}
-
-// cancelDeletedSessionQueue removes pending prompts left on a deleted session
-// and publishes a task-scoped queue status event for the live badge path.
-func (s *Service) cancelDeletedSessionQueue(ctx context.Context, taskID, sessionID string) {
-	if s.messageQueue == nil {
-		return
-	}
-	if _, err := s.messageQueue.CancelAll(ctx, sessionID); err != nil {
-		s.logger.Warn("failed to cancel queued prompts after session delete",
-			zap.String("session_id", sessionID),
-			zap.String("task_id", taskID),
-			zap.Error(err))
-	}
-	s.publishTaskQueueStatusEvent(ctx, taskID, sessionID)
 }
 
 // quiesceSessionExecutionBeforeDeletion stops the in-memory lifecycle

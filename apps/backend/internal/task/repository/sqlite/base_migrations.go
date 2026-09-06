@@ -51,6 +51,10 @@ func (r *Repository) migrateSessionsAddCostColumns() {
 
 // runMigrations applies idempotent ALTER TABLE migrations for schema evolution.
 func (r *Repository) runMigrations() error {
+	r.migrate.Apply("queue_session_locks.table", `
+		CREATE TABLE IF NOT EXISTS queue_session_locks (
+			session_id TEXT PRIMARY KEY
+		)`)
 	if err := r.migrateTaskPriorityToTextPostgres(); err != nil {
 		return err
 	}
@@ -297,6 +301,19 @@ func (r *Repository) runMigrations() error {
 	// frontend snapshots the prior value before the advance to position the
 	// "New" divider (see models.TaskSession.LastReadMessageID).
 	r.migrate.Apply("task_sessions.last_read_message_id", `ALTER TABLE task_sessions ADD COLUMN last_read_message_id TEXT DEFAULT ''`)
+	r.migrate.Apply("task_sessions.archived_at", `ALTER TABLE task_sessions ADD COLUMN archived_at TIMESTAMP`)
+	r.migrate.Apply("task_session_cleanup_receipts.table", `
+		CREATE TABLE IF NOT EXISTS task_session_cleanup_receipts (
+			task_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			disposition TEXT NOT NULL,
+			queue_before_count INTEGER NOT NULL,
+			evidence_retained BOOLEAN NOT NULL,
+			occurred_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (task_id, session_id),
+			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+		)`)
 	r.migrate.Apply("task_session_turns.execution_profile_id", `ALTER TABLE task_session_turns ADD COLUMN execution_profile_id TEXT NOT NULL DEFAULT ''`)
 	r.migrate.Apply("task_session_turns.route_generation", `ALTER TABLE task_session_turns ADD COLUMN route_generation BIGINT NOT NULL DEFAULT 0`)
 

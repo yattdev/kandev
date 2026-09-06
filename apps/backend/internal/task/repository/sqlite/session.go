@@ -17,6 +17,7 @@ import (
 	"github.com/kandev/kandev/internal/agentctl/tracing"
 	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/db/dialect"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
 )
 
@@ -478,7 +479,7 @@ const taskSessionSelectCols = `ts.id, ts.task_id,
 	ts.repository_id, ts.base_branch, ts.base_commit_sha,
 	COALESCE(NULLIF(te.workspace_path, ''), ts.workspace_path),
 	ts.agent_profile_snapshot, ts.executor_snapshot, ts.environment_snapshot, ts.repository_snapshot,
-	ts.state, ts.error_message, ts.metadata, ts.started_at, ts.completed_at, ts.updated_at,
+	ts.state, ts.error_message, ts.metadata, ts.started_at, ts.completed_at, ts.archived_at, ts.updated_at,
 	ts.is_primary, ts.review_status, ts.is_passthrough, ts.task_environment_id, ts.name, ts.last_read_message_id,
 	ts.cost_subcents, ts.tokens_in, ts.tokens_cached_in, ts.tokens_out`
 
@@ -989,6 +990,7 @@ func (r *Repository) scanTaskSession(ctx context.Context, row *sql.Row, noRowsEr
 	var environmentSnapshotJSON string
 	var repositorySnapshotJSON string
 	var completedAt sql.NullTime
+	var archivedAt sql.NullTime
 	var isPrimary int
 	var isPassthrough int
 	var reviewStatus sql.NullString
@@ -1004,7 +1006,7 @@ func (r *Repository) scanTaskSession(ctx context.Context, row *sql.Row, noRowsEr
 		&session.ExecutorID, &session.ExecutorProfileID, &session.EnvironmentID,
 		&session.RepositoryID, &session.BaseBranch, &session.BaseCommitSHA, &session.WorkspacePath,
 		&agentProfileSnapshotJSON, &executorSnapshotJSON, &environmentSnapshotJSON, &repositorySnapshotJSON,
-		&state, &session.ErrorMessage, &metadataJSON, &session.StartedAt, &completedAt, &session.UpdatedAt,
+		&state, &session.ErrorMessage, &metadataJSON, &session.StartedAt, &completedAt, &archivedAt, &session.UpdatedAt,
 		&isPrimary, &reviewStatus, &isPassthrough, &session.TaskEnvironmentID, &name, &lastReadMessageID,
 		&session.CostSubcents, &session.TokensIn, &session.TokensCachedIn, &session.TokensOut,
 	)
@@ -1033,6 +1035,9 @@ func (r *Repository) scanTaskSession(ctx context.Context, row *sql.Row, noRowsEr
 	}
 	if completedAt.Valid {
 		session.CompletedAt = &completedAt.Time
+	}
+	if archivedAt.Valid {
+		session.ArchivedAt = &archivedAt.Time
 	}
 	if err := unmarshalSessionJSON(metadataJSON, &session.Metadata, "agent session metadata"); err != nil {
 		return nil, err
@@ -1124,7 +1129,7 @@ func (r *Repository) ClaimPromptableTaskSessionIfActive(ctx context.Context, id 
 	var state models.TaskSessionState
 	var active bool
 	err = tx.QueryRowxContext(ctx, r.db.Rebind(`
-		SELECT ts.state, t.archived_at IS NULL
+		SELECT ts.state, t.archived_at IS NULL AND ts.archived_at IS NULL
 		FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
 		WHERE ts.id = ?
 	`), id).Scan(&state, &active)
@@ -1143,7 +1148,7 @@ func (r *Repository) ClaimPromptableTaskSessionIfActive(ctx context.Context, id 
 
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_sessions SET state = ?, completed_at = NULL, updated_at = ?
-		WHERE id = ? AND state = ?
+		WHERE id = ? AND state = ? AND archived_at IS NULL
 		  AND EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_sessions.task_id AND tasks.archived_at IS NULL)
 	`), models.TaskSessionStateRunning, time.Now().UTC(), id, state)
 	if err != nil {
@@ -1181,7 +1186,7 @@ func (r *Repository) classifyPromptableTaskSessionClaim(
 	var state models.TaskSessionState
 	var active bool
 	err := tx.QueryRowxContext(ctx, r.db.Rebind(`
-		SELECT ts.state, t.archived_at IS NULL
+		SELECT ts.state, t.archived_at IS NULL AND ts.archived_at IS NULL
 		FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
 		WHERE ts.id = ?
 	`), id).Scan(&state, &active)
@@ -1215,7 +1220,8 @@ func (r *Repository) GetTaskSessionByTaskID(ctx context.Context, taskID string) 
 func (r *Repository) GetActiveTaskSessionByTaskID(ctx context.Context, taskID string) (*models.TaskSession, error) {
 	row := r.ro.QueryRowContext(ctx, r.ro.Rebind(
 		`SELECT `+taskSessionSelectCols+` `+taskSessionFromClause+`
-		 WHERE ts.task_id = ? AND ts.state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
+		 WHERE ts.task_id = ? AND ts.archived_at IS NULL
+		   AND ts.state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
 		 ORDER BY ts.started_at DESC LIMIT 1`,
 	), taskID)
 	return r.scanTaskSession(ctx, row, fmt.Sprintf("no active agent session for task: %s", taskID))
@@ -2478,7 +2484,7 @@ func (r *Repository) ListActiveTaskSessions(ctx context.Context) ([]*models.Task
 	ctx, span := tracing.Tracer("kandev-db").Start(ctx, "db.ListActiveTaskSessions")
 	defer span.End()
 	rows, err := r.ro.QueryContext(ctx,
-		`SELECT `+taskSessionSelectCols+` `+taskSessionFromClause+` WHERE ts.state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT') ORDER BY ts.started_at DESC`,
+		`SELECT `+taskSessionSelectCols+` `+taskSessionFromClause+` WHERE ts.archived_at IS NULL AND ts.state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT') ORDER BY ts.started_at DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -2495,7 +2501,7 @@ func (r *Repository) ListActiveTaskSessions(ctx context.Context) ([]*models.Task
 // ListActiveTaskSessionsByTaskID returns all active agent sessions for a specific task
 func (r *Repository) ListActiveTaskSessionsByTaskID(ctx context.Context, taskID string) ([]*models.TaskSession, error) {
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(
-		`SELECT `+taskSessionSelectCols+` `+taskSessionFromClause+` WHERE ts.task_id = ? AND ts.state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT') ORDER BY ts.started_at DESC`,
+		`SELECT `+taskSessionSelectCols+` `+taskSessionFromClause+` WHERE ts.task_id = ? AND ts.archived_at IS NULL AND ts.state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT') ORDER BY ts.started_at DESC`,
 	), taskID)
 	if err != nil {
 		return nil, err
@@ -2756,6 +2762,7 @@ func scanTaskSessionRow(rows *sql.Rows) (*models.TaskSession, error) {
 	var environmentSnapshotJSON string
 	var repositorySnapshotJSON string
 	var completedAt sql.NullTime
+	var archivedAt sql.NullTime
 	var isPrimary int
 	var isPassthrough int
 	var reviewStatus sql.NullString
@@ -2769,7 +2776,7 @@ func scanTaskSessionRow(rows *sql.Rows) (*models.TaskSession, error) {
 		&session.ExecutorID, &session.ExecutorProfileID, &session.EnvironmentID,
 		&session.RepositoryID, &session.BaseBranch, &session.BaseCommitSHA, &session.WorkspacePath,
 		&agentProfileSnapshotJSON, &executorSnapshotJSON, &environmentSnapshotJSON, &repositorySnapshotJSON,
-		&state, &session.ErrorMessage, &metadataJSON, &session.StartedAt, &completedAt, &session.UpdatedAt,
+		&state, &session.ErrorMessage, &metadataJSON, &session.StartedAt, &completedAt, &archivedAt, &session.UpdatedAt,
 		&isPrimary, &reviewStatus, &isPassthrough, &session.TaskEnvironmentID, &name, &lastReadMessageID,
 		&session.CostSubcents, &session.TokensIn, &session.TokensCachedIn, &session.TokensOut,
 	)
@@ -2794,6 +2801,9 @@ func scanTaskSessionRow(rows *sql.Rows) (*models.TaskSession, error) {
 	}
 	if completedAt.Valid {
 		session.CompletedAt = &completedAt.Time
+	}
+	if archivedAt.Valid {
+		session.ArchivedAt = &archivedAt.Time
 	}
 
 	if err := unmarshalSessionSnapshots(session, metadataJSON, agentProfileSnapshotJSON,
@@ -2824,17 +2834,92 @@ func unmarshalSessionSnapshots(
 	return unmarshalSessionJSON(repositorySnapshotJSON, &session.RepositorySnapshot, "repository snapshot")
 }
 
-// DeleteTaskSession deletes an agent session by ID and any pending queue rows
-// keyed to that session. Without the queue purge, orphan rows keep inflating
-// task-scoped queued_prompt_count after the session is gone.
+// DeleteTaskSession deletes an agent session only when its queue is empty.
+// The task-row and queue-session locks make the emptiness proof atomic with
+// deletion, so a concurrent enqueue either lands first and blocks deletion or
+// observes the missing session after deletion.
 func (r *Repository) DeleteTaskSession(ctx context.Context, id string) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var taskIdentity struct {
+		TaskID      string `db:"task_id"`
+		WorkspaceID string `db:"workspace_id"`
+	}
+	if err := tx.GetContext(ctx, &taskIdentity, r.db.Rebind(`
+		SELECT ts.task_id, t.workspace_id
+		FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
+		WHERE ts.id = ?
+	`), id); err != nil {
+		return fmt.Errorf("agent session not found: %s: %w", id, err)
+	}
+	taskID := taskIdentity.TaskID
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET updated_at = updated_at WHERE id = ?`), taskID)
+	if err != nil {
+		return fmt.Errorf("lock task for session delete: %w", err)
+	}
+	if rows, rowsErr := result.RowsAffected(); rowsErr != nil || rows == 0 {
+		return fmt.Errorf("lock task for session delete: task not found: %s", taskID)
+	}
+	result, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_sessions SET updated_at = updated_at WHERE id = ? AND task_id = ?`), id, taskID)
+	if err != nil {
+		return fmt.Errorf("lock session for delete: %w", err)
+	}
+	if rows, rowsErr := result.RowsAffected(); rowsErr != nil || rows == 0 {
+		return fmt.Errorf("agent session not found: %s", id)
+	}
+	if err := messagequeue.LockSessionInTransaction(ctx, tx, r.db, id); err != nil {
+		return fmt.Errorf("lock queue for session delete: %w", err)
+	}
+	var pending int
+	if err := tx.GetContext(ctx, &pending, r.db.Rebind(`SELECT COUNT(*) FROM queued_messages WHERE session_id = ?`), id); err != nil {
+		if !db.IsMissingTableError(err) {
+			return fmt.Errorf("inspect pending queue for session %s: %w", id, err)
+		}
+	}
+	if pending > 0 {
+		return fmt.Errorf("cannot delete session %s: %d pending queue entries remain; inspect and dispose or recover them first", id, pending)
+	}
+	var pendingMove int
+	if err := tx.GetContext(ctx, &pendingMove, r.db.Rebind(`SELECT COUNT(*) FROM pending_moves WHERE session_id = ?`), id); err != nil {
+		if !db.IsMissingTableError(err) {
+			return fmt.Errorf("inspect pending lifecycle action for session %s: %w", id, err)
+		}
+	}
+	if pendingMove > 0 {
+		return fmt.Errorf("cannot delete session %s: a pending lifecycle action remains", id)
+	}
+	var evidence int
+	if err := tx.GetContext(ctx, &evidence, r.db.Rebind(`
+		SELECT CASE WHEN
+			EXISTS (SELECT 1 FROM task_session_turns WHERE task_session_id = ?)
+			OR EXISTS (SELECT 1 FROM task_session_messages WHERE task_session_id = ?)
+		THEN 1 ELSE 0 END
+	`), id, id); err != nil {
+		return fmt.Errorf("inspect retained evidence for session %s: %w", id, err)
+	}
+	if evidence > 0 {
+		now := r.nowUTC()
+		_, err := tx.ExecContext(ctx, r.db.Rebind(`
+			UPDATE task_sessions
+			SET archived_at = COALESCE(archived_at, ?), updated_at = ?
+			WHERE id = ?
+		`), now, now, id)
+		if err != nil {
+			return fmt.Errorf("archive session evidence %s: %w", id, err)
+		}
+		if err := r.insertTaskSessionCleanupReceipt(ctx, tx, taskIdentity, id, "archived", pending, true, now); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	if err := r.insertTaskSessionCleanupReceipt(ctx, tx, taskIdentity, id, "deleted", pending, false, r.nowUTC()); err != nil {
+		return err
+	}
 
-	result, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_sessions WHERE id = ?`), id)
+	result, err = tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_sessions WHERE id = ?`), id)
 	if err != nil {
 		return err
 	}
@@ -2852,14 +2937,52 @@ func (r *Repository) DeleteTaskSession(ctx context.Context, id string) error {
 			return fmt.Errorf("purge prompt history for session %s: %w", id, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM queued_messages WHERE session_id = ?`), id); err != nil {
-		// Isolated unit tests may omit the messagequeue schema. Production
-		// always has queued_messages; treat a missing table as already-purged.
-		if !db.IsMissingTableError(err) {
-			return fmt.Errorf("purge queued messages for session %s: %w", id, err)
-		}
-	}
 	return tx.Commit()
+}
+
+func (r *Repository) insertTaskSessionCleanupReceipt(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	identity struct {
+		TaskID      string `db:"task_id"`
+		WorkspaceID string `db:"workspace_id"`
+	},
+	sessionID, disposition string,
+	queueBeforeCount int,
+	evidenceRetained bool,
+	occurredAt time.Time,
+) error {
+	_, err := tx.ExecContext(ctx, r.db.Rebind(`
+		INSERT INTO task_session_cleanup_receipts (
+			task_id, workspace_id, session_id, disposition,
+			queue_before_count, evidence_retained, occurred_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (task_id, session_id) DO NOTHING
+	`), identity.TaskID, identity.WorkspaceID, sessionID, disposition,
+		queueBeforeCount, evidenceRetained, occurredAt)
+	if err != nil {
+		return fmt.Errorf("record session cleanup receipt %s: %w", sessionID, err)
+	}
+	return nil
+}
+
+// GetTaskSessionCleanupReceipt returns the immutable readback for one exact
+// task/session cleanup. It never searches by session ID alone.
+func (r *Repository) GetTaskSessionCleanupReceipt(
+	ctx context.Context,
+	taskID, sessionID string,
+) (*models.TaskSessionCleanupReceipt, error) {
+	receipt := &models.TaskSessionCleanupReceipt{}
+	err := r.ro.GetContext(ctx, receipt, r.ro.Rebind(`
+		SELECT task_id, workspace_id, session_id, disposition,
+			queue_before_count, evidence_retained, occurred_at
+		FROM task_session_cleanup_receipts
+		WHERE task_id = ? AND session_id = ?
+	`), taskID, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("session cleanup receipt not found: %s: %w", sessionID, err)
+	}
+	return receipt, nil
 }
 
 // Task Session Worktree operations
@@ -3058,7 +3181,7 @@ func (r *Repository) appendWorktreesForSessionChunk(
 // row; callers should use errors.Is to distinguish this from real DB errors.
 func (r *Repository) GetPrimarySessionByTaskID(ctx context.Context, taskID string) (*models.TaskSession, error) {
 	row := r.ro.QueryRowContext(ctx, r.ro.Rebind(
-		`SELECT `+taskSessionSelectCols+` `+taskSessionFromClause+` WHERE ts.task_id = ? AND ts.is_primary = 1 LIMIT 1`,
+		`SELECT `+taskSessionSelectCols+` `+taskSessionFromClause+` WHERE ts.task_id = ? AND ts.is_primary = 1 AND ts.archived_at IS NULL LIMIT 1`,
 	), taskID)
 	session, err := r.scanTaskSession(ctx, row, "task_sessions: no primary session row")
 	if errors.Is(err, models.ErrTaskSessionNotFound) {
@@ -3084,7 +3207,7 @@ func (r *Repository) GetPrimarySessionIDsByTaskIDs(ctx context.Context, taskIDs 
 
 	query := fmt.Sprintf(`
 		SELECT id, task_id FROM task_sessions
-		WHERE task_id IN (%s) AND is_primary = 1
+		WHERE task_id IN (%s) AND is_primary = 1 AND archived_at IS NULL
 	`, strings.Join(placeholders, ","))
 
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(query), args...)
@@ -3163,7 +3286,7 @@ func (r *Repository) GetPrimarySessionInfoByTaskIDs(ctx context.Context, taskIDs
 		       e.type, e.name
 		FROM task_sessions ts
 		LEFT JOIN executors e ON e.id = ts.executor_id
-		WHERE ts.task_id IN (%s) AND ts.is_primary = 1
+		WHERE ts.task_id IN (%s) AND ts.is_primary = 1 AND ts.archived_at IS NULL
 	`, strings.Join(placeholders, ","))
 
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(query), args...)
@@ -3262,7 +3385,7 @@ func (r *Repository) setSessionPrimary(ctx context.Context, sessionID string, re
 	// every primary promotion must take the owning task lock first so concurrent
 	// promotions keep one lock order.
 	var taskID string
-	query := `SELECT task_id FROM task_sessions WHERE id = ?`
+	query := `SELECT task_id FROM task_sessions WHERE id = ? AND archived_at IS NULL`
 	err = tx.QueryRowContext(ctx, r.db.Rebind(query), sessionID).Scan(&taskID)
 	if err == sql.ErrNoRows {
 		return primarySessionNotPromoted(sessionID, requireNonterminal)
@@ -3304,7 +3427,7 @@ func (r *Repository) setSessionPrimary(ctx context.Context, sessionID string, re
 	}
 
 	// Set primary flag on the specified session
-	promoteQuery := `UPDATE task_sessions SET is_primary = 1, updated_at = ? WHERE id = ?`
+	promoteQuery := `UPDATE task_sessions SET is_primary = 1, updated_at = ? WHERE id = ? AND archived_at IS NULL`
 	if requireNonterminal {
 		promoteQuery += ` AND state IN ('CREATED', 'STARTING', 'RUNNING', 'IDLE', 'WAITING_FOR_INPUT')`
 	}

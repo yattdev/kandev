@@ -1,6 +1,5 @@
 import { test, expect } from "../../fixtures/test-base";
 import { KanbanPage } from "../../pages/kanban-page";
-import { waitForSessionDone } from "../../helpers/session";
 import { watchWs } from "../../helpers/causal-waits";
 
 const DONE_STATES = ["COMPLETED", "WAITING_FOR_INPUT"];
@@ -15,7 +14,7 @@ const CREATE_PLAN_SCRIPT = [
 
 /**
  * Tests the session tabs on the kanban right-side preview panel:
- * - Every session of the task shows up as a tab
+ * - Current sessions show as tabs; terminal helpers require session history
  * - Clicking a tab switches the rendered session body and updates the URL
  * - Right-clicking a tab opens the same lifecycle menu as the full-page view
  *
@@ -23,10 +22,11 @@ const CREATE_PLAN_SCRIPT = [
  * still lives on the full-page task view.
  */
 test.describe("Preview session tabs", () => {
-  test("shows all sessions as tabs and switches between them", async ({
+  test("hides terminal helpers until history is requested and then switches tabs", async ({
     testPage,
     apiClient,
     seedData,
+    prCapture,
   }) => {
     test.setTimeout(180_000);
 
@@ -60,28 +60,21 @@ test.describe("Preview session tabs", () => {
     const { sessions: afterFirst } = await apiClient.listTaskSessions(task.id);
     const primaryId = afterFirst[0].id;
 
-    // 3. Launch a second session through the same WS API path the UI uses.
-    // This spec is about preview tabs, not dialog mechanics, so it avoids the
-    // separate new-session-dialog UI surface which has its own dedicated tests.
-    const launched = await apiClient.launchSession(
-      {
-        task_id: task.id,
-        agent_profile_id: seedData.agentProfileId,
-        executor_profile_id: seedData.worktreeExecutorProfileId,
-        workflow_step_id: seedData.startStepId,
-        prompt: 'e2e:message("secondary-session-response")',
-      },
-      60_000,
-    );
-
-    // 4. Wait for the launched second session to finish.
-    await waitForSessionDone(
-      apiClient,
-      task.id,
-      launched.session_id,
-      "Waiting for second session to finish",
-      60_000,
-    );
+    // 3. Seed a completed helper with transcript evidence. This spec is about
+    // history visibility and selection, while launch behavior has dedicated
+    // coverage elsewhere.
+    const secondaryId = `preview-history-helper-${task.id}`;
+    await apiClient.seedTaskSession(task.id, {
+      state: "COMPLETED",
+      sessionId: secondaryId,
+      agentProfileId: seedData.agentProfileId,
+      completedAt: "2026-09-01T00:00:00Z",
+    });
+    await apiClient.seedSessionMessage(secondaryId, {
+      type: "message",
+      content: "secondary-session-response",
+      authorType: "agent",
+    });
 
     // Keep the original preview semantics under test: the first session should
     // remain the task's primary/default tab even after another session exists.
@@ -98,13 +91,8 @@ test.describe("Preview session tabs", () => {
       )
       .toBe(primaryId);
 
-    const { sessions: afterSecond } = await apiClient.listTaskSessions(task.id);
-    const secondaryId = afterSecond.find((s) => s.id !== primaryId)?.id;
-    if (!secondaryId) throw new Error("Secondary session not created");
-
-    // The first session remains primary by default — creating a second via the
-    // new-session dialog does not steal the primary flag (verified by
-    // preview-primary-session.spec.ts).
+    // The seeded helper briefly becomes primary under the test harness, so the
+    // explicit promotion above restores the expected default tab.
 
     const kanban = new KanbanPage(testPage);
 
@@ -119,14 +107,22 @@ test.describe("Preview session tabs", () => {
     });
     await previewCard.click();
 
-    // 6. Preview panel + both tabs are visible.
+    // 6. The ordinary strip keeps the primary visible and hides terminal helpers.
     const previewPanel = testPage.getByTestId("task-preview-panel");
     await expect(previewPanel).toBeVisible({ timeout: 10_000 });
 
     const primaryTab = testPage.getByTestId(`preview-session-tab-${primaryId}`);
     const secondaryTab = testPage.getByTestId(`preview-session-tab-${secondaryId}`);
     await expect(primaryTab).toBeVisible({ timeout: 10_000 });
+    await expect(secondaryTab).toHaveCount(0);
+    await prCapture.screenshot("session-history-hidden-desktop", {
+      caption: "Desktop preview with terminal helper sessions hidden from the ordinary tab strip",
+    });
+    await testPage.getByTestId("preview-session-history-toggle").click();
     await expect(secondaryTab).toBeVisible();
+    await prCapture.screenshot("session-history-visible-desktop", {
+      caption: "Desktop preview after Show session history reveals the terminal helper",
+    });
 
     // 7. Primary tab is active by default and its session content is visible.
     // "simple mock response" appears only in the agent's reply, not in any prompt,

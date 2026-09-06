@@ -572,6 +572,8 @@ export type TaskSession = ActiveSubagentCountFields & {
   /** Cross-channel logical clock for pending_action snapshots. */
   pending_action_revision?: TaskPendingActionRevision;
   error_message?: string;
+  /** Set when cleanup retained this session's transcript as task history. */
+  archived_at?: string;
   metadata?: Record<string, unknown> | null;
   agent_profile_snapshot?: Record<string, unknown> | null;
   executor_snapshot?: Record<string, unknown> | null;

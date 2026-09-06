@@ -18,6 +18,8 @@ import type { TaskPlan } from "@/lib/types/http-agents";
 import type { ChatSubmitPayload } from "./chat/chat-input-container";
 import type { EntityReference } from "@/lib/types/entity-reference";
 
+const HISTORY_TOGGLE_TESTID = "preview-session-history-toggle";
+
 const mocks = vi.hoisted(() => ({
   getWebSocketClient: vi.fn(),
   onSend: null as null | ((payload: ChatSubmitPayload) => Promise<void>),
@@ -377,6 +379,24 @@ describe("PreviewSessionTabs tab label", () => {
   });
 });
 
+describe("PreviewSessionTabs history", () => {
+  it("hides archived helpers until history is requested", () => {
+    mocks.sessions = [
+      makeSession("session-a", { state: "WAITING_FOR_INPUT", is_primary: true }),
+      makeSession("session-history", {
+        state: "COMPLETED",
+        is_primary: false,
+        archived_at: TIMESTAMP,
+      }),
+    ];
+    render(<PreviewSessionTabs taskId={TASK_ID} sessionId="session-a" />);
+
+    expect(screen.queryByTestId("preview-session-tab-session-history")).toBeNull();
+    fireEvent.click(screen.getByTestId(HISTORY_TOGGLE_TESTID));
+    expect(screen.getByTestId("preview-session-tab-session-history")).toBeTruthy();
+  });
+});
+
 describe("PreviewSessionTabs session context menu", () => {
   it("renders the full lifecycle menu on right-click, without Close Others", () => {
     mocks.sessions = [makeSession("session-a", { state: "COMPLETED" })];
@@ -473,6 +493,9 @@ describe("PreviewSessionTabs session context menu", () => {
 });
 
 async function deleteViaContextMenu(tabTestId: string) {
+  if (!screen.queryByTestId(tabTestId)) {
+    fireEvent.click(screen.getByTestId(HISTORY_TOGGLE_TESTID));
+  }
   fireEvent.contextMenu(screen.getByTestId(tabTestId));
   fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
   const confirm = await screen.findByTestId("session-delete-confirm");
@@ -671,6 +694,7 @@ describe("PreviewSessionTabs Plan tab", () => {
 
   it("shows a Plan tab alongside session tabs", () => {
     render(<PreviewSessionTabs taskId={TASK_ID} sessionId={null} />);
+    fireEvent.click(screen.getByTestId(HISTORY_TOGGLE_TESTID));
 
     expect(screen.getByTestId(PLAN_TAB_TESTID)).toBeTruthy();
     expect(screen.getByTestId(`preview-session-tab-${session.id}`)).toBeTruthy();
@@ -686,6 +710,7 @@ describe("PreviewSessionTabs Plan tab", () => {
     render(
       <PreviewSessionTabs taskId={TASK_ID} sessionId={null} onSessionChange={onSessionChange} />,
     );
+    fireEvent.click(screen.getByTestId(HISTORY_TOGGLE_TESTID));
     expect(screen.getByTestId("preview-chat")).toBeTruthy();
 
     fireEvent.mouseDown(screen.getByTestId(PLAN_TAB_TESTID), { button: 0 });

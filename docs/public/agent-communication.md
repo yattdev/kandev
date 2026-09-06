@@ -241,6 +241,8 @@ These tools complement cross-task communication for common coordination patterns
 | `list_related_tasks_kandev` | Discover parent / child / sibling / blocker task IDs |
 | `create_task_kandev` | Delegate work to a new subtask; returns the new task's ID |
 | `spawn_session_kandev` | Start another session on an existing task; returns `{task_id, session_id, state, agent_profile_id}`, where `agent_profile_id` is the effective profile after workflow resolution; use the `session_id` field to message the new session directly |
+| `recover_session_queue_kandev` | Read exact FIFO payloads and hashes from a terminal non-primary sibling on the current task without mutating its queue |
+| `close_task_session_kandev` | Safely archive or delete one terminal non-primary sibling on the current task and return its durable cleanup receipt |
 | `move_task_kandev` | Hand off a task to the next workflow step with an optional prompt for the receiving agent |
 | `create_task_plan_kandev` | Record an agreed implementation plan (both tasks can create/update their own plans) |
 | `get_task_plan_kandev` | Read a task's plan; useful before messaging to share a structured proposal |

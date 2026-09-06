@@ -1291,6 +1291,8 @@
   "sessionContext": "会话上下文",
   "sessionCount_one": "{{count}} 个会话",
   "sessionCount_other": "{{count}} 个会话",
+  "showSessionHistory": "显示会话历史记录",
+  "hideSessionHistory": "隐藏会话历史记录",
   "sessionFallbackLabel": "会话",
   "sessionModelSettings": "会话模型设置",
   "sessionNotReady": "会话未就绪",

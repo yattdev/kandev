@@ -5,6 +5,50 @@ import { SessionPage } from "../../pages/session-page";
 const DONE_STATES = ["COMPLETED", "WAITING_FOR_INPUT"];
 
 test.describe("mobile: session deletion", () => {
+  test("reveals terminal helper sessions through the mobile history control", async ({
+    testPage,
+    apiClient,
+    seedData,
+    prCapture,
+  }) => {
+    const task = await apiClient.createTask(seedData.workspaceId, "Mobile session history", {
+      workflow_id: seedData.workflowId,
+      workflow_step_id: seedData.startStepId,
+    });
+    const primary = await apiClient.seedTaskSession(task.id, {
+      state: "WAITING_FOR_INPUT",
+      agentProfileId: seedData.agentProfileId,
+      sessionId: `mobile-history-primary-${task.id}`,
+    });
+    const helper = await apiClient.seedTaskSession(task.id, {
+      state: "COMPLETED",
+      agentProfileId: seedData.agentProfileId,
+      sessionId: `mobile-history-helper-${task.id}`,
+      completedAt: "2026-09-01T00:00:00Z",
+    });
+    await apiClient.setPrimarySession(primary.session_id);
+
+    await testPage.goto(`/t/${task.id}`);
+    const session = new SessionPage(testPage);
+    await session.waitForLoad();
+    const layout = testPage.locator("[data-testid='mobile-task-layout']:visible");
+    await layout.getByTestId("mobile-sessions-pill").tap();
+    const sheet = testPage.getByRole("dialog", { name: "Sessions" });
+    const helperRow = sheet.getByTestId(`mobile-session-row-${helper.session_id}`);
+    await expect(helperRow).toHaveCount(0);
+    await prCapture.screenshot("session-history-hidden-mobile", {
+      caption: "Mobile session sheet with terminal helper sessions hidden by default",
+    });
+
+    const historyToggle = sheet.getByTestId("mobile-session-history-toggle");
+    await expect(historyToggle).toBeVisible();
+    await historyToggle.tap();
+    await expect(helperRow).toBeVisible();
+    await prCapture.screenshot("session-history-visible-mobile", {
+      caption: "Mobile session sheet after the history control reveals the terminal helper",
+    });
+  });
+
   test("deletes a session from the native session actions sheet", async ({
     testPage,
     apiClient,

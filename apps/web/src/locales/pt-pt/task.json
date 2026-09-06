@@ -1292,6 +1292,8 @@
   "sessionContext": "Contexto da sessão",
   "sessionCount_one": "{{count}} sessão",
   "sessionCount_other": "{{count}} sessões",
+  "showSessionHistory": "Mostrar histórico de sessões",
+  "hideSessionHistory": "Ocultar histórico de sessões",
   "sessionFallbackLabel": "Sessão",
   "sessionModelSettings": "Definições do modelo da sessão",
   "sessionNotReady": "A sessão não está pronta",

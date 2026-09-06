@@ -77,7 +77,7 @@ func (r *sqliteRepository) lockSessionTx(ctx context.Context, tx *sqlx.Tx, sessi
 // only queue tables) the guard is skipped — the presence check happens at
 // construction, never inside the transaction, because a failed statement
 // would abort the whole PostgreSQL transaction.
-func (r *sqliteRepository) guardActiveTaskTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
+func (r *sqliteRepository) guardActiveTaskTx(ctx context.Context, tx *sqlx.Tx, taskID, sessionID string) error {
 	if !r.tasksTablePresent {
 		return nil
 	}
@@ -91,6 +91,20 @@ func (r *sqliteRepository) guardActiveTaskTx(ctx context.Context, tx *sqlx.Tx, t
 	affected, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("guard active task rows affected: %w", err)
+	}
+	if affected == 0 {
+		return ErrTaskInactive
+	}
+	res, err = tx.ExecContext(ctx, r.db.Rebind(`
+		UPDATE task_sessions SET updated_at = updated_at
+		WHERE id = ? AND task_id = ? AND archived_at IS NULL
+	`), sessionID, taskID)
+	if err != nil {
+		return fmt.Errorf("guard queue session admission: %w", err)
+	}
+	affected, err = res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("guard queue session rows affected: %w", err)
 	}
 	if affected == 0 {
 		return ErrTaskInactive
@@ -122,6 +136,13 @@ func lockSessionTxIn(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, sessionID st
 		return fmt.Errorf("acquire queue session lock: %w", err)
 	}
 	return nil
+}
+
+// LockSessionInTransaction serializes a task-lifecycle transaction with every
+// queue mutation for one session. Callers must lock the owning task row first,
+// matching queue admission's task-row then session-lock order.
+func LockSessionInTransaction(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, sessionID string) error {
+	return lockSessionTxIn(ctx, tx, db, sessionID)
 }
 func (r *sqliteRepository) withSessionLock(sessionID string) func() {
 	r.mu.Lock()
@@ -211,7 +232,7 @@ func (r *sqliteRepository) Insert(ctx context.Context, msg *QueuedMessage, maxPe
 		return fmt.Errorf("begin insert tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID); err != nil {
+	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID, msg.SessionID); err != nil {
 		return err
 	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
@@ -285,7 +306,7 @@ func (r *sqliteRepository) RequeuePreservingFIFO(ctx context.Context, msg *Queue
 		return fmt.Errorf("begin requeue-fifo tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID); err != nil {
+	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID, msg.SessionID); err != nil {
 		return err
 	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
@@ -421,7 +442,7 @@ func (r *sqliteRepository) Restore(ctx context.Context, msg *QueuedMessage, maxP
 		return fmt.Errorf("begin restore tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID); err != nil {
+	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID, msg.SessionID); err != nil {
 		return err
 	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
@@ -470,7 +491,7 @@ func (r *sqliteRepository) AppendOrInsertTail(ctx context.Context, sessionID, ta
 		return nil, false, fmt.Errorf("begin append tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.guardActiveTaskTx(ctx, tx, taskID); err != nil {
+	if err := r.guardActiveTaskTx(ctx, tx, taskID, sessionID); err != nil {
 		return nil, false, err
 	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
@@ -552,7 +573,7 @@ func (r *sqliteRepository) InsertOrReplaceByCoalesceKey(ctx context.Context, msg
 		return nil, false, fmt.Errorf("begin coalesce tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID); err != nil {
+	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID, msg.SessionID); err != nil {
 		return nil, false, err
 	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
@@ -2054,7 +2075,7 @@ func (r *sqliteRepository) AutoMergeCandidateIntoAbove(ctx context.Context, cand
 	// task row: an archive/delete can commit between the failed insert and
 	// the fold, and the fold must not accept a message the purge will then
 	// silently delete. Task row first, then the session lock.
-	if err := r.guardActiveTaskTx(ctx, tx, candidate.TaskID); err != nil {
+	if err := r.guardActiveTaskTx(ctx, tx, candidate.TaskID, candidate.SessionID); err != nil {
 		return nil, false, err
 	}
 	if err := r.lockSessionTx(ctx, tx, candidate.SessionID); err != nil {

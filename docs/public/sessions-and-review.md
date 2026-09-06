@@ -77,7 +77,7 @@ Use **Threads** to read active task conversations side by side without opening e
 
 Threads shows one column for each task with an active primary agent session. The column header shows the task status, workflow context, and any explicit permission or question that needs your attention. A normal waiting state does not mean that the agent asked a question.
 
-On desktop, use the session tabs in a column to switch between any existing session for that task. On a phone, tap the session control and choose a session from the bottom sheet. The selected conversation keeps its normal reply controls, so you can answer the agent without leaving Threads.
+On desktop, use the session tabs in a column to switch between current sessions for that task. On a phone, tap the session control and choose a session from the bottom sheet. Archived and terminal helper sessions stay out of these ordinary lists; choose **Show session history** to reveal them. The selected conversation keeps its normal reply controls, so you can answer the agent without leaving Threads.
 
 Select **Open task** in a column when you need the complete task workbench. To link directly to a task and session, use a Threads URL with `taskId` and `sessionId` query parameters.
 
@@ -86,11 +86,13 @@ Select **Open task** in a column when you need the complete task workbench. To l
 
 ## Let agents coordinate sessions
 
-Task MCP gives an agent three session-coordination operations:
+Task MCP gives an agent five session-coordination operations:
 
 - `spawn_session_kandev` starts another session on the current task by default. It can select a profile and name, and can target another task in the same workspace. The new session shares the target task's environment; its supplied prompt is its initial context.
 - `message_task_kandev` sends work to a task's primary session or to an explicit session ID. A same-task sibling must be addressed by session ID, and a session cannot message itself.
 - `stop_task_kandev` asks the current task to halt all live sessions on one same-workspace direct child. It sends no prompt and has no session-specific option. A stopped session is `CANCELLED` and cannot be resumed, so `spawn_session_kandev` is how the task is put back to work.
+- `recover_session_queue_kandev` lets the task's current primary read exact FIFO payloads and hashes from one terminal non-primary sibling before cleanup.
+- `close_task_session_kandev` closes that exact sibling only when its queue and lifecycle state are safe, archiving transcript evidence and returning a durable cleanup receipt.
 
 Delivery follows the target state:
 

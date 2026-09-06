@@ -588,6 +588,28 @@ session, and the backend verifies that binding against the task workspace. If
 the tools are unavailable, preserve the queue and wait for normal FIFO delivery
 or use the authenticated queue UI. Do not use database edits as a fallback.
 
+### Recover queued work and close a helper session
+
+The current primary session can inspect a terminal helper session on its own
+task with `recover_session_queue_kandev(target_session_id)`. Unlike the
+body-free census, this scoped recovery response contains the exact FIFO message
+bodies, attachments, delivery fields, immutable IDs, and SHA-256 hashes needed
+to reconstruct pending work. It does not transfer or remove anything.
+
+After the recovery response is recorded, call
+`close_task_session_kandev(target_session_id)`. Cleanup rejects the current
+primary, live or non-terminal sessions, cross-task targets, pending lifecycle
+actions, and every non-empty queue. An empty session is hard-deleted only when
+it has no retained transcript evidence; otherwise Kandev archives it. The
+response is a durable, body-free receipt containing the exact task, workspace,
+session, disposition, queue count, evidence decision, and timestamp. Retrying a
+completed cleanup returns the same receipt.
+
+Archived and terminal helper sessions are hidden from ordinary session tabs and
+pickers. Use **Show session history** in the desktop session controls or mobile
+session sheet to inspect them. No cleanup tool accepts a task or workspace
+override, clear-all switch, or force option.
+
 Trusted scheduled automation messages use the same durable queue with an
 additional guard. The Host derives routine identity from the authenticated
 workspace, routine type/name, policy generation, and semantic scope
