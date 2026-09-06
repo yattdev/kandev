@@ -1,0 +1,37 @@
+{
+  "generated_at": "2026-09-06T02:13:13.527Z",
+  "assets": [
+    {
+      "name": "session-history-hidden-desktop",
+      "type": "screenshot",
+      "format": "png",
+      "file": "preview-session-tabs--session-history-hidden-desktop.png",
+      "test": "preview-session-tabs.spec.ts",
+      "caption": "Desktop preview with terminal helper sessions hidden from the ordinary tab strip"
+    },
+    {
+      "name": "session-history-visible-desktop",
+      "type": "screenshot",
+      "format": "png",
+      "file": "preview-session-tabs--session-history-visible-desktop.png",
+      "test": "preview-session-tabs.spec.ts",
+      "caption": "Desktop preview after Show session history reveals the terminal helper"
+    },
+    {
+      "name": "session-history-hidden-mobile",
+      "type": "screenshot",
+      "format": "png",
+      "file": "mobile-session-deletion--session-history-hidden-mobile.png",
+      "test": "mobile-session-deletion.spec.ts",
+      "caption": "Mobile session sheet with terminal helper sessions hidden by default"
+    },
+    {
+      "name": "session-history-visible-mobile",
+      "type": "screenshot",
+      "format": "png",
+      "file": "mobile-session-deletion--session-history-visible-mobile.png",
+      "test": "mobile-session-deletion.spec.ts",
+      "caption": "Mobile session sheet after the history control reveals the terminal helper"
+    }
+  ]
+}
