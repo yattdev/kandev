@@ -66,6 +66,16 @@ const MetadataLifecycleGeneration = "lifecycle_queue_generation"
 // compatibility.
 const MetadataLifecycleReserved = "lifecycle_reserved_in_flight"
 
+// MetadataRecoverySourceSessionID preserves the first session identity from
+// which a terminal-session recovery moved this entry. The active session_id
+// must change so the replacement can drain the row, while this immutable
+// provenance remains attached to the recovered queue entry.
+const MetadataRecoverySourceSessionID = "recovery_source_session_id"
+
+// MetadataRecoverySourcePosition preserves the entry's FIFO position in its
+// original session before recovery appends the batch to the replacement.
+const MetadataRecoverySourcePosition = "recovery_source_position"
+
 // MetadataSenderTaskID identifies the task that produced an agent message. Two
 // agent entries may only merge when their sender task ids match, so the merge
 // never mixes prompts issued by different agents.

@@ -26,14 +26,15 @@ func (h *Handlers) handleRecoverSessionQueue(ctx context.Context, msg *ws.Messag
 	if h.queueManager == nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "message queue recovery is not available", nil)
 	}
-	entries, err := h.queueManager.RecoverySnapshot(ctx, req.TargetSessionID)
+	entries, err := h.queueManager.RecoverSessionQueue(ctx, req.TargetSessionID, req.CallerSessionID)
 	if err != nil {
 		h.logger.Error("session queue recovery failed", zap.String("target_session_id", req.TargetSessionID), zap.Error(err))
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "failed to recover session queue", nil)
 	}
 	return ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
 		"task_id": req.TaskID, "source_session_id": req.TargetSessionID,
-		"entries": entries, "readback_count": len(entries),
+		"destination_session_id": req.CallerSessionID,
+		"entries":                entries, "readback_count": len(entries),
 	})
 }
 

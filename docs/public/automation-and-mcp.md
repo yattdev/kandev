@@ -590,13 +590,16 @@ or use the authenticated queue UI. Do not use database edits as a fallback.
 
 ### Recover queued work and close a helper session
 
-The current primary session can inspect a terminal helper session on its own
-task with `recover_session_queue_kandev(target_session_id)`. Unlike the
-body-free census, this scoped recovery response contains the exact FIFO message
-bodies, attachments, delivery fields, immutable IDs, and SHA-256 hashes needed
-to reconstruct pending work. It does not transfer or remove anything.
+The current primary session can recover a terminal helper session's queue on
+its own task with `recover_session_queue_kandev(target_session_id)`. The
+operation atomically moves the complete source FIFO to the tail of the current
+primary's queue and returns the exact pre-move message bodies, attachments,
+delivery fields, immutable IDs, source positions, SHA-256 hashes, and prior
+in-flight state. Durable rows left reserved by a crashed delivery are included
+in the readback and restored to pending as part of the same transaction.
+Retrying after success returns an empty batch without duplicating entries.
 
-After the recovery response is recorded, call
+After recording the recovery response, call
 `close_task_session_kandev(target_session_id)`. Cleanup rejects the current
 primary, live or non-terminal sessions, cross-task targets, pending lifecycle
 actions, and every non-empty queue. An empty session is hard-deleted only when

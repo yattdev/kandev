@@ -1336,8 +1336,8 @@ func (s *Server) registerKanbanTools() {
 	)
 	s.mcpServer.AddTool(
 		mcp.NewTool("recover_session_queue_kandev",
-			mcp.WithDescription("Read the exact FIFO payloads and immutable hashes still queued on a terminal non-primary session of the calling task. Only the task's current primary session may call this tool. It never removes or transfers entries."),
-			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDescription("Atomically recover every queued entry from a terminal non-primary session of the calling task into the current primary session. Returns the exact original FIFO payloads and hashes, restores crashed in-flight durable rows to pending, and preserves entry identity. Only the task's current primary session may call this tool."),
+			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithOpenWorldHintAnnotation(false),

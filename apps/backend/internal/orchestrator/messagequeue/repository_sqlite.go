@@ -30,6 +30,11 @@ type sqliteRepository struct {
 	// the whole transaction — the guard must never issue its UPDATE against a
 	// missing table inside a tx.
 	tasksTablePresent bool
+
+	// failQueueRecoveryAfter is a test-only failpoint that aborts recovery
+	// after the requested number of row updates. The surrounding transaction
+	// must roll back every prior update.
+	failQueueRecoveryAfter int
 }
 
 // NewSQLiteRepository creates a SQLite-backed Repository. The supplied writer
@@ -2565,6 +2570,97 @@ func (r *sqliteRepository) TransferSession(ctx context.Context, oldSessionID, ne
 		return fmt.Errorf("clear source queue auto-run: %w", err)
 	}
 	return tx.Commit()
+}
+
+// RecoverSessionQueue atomically returns and moves the complete source FIFO.
+func (r *sqliteRepository) RecoverSessionQueue(
+	ctx context.Context,
+	oldSessionID, newSessionID string,
+) ([]QueuedMessage, error) {
+	first, second := oldSessionID, newSessionID
+	if first > second {
+		first, second = second, first
+	}
+	unlockFirst := r.withSessionLock(first)
+	defer unlockFirst()
+	if first != second {
+		unlockSecond := r.withSessionLock(second)
+		defer unlockSecond()
+	}
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin queue recovery tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockSessionTx(ctx, tx, first); err != nil {
+		return nil, err
+	}
+	if first != second {
+		if err := r.lockSessionTx(ctx, tx, second); err != nil {
+			return nil, err
+		}
+	}
+	if oldSessionID == newSessionID {
+		return nil, ErrInvalidQueueDisposition
+	}
+	ordered, _, err := r.listOrderedStoredSessionEntries(ctx, tx, oldSessionID)
+	if err != nil {
+		return nil, err
+	}
+	var destMax sql.NullInt64
+	if err := tx.GetContext(ctx, &destMax, r.db.Rebind(`SELECT MAX(position) FROM queued_messages WHERE session_id = ?`), newSessionID); err != nil {
+		return nil, fmt.Errorf("recover queue destination max: %w", err)
+	}
+	recovered, err := r.recoverQueueRows(ctx, tx, ordered, oldSessionID, newSessionID, destMax.Int64)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return recovered, nil
+}
+
+func (r *sqliteRepository) recoverQueueRows(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	ordered []storedQueueEntry,
+	oldSessionID, newSessionID string,
+	destinationPosition int64,
+) ([]QueuedMessage, error) {
+	recovered := make([]QueuedMessage, 0, len(ordered))
+	for index, stored := range ordered {
+		message := stored.message
+		recovered = append(recovered, *cloneQueuedMessage(message))
+		metadataJSON, marshalErr := marshalMetadata(recoveryMetadata(message.Metadata, oldSessionID, message.Position))
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		result, updateErr := tx.ExecContext(ctx, r.db.Rebind(`
+			UPDATE queued_messages
+			SET session_id = ?, position = ?, metadata_json = ?
+			WHERE id = ? AND session_id = ? AND metadata_json = ?
+		`), newSessionID, destinationPosition+int64(index)+1, metadataJSON,
+			message.ID, oldSessionID, stored.raw)
+		if updateErr != nil {
+			return nil, fmt.Errorf("recover queued entry: %w", updateErr)
+		}
+		affected, rowsErr := result.RowsAffected()
+		if rowsErr != nil {
+			return nil, rowsErr
+		}
+		if affected != 1 {
+			return nil, ErrQueueChanged
+		}
+		if r.failQueueRecoveryAfter > 0 {
+			r.failQueueRecoveryAfter--
+			if r.failQueueRecoveryAfter == 0 {
+				return nil, errors.New("injected queue recovery failure")
+			}
+		}
+	}
+	return recovered, nil
 }
 
 // ReplaceSession replaces a session's queue with the supplied snapshot.

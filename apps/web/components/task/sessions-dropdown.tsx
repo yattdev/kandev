@@ -22,7 +22,7 @@ import { TaskCreateDialog } from "../task-create-dialog";
 import { useAppStore, useAppStoreApi } from "@/components/state-provider";
 
 import { useTaskSessions } from "@/hooks/use-task-sessions";
-import { performLayoutSwitch } from "@/lib/state/dockview-store";
+import { performLayoutSwitch, useDockviewStore } from "@/lib/state/dockview-store";
 import type { ForegroundActivity, TaskSession, TaskSessionState } from "@/lib/types/http";
 import { getSessionStateIcon } from "@/lib/ui/state-icons";
 import { getWebSocketClient } from "@/lib/ws/connection";
@@ -239,7 +239,10 @@ export const SessionsDropdown = memo(function SessionsDropdown({
 }: SessionsDropdownProps) {
   const [showNewSessionDialog, setShowNewSessionDialog] = useState(false);
   const [open, setOpen] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const showHistory = useDockviewStore((state) =>
+    taskId ? (state.sessionHistoryVisibleByTaskId[taskId] ?? false) : false,
+  );
+  const setSessionHistoryVisible = useDockviewStore((state) => state.setSessionHistoryVisible);
   const storePrimarySessionId = useAppStore((state) => {
     const activeTaskId = state.tasks.activeTaskId;
     if (!activeTaskId) return null;
@@ -300,7 +303,9 @@ export const SessionsDropdown = memo(function SessionsDropdown({
         <SessionDropdownContent
           sortedSessions={visibleSessions}
           showHistory={showHistory}
-          onToggleHistory={() => setShowHistory((current) => !current)}
+          onToggleHistory={() => {
+            if (taskId) setSessionHistoryVisible(taskId, !showHistory);
+          }}
           activeSessionId={activeSessionId}
           primarySessionId={primarySessionId}
           currentTime={currentTime}

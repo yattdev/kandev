@@ -2839,58 +2839,99 @@ func unmarshalSessionSnapshots(
 // deletion, so a concurrent enqueue either lands first and blocks deletion or
 // observes the missing session after deletion.
 func (r *Repository) DeleteTaskSession(ctx context.Context, id string) error {
+	return r.deleteTaskSession(ctx, id, false)
+}
+
+// DeletePreparedTaskSession compensates a failed launch before the prepared
+// session becomes observable as running. It is deliberately narrower than
+// DeleteTaskSession: CREATED is the only state allowed to bypass the primary
+// guard used by user-facing cleanup.
+func (r *Repository) DeletePreparedTaskSession(ctx context.Context, id string) error {
+	return r.deleteTaskSession(ctx, id, true)
+}
+
+type sessionCleanupIdentity struct {
+	TaskID      string `db:"task_id"`
+	WorkspaceID string `db:"workspace_id"`
+}
+
+func (r *Repository) deleteTaskSession(ctx context.Context, id string, requirePrepared bool) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var taskIdentity struct {
-		TaskID      string `db:"task_id"`
-		WorkspaceID string `db:"workspace_id"`
+	taskIdentity, err := r.lockTaskSessionForDelete(ctx, tx, id, requirePrepared)
+	if err != nil {
+		return err
 	}
+	pending, err := r.validateSessionDeleteQueue(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	return r.finishTaskSessionDelete(ctx, tx, taskIdentity, id, pending)
+}
+
+func (r *Repository) lockTaskSessionForDelete(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	id string,
+	requirePrepared bool,
+) (sessionCleanupIdentity, error) {
+	var taskIdentity sessionCleanupIdentity
 	if err := tx.GetContext(ctx, &taskIdentity, r.db.Rebind(`
 		SELECT ts.task_id, t.workspace_id
 		FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
 		WHERE ts.id = ?
 	`), id); err != nil {
-		return fmt.Errorf("agent session not found: %s: %w", id, err)
+		return taskIdentity, fmt.Errorf("agent session not found: %s: %w", id, err)
 	}
 	taskID := taskIdentity.TaskID
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET updated_at = updated_at WHERE id = ?`), taskID)
 	if err != nil {
-		return fmt.Errorf("lock task for session delete: %w", err)
+		return taskIdentity, fmt.Errorf("lock task for session delete: %w", err)
 	}
 	if rows, rowsErr := result.RowsAffected(); rowsErr != nil || rows == 0 {
-		return fmt.Errorf("lock task for session delete: task not found: %s", taskID)
+		return taskIdentity, fmt.Errorf("lock task for session delete: task not found: %s", taskID)
 	}
-	result, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_sessions SET updated_at = updated_at WHERE id = ? AND task_id = ?`), id, taskID)
-	if err != nil {
-		return fmt.Errorf("lock session for delete: %w", err)
+	if err := r.lockAndValidateSessionDelete(ctx, tx, id, taskID, requirePrepared); err != nil {
+		return taskIdentity, err
 	}
-	if rows, rowsErr := result.RowsAffected(); rowsErr != nil || rows == 0 {
-		return fmt.Errorf("agent session not found: %s", id)
-	}
+	return taskIdentity, nil
+}
+
+func (r *Repository) validateSessionDeleteQueue(ctx context.Context, tx *sqlx.Tx, id string) (int, error) {
 	if err := messagequeue.LockSessionInTransaction(ctx, tx, r.db, id); err != nil {
-		return fmt.Errorf("lock queue for session delete: %w", err)
+		return 0, fmt.Errorf("lock queue for session delete: %w", err)
 	}
 	var pending int
 	if err := tx.GetContext(ctx, &pending, r.db.Rebind(`SELECT COUNT(*) FROM queued_messages WHERE session_id = ?`), id); err != nil {
 		if !db.IsMissingTableError(err) {
-			return fmt.Errorf("inspect pending queue for session %s: %w", id, err)
+			return 0, fmt.Errorf("inspect pending queue for session %s: %w", id, err)
 		}
 	}
 	if pending > 0 {
-		return fmt.Errorf("cannot delete session %s: %d pending queue entries remain; inspect and dispose or recover them first", id, pending)
+		return 0, fmt.Errorf("cannot delete session %s: %d pending queue entries remain; inspect and dispose or recover them first", id, pending)
 	}
 	var pendingMove int
 	if err := tx.GetContext(ctx, &pendingMove, r.db.Rebind(`SELECT COUNT(*) FROM pending_moves WHERE session_id = ?`), id); err != nil {
 		if !db.IsMissingTableError(err) {
-			return fmt.Errorf("inspect pending lifecycle action for session %s: %w", id, err)
+			return 0, fmt.Errorf("inspect pending lifecycle action for session %s: %w", id, err)
 		}
 	}
 	if pendingMove > 0 {
-		return fmt.Errorf("cannot delete session %s: a pending lifecycle action remains", id)
+		return 0, fmt.Errorf("cannot delete session %s: a pending lifecycle action remains", id)
 	}
+	return pending, nil
+}
+
+func (r *Repository) finishTaskSessionDelete(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	taskIdentity sessionCleanupIdentity,
+	id string,
+	pending int,
+) error {
 	var evidence int
 	if err := tx.GetContext(ctx, &evidence, r.db.Rebind(`
 		SELECT CASE WHEN
@@ -2919,7 +2960,7 @@ func (r *Repository) DeleteTaskSession(ctx context.Context, id string) error {
 		return err
 	}
 
-	result, err = tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_sessions WHERE id = ?`), id)
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_sessions WHERE id = ?`), id)
 	if err != nil {
 		return err
 	}
@@ -2940,13 +2981,41 @@ func (r *Repository) DeleteTaskSession(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
+func (r *Repository) lockAndValidateSessionDelete(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	id, taskID string,
+	requirePrepared bool,
+) error {
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_sessions SET updated_at = updated_at WHERE id = ? AND task_id = ?`), id, taskID)
+	if err != nil {
+		return fmt.Errorf("lock session for delete: %w", err)
+	}
+	if rows, rowsErr := result.RowsAffected(); rowsErr != nil || rows == 0 {
+		return fmt.Errorf("agent session not found: %s", id)
+	}
+	var lockedSession struct {
+		IsPrimary bool                    `db:"is_primary"`
+		State     models.TaskSessionState `db:"state"`
+	}
+	if err := tx.GetContext(ctx, &lockedSession, r.db.Rebind(`
+		SELECT is_primary, state FROM task_sessions WHERE id = ? AND task_id = ?
+	`), id, taskID); err != nil {
+		return fmt.Errorf("revalidate session before delete: %w", err)
+	}
+	if requirePrepared && lockedSession.State != models.TaskSessionStateCreated {
+		return fmt.Errorf("cannot compensate session %s in state %s; only an unlaunched prepared session can be deleted", id, lockedSession.State)
+	}
+	if lockedSession.IsPrimary && !requirePrepared {
+		return fmt.Errorf("cannot close the primary session %s; promote a replacement first", id)
+	}
+	return nil
+}
+
 func (r *Repository) insertTaskSessionCleanupReceipt(
 	ctx context.Context,
 	tx *sqlx.Tx,
-	identity struct {
-		TaskID      string `db:"task_id"`
-		WorkspaceID string `db:"workspace_id"`
-	},
+	identity sessionCleanupIdentity,
 	sessionID, disposition string,
 	queueBeforeCount int,
 	evidenceRetained bool,

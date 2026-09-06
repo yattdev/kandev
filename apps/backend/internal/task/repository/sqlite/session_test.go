@@ -187,6 +187,60 @@ func TestDeleteTaskSessionPersistsExactCleanupReceipt(t *testing.T) {
 	}
 }
 
+func TestDeleteTaskSessionRejectsSessionPromotedAfterPreflight(t *testing.T) {
+	repo := newRepoForSessionTests(t)
+	ctx := context.Background()
+	const (
+		taskID    = "task-primary-cleanup-race"
+		primaryID = "session-original-primary"
+		cleanupID = "session-cleanup-target"
+	)
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, Title: "Primary cleanup race"}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: primaryID, TaskID: taskID, IsPrimary: true}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: cleanupID, TaskID: taskID}))
+
+	// Model the exact deterministic interleaving: service preflight observes a
+	// non-primary cleanup target, then another caller promotes it before the
+	// repository cleanup transaction begins.
+	preflight, err := repo.GetTaskSession(ctx, cleanupID)
+	require.NoError(t, err)
+	require.False(t, preflight.IsPrimary)
+	require.NoError(t, repo.SetSessionPrimary(ctx, cleanupID))
+
+	err = repo.DeleteTaskSession(ctx, cleanupID)
+	require.ErrorContains(t, err, "primary session")
+	retained, readErr := repo.GetTaskSession(ctx, cleanupID)
+	require.NoError(t, readErr)
+	require.True(t, retained.IsPrimary)
+	_, receiptErr := repo.GetTaskSessionCleanupReceipt(ctx, taskID, cleanupID)
+	require.Error(t, receiptErr)
+}
+
+func TestDeletePreparedTaskSessionOnlyCompensatesCreatedSession(t *testing.T) {
+	repo := newRepoForSessionTests(t)
+	ctx := context.Background()
+
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "task-prepared-cleanup", Title: "Prepared cleanup"}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{
+		ID: "session-prepared-primary", TaskID: "task-prepared-cleanup",
+		State: models.TaskSessionStateCreated, IsPrimary: true,
+	}))
+	require.NoError(t, repo.DeletePreparedTaskSession(ctx, "session-prepared-primary"))
+	_, err := repo.GetTaskSession(ctx, "session-prepared-primary")
+	require.Error(t, err)
+
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "task-running-cleanup", Title: "Running cleanup"}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{
+		ID: "session-running-primary", TaskID: "task-running-cleanup",
+		State: models.TaskSessionStateRunning, IsPrimary: true,
+	}))
+	err = repo.DeletePreparedTaskSession(ctx, "session-running-primary")
+	require.ErrorContains(t, err, "only an unlaunched prepared session")
+	retained, readErr := repo.GetTaskSession(ctx, "session-running-primary")
+	require.NoError(t, readErr)
+	require.True(t, retained.IsPrimary)
+}
+
 func TestCreateOfficeTaskSessionMarksOnlyTheFirstConcurrentSessionAsOrigin(t *testing.T) {
 	repo := newRepoForSessionTests(t)
 	ctx := context.Background()

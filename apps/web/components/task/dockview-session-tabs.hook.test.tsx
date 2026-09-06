@@ -40,9 +40,45 @@ function renderHookWithHydratedSessions() {
   );
 }
 
+function renderHookWithTerminalHistory() {
+  const sessions = [
+    {
+      id: ACTIVE_SESSION_ID,
+      task_id: TASK_ID,
+      state: "WAITING_FOR_INPUT",
+      is_primary: true,
+    } as TaskSession,
+    {
+      id: SIBLING_SESSION_ID,
+      task_id: TASK_ID,
+      state: "COMPLETED",
+      is_primary: false,
+    } as TaskSession,
+  ];
+
+  return render(
+    <StateProvider
+      initialState={{
+        ...defaultState,
+        tasks: {
+          ...defaultState.tasks,
+          activeTaskId: TASK_ID,
+          activeSessionId: ACTIVE_SESSION_ID,
+        },
+        taskSessionsByTask: {
+          ...defaultState.taskSessionsByTask,
+          itemsByTaskId: { [TASK_ID]: sessions },
+        },
+      }}
+    >
+      <Harness />
+    </StateProvider>,
+  );
+}
+
 afterEach(() => {
   cleanup();
-  useDockviewStore.setState({ api: null });
+  useDockviewStore.setState({ api: null, sessionHistoryVisibleByTaskId: {} });
 });
 
 describe("useAutoSessionTab", () => {
@@ -59,5 +95,26 @@ describe("useAutoSessionTab", () => {
     expect(api.panels.map((panel) => panel.id)).toEqual(
       expect.arrayContaining([`session:${ACTIVE_SESSION_ID}`, `session:${SIBLING_SESSION_ID}`]),
     );
+  });
+
+  it("hides terminal helper panels until desktop history is explicitly shown", () => {
+    const { api } = makeReorderingAutoSessionApi();
+    useDockviewStore.setState({ api: api as DockviewApi, sessionHistoryVisibleByTaskId: {} });
+    renderHookWithTerminalHistory();
+
+    expect(api.panels.map((panel) => panel.id)).toContain(`session:${ACTIVE_SESSION_ID}`);
+    expect(api.panels.map((panel) => panel.id)).not.toContain(`session:${SIBLING_SESSION_ID}`);
+
+    act(() => {
+      useDockviewStore.getState().setSessionHistoryVisible(TASK_ID, true);
+    });
+    expect(api.panels.map((panel) => panel.id)).toContain(`session:${ACTIVE_SESSION_ID}`);
+    expect(api.panels.map((panel) => panel.id)).toContain(`session:${SIBLING_SESSION_ID}`);
+
+    act(() => {
+      useDockviewStore.getState().setSessionHistoryVisible(TASK_ID, false);
+    });
+    expect(api.panels.map((panel) => panel.id)).not.toContain(`session:${SIBLING_SESSION_ID}`);
+    expect(api.panels.map((panel) => panel.id)).toContain(`session:${ACTIVE_SESSION_ID}`);
   });
 });

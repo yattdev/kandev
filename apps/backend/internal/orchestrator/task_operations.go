@@ -1489,7 +1489,7 @@ func (s *Service) prepareSessionForStart(
 		// session row. Compensate before returning so callers never observe a
 		// partial sibling session when the required parent/group workspace is
 		// unavailable.
-		if deleteErr := s.repo.DeleteTaskSession(ctx, sessionID); deleteErr != nil {
+		if deleteErr := s.repo.DeletePreparedTaskSession(ctx, sessionID); deleteErr != nil {
 			s.logger.Warn("failed to compensate inherited workspace session",
 				zap.String("session_id", sessionID), zap.Error(deleteErr))
 		}

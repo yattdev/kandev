@@ -228,6 +228,123 @@ func TestExactDispositionPreservesReservedLifecycleRows(t *testing.T) {
 	}
 }
 
+func TestRecoverSessionQueueMovesExactFIFOAndRestoresReservedRows(t *testing.T) {
+	tests := []struct {
+		name string
+		new  func(*testing.T) Repository
+	}{
+		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
+		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := tt.new(t)
+			svc := censusTestService(t, repo)
+			ctx := context.Background()
+			destinationHead, err := svc.QueueMessage(ctx, "replacement", "task-1", "already queued", "", QueuedByUser, false, nil)
+			if err != nil {
+				t.Fatalf("queue destination head: %v", err)
+			}
+			first, err := svc.QueueMessageWithMetadata(
+				ctx, "retired", "task-1", "durable first", "model-a", QueuedByWorkflow, false, nil,
+				map[string]interface{}{MetadataLifecycleDurable: true},
+			)
+			if err != nil {
+				t.Fatalf("queue durable source: %v", err)
+			}
+			second, err := svc.QueueMessage(ctx, "retired", "task-1", "ordinary second", "model-b", QueuedByAgent, true, nil)
+			if err != nil {
+				t.Fatalf("queue ordinary source: %v", err)
+			}
+			if _, err := repo.ReserveHead(ctx, "retired"); err != nil {
+				t.Fatalf("reserve durable source: %v", err)
+			}
+
+			recovered, err := svc.RecoverSessionQueue(ctx, "retired", "replacement")
+			if err != nil {
+				t.Fatalf("recover session queue: %v", err)
+			}
+			if len(recovered) != 2 || recovered[0].ID != first.ID || recovered[1].ID != second.ID {
+				t.Fatalf("recovered FIFO = %#v", recovered)
+			}
+			if recovered[0].SessionID != "retired" || recovered[1].SessionID != "retired" ||
+				recovered[0].Content != "durable first" || recovered[1].Content != "ordinary second" {
+				t.Fatalf("exact recovery readback = %#v", recovered)
+			}
+			if recovered[0].ContentSHA256 != "b4e77df26e8000f3cb4f65bf40e7cdbebc7c600d77d0cd2041b8092cfe2942ff" ||
+				recovered[1].ContentSHA256 != "a5379d10fff8216cdafbc7a9809f6ef3c5d7f1943edd067337dcb81fcb9636ee" {
+				t.Fatalf("recovered hashes = %#v", recovered)
+			}
+
+			source, err := repo.ListBySession(ctx, "retired")
+			if err != nil || len(source) != 0 {
+				t.Fatalf("source after recovery = %#v, err=%v", source, err)
+			}
+			destination, err := repo.ListBySession(ctx, "replacement")
+			if err != nil {
+				t.Fatalf("list destination: %v", err)
+			}
+			if len(destination) != 3 || destination[0].ID != destinationHead.ID ||
+				destination[1].ID != first.ID || destination[2].ID != second.ID {
+				t.Fatalf("destination FIFO = %#v", destination)
+			}
+			if destination[1].IsReservedInFlight() {
+				t.Fatalf("recovered durable row remained reserved: %#v", destination[1])
+			}
+
+			retry, err := svc.RecoverSessionQueue(ctx, "retired", "replacement")
+			if err != nil || len(retry) != 0 {
+				t.Fatalf("idempotent retry = %#v, err=%v", retry, err)
+			}
+		})
+	}
+}
+
+func TestRecoverSessionQueueRollsBackEveryRowOnFailure(t *testing.T) {
+	repo := newTestSQLiteRepo(t).(*sqliteRepository)
+	svc := censusTestService(t, repo)
+	ctx := context.Background()
+	destination, err := svc.QueueMessage(ctx, "replacement", "task-1", "destination", "", QueuedByUser, false, nil)
+	if err != nil {
+		t.Fatalf("queue destination: %v", err)
+	}
+	first, err := svc.QueueMessageWithMetadata(
+		ctx, "retired", "task-1", "durable", "", QueuedByWorkflow, false, nil,
+		map[string]interface{}{MetadataLifecycleDurable: true},
+	)
+	if err != nil {
+		t.Fatalf("queue first: %v", err)
+	}
+	second, err := svc.QueueMessage(ctx, "retired", "task-1", "ordinary", "", QueuedByAgent, false, nil)
+	if err != nil {
+		t.Fatalf("queue second: %v", err)
+	}
+	if _, err := repo.ReserveHead(ctx, "retired"); err != nil {
+		t.Fatalf("reserve first: %v", err)
+	}
+	repo.failQueueRecoveryAfter = 1
+
+	if _, err := svc.RecoverSessionQueue(ctx, "retired", "replacement"); err == nil {
+		t.Fatal("recovery succeeded despite injected mid-transaction failure")
+	}
+	source, err := repo.ListBySession(ctx, "retired")
+	if err != nil {
+		t.Fatalf("list source after rollback: %v", err)
+	}
+	if len(source) != 2 || source[0].ID != first.ID || source[1].ID != second.ID || !source[0].IsReservedInFlight() {
+		t.Fatalf("source after rollback = %#v", source)
+	}
+	kept, err := repo.ListBySession(ctx, "replacement")
+	if err != nil {
+		t.Fatalf("list destination after rollback: %v", err)
+	}
+	if len(kept) != 1 || kept[0].ID != destination.ID {
+		t.Fatalf("destination after rollback = %#v", kept)
+	}
+}
+
 func TestIdenticalRoutineWakeCoalescingIsConcurrentRestartDurableAndCapacitySafe(t *testing.T) {
 	tests := []struct {
 		name string

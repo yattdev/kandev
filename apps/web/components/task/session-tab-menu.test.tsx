@@ -23,7 +23,9 @@ describe("DeleteSessionDialog", () => {
     );
 
     const dialog = screen.getByRole("alertdialog");
-    expect(dialog.textContent).toContain("permanently delete the conversation history");
+    expect(dialog.textContent).toContain(
+      "conversation history may remain available in session history",
+    );
     expect(dialog.textContent).toContain("task workspace and its files are kept");
     expect(dialog.textContent).toContain("only session for this task");
     const description = dialog.querySelector('[data-slot="alert-dialog-description"]');

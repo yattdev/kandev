@@ -66,13 +66,20 @@ func cleanupHandlers(t *testing.T) (*Handlers, *messagequeue.Service, *cleanupSe
 
 func TestRecoverSessionQueueReturnsExactFIFOToCurrentPrimary(t *testing.T) {
 	h, queue, _, _ := cleanupHandlers(t)
-	first, err := queue.QueueMessage(context.Background(), "target", "task-1", "first exact body", "model-a", messagequeue.QueuedByAgent, false, nil)
+	first, err := queue.QueueMessageWithMetadata(
+		context.Background(), "target", "task-1", "first exact body", "model-a", messagequeue.QueuedByWorkflow, false, nil,
+		map[string]interface{}{messagequeue.MetadataLifecycleDurable: true},
+	)
 	if err != nil {
 		t.Fatalf("queue first: %v", err)
 	}
 	second, err := queue.QueueMessage(context.Background(), "target", "task-1", "second exact body", "model-b", messagequeue.QueuedByUser, true, nil)
 	if err != nil {
 		t.Fatalf("queue second: %v", err)
+	}
+	reserved, ok := queue.ReserveQueued(context.Background(), "target")
+	if !ok || reserved == nil || reserved.ID != first.ID {
+		t.Fatalf("reserve durable first = %#v, ok=%t", reserved, ok)
 	}
 	resp, err := h.handleRecoverSessionQueue(
 		queuePrincipal("workspace-1", "task-1", "caller"),
@@ -98,6 +105,16 @@ func TestRecoverSessionQueueReturnsExactFIFOToCurrentPrimary(t *testing.T) {
 	if payload.Entries[0].ContentSHA256 != "b8c1a59e8cee69b502e3411acb6090e2f13460f0681191b6e68ca5e13b753623" ||
 		payload.Entries[1].ContentSHA256 != "4a4d5c998b5977a1daa3bccac736b92f22af36e5e467e31f909fa7bd88c39f8e" {
 		t.Fatalf("exact readback hashes = %#v", payload.Entries)
+	}
+	if !payload.Entries[0].ReservedInFlight {
+		t.Fatalf("reserved source state missing from readback: %#v", payload.Entries[0])
+	}
+	if source := queue.GetStatus(context.Background(), "target"); source.Count != 0 {
+		t.Fatalf("source queue after recovery = %#v", source)
+	}
+	destination := queue.GetStatus(context.Background(), "caller")
+	if destination.Count != 2 || destination.Entries[0].ID != first.ID || destination.Entries[1].ID != second.ID {
+		t.Fatalf("destination FIFO after recovery = %#v", destination)
 	}
 }
 

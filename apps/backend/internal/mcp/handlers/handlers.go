@@ -234,6 +234,7 @@ type CoordinatorQueueManager interface {
 	Census(ctx context.Context, sessionID string) (*messagequeue.QueueCensus, error)
 	DisposeExact(ctx context.Context, sessionID string, claims []messagequeue.QueueEntryClaim) (*messagequeue.QueueDispositionResult, error)
 	RecoverySnapshot(ctx context.Context, sessionID string) ([]messagequeue.QueueRecoveryEntry, error)
+	RecoverSessionQueue(ctx context.Context, sourceSessionID, destinationSessionID string) ([]messagequeue.QueueRecoveryEntry, error)
 }
 
 type SessionCloser interface {

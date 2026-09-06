@@ -1076,6 +1076,36 @@ func (r *memoryRepository) TransferSession(_ context.Context, oldSessionID, newS
 	return nil
 }
 
+// RecoverSessionQueue atomically returns and moves the complete source FIFO.
+func (r *memoryRepository) RecoverSessionQueue(_ context.Context, oldSessionID, newSessionID string) ([]QueuedMessage, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if oldSessionID == newSessionID {
+		return nil, ErrInvalidQueueDisposition
+	}
+	list := r.entries[oldSessionID]
+	recovered := make([]QueuedMessage, 0, len(list))
+	var destMax int64
+	for _, message := range r.entries[newSessionID] {
+		if message.Position > destMax {
+			destMax = message.Position
+		}
+	}
+	for index, message := range list {
+		recovered = append(recovered, *cloneQueuedMessage(message))
+		message.Metadata = recoveryMetadata(message.Metadata, oldSessionID, message.Position)
+		message.SessionID = newSessionID
+		message.Position = destMax + int64(index) + 1
+	}
+	if len(list) > 0 {
+		r.entries[newSessionID] = append(r.entries[newSessionID], list...)
+		r.nextPosition[newSessionID] = destMax + int64(len(list))
+		delete(r.entries, oldSessionID)
+		delete(r.nextPosition, oldSessionID)
+	}
+	return recovered, nil
+}
+
 // ReplaceSession replaces a session's queue with the supplied snapshot.
 func (r *memoryRepository) ReplaceSession(_ context.Context, sessionID string, entries []QueuedMessage, pendingMove *PendingMove) error {
 	r.mu.Lock()
