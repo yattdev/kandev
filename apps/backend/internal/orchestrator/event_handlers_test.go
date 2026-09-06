@@ -780,7 +780,7 @@ func (m *mockAgentManager) GetExecutionIDForSession(ctx context.Context, session
 			return running.AgentExecutionID, nil
 		}
 	}
-	return "", fmt.Errorf("no execution found")
+	return "", fmt.Errorf("%w: %s", lifecycle.ErrNoExecutionForSession, sessionID)
 }
 
 func (m *mockAgentManager) GetACPSessionIDForSession(sessionID string) (string, bool) {

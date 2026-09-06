@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,29 @@ import (
 	"github.com/kandev/kandev/internal/orchestrator/executor"
 	"github.com/kandev/kandev/internal/task/models"
 )
+
+func TestDeleteSession_PreservesSessionWhenExecutionLookupFails(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedTaskAndSession(t, repo, "task-lookup-failure", "session-lookup-failure", models.TaskSessionStateCompleted)
+
+	lookupErr := errors.New("lifecycle store unavailable")
+	manager := &mockAgentManager{
+		getExecutionIDForSessionFunc: func(context.Context, string) (string, error) {
+			return "", lookupErr
+		},
+	}
+	svc := createTestServiceWithAgent(repo, newMockStepGetter(), newMockTaskRepo(), manager)
+	svc.executor = executor.NewExecutor(manager, repo, testLogger(), executor.ExecutorConfig{})
+
+	err := svc.DeleteSession(ctx, "session-lookup-failure")
+	if !errors.Is(err, lookupErr) {
+		t.Fatalf("DeleteSession error = %v, want execution lookup failure", err)
+	}
+	if _, err := repo.GetTaskSession(ctx, "session-lookup-failure"); err != nil {
+		t.Fatalf("session was removed after execution lookup failure: %v", err)
+	}
+}
 
 func TestDeleteSessionRejectsCurrentPrimary(t *testing.T) {
 	ctx := context.Background()

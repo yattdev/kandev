@@ -114,9 +114,9 @@ test.describe("mobile: session deletion", () => {
     const confirmation = secondaryRow.getByTestId("mobile-session-delete-confirmation");
     await expect(confirmation).toBeVisible();
     await expect(testPage.getByRole("alertdialog")).toHaveCount(0);
-    // The row-local confirmation states the conversation-deletion contract and
+    // The row-local confirmation reflects archive-or-delete behavior and
     // explicitly says the task workspace and files are retained.
-    await expect(confirmation).toContainText("permanently delete the conversation history");
+    await expect(confirmation).toContainText("removes the session from active views");
     await expect(confirmation).toContainText("task workspace and its files are kept");
 
     await confirmation.getByRole("button", { name: "Cancel" }).tap();

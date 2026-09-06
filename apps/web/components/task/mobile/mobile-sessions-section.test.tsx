@@ -393,7 +393,7 @@ describe("MobileSessionsPicker session delete confirmation", () => {
 
     const confirmation = screen.getByRole("group", { name: /delete session/i });
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(confirmation.textContent).toContain("permanently delete the conversation history");
+    expect(confirmation.textContent).toContain("removes the session from active views");
     expect(confirmation.textContent).toContain("task workspace and its files are kept");
     expect(confirmation.textContent).toContain("only session for this task");
     const confirm = within(confirmation).getByTestId("mobile-session-delete-confirm");

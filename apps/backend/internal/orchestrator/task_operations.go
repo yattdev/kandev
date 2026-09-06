@@ -3610,8 +3610,12 @@ func (s *Service) quiesceSessionExecutionBeforeDeletion(
 		return nil
 	}
 	executionID, executionErr := s.agentManager.GetExecutionIDForSession(ctx, sessionID)
-	if executionErr != nil || executionID == "" {
+	if errors.Is(executionErr, lifecycle.ErrNoExecutionForSession) ||
+		(executionID == "" && executionErr == nil) {
 		return nil
+	}
+	if executionErr != nil {
+		return fmt.Errorf("failed to inspect session execution before deletion: %w", executionErr)
 	}
 	stopErr := s.executor.StopExecution(ctx, executionID, "session deleted", true)
 	if stopErr != nil && !errors.Is(stopErr, agentruntime.ErrNotFound) {
