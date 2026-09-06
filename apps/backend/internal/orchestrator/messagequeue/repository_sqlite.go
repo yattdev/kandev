@@ -1534,6 +1534,9 @@ func (r *sqliteRepository) TakeByID(ctx context.Context, sessionID, entryID stri
 	if affected == 0 {
 		return nil, nil
 	}
+	if err := r.redactRecoveryReceiptsIfEmptyTx(ctx, tx, sessionID); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -2482,6 +2485,9 @@ func (r *sqliteRepository) DeleteByID(ctx context.Context, sessionID, entryID st
 	if n == 0 {
 		return ErrEntryNotFound
 	}
+	if err := r.redactRecoveryReceiptsIfEmptyTx(ctx, tx, sessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -2517,6 +2523,11 @@ func (r *sqliteRepository) DeleteAllBySession(ctx context.Context, sessionID str
 			return 0, fmt.Errorf("delete queued candidate rows affected: %w", err)
 		}
 		removed += int(affected)
+	}
+	if removed > 0 {
+		if err := r.redactRecoveryReceiptsIfEmptyTx(ctx, tx, sessionID); err != nil {
+			return 0, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
@@ -2821,7 +2832,12 @@ func redactRecoveryReceiptsTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, tas
 	}
 	now := time.Now().UTC()
 	for _, id := range ids {
-		var scope struct{ TaskID, WorkspaceID, SourceSessionID, DestinationSessionID string }
+		var scope struct {
+			TaskID               string `db:"task_id"`
+			WorkspaceID          string `db:"workspace_id"`
+			SourceSessionID      string `db:"source_session_id"`
+			DestinationSessionID string `db:"destination_session_id"`
+		}
 		if err := tx.GetContext(ctx, &scope, db.Rebind(`SELECT task_id, workspace_id, source_session_id, destination_session_id FROM queue_recovery_receipts WHERE id = ?`), id); err != nil {
 			return err
 		}

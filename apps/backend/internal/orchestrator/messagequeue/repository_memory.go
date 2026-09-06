@@ -405,6 +405,20 @@ func (r *memoryRepository) ListBySession(_ context.Context, sessionID string) ([
 	return out, nil
 }
 
+func (r *memoryRepository) redactRecoveryIfEmptyLocked(sessionID string) {
+	if len(r.entries[sessionID]) != 0 {
+		return
+	}
+	for sourceID, recovery := range r.recoveries {
+		if recovery.destinationSessionID != sessionID || recovery.expired {
+			continue
+		}
+		recovery.entries = nil
+		recovery.expired = true
+		r.recoveries[sourceID] = recovery
+	}
+}
+
 // DisposeExact removes only unchanged exact entries under the session's memory lock.
 func (r *memoryRepository) DisposeExact(_ context.Context, sessionID string, claims []QueueEntryClaim) (*QueueDispositionResult, error) {
 	r.mu.Lock()
@@ -446,13 +460,7 @@ func (r *memoryRepository) DisposeExact(_ context.Context, sessionID string, cla
 	}
 	result.AfterCount = visibleQueueCount(r.entries[sessionID])
 	if len(remove) > 0 && result.AfterCount == 0 {
-		for sourceID, recovery := range r.recoveries {
-			if recovery.destinationSessionID == sessionID {
-				recovery.entries = nil
-				recovery.expired = true
-				r.recoveries[sourceID] = recovery
-			}
-		}
+		r.redactRecoveryIfEmptyLocked(sessionID)
 	}
 	return result, nil
 }
@@ -478,6 +486,7 @@ func (r *memoryRepository) TakeHead(_ context.Context, sessionID string) (*Queue
 		delete(r.entries, sessionID)
 		delete(r.nextPosition, sessionID)
 	}
+	r.redactRecoveryIfEmptyLocked(sessionID)
 	out := *head
 	return &out, nil
 }
@@ -571,6 +580,7 @@ func (r *memoryRepository) AcknowledgeByID(_ context.Context, sessionID, entryID
 			delete(r.entries, sessionID)
 			delete(r.nextPosition, sessionID)
 		}
+		r.redactRecoveryIfEmptyLocked(sessionID)
 		return nil
 	}
 	return ErrEntryNotFound
@@ -595,6 +605,7 @@ func (r *memoryRepository) TakeByID(_ context.Context, sessionID, entryID string
 			delete(r.entries, sessionID)
 			delete(r.nextPosition, sessionID)
 		}
+		r.redactRecoveryIfEmptyLocked(sessionID)
 		out := *m
 		return &out, nil
 	}
@@ -1072,6 +1083,9 @@ func (r *memoryRepository) DeleteAllBySession(_ context.Context, sessionID strin
 		delete(r.nextPosition, sessionID)
 	} else {
 		r.entries[sessionID] = kept
+	}
+	if removed > 0 {
+		r.redactRecoveryIfEmptyLocked(sessionID)
 	}
 	return removed, nil
 }

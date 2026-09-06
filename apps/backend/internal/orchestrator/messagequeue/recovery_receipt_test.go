@@ -77,6 +77,64 @@ func TestSQLiteQueueRecoveryReceiptRejectsCorruptedSnapshot(t *testing.T) {
 	}
 }
 
+func TestRecoveryReceiptExpiresWhenDestinationIsRemovedByAnyDrainPath(t *testing.T) {
+	paths := []struct {
+		name   string
+		remove func(t *testing.T, repo Repository, entry QueuedMessage)
+	}{
+		{name: "take-head", remove: func(t *testing.T, repo Repository, _ QueuedMessage) {
+			t.Helper()
+			if _, err := repo.TakeHead(context.Background(), "destination"); err != nil {
+				t.Fatalf("take head: %v", err)
+			}
+		}},
+		{name: "take-by-id", remove: func(t *testing.T, repo Repository, entry QueuedMessage) {
+			t.Helper()
+			if _, err := repo.TakeByID(context.Background(), "destination", entry.ID); err != nil {
+				t.Fatalf("take by id: %v", err)
+			}
+		}},
+		{name: "cancel-all", remove: func(t *testing.T, repo Repository, _ QueuedMessage) {
+			t.Helper()
+			if _, err := repo.DeleteAllBySession(context.Background(), "destination"); err != nil {
+				t.Fatalf("cancel all: %v", err)
+			}
+		}},
+	}
+	for _, repoCase := range []struct {
+		name string
+		new  func(t *testing.T) (Repository, func())
+	}{
+		{name: "memory", new: func(*testing.T) (Repository, func()) { return NewMemoryRepository(), func() {} }},
+		{name: "sqlite", new: func(t *testing.T) (Repository, func()) {
+			db, repo := openRecoveryReceiptRepository(t, filepath.Join(t.TempDir(), "retention.db"))
+			return repo, func() { _ = db.Close() }
+		}},
+	} {
+		for _, path := range paths {
+			t.Run(repoCase.name+"/"+path.name, func(t *testing.T) {
+				repo, closeRepo := repoCase.new(t)
+				defer closeRepo()
+				ctx := context.Background()
+				if err := repo.Insert(ctx, &QueuedMessage{SessionID: "source", TaskID: "task-1", Content: "recovery body"}, 10); err != nil {
+					t.Fatalf("insert: %v", err)
+				}
+				if _, err := repo.RecoverSessionQueue(ctx, "source", "destination"); err != nil {
+					t.Fatalf("recover: %v", err)
+				}
+				entries, err := repo.ListBySession(ctx, "destination")
+				if err != nil || len(entries) != 1 {
+					t.Fatalf("destination entries = %#v, err=%v", entries, err)
+				}
+				path.remove(t, repo, entries[0])
+				if _, err := repo.RecoverSessionQueue(ctx, "source", "destination"); !errors.Is(err, ErrQueueRecoverySnapshotExpired) {
+					t.Fatalf("replay error = %v, want %v", err, ErrQueueRecoverySnapshotExpired)
+				}
+			})
+		}
+	}
+}
+
 func openRecoveryReceiptRepository(t *testing.T, path string) (*sqlx.DB, *sqliteRepository) {
 	t.Helper()
 	raw, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
