@@ -1336,7 +1336,7 @@ func (s *Server) registerKanbanTools() {
 	)
 	s.mcpServer.AddTool(
 		mcp.NewTool("recover_session_queue_kandev",
-			mcp.WithDescription("Atomically recover every queued entry from a terminal non-primary session of the calling task into the current primary session. Returns the exact original FIFO payloads and hashes, restores crashed in-flight durable rows to pending, and preserves entry identity. Only the task's current primary session may call this tool."),
+			mcp.WithDescription("Atomically recover every queued entry from a terminal non-primary session of the calling task into the current primary session. Returns a durable receipt with the exact original FIFO payloads and hashes, restores crashed in-flight durable rows to pending, and preserves entry identity. An exact retry returns the same receipt and snapshot. Current-primary authorization is revalidated in the recovery transaction."),
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithIdempotentHintAnnotation(true),

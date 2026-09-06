@@ -146,7 +146,45 @@ var (
 	// ErrLifecycleCancelled means an archive/delete purge invalidated a
 	// previously accepted lifecycle entry before it could be retried.
 	ErrLifecycleCancelled = errors.New("lifecycle queue entry cancelled")
+	// ErrQueueRecoveryConflict means a source queue was already recovered to a
+	// different replacement session. A source may have exactly one destination.
+	ErrQueueRecoveryConflict = errors.New("queue source already recovered to a different session")
+	// ErrQueueRecoveryUnauthorized means task/session ownership changed before
+	// the transfer transaction acquired its authorization locks.
+	ErrQueueRecoveryUnauthorized = errors.New("queue recovery authorization is no longer valid")
+	// ErrQueueRecoveryTargetNotTerminal means the source session resumed before
+	// the transfer transaction acquired its authorization locks.
+	ErrQueueRecoveryTargetNotTerminal = errors.New("queue recovery source session is not terminal")
 )
+
+// QueueRecoveryScope is the server-derived ownership fence stored with one
+// committed source-to-destination recovery.
+type QueueRecoveryScope struct {
+	TaskID               string
+	WorkspaceID          string
+	SourceSessionID      string
+	DestinationSessionID string
+}
+
+// QueueRecoveryReceipt is the durable audit identity for one committed queue
+// recovery. Snapshot bodies stay in Entries and are never duplicated here.
+type QueueRecoveryReceipt struct {
+	ID                   string    `db:"id" json:"id"`
+	TaskID               string    `db:"task_id" json:"task_id"`
+	WorkspaceID          string    `db:"workspace_id" json:"workspace_id"`
+	SourceSessionID      string    `db:"source_session_id" json:"source_session_id"`
+	DestinationSessionID string    `db:"destination_session_id" json:"destination_session_id"`
+	EntryCount           int       `db:"entry_count" json:"entry_count"`
+	SnapshotSHA256       string    `db:"snapshot_sha256" json:"snapshot_sha256"`
+	OccurredAt           time.Time `db:"occurred_at" json:"occurred_at"`
+}
+
+// QueueRecoveryResult combines the stable receipt with the exact pre-move
+// snapshot. Exact retries return the same receipt and entries.
+type QueueRecoveryResult struct {
+	Receipt QueueRecoveryReceipt
+	Entries []QueuedMessage
+}
 
 // QueuedMessage represents a single FIFO entry queued for a session.
 type QueuedMessage struct {

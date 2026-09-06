@@ -103,7 +103,7 @@ func (s *Service) RecoverySnapshot(ctx context.Context, sessionID string) ([]Que
 	if err != nil {
 		return nil, fmt.Errorf("list queue recovery snapshot: %w", err)
 	}
-	return recoveryEntries(entries), nil
+	return RecoveryEntries(entries), nil
 }
 
 // RecoverSessionQueue atomically moves every source row to the replacement
@@ -125,10 +125,12 @@ func (s *Service) RecoverSessionQueue(
 		zap.String("from_session_id", sourceSessionID),
 		zap.String("to_session_id", destinationSessionID),
 		zap.Int("entries", len(entries)))
-	return recoveryEntries(entries), nil
+	return RecoveryEntries(entries), nil
 }
 
-func recoveryEntries(entries []QueuedMessage) []QueueRecoveryEntry {
+// RecoveryEntries converts persisted queue snapshots into the guarded recovery
+// response shape without exposing unfiltered metadata.
+func RecoveryEntries(entries []QueuedMessage) []QueueRecoveryEntry {
 	result := make([]QueueRecoveryEntry, 0, len(entries))
 	for i := range entries {
 		entry := &entries[i]

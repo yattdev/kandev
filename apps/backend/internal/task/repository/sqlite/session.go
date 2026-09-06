@@ -2900,6 +2900,119 @@ func (r *Repository) lockTaskSessionForDelete(
 	return taskIdentity, nil
 }
 
+// RecoverTaskSessionQueue revalidates the caller and target under the owning
+// task lock, then transfers the exact queue snapshot and records its replay
+// receipt in the same transaction. A primary promotion takes this same task
+// lock, so stale preflight authorization can never commit a recovery.
+func (r *Repository) RecoverTaskSessionQueue(
+	ctx context.Context,
+	scope messagequeue.QueueRecoveryScope,
+) (*messagequeue.QueueRecoveryResult, error) {
+	if scope.TaskID == "" || scope.WorkspaceID == "" || scope.SourceSessionID == "" ||
+		scope.DestinationSessionID == "" || scope.SourceSessionID == scope.DestinationSessionID {
+		return nil, messagequeue.ErrQueueRecoveryUnauthorized
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin authorized queue recovery: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := r.lockTaskForQueueRecovery(ctx, tx, scope); err != nil {
+		return nil, err
+	}
+	if err := r.validateQueueRecoverySessions(ctx, tx, scope); err != nil {
+		return nil, err
+	}
+
+	result, err := messagequeue.RecoverSessionQueueInTransaction(ctx, tx, r.db, scope)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit authorized queue recovery: %w", err)
+	}
+	return result, nil
+}
+
+func (r *Repository) lockTaskForQueueRecovery(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	scope messagequeue.QueueRecoveryScope,
+) error {
+	locked, err := tx.ExecContext(ctx, r.db.Rebind(`
+		UPDATE tasks SET updated_at = updated_at
+		WHERE id = ? AND workspace_id = ? AND archived_at IS NULL
+	`), scope.TaskID, scope.WorkspaceID)
+	if err != nil {
+		return fmt.Errorf("lock task for queue recovery: %w", err)
+	}
+	rows, err := locked.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read queue recovery task lock: %w", err)
+	}
+	if rows != 1 {
+		return messagequeue.ErrQueueRecoveryUnauthorized
+	}
+	return nil
+}
+
+func (r *Repository) validateQueueRecoverySessions(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	scope messagequeue.QueueRecoveryScope,
+) error {
+	locked, err := tx.ExecContext(ctx, r.db.Rebind(`
+		UPDATE task_sessions SET updated_at = updated_at
+		WHERE task_id = ? AND id IN (?, ?) AND archived_at IS NULL
+	`), scope.TaskID, scope.SourceSessionID, scope.DestinationSessionID)
+	if err != nil {
+		return fmt.Errorf("lock queue recovery sessions: %w", err)
+	}
+	rows, err := locked.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read queue recovery session locks: %w", err)
+	}
+	if rows != 2 {
+		return messagequeue.ErrQueueRecoveryUnauthorized
+	}
+
+	var destinationPrimary bool
+	if err := tx.GetContext(ctx, &destinationPrimary, r.db.Rebind(`
+		SELECT is_primary FROM task_sessions
+		WHERE id = ? AND task_id = ? AND archived_at IS NULL
+	`), scope.DestinationSessionID, scope.TaskID); errors.Is(err, sql.ErrNoRows) {
+		return messagequeue.ErrQueueRecoveryUnauthorized
+	} else if err != nil {
+		return fmt.Errorf("revalidate queue recovery destination: %w", err)
+	} else if !destinationPrimary {
+		return messagequeue.ErrQueueRecoveryUnauthorized
+	}
+	var source struct {
+		IsPrimary bool                    `db:"is_primary"`
+		State     models.TaskSessionState `db:"state"`
+	}
+	if err := tx.GetContext(ctx, &source, r.db.Rebind(`
+		SELECT is_primary, state FROM task_sessions
+		WHERE id = ? AND task_id = ? AND archived_at IS NULL
+	`), scope.SourceSessionID, scope.TaskID); errors.Is(err, sql.ErrNoRows) {
+		return messagequeue.ErrQueueRecoveryUnauthorized
+	} else if err != nil {
+		return fmt.Errorf("revalidate queue recovery source: %w", err)
+	} else if source.IsPrimary {
+		return messagequeue.ErrQueueRecoveryUnauthorized
+	}
+	if !isTerminalQueueRecoveryState(source.State) {
+		return messagequeue.ErrQueueRecoveryTargetNotTerminal
+	}
+	return nil
+}
+
+func isTerminalQueueRecoveryState(state models.TaskSessionState) bool {
+	return state == models.TaskSessionStateCompleted ||
+		state == models.TaskSessionStateFailed || state == models.TaskSessionStateCancelled
+}
+
 func (r *Repository) validateSessionDeleteQueue(ctx context.Context, tx *sqlx.Tx, id string) (int, error) {
 	if err := messagequeue.LockSessionInTransaction(ctx, tx, r.db, id); err != nil {
 		return 0, fmt.Errorf("lock queue for session delete: %w", err)

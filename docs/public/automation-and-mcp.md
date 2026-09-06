@@ -597,7 +597,13 @@ primary's queue and returns the exact pre-move message bodies, attachments,
 delivery fields, immutable IDs, source positions, SHA-256 hashes, and prior
 in-flight state. Durable rows left reserved by a crashed delivery are included
 in the readback and restored to pending as part of the same transaction.
-Retrying after success returns an empty batch without duplicating entries.
+The response also includes a durable recovery receipt with a stable ID,
+source and destination identities, entry count, snapshot hash, and timestamp.
+Retrying the same recovery returns that same receipt and exact FIFO snapshot
+without duplicating entries. Kandev revalidates that the caller is still the
+task's current primary, and that the source is still terminal and non-primary,
+inside the queue-transfer transaction; a concurrent promotion or resumed
+source is denied without moving any row.
 
 After recording the recovery response, call
 `close_task_session_kandev(target_session_id)`. Cleanup rejects the current

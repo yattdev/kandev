@@ -91,7 +91,7 @@ Task MCP gives an agent five session-coordination operations:
 - `spawn_session_kandev` starts another session on the current task by default. It can select a profile and name, and can target another task in the same workspace. The new session shares the target task's environment; its supplied prompt is its initial context.
 - `message_task_kandev` sends work to a task's primary session or to an explicit session ID. A same-task sibling must be addressed by session ID, and a session cannot message itself.
 - `stop_task_kandev` asks the current task to halt all live sessions on one same-workspace direct child. It sends no prompt and has no session-specific option. A stopped session is `CANCELLED` and cannot be resumed, so `spawn_session_kandev` is how the task is put back to work.
-- `recover_session_queue_kandev` lets the task's current primary atomically move the exact FIFO from one terminal non-primary sibling into its own queue before cleanup, including durable rows left reserved by a crashed delivery.
+- `recover_session_queue_kandev` lets the task's current primary atomically move the exact FIFO from one terminal non-primary sibling into its own queue before cleanup, including durable rows left reserved by a crashed delivery. It returns a durable recovery receipt, and an exact retry returns the same receipt and FIFO snapshot.
 - `close_task_session_kandev` closes that exact sibling only when its queue and lifecycle state are safe, archiving transcript evidence and returning a durable cleanup receipt.
 
 Delivery follows the target state:

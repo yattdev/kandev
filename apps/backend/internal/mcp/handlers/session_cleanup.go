@@ -3,15 +3,18 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	mcpscope "github.com/kandev/kandev/internal/mcp/scope"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
 	ws "github.com/kandev/kandev/pkg/websocket"
 	"go.uber.org/zap"
 )
 
 type sessionCleanupRequest struct {
+	WorkspaceID     string                            `json:"-"`
 	TaskID          string                            `json:"task_id"`
 	CallerSessionID string                            `json:"caller_session_id"`
 	TargetSessionID string                            `json:"target_session_id"`
@@ -23,18 +26,31 @@ func (h *Handlers) handleRecoverSessionQueue(ctx context.Context, msg *ws.Messag
 	if response != nil {
 		return response, nil
 	}
-	if h.queueManager == nil {
+	coordinator, ok := h.sessionRepo.(sessionQueueRecoveryCoordinator)
+	if !ok {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "message queue recovery is not available", nil)
 	}
-	entries, err := h.queueManager.RecoverSessionQueue(ctx, req.TargetSessionID, req.CallerSessionID)
+	result, err := coordinator.RecoverTaskSessionQueue(ctx, messagequeue.QueueRecoveryScope{
+		TaskID: req.TaskID, WorkspaceID: req.WorkspaceID,
+		SourceSessionID: req.TargetSessionID, DestinationSessionID: req.CallerSessionID,
+	})
 	if err != nil {
+		if errors.Is(err, messagequeue.ErrQueueRecoveryUnauthorized) {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden,
+				"session queue recovery requires the calling task's current primary session", nil)
+		}
+		if errors.Is(err, messagequeue.ErrQueueRecoveryTargetNotTerminal) ||
+			errors.Is(err, messagequeue.ErrQueueRecoveryConflict) {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, err.Error(), nil)
+		}
 		h.logger.Error("session queue recovery failed", zap.String("target_session_id", req.TargetSessionID), zap.Error(err))
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "failed to recover session queue", nil)
 	}
+	entries := messagequeue.RecoveryEntries(result.Entries)
 	return ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
 		"task_id": req.TaskID, "source_session_id": req.TargetSessionID,
 		"destination_session_id": req.CallerSessionID,
-		"entries":                entries, "readback_count": len(entries),
+		"entries":                entries, "readback_count": len(entries), "receipt": result.Receipt,
 	})
 }
 
@@ -74,6 +90,7 @@ func (h *Handlers) authorizeSessionCleanup(
 	if response != nil {
 		return req, response
 	}
+	req.WorkspaceID = workspaceID
 	return req, h.authorizeSessionCleanupTarget(ctx, msg, &req, workspaceID)
 }
 

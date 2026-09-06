@@ -245,6 +245,17 @@ type sessionCleanupReceiptReader interface {
 	GetTaskSessionCleanupReceipt(ctx context.Context, taskID, sessionID string) (*models.TaskSessionCleanupReceipt, error)
 }
 
+// sessionQueueRecoveryCoordinator owns the task/session authorization and
+// queue transfer transaction. The handler's preflight remains useful for fast
+// feedback, but this boundary must revalidate the current primary immediately
+// before the queue mutation commits.
+type sessionQueueRecoveryCoordinator interface {
+	RecoverTaskSessionQueue(
+		ctx context.Context,
+		scope messagequeue.QueueRecoveryScope,
+	) (*messagequeue.QueueRecoveryResult, error)
+}
+
 // messageMetadataQueuer is an optional extension implemented by the
 // production queue service. Keeping metadata out of MessageQueuer preserves
 // compatibility with lightweight test and alternate queue implementations.

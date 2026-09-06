@@ -314,6 +314,18 @@ func (r *Repository) runMigrations() error {
 			PRIMARY KEY (task_id, session_id),
 			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 		)`)
+	r.migrate.Apply("queue_recovery_receipts.table", `
+		CREATE TABLE IF NOT EXISTS queue_recovery_receipts (
+			id                     TEXT PRIMARY KEY,
+			task_id                TEXT NOT NULL DEFAULT '',
+			workspace_id           TEXT NOT NULL DEFAULT '',
+			source_session_id      TEXT NOT NULL UNIQUE,
+			destination_session_id TEXT NOT NULL,
+			entry_count            INTEGER NOT NULL,
+			snapshot_sha256        TEXT NOT NULL,
+			snapshot_json          TEXT NOT NULL,
+			occurred_at            TIMESTAMP NOT NULL
+		)`)
 	r.migrate.Apply("task_session_turns.execution_profile_id", `ALTER TABLE task_session_turns ADD COLUMN execution_profile_id TEXT NOT NULL DEFAULT ''`)
 	r.migrate.Apply("task_session_turns.route_generation", `ALTER TABLE task_session_turns ADD COLUMN route_generation BIGINT NOT NULL DEFAULT 0`)
 

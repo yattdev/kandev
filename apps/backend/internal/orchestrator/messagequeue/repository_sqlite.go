@@ -2,6 +2,7 @@ package messagequeue
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -117,6 +118,19 @@ func (r *sqliteRepository) guardActiveTaskTx(ctx context.Context, tx *sqlx.Tx, t
 	return nil
 }
 
+func (r *sqliteRepository) guardSessionNotRecoveredTx(ctx context.Context, tx *sqlx.Tx, sessionID string) error {
+	var recovered bool
+	if err := tx.GetContext(ctx, &recovered, r.db.Rebind(`
+		SELECT EXISTS (SELECT 1 FROM queue_recovery_receipts WHERE source_session_id = ?)
+	`), sessionID); err != nil {
+		return fmt.Errorf("guard recovered queue session: %w", err)
+	}
+	if recovered {
+		return ErrQueueRecoveryConflict
+	}
+	return nil
+}
+
 // lockSessionTxIn takes the per-session cross-process lock inside an existing
 // transaction (see lockSessionTx). It is the shared core used by the
 // repository methods and by PurgeTaskInTransaction, which runs inside the task
@@ -211,6 +225,18 @@ func (r *sqliteRepository) initSchema() error {
 		session_id TEXT PRIMARY KEY,
 		auto_run   INTEGER NOT NULL DEFAULT 1
 	);
+
+	CREATE TABLE IF NOT EXISTS queue_recovery_receipts (
+		id                     TEXT PRIMARY KEY,
+		task_id                TEXT NOT NULL DEFAULT '',
+		workspace_id           TEXT NOT NULL DEFAULT '',
+		source_session_id      TEXT NOT NULL UNIQUE,
+		destination_session_id TEXT NOT NULL,
+		entry_count            INTEGER NOT NULL,
+		snapshot_sha256        TEXT NOT NULL,
+		snapshot_json          TEXT NOT NULL,
+		occurred_at            TIMESTAMP NOT NULL
+	);
 	`)
 	if err != nil {
 		return err
@@ -241,6 +267,9 @@ func (r *sqliteRepository) Insert(ctx context.Context, msg *QueuedMessage, maxPe
 		return err
 	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
+		return err
+	}
+	if err := r.guardSessionNotRecoveredTx(ctx, tx, msg.SessionID); err != nil {
 		return err
 	}
 
@@ -315,6 +344,9 @@ func (r *sqliteRepository) RequeuePreservingFIFO(ctx context.Context, msg *Queue
 		return err
 	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
+		return err
+	}
+	if err := r.guardSessionNotRecoveredTx(ctx, tx, msg.SessionID); err != nil {
 		return err
 	}
 
@@ -453,6 +485,9 @@ func (r *sqliteRepository) Restore(ctx context.Context, msg *QueuedMessage, maxP
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
 		return err
 	}
+	if err := r.guardSessionNotRecoveredTx(ctx, tx, msg.SessionID); err != nil {
+		return err
+	}
 
 	if maxPerSession > 0 {
 		var count int
@@ -500,6 +535,9 @@ func (r *sqliteRepository) AppendOrInsertTail(ctx context.Context, sessionID, ta
 		return nil, false, err
 	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
+		return nil, false, err
+	}
+	if err := r.guardSessionNotRecoveredTx(ctx, tx, sessionID); err != nil {
 		return nil, false, err
 	}
 
@@ -582,6 +620,9 @@ func (r *sqliteRepository) InsertOrReplaceByCoalesceKey(ctx context.Context, msg
 		return nil, false, err
 	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
+		return nil, false, err
+	}
+	if err := r.guardSessionNotRecoveredTx(ctx, tx, msg.SessionID); err != nil {
 		return nil, false, err
 	}
 
@@ -2086,6 +2127,9 @@ func (r *sqliteRepository) AutoMergeCandidateIntoAbove(ctx context.Context, cand
 	if err := r.lockSessionTx(ctx, tx, candidate.SessionID); err != nil {
 		return nil, false, err
 	}
+	if err := r.guardSessionNotRecoveredTx(ctx, tx, candidate.SessionID); err != nil {
+		return nil, false, err
+	}
 
 	target, storedContent, storedAttachmentsJSON, storedMetadataJSON, err := r.scanTailWithRawJSON(ctx, tx, candidate.SessionID)
 	if err != nil {
@@ -2593,6 +2637,45 @@ func (r *sqliteRepository) RecoverSessionQueue(
 		return nil, fmt.Errorf("begin queue recovery tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	result, err := r.recoverSessionQueueInTransaction(ctx, tx, QueueRecoveryScope{
+		SourceSessionID: oldSessionID, DestinationSessionID: newSessionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return result.Entries, nil
+}
+
+// RecoverSessionQueueInTransaction moves a queue inside a caller-owned task
+// transaction. The caller must acquire the owning task lock and revalidate
+// session authorization before calling this helper. Queue locks and the
+// durable replay receipt are committed by that same transaction.
+func RecoverSessionQueueInTransaction(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	db *sqlx.DB,
+	scope QueueRecoveryScope,
+) (*QueueRecoveryResult, error) {
+	r := &sqliteRepository{db: db}
+	return r.recoverSessionQueueInTransaction(ctx, tx, scope)
+}
+
+func (r *sqliteRepository) recoverSessionQueueInTransaction(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	scope QueueRecoveryScope,
+) (*QueueRecoveryResult, error) {
+	if scope.SourceSessionID == "" || scope.DestinationSessionID == "" ||
+		scope.SourceSessionID == scope.DestinationSessionID {
+		return nil, ErrInvalidQueueDisposition
+	}
+	first, second := scope.SourceSessionID, scope.DestinationSessionID
+	if first > second {
+		first, second = second, first
+	}
 	if err := r.lockSessionTx(ctx, tx, first); err != nil {
 		return nil, err
 	}
@@ -2601,25 +2684,101 @@ func (r *sqliteRepository) RecoverSessionQueue(
 			return nil, err
 		}
 	}
-	if oldSessionID == newSessionID {
-		return nil, ErrInvalidQueueDisposition
+	replayed, found, err := r.loadQueueRecoveryReceipt(ctx, tx, scope)
+	if err != nil {
+		return nil, err
 	}
-	ordered, _, err := r.listOrderedStoredSessionEntries(ctx, tx, oldSessionID)
+	if found {
+		return replayed, nil
+	}
+	ordered, _, err := r.listOrderedStoredSessionEntries(ctx, tx, scope.SourceSessionID)
 	if err != nil {
 		return nil, err
 	}
 	var destMax sql.NullInt64
-	if err := tx.GetContext(ctx, &destMax, r.db.Rebind(`SELECT MAX(position) FROM queued_messages WHERE session_id = ?`), newSessionID); err != nil {
+	if err := tx.GetContext(ctx, &destMax, r.db.Rebind(`SELECT MAX(position) FROM queued_messages WHERE session_id = ?`), scope.DestinationSessionID); err != nil {
 		return nil, fmt.Errorf("recover queue destination max: %w", err)
 	}
-	recovered, err := r.recoverQueueRows(ctx, tx, ordered, oldSessionID, newSessionID, destMax.Int64)
+	recovered, err := r.recoverQueueRows(ctx, tx, ordered, scope.SourceSessionID, scope.DestinationSessionID, destMax.Int64)
 	if err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
+	receipt, err := r.insertQueueRecoveryReceipt(ctx, tx, scope, recovered)
+	if err != nil {
 		return nil, err
 	}
-	return recovered, nil
+	return &QueueRecoveryResult{Receipt: *receipt, Entries: recovered}, nil
+}
+
+type storedQueueRecoveryReceipt struct {
+	QueueRecoveryReceipt
+	SnapshotJSON string `db:"snapshot_json"`
+}
+
+func (r *sqliteRepository) loadQueueRecoveryReceipt(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	scope QueueRecoveryScope,
+) (*QueueRecoveryResult, bool, error) {
+	var receipt storedQueueRecoveryReceipt
+	err := tx.GetContext(ctx, &receipt, r.db.Rebind(`
+		SELECT id, task_id, workspace_id, source_session_id, destination_session_id,
+			entry_count, snapshot_sha256, snapshot_json, occurred_at
+		FROM queue_recovery_receipts WHERE source_session_id = ?
+	`), scope.SourceSessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("read queue recovery receipt: %w", err)
+	}
+	if receipt.DestinationSessionID != scope.DestinationSessionID ||
+		(scope.TaskID != "" && receipt.TaskID != scope.TaskID) ||
+		(scope.WorkspaceID != "" && receipt.WorkspaceID != scope.WorkspaceID) {
+		return nil, false, ErrQueueRecoveryConflict
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(receipt.SnapshotJSON)))
+	if digest != receipt.SnapshotSHA256 {
+		return nil, false, errors.New("queue recovery receipt snapshot hash mismatch")
+	}
+	var entries []QueuedMessage
+	if err := json.Unmarshal([]byte(receipt.SnapshotJSON), &entries); err != nil {
+		return nil, false, fmt.Errorf("decode queue recovery receipt: %w", err)
+	}
+	if len(entries) != receipt.EntryCount {
+		return nil, false, errors.New("queue recovery receipt entry count mismatch")
+	}
+	return &QueueRecoveryResult{Receipt: receipt.QueueRecoveryReceipt, Entries: entries}, true, nil
+}
+
+func (r *sqliteRepository) insertQueueRecoveryReceipt(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	scope QueueRecoveryScope,
+	entries []QueuedMessage,
+) (*QueueRecoveryReceipt, error) {
+	snapshotJSON, err := json.Marshal(entries)
+	if err != nil {
+		return nil, fmt.Errorf("encode queue recovery receipt: %w", err)
+	}
+	receipt := &QueueRecoveryReceipt{
+		ID: uuid.NewString(), TaskID: scope.TaskID, WorkspaceID: scope.WorkspaceID,
+		SourceSessionID: scope.SourceSessionID, DestinationSessionID: scope.DestinationSessionID,
+		EntryCount: len(entries), SnapshotSHA256: fmt.Sprintf("%x", sha256.Sum256(snapshotJSON)),
+		OccurredAt: time.Now().UTC(),
+	}
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`
+		INSERT INTO queue_recovery_receipts (
+			id, task_id, workspace_id, source_session_id, destination_session_id, entry_count,
+			snapshot_sha256, snapshot_json, occurred_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`), receipt.ID, receipt.TaskID, receipt.WorkspaceID,
+		receipt.SourceSessionID, receipt.DestinationSessionID, receipt.EntryCount,
+		receipt.SnapshotSHA256, string(snapshotJSON), receipt.OccurredAt)
+	if err != nil {
+		return nil, fmt.Errorf("record queue recovery receipt: %w", err)
+	}
+	return receipt, nil
 }
 
 func (r *sqliteRepository) recoverQueueRows(

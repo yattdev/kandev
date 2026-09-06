@@ -13,8 +13,9 @@ import (
 
 type cleanupSessionRepo struct {
 	SessionRepository
-	sessions map[string]*models.TaskSession
-	receipt  *models.TaskSessionCleanupReceipt
+	sessions     map[string]*models.TaskSession
+	receipt      *models.TaskSessionCleanupReceipt
+	recoverQueue func(context.Context, messagequeue.QueueRecoveryScope) (*messagequeue.QueueRecoveryResult, error)
 }
 
 func (r *cleanupSessionRepo) GetTaskSession(_ context.Context, id string) (*models.TaskSession, error) {
@@ -31,6 +32,13 @@ func (r *cleanupSessionRepo) GetTaskSessionCleanupReceipt(_ context.Context, tas
 		return &copy, nil
 	}
 	return nil, errors.New("not found")
+}
+
+func (r *cleanupSessionRepo) RecoverTaskSessionQueue(
+	ctx context.Context,
+	scope messagequeue.QueueRecoveryScope,
+) (*messagequeue.QueueRecoveryResult, error) {
+	return r.recoverQueue(ctx, scope)
 }
 
 type recordingSessionCloser struct {
@@ -53,7 +61,8 @@ func cleanupHandlers(t *testing.T) (*Handlers, *messagequeue.Service, *cleanupSe
 	if err != nil {
 		t.Fatalf("logger: %v", err)
 	}
-	queue := messagequeue.NewServiceMemory(log)
+	queueRepository := messagequeue.NewMemoryRepository()
+	queue := messagequeue.NewService(queueRepository, messagequeue.DefaultMaxPerSession, log)
 	queue.SetAutoMergeEnabled(false)
 	repo := &cleanupSessionRepo{sessions: map[string]*models.TaskSession{
 		"caller": {ID: "caller", TaskID: "task-1", IsPrimary: true, State: models.TaskSessionStateWaitingForInput},
@@ -61,6 +70,20 @@ func cleanupHandlers(t *testing.T) (*Handlers, *messagequeue.Service, *cleanupSe
 		"other":  {ID: "other", TaskID: "task-2", State: models.TaskSessionStateCompleted},
 	}}
 	closer := &recordingSessionCloser{}
+	repo.recoverQueue = func(ctx context.Context, scope messagequeue.QueueRecoveryScope) (*messagequeue.QueueRecoveryResult, error) {
+		entries, err := queueRepository.RecoverSessionQueue(ctx, scope.SourceSessionID, scope.DestinationSessionID)
+		if err != nil {
+			return nil, err
+		}
+		return &messagequeue.QueueRecoveryResult{
+			Receipt: messagequeue.QueueRecoveryReceipt{
+				ID: "recovery-1", TaskID: scope.TaskID, WorkspaceID: scope.WorkspaceID,
+				SourceSessionID: scope.SourceSessionID, DestinationSessionID: scope.DestinationSessionID,
+				EntryCount: len(entries),
+			},
+			Entries: entries,
+		}, nil
+	}
 	return &Handlers{sessionRepo: repo, queueManager: queue, sessionCloser: closer, logger: log}, queue, repo, closer
 }
 
@@ -91,6 +114,7 @@ func TestRecoverSessionQueueReturnsExactFIFOToCurrentPrimary(t *testing.T) {
 		t.Fatalf("recover: %v", err)
 	}
 	var payload struct {
+		Receipt messagequeue.QueueRecoveryReceipt `json:"receipt"`
 		Entries []messagequeue.QueueRecoveryEntry `json:"entries"`
 	}
 	if err := resp.ParsePayload(&payload); err != nil {
@@ -98,6 +122,10 @@ func TestRecoverSessionQueueReturnsExactFIFOToCurrentPrimary(t *testing.T) {
 	}
 	if len(payload.Entries) != 2 || payload.Entries[0].ID != first.ID || payload.Entries[1].ID != second.ID {
 		t.Fatalf("FIFO entries = %#v", payload.Entries)
+	}
+	if payload.Receipt.ID != "recovery-1" || payload.Receipt.EntryCount != 2 ||
+		payload.Receipt.SourceSessionID != "target" || payload.Receipt.DestinationSessionID != "caller" {
+		t.Fatalf("recovery receipt = %#v", payload.Receipt)
 	}
 	if payload.Entries[0].Content != "first exact body" || payload.Entries[1].Content != "second exact body" {
 		t.Fatalf("exact bodies = %#v", payload.Entries)
@@ -145,6 +173,33 @@ func TestRecoverSessionQueueRejectsCrossTaskAndNonPrimaryCallers(t *testing.T) {
 		t.Fatalf("recover non-primary: %v", err)
 	}
 	assertWSError(t, resp, ws.ErrorCodeForbidden)
+}
+
+func TestRecoverSessionQueueRejectsCallerThatLostPrimaryAfterPreflight(t *testing.T) {
+	h, queue, repo, _ := cleanupHandlers(t)
+	queued, err := queue.QueueMessage(context.Background(), "target", "task-1", "must remain", "", messagequeue.QueuedByUser, false, nil)
+	if err != nil {
+		t.Fatalf("queue target entry: %v", err)
+	}
+	repo.recoverQueue = func(context.Context, messagequeue.QueueRecoveryScope) (*messagequeue.QueueRecoveryResult, error) {
+		repo.sessions["caller"].IsPrimary = false
+		return nil, messagequeue.ErrQueueRecoveryUnauthorized
+	}
+
+	resp, err := h.handleRecoverSessionQueue(
+		queuePrincipal("workspace-1", "task-1", "caller"),
+		makeWSMessage(t, ws.ActionMCPRecoverSessionQueue, map[string]interface{}{
+			"task_id": "task-1", "caller_session_id": "caller", "target_session_id": "target",
+		}),
+	)
+	if err != nil {
+		t.Fatalf("recover stale primary: %v", err)
+	}
+	assertWSError(t, resp, ws.ErrorCodeForbidden)
+	status := queue.GetStatus(context.Background(), "target")
+	if status.Count != 1 || status.Entries[0].ID != queued.ID {
+		t.Fatalf("target queue changed after stale authorization: %#v", status)
+	}
 }
 
 func TestCloseTaskSessionIsScopedAndReturnsDurableReceipt(t *testing.T) {

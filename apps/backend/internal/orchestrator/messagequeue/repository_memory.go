@@ -19,6 +19,12 @@ type memoryRepository struct {
 	pendingMoves map[string]*PendingMove
 	generation   map[string]int64
 	autoRun      map[string]bool
+	recoveries   map[string]memoryQueueRecovery
+}
+
+type memoryQueueRecovery struct {
+	destinationSessionID string
+	entries              []QueuedMessage
 }
 
 // NewMemoryRepository returns an in-memory Repository. Suitable for tests.
@@ -29,6 +35,7 @@ func NewMemoryRepository() Repository {
 		pendingMoves: make(map[string]*PendingMove),
 		generation:   make(map[string]int64),
 		autoRun:      make(map[string]bool),
+		recoveries:   make(map[string]memoryQueueRecovery),
 	}
 }
 
@@ -100,6 +107,9 @@ func (r *memoryRepository) Insert(_ context.Context, msg *QueuedMessage, maxPerS
 func (r *memoryRepository) Restore(_ context.Context, msg *QueuedMessage, maxPerSession int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, recovered := r.recoveries[msg.SessionID]; recovered {
+		return ErrQueueRecoveryConflict
+	}
 	list := r.entries[msg.SessionID]
 	if maxPerSession > 0 && len(list) >= maxPerSession {
 		return ErrQueueFull
@@ -124,6 +134,9 @@ func (r *memoryRepository) Restore(_ context.Context, msg *QueuedMessage, maxPer
 
 // insertLocked performs the actual insert. Caller must already hold r.mu.
 func (r *memoryRepository) insertLocked(msg *QueuedMessage, maxPerSession int) error {
+	if _, recovered := r.recoveries[msg.SessionID]; recovered {
+		return ErrQueueRecoveryConflict
+	}
 	list := r.entries[msg.SessionID]
 	if maxPerSession > 0 && len(list) >= maxPerSession {
 		return ErrQueueFull
@@ -160,6 +173,9 @@ func (r *memoryRepository) insertLocked(msg *QueuedMessage, maxPerSession int) e
 func (r *memoryRepository) RequeuePreservingFIFO(_ context.Context, msg *QueuedMessage) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, recovered := r.recoveries[msg.SessionID]; recovered {
+		return ErrQueueRecoveryConflict
+	}
 	list := r.entries[msg.SessionID]
 	coalesceKey := metadataString(msg.Metadata, MetadataCoalesceKey)
 	// Coalesce-replace: only when caller supplied a coalesce key. This
@@ -243,6 +259,9 @@ func (r *memoryRepository) nextRequeuePositionLocked(sessionID string, list []*Q
 func (r *memoryRepository) AppendOrInsertTail(_ context.Context, sessionID, taskID, content, model, queuedBy string, planMode bool, attachments []MessageAttachment, metadata map[string]interface{}, maxPerSession int) (*QueuedMessage, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, recovered := r.recoveries[sessionID]; recovered {
+		return nil, false, ErrQueueRecoveryConflict
+	}
 
 	list := r.entries[sessionID]
 	if len(list) > 0 {
@@ -274,6 +293,9 @@ func (r *memoryRepository) AppendOrInsertTail(_ context.Context, sessionID, task
 func (r *memoryRepository) InsertOrReplaceByCoalesceKey(_ context.Context, msg *QueuedMessage, coalesceKey string, maxPerSession int, allowInsert bool) (*QueuedMessage, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, recovered := r.recoveries[msg.SessionID]; recovered {
+		return nil, false, ErrQueueRecoveryConflict
+	}
 
 	var reservedMatch bool
 	for _, existing := range r.entries[msg.SessionID] {
@@ -326,6 +348,9 @@ func (r *memoryRepository) InsertOrReplaceByCoalesceKey(_ context.Context, msg *
 func (r *memoryRepository) InsertOrReplaceLifecycleByCoalesceKey(ctx context.Context, msg *QueuedMessage, coalesceKey string, maxPerSession int, allowInsert bool) (*QueuedMessage, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, recovered := r.recoveries[msg.SessionID]; recovered {
+		return nil, false, ErrQueueRecoveryConflict
+	}
 	expected, ok := lifecycleGenerationFromMetadata(msg.Metadata)
 	if !ok || expected != r.generation[msg.TaskID] {
 		return nil, false, ErrLifecycleCancelled
@@ -1083,6 +1108,12 @@ func (r *memoryRepository) RecoverSessionQueue(_ context.Context, oldSessionID, 
 	if oldSessionID == newSessionID {
 		return nil, ErrInvalidQueueDisposition
 	}
+	if receipt, ok := r.recoveries[oldSessionID]; ok {
+		if receipt.destinationSessionID != newSessionID {
+			return nil, ErrQueueRecoveryConflict
+		}
+		return cloneQueuedMessages(receipt.entries), nil
+	}
 	list := r.entries[oldSessionID]
 	recovered := make([]QueuedMessage, 0, len(list))
 	var destMax int64
@@ -1103,7 +1134,19 @@ func (r *memoryRepository) RecoverSessionQueue(_ context.Context, oldSessionID, 
 		delete(r.entries, oldSessionID)
 		delete(r.nextPosition, oldSessionID)
 	}
+	r.recoveries[oldSessionID] = memoryQueueRecovery{
+		destinationSessionID: newSessionID,
+		entries:              cloneQueuedMessages(recovered),
+	}
 	return recovered, nil
+}
+
+func cloneQueuedMessages(entries []QueuedMessage) []QueuedMessage {
+	cloned := make([]QueuedMessage, len(entries))
+	for i := range entries {
+		cloned[i] = *cloneQueuedMessage(&entries[i])
+	}
+	return cloned
 }
 
 // ReplaceSession replaces a session's queue with the supplied snapshot.

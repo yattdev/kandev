@@ -3,6 +3,7 @@ package messagequeue
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -295,8 +296,11 @@ func TestRecoverSessionQueueMovesExactFIFOAndRestoresReservedRows(t *testing.T) 
 			}
 
 			retry, err := svc.RecoverSessionQueue(ctx, "retired", "replacement")
-			if err != nil || len(retry) != 0 {
-				t.Fatalf("idempotent retry = %#v, err=%v", retry, err)
+			if err != nil {
+				t.Fatalf("idempotent retry: %v", err)
+			}
+			if !reflect.DeepEqual(retry, recovered) {
+				t.Fatalf("idempotent retry = %#v, want committed snapshot %#v", retry, recovered)
 			}
 		})
 	}
@@ -342,6 +346,155 @@ func TestRecoverSessionQueueRollsBackEveryRowOnFailure(t *testing.T) {
 	}
 	if len(kept) != 1 || kept[0].ID != destination.ID {
 		t.Fatalf("destination after rollback = %#v", kept)
+	}
+}
+
+func TestConcurrentRecoverSessionQueueReplaysOneCommittedSnapshot(t *testing.T) {
+	tests := []struct {
+		name string
+		new  func(*testing.T) Repository
+	}{
+		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
+		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := tt.new(t)
+			svc := censusTestService(t, repo)
+			queued, err := svc.QueueMessage(context.Background(), "source", "task-1", "recover once", "", QueuedByUser, false, nil)
+			if err != nil {
+				t.Fatalf("queue source: %v", err)
+			}
+			start := make(chan struct{})
+			results := make(chan []QueueRecoveryEntry, 2)
+			errs := make(chan error, 2)
+			var wg sync.WaitGroup
+			for range 2 {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-start
+					entries, recoverErr := svc.RecoverSessionQueue(context.Background(), "source", "destination")
+					if recoverErr != nil {
+						errs <- recoverErr
+						return
+					}
+					results <- entries
+				}()
+			}
+			close(start)
+			wg.Wait()
+			close(results)
+			close(errs)
+			for recoverErr := range errs {
+				t.Fatalf("concurrent recovery: %v", recoverErr)
+			}
+			var snapshots [][]QueueRecoveryEntry
+			for result := range results {
+				snapshots = append(snapshots, result)
+			}
+			if len(snapshots) != 2 || !reflect.DeepEqual(snapshots[0], snapshots[1]) ||
+				len(snapshots[0]) != 1 || snapshots[0][0].ID != queued.ID {
+				t.Fatalf("concurrent snapshots = %#v, want two identical committed readbacks", snapshots)
+			}
+			destination, err := repo.ListBySession(context.Background(), "destination")
+			if err != nil {
+				t.Fatalf("list destination: %v", err)
+			}
+			if len(destination) != 1 || destination[0].ID != queued.ID {
+				t.Fatalf("destination queue = %#v, want one moved row", destination)
+			}
+		})
+	}
+}
+
+func TestConcurrentRecoverSessionQueueAllowsOneDestination(t *testing.T) {
+	tests := []struct {
+		name string
+		new  func(*testing.T) Repository
+	}{
+		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
+		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := tt.new(t)
+			svc := censusTestService(t, repo)
+			queued, err := svc.QueueMessage(context.Background(), "source", "task-1", "one destination", "", QueuedByUser, false, nil)
+			if err != nil {
+				t.Fatalf("queue source: %v", err)
+			}
+			start := make(chan struct{})
+			errs := make(chan error, 2)
+			var wg sync.WaitGroup
+			for _, destination := range []string{"destination-a", "destination-b"} {
+				wg.Add(1)
+				go func(destination string) {
+					defer wg.Done()
+					<-start
+					_, recoverErr := svc.RecoverSessionQueue(context.Background(), "source", destination)
+					errs <- recoverErr
+				}(destination)
+			}
+			close(start)
+			wg.Wait()
+			close(errs)
+			var successes, conflicts int
+			for recoverErr := range errs {
+				switch {
+				case recoverErr == nil:
+					successes++
+				case errors.Is(recoverErr, ErrQueueRecoveryConflict):
+					conflicts++
+				default:
+					t.Fatalf("concurrent recovery error = %v", recoverErr)
+				}
+			}
+			if successes != 1 || conflicts != 1 {
+				t.Fatalf("concurrent outcomes = successes %d conflicts %d, want 1/1", successes, conflicts)
+			}
+			var moved []QueuedMessage
+			for _, destination := range []string{"destination-a", "destination-b"} {
+				entries, listErr := repo.ListBySession(context.Background(), destination)
+				if listErr != nil {
+					t.Fatalf("list %s: %v", destination, listErr)
+				}
+				moved = append(moved, entries...)
+			}
+			if len(moved) != 1 || moved[0].ID != queued.ID {
+				t.Fatalf("destination queues contain %#v, want one moved row", moved)
+			}
+		})
+	}
+}
+
+func TestRecoveredSourceRejectsNewAdmissions(t *testing.T) {
+	tests := []struct {
+		name string
+		new  func(*testing.T) Repository
+	}{
+		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
+		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := tt.new(t)
+			if _, err := repo.RecoverSessionQueue(context.Background(), "source", "destination"); err != nil {
+				t.Fatalf("recover empty source: %v", err)
+			}
+			err := repo.Insert(context.Background(), &QueuedMessage{
+				SessionID: "source", TaskID: "task-1", Content: "late arrival", QueuedBy: QueuedByUser,
+			}, 10)
+			if !errors.Is(err, ErrQueueRecoveryConflict) {
+				t.Fatalf("late source admission error = %v, want ErrQueueRecoveryConflict", err)
+			}
+		})
 	}
 }
 
