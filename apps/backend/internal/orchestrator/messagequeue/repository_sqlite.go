@@ -1592,6 +1592,9 @@ func (r *sqliteRepository) ClaimSendNow(ctx context.Context, sessionID string, e
 	if err := r.applySQLiteSendNowClaim(ctx, tx, sessionID, sources, storedByID); err != nil {
 		return nil, err
 	}
+	if err := r.redactRecoveryReceiptsIfEmptyTx(ctx, tx, sessionID); err != nil {
+		return nil, err
+	}
 	if err := r.setAutoRunTx(ctx, tx, sessionID, true); err != nil {
 		return nil, err
 	}
@@ -1658,6 +1661,9 @@ func (r *sqliteRepository) AcknowledgeSendNowClaim(ctx context.Context, claim *S
 		if err := r.acknowledgeSQLiteSendNowSource(ctx, tx, sessionID, source, stored); err != nil {
 			return err
 		}
+	}
+	if err := r.redactRecoveryReceiptsIfEmptyTx(ctx, tx, sessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

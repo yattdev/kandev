@@ -672,6 +672,7 @@ func (r *memoryRepository) ClaimSendNow(_ context.Context, sessionID string, exp
 	} else {
 		r.entries[sessionID] = remaining
 	}
+	r.redactRecoveryIfEmptyLocked(sessionID)
 	r.autoRun[sessionID] = true
 	return &SendNowClaim{Sources: sources, Dispatch: *envelope, SourceGenerations: generations}, nil
 }
@@ -783,6 +784,7 @@ func (r *memoryRepository) AcknowledgeSendNowClaim(_ context.Context, claim *Sen
 	} else {
 		r.entries[sessionID] = remaining
 	}
+	r.redactRecoveryIfEmptyLocked(sessionID)
 	return nil
 }
 

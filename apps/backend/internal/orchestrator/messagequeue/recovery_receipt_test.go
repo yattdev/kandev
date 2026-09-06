@@ -100,6 +100,12 @@ func TestRecoveryReceiptExpiresWhenDestinationIsRemovedByAnyDrainPath(t *testing
 				t.Fatalf("cancel all: %v", err)
 			}
 		}},
+		{name: "claim-send-now", remove: func(t *testing.T, repo Repository, entry QueuedMessage) {
+			t.Helper()
+			if _, err := repo.ClaimSendNow(context.Background(), "destination", []QueuedMessage{entry}); err != nil {
+				t.Fatalf("claim send-now: %v", err)
+			}
+		}},
 	}
 	for _, repoCase := range []struct {
 		name string
@@ -132,6 +138,48 @@ func TestRecoveryReceiptExpiresWhenDestinationIsRemovedByAnyDrainPath(t *testing
 				}
 			})
 		}
+	}
+}
+
+func TestRecoveryReceiptExpiresAfterSendNowAcknowledgement(t *testing.T) {
+	for _, repoCase := range []struct {
+		name string
+		new  func(t *testing.T) (Repository, func())
+	}{
+		{name: "memory", new: func(*testing.T) (Repository, func()) { return NewMemoryRepository(), func() {} }},
+		{name: "sqlite", new: func(t *testing.T) (Repository, func()) {
+			db, repo := openRecoveryReceiptRepository(t, filepath.Join(t.TempDir(), "ack-retention.db"))
+			return repo, func() { _ = db.Close() }
+		}},
+	} {
+		t.Run(repoCase.name, func(t *testing.T) {
+			repo, closeRepo := repoCase.new(t)
+			defer closeRepo()
+			ctx := context.Background()
+			if err := repo.Insert(ctx, &QueuedMessage{
+				SessionID: "source", TaskID: "task-1", Content: "durable recovery body",
+				Metadata: map[string]interface{}{MetadataLifecycleDurable: true},
+			}, 10); err != nil {
+				t.Fatalf("insert: %v", err)
+			}
+			if _, err := repo.RecoverSessionQueue(ctx, "source", "destination"); err != nil {
+				t.Fatalf("recover: %v", err)
+			}
+			entries, err := repo.ListBySession(ctx, "destination")
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("destination entries = %#v, err=%v", entries, err)
+			}
+			claim, err := repo.ClaimSendNow(ctx, "destination", entries)
+			if err != nil {
+				t.Fatalf("claim send-now: %v", err)
+			}
+			if err := repo.AcknowledgeSendNowClaim(ctx, claim); err != nil {
+				t.Fatalf("acknowledge send-now: %v", err)
+			}
+			if _, err := repo.RecoverSessionQueue(ctx, "source", "destination"); !errors.Is(err, ErrQueueRecoverySnapshotExpired) {
+				t.Fatalf("replay error = %v, want %v", err, ErrQueueRecoverySnapshotExpired)
+			}
+		})
 	}
 }
 
