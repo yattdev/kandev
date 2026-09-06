@@ -234,7 +234,7 @@ export function reconcileRemovedSessionPanels(
   }
 }
 
-const EMPTY_SESSION_IDS_KEY = "";
+const EMPTY_SESSION_VISIBILITY_KEY = "";
 
 /**
  * Whether the layout is maximized — session panels are intentionally absent
@@ -632,15 +632,17 @@ export function useAutoSessionTab(effectiveSessionId: string | null) {
     activeTaskId ? (state.sessionHistoryVisibleByTaskId[activeTaskId] ?? false) : false,
   );
 
-  // Key-based dependency so the effect re-runs when the task's session list
-  // changes (add/remove). Inside the effect we re-read the real array from
-  // the store so we don't capture a stale reference.
-  const sessionIdsKey = useAppStore((s) => {
+  // Key-based dependency so the effect re-runs when the task's visible session
+  // set can change. Inside the effect we re-read the real array from the store
+  // so we don't capture a stale reference.
+  const sessionVisibilityKey = useAppStore((s) => {
     const tid = s.tasks.activeTaskId;
-    if (!tid) return EMPTY_SESSION_IDS_KEY;
+    if (!tid) return EMPTY_SESSION_VISIBILITY_KEY;
     const list = s.taskSessionsByTask.itemsByTaskId[tid];
-    if (!list || list.length === 0) return EMPTY_SESSION_IDS_KEY;
-    return list.map((ss) => ss.id).join(",");
+    if (!list || list.length === 0) return EMPTY_SESSION_VISIBILITY_KEY;
+    return JSON.stringify(
+      list.map(({ id, state, is_primary, archived_at }) => [id, state, is_primary, archived_at]),
+    );
   });
 
   useEffect(() => {
@@ -654,5 +656,5 @@ export function useAutoSessionTab(effectiveSessionId: string | null) {
       },
       showHistory,
     );
-  }, [appStore, dockviewApi, effectiveSessionId, sessionIdsKey, showHistory]);
+  }, [appStore, dockviewApi, effectiveSessionId, sessionVisibilityKey, showHistory]);
 }
