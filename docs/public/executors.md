@@ -103,10 +103,17 @@ Review the selected bundles before saving the profile.
 The host model probe helps edit a profile, but it is not the launch authority.
 At launch, the selected executor's advertised ACP catalog decides whether
 Kandev sends the saved model. If the executor does not advertise that model,
-Kandev sends no request for it. It uses an advertised fallback only when one
-exists; otherwise the agent uses its current or default model.
+Kandev sends no request for it. An exact profile (a model with neither an
+explicit fallback nor automatic fallback) fails before inference instead of
+substituting the executor default. Kandev uses an advertised explicit fallback
+when configured. With automatic fallback enabled, the agent can use its
+current or default model.
 
-Kandev writes one warning to task chat when this happens. The warning can list
+the requested model, effective model, agent, executor, and executor profile.
+Kandev writes one warning to task chat for an explicitly authorized fallback.
+For an exact-profile mismatch, the session error reports the requested model,
+the effective model when known, and a stable reason. The warning can list the
+requested model, effective model, agent, executor, and executor profile.
 the requested model, effective model, agent, executor, and executor profile.
 It also tells you to check executor credentials, copied agent configuration,
 and the agent version. Kandev does not rewrite the saved profile model.

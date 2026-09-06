@@ -215,12 +215,15 @@ editing hint, not a launch gate. A profile remains selectable when its saved
 model is missing from that host list.
 
 At task launch, the selected executor's ACP catalog is authoritative. Kandev
-sends the requested model only when the executor advertises it. If it does
-not, Kandev uses an advertised fallback when available, or sends no model
-request and continues with the agent's current or default model. Kandev stores
-one warning in task chat with the requested model and the effective model when
-known. The warning also identifies the agent and executor and asks you to
-check credentials, copied configuration, and the agent version.
+sends the requested model only when the executor advertises it. An exact
+profile, with no explicit fallback and automatic fallback off, fails before
+inference when its model cannot be selected. An advertised explicit fallback
+may be selected instead. With automatic fallback enabled, Kandev sends no
+unadvertised model request and continues with the agent's current or default
+model. Authorized fallback stores one warning in task chat with the requested
+model and effective model when known. The warning identifies the agent and
+executor and asks you to check credentials, copied configuration, and the
+agent version.
 
 The saved profile model is not changed. Optional portable configuration can
 copy selected allowlisted files into a remote executor, but it cannot guarantee

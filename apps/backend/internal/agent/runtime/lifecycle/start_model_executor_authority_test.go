@@ -22,20 +22,16 @@ func TestApplyStartModelPolicyExecutorAuthority(t *testing.T) {
 		wantErr       string
 	}{
 		{
-			name:        "requested model absent does not call executor",
-			state:       modelState("executor-default"),
-			policy:      StartModelPolicy{Model: "host-only-model"},
-			wantOutcome: ModelSelectionOutcomeProviderDefault,
-			wantReason:  ModelSelectionReasonRequestedNotAdvertised,
-			wantWarning: true,
+			name:    "exact model absent fails without calling executor",
+			state:   modelState("executor-default"),
+			policy:  StartModelPolicy{Model: "host-only-model"},
+			wantErr: `requested model "host-only-model" is unavailable (reason: requested_not_advertised)`,
 		},
 		{
-			name:        "empty catalog does not call executor",
-			state:       &CachedModelState{},
-			policy:      StartModelPolicy{Model: "host-only-model", FallbackModel: "fallback"},
-			wantOutcome: ModelSelectionOutcomeProviderDefault,
-			wantReason:  ModelSelectionReasonCatalogEmpty,
-			wantWarning: true,
+			name:    "exact model with empty catalog fails without calling executor",
+			state:   &CachedModelState{},
+			policy:  StartModelPolicy{Model: "host-only-model", FallbackModel: "fallback"},
+			wantErr: `requested model "host-only-model" is unavailable (reason: catalog_empty)`,
 		},
 		{
 			name:          "advertised fallback is applied",
@@ -48,22 +44,18 @@ func TestApplyStartModelPolicyExecutorAuthority(t *testing.T) {
 			wantWarning:   true,
 		},
 		{
-			name:          "advertised fallback method not supported keeps provider default",
+			name:          "advertised fallback method not supported fails",
 			state:         modelState("fallback"),
 			policy:        StartModelPolicy{Model: "host-only-model", FallbackModel: "fallback"},
 			applierErrors: []error{methodNotFoundErr()},
 			wantCalls:     []string{"fallback"},
-			wantOutcome:   ModelSelectionOutcomeProviderDefault,
-			wantReason:    ModelSelectionReasonSelectionUnsupported,
-			wantWarning:   true,
+			wantErr:       `requested model "host-only-model" is unavailable (reason: selection_unsupported)`,
 		},
 		{
-			name:        "unadvertised fallback keeps provider default",
-			state:       modelState("executor-default"),
-			policy:      StartModelPolicy{Model: "host-only-model", FallbackModel: "host-fallback"},
-			wantOutcome: ModelSelectionOutcomeProviderDefault,
-			wantReason:  ModelSelectionReasonFallbackNotAdvertised,
-			wantWarning: true,
+			name:    "unadvertised fallback fails",
+			state:   modelState("executor-default"),
+			policy:  StartModelPolicy{Model: "host-only-model", FallbackModel: "host-fallback"},
+			wantErr: `requested model "host-only-model" is unavailable (reason: fallback_not_advertised)`,
 		},
 		{
 			name:          "advertised requested model is applied",
@@ -74,14 +66,20 @@ func TestApplyStartModelPolicyExecutorAuthority(t *testing.T) {
 			wantEffective: "requested",
 		},
 		{
-			name:          "method not supported keeps provider default",
+			name:          "exact model selection unsupported fails",
 			state:         modelState("requested"),
 			policy:        StartModelPolicy{Model: "requested"},
 			applierErrors: []error{methodNotFoundErr()},
 			wantCalls:     []string{"requested"},
-			wantOutcome:   ModelSelectionOutcomeProviderDefault,
-			wantReason:    ModelSelectionReasonSelectionUnsupported,
-			wantWarning:   true,
+			wantErr:       `requested model "requested" is unavailable (reason: selection_unsupported)`,
+		},
+		{
+			name:        "auto fallback allows absent requested model",
+			state:       modelState("executor-default"),
+			policy:      StartModelPolicy{Model: "host-only-model", AutoFallback: true},
+			wantOutcome: ModelSelectionOutcomeProviderDefault,
+			wantReason:  ModelSelectionReasonRequestedNotAdvertised,
+			wantWarning: true,
 		},
 		{
 			name:          "advertised apply error is explicit",
@@ -119,6 +117,9 @@ func TestApplyStartModelPolicyExecutorAuthority(t *testing.T) {
 			}
 			if !reflect.DeepEqual(applier.calls, tt.wantCalls) {
 				t.Errorf("SetModel calls = %v, want %v", applier.calls, tt.wantCalls)
+			}
+			if tt.wantErr != "" {
+				return
 			}
 			if decision.Outcome != tt.wantOutcome {
 				t.Errorf("outcome = %q, want %q", decision.Outcome, tt.wantOutcome)

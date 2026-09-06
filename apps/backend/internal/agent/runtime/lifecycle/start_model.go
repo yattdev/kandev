@@ -99,11 +99,10 @@ func providerDefaultDecision(state *CachedModelState, policy StartModelPolicy, r
 }
 
 // applyStartModelPolicy applies the profile model only when the executor's
-// ACP catalog advertises it. If the requested model is absent, it may apply an
-// explicitly configured fallback only when that fallback is also advertised.
-// All other mismatches continue on the agent's current/default model and
-// return a warning decision. Errors from an advertised model remain explicit,
-// except for method-not-supported and legacy auto-fallback mode.
+// ACP catalog advertises it. An exact profile fails closed when the requested
+// model cannot be attested before inference. Provider-default continuation is
+// allowed only when auto fallback is explicitly enabled; an explicit fallback
+// is the sole other authorized alternate model.
 func applyStartModelPolicy(
 	ctx context.Context,
 	log *logger.Logger,
@@ -121,28 +120,26 @@ func applyStartModelPolicy(
 	}
 	advertised := advertisedModelIDs(state)
 	if len(advertised) == 0 {
-		return providerDefaultDecision(state, policy, ModelSelectionReasonCatalogEmpty), nil
+		return unavailableStartModel(state, policy, ModelSelectionReasonCatalogEmpty)
 	}
 
 	if !containsModel(advertised, policy.Model) {
-		if policy.FallbackModel != "" && containsModel(advertised, policy.FallbackModel) {
+		if !policy.AutoFallback && policy.FallbackModel != "" && containsModel(advertised, policy.FallbackModel) {
 			return applyAdvertisedFallback(ctx, log, applier, state, policy, decision)
 		}
 		reason := ModelSelectionReasonRequestedNotAdvertised
-		if policy.FallbackModel != "" {
+		if !policy.AutoFallback && policy.FallbackModel != "" {
 			reason = ModelSelectionReasonFallbackNotAdvertised
 		}
-		return providerDefaultDecision(state, policy, reason), nil
+		return unavailableStartModel(state, policy, reason)
 	}
 
 	decision.SetModelCalled = true
 	if err := applier.SetModel(ctx, policy.Model); err != nil {
 		if sessionmodel.IsMethodNotFound(err) {
-			log.Debug("agent does not support model selection, continuing on provider default",
-				zap.String("model", policy.Model), zap.Error(err))
-			decision = providerDefaultDecision(state, policy, ModelSelectionReasonSelectionUnsupported)
-			decision.SetModelCalled = true
-			return decision, nil
+			unsupported, unavailableErr := unavailableStartModel(state, policy, ModelSelectionReasonSelectionUnsupported)
+			unsupported.SetModelCalled = true
+			return unsupported, unavailableErr
 		}
 		if policy.AutoFallback {
 			log.Warn("failed to set profile model via ACP (auto-fallback)",
@@ -159,6 +156,27 @@ func applyStartModelPolicy(
 	return decision, nil
 }
 
+// unavailableStartModel permits provider-default inference only for profiles
+// that explicitly authorize it. The error contains stable, provider-neutral
+// evidence and never includes executor configuration or transport details.
+func unavailableStartModel(
+	state *CachedModelState,
+	policy StartModelPolicy,
+	reason string,
+) (ModelSelectionDecision, error) {
+	decision := providerDefaultDecision(state, policy, reason)
+	if policy.AutoFallback {
+		return decision, nil
+	}
+	if decision.EffectiveModel == "" {
+		return decision, fmt.Errorf("requested model %q is unavailable (reason: %s)", policy.Model, reason)
+	}
+	return decision, fmt.Errorf(
+		"requested model %q is unavailable (reason: %s, effective model: %q)",
+		policy.Model, reason, decision.EffectiveModel,
+	)
+}
+
 func applyAdvertisedFallback(
 	ctx context.Context,
 	log *logger.Logger,
@@ -170,9 +188,9 @@ func applyAdvertisedFallback(
 	decision.SetModelCalled = true
 	if err := applier.SetModel(ctx, policy.FallbackModel); err != nil {
 		if sessionmodel.IsMethodNotFound(err) {
-			decision = providerDefaultDecision(state, policy, ModelSelectionReasonSelectionUnsupported)
-			decision.SetModelCalled = true
-			return decision, nil
+			unsupported, unavailableErr := unavailableStartModel(state, policy, ModelSelectionReasonSelectionUnsupported)
+			unsupported.SetModelCalled = true
+			return unsupported, unavailableErr
 		}
 		return decision, fmt.Errorf("failed to set fallback model %q: %w", policy.FallbackModel, err)
 	}
