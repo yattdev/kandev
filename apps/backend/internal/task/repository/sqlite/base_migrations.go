@@ -324,8 +324,17 @@ func (r *Repository) runMigrations() error {
 			entry_count            INTEGER NOT NULL,
 			snapshot_sha256        TEXT NOT NULL,
 			snapshot_json          TEXT NOT NULL,
+			snapshot_redacted      INTEGER NOT NULL DEFAULT 0,
+			redacted_at            TIMESTAMP,
 			occurred_at            TIMESTAMP NOT NULL
 		)`)
+	r.migrate.Apply("queue_recovery_receipts.snapshot_redacted", `ALTER TABLE queue_recovery_receipts ADD COLUMN snapshot_redacted INTEGER NOT NULL DEFAULT 0`)
+	r.migrate.Apply("queue_recovery_receipts.redacted_at", `ALTER TABLE queue_recovery_receipts ADD COLUMN redacted_at TIMESTAMP`)
+	r.migrate.Apply("queue_recovery_cleanup_events.table", `CREATE TABLE IF NOT EXISTS queue_recovery_cleanup_events (
+		receipt_id TEXT NOT NULL, task_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+		source_session_id TEXT NOT NULL, destination_session_id TEXT NOT NULL,
+		reason TEXT NOT NULL, occurred_at TIMESTAMP NOT NULL
+	)`)
 	r.migrate.Apply("task_session_turns.execution_profile_id", `ALTER TABLE task_session_turns ADD COLUMN execution_profile_id TEXT NOT NULL DEFAULT ''`)
 	r.migrate.Apply("task_session_turns.route_generation", `ALTER TABLE task_session_turns ADD COLUMN route_generation BIGINT NOT NULL DEFAULT 0`)
 

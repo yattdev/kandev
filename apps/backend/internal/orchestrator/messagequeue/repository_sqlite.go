@@ -235,6 +235,18 @@ func (r *sqliteRepository) initSchema() error {
 		entry_count            INTEGER NOT NULL,
 		snapshot_sha256        TEXT NOT NULL,
 		snapshot_json          TEXT NOT NULL,
+		snapshot_redacted      INTEGER NOT NULL DEFAULT 0,
+		redacted_at            TIMESTAMP,
+		occurred_at            TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS queue_recovery_cleanup_events (
+		receipt_id             TEXT NOT NULL,
+		task_id                TEXT NOT NULL,
+		workspace_id           TEXT NOT NULL,
+		source_session_id      TEXT NOT NULL,
+		destination_session_id TEXT NOT NULL,
+		reason                 TEXT NOT NULL,
 		occurred_at            TIMESTAMP NOT NULL
 	);
 	`)
@@ -251,6 +263,12 @@ func (r *sqliteRepository) initSchema() error {
 		return alterErr
 	}
 	if _, alterErr := r.db.Exec(`ALTER TABLE pending_moves ADD COLUMN move_id TEXT NOT NULL DEFAULT ''`); alterErr != nil && !internaldb.IsDuplicateColumnError(alterErr) {
+		return alterErr
+	}
+	if _, alterErr := r.db.Exec(`ALTER TABLE queue_recovery_receipts ADD COLUMN snapshot_redacted INTEGER NOT NULL DEFAULT 0`); alterErr != nil && !internaldb.IsDuplicateColumnError(alterErr) {
+		return alterErr
+	}
+	if _, alterErr := r.db.Exec(`ALTER TABLE queue_recovery_receipts ADD COLUMN redacted_at TIMESTAMP`); alterErr != nil && !internaldb.IsDuplicateColumnError(alterErr) {
 		return alterErr
 	}
 	return nil
@@ -850,6 +868,9 @@ func PurgeTaskInTransaction(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, taskI
 			return 0, err
 		}
 	}
+	if err := redactRecoveryReceiptsTx(ctx, tx, db, taskID, "", "task_purged"); err != nil {
+		return 0, err
+	}
 	result, err := tx.ExecContext(ctx, db.Rebind(`DELETE FROM queued_messages WHERE task_id = ?`), taskID)
 	if err != nil {
 		return 0, fmt.Errorf("purge queued task entries: %w", err)
@@ -1034,6 +1055,7 @@ func (r *sqliteRepository) DisposeExact(ctx context.Context, sessionID string, c
 		BeforeCount: visibleQueueCount(visible),
 		Outcomes:    make([]QueueDispositionOutcome, 0, len(claims)),
 	}
+	removedAny := false
 	for _, claim := range claims {
 		stored, found := byID[claim.ID]
 		status, disposeErr := r.disposeExactStoredClaim(ctx, tx, sessionID, claim, stored, found)
@@ -1041,6 +1063,7 @@ func (r *sqliteRepository) DisposeExact(ctx context.Context, sessionID string, c
 			return nil, disposeErr
 		}
 		result.Outcomes = append(result.Outcomes, QueueDispositionOutcome{ID: claim.ID, Status: status})
+		removedAny = removedAny || status == QueueDispositionRemoved
 	}
 	remaining, _, err := r.listOrderedStoredSessionEntries(ctx, tx, sessionID)
 	if err != nil {
@@ -1051,6 +1074,11 @@ func (r *sqliteRepository) DisposeExact(ctx context.Context, sessionID string, c
 		visible = append(visible, stored.message)
 	}
 	result.AfterCount = visibleQueueCount(visible)
+	if removedAny && result.AfterCount == 0 {
+		if err := redactRecoveryReceiptsTx(ctx, tx, r.db, "", sessionID, "destination_dispositioned"); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -1182,6 +1210,9 @@ func (r *sqliteRepository) TakeHead(ctx context.Context, sessionID string) (*Que
 	}
 	if affected == 0 {
 		return nil, nil
+	}
+	if err := r.redactRecoveryReceiptsIfEmptyTx(ctx, tx, sessionID); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -1410,6 +1441,9 @@ func (r *sqliteRepository) reserveOrdinaryHead(
 	if affected == 0 {
 		return nil, nil
 	}
+	if err := r.redactRecoveryReceiptsIfEmptyTx(ctx, tx, msg.SessionID); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -1444,6 +1478,9 @@ func (r *sqliteRepository) AcknowledgeByID(ctx context.Context, sessionID, entry
 	}
 	if affected == 0 {
 		return ErrEntryNotFound
+	}
+	if err := r.redactRecoveryReceiptsIfEmptyTx(ctx, tx, sessionID); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
@@ -2712,7 +2749,8 @@ func (r *sqliteRepository) recoverSessionQueueInTransaction(
 
 type storedQueueRecoveryReceipt struct {
 	QueueRecoveryReceipt
-	SnapshotJSON string `db:"snapshot_json"`
+	SnapshotJSON     string `db:"snapshot_json"`
+	SnapshotRedacted bool   `db:"snapshot_redacted"`
 }
 
 func (r *sqliteRepository) loadQueueRecoveryReceipt(
@@ -2723,7 +2761,7 @@ func (r *sqliteRepository) loadQueueRecoveryReceipt(
 	var receipt storedQueueRecoveryReceipt
 	err := tx.GetContext(ctx, &receipt, r.db.Rebind(`
 		SELECT id, task_id, workspace_id, source_session_id, destination_session_id,
-			entry_count, snapshot_sha256, snapshot_json, occurred_at
+			entry_count, snapshot_sha256, snapshot_json, snapshot_redacted, occurred_at
 		FROM queue_recovery_receipts WHERE source_session_id = ?
 	`), scope.SourceSessionID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -2737,6 +2775,9 @@ func (r *sqliteRepository) loadQueueRecoveryReceipt(
 		(scope.WorkspaceID != "" && receipt.WorkspaceID != scope.WorkspaceID) {
 		return nil, false, ErrQueueRecoveryConflict
 	}
+	if receipt.SnapshotRedacted {
+		return nil, false, ErrQueueRecoverySnapshotExpired
+	}
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(receipt.SnapshotJSON)))
 	if digest != receipt.SnapshotSHA256 {
 		return nil, false, errors.New("queue recovery receipt snapshot hash mismatch")
@@ -2749,6 +2790,60 @@ func (r *sqliteRepository) loadQueueRecoveryReceipt(
 		return nil, false, errors.New("queue recovery receipt entry count mismatch")
 	}
 	return &QueueRecoveryResult{Receipt: receipt.QueueRecoveryReceipt, Entries: entries}, true, nil
+}
+
+// redactRecoveryReceiptsTx replaces retained bodies with an empty tombstone
+// while preserving receipt identity, count, and original snapshot hash. The
+// event is append-only and emitted in the same transaction as the terminal
+// disposition or task purge, so cleanup cannot be mistaken for silent loss.
+func redactRecoveryReceiptsTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, taskID, destinationSessionID, reason string) error {
+	var ids []string
+	rows, err := tx.QueryxContext(ctx, db.Rebind(`
+		SELECT id FROM queue_recovery_receipts
+		WHERE (? = '' OR task_id = ?) AND (? = '' OR destination_session_id = ?) AND snapshot_redacted = 0
+	`), taskID, taskID, destinationSessionID, destinationSessionID)
+	if err != nil {
+		return fmt.Errorf("list recovery receipts for redaction: %w", err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	for _, id := range ids {
+		var scope struct{ TaskID, WorkspaceID, SourceSessionID, DestinationSessionID string }
+		if err := tx.GetContext(ctx, &scope, db.Rebind(`SELECT task_id, workspace_id, source_session_id, destination_session_id FROM queue_recovery_receipts WHERE id = ?`), id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, db.Rebind(`UPDATE queue_recovery_receipts SET snapshot_json = '[]', snapshot_redacted = 1, redacted_at = ? WHERE id = ? AND snapshot_redacted = 0`), now, id); err != nil {
+			return fmt.Errorf("redact recovery receipt: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, db.Rebind(`INSERT INTO queue_recovery_cleanup_events (receipt_id, task_id, workspace_id, source_session_id, destination_session_id, reason, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?)`), id, scope.TaskID, scope.WorkspaceID, scope.SourceSessionID, scope.DestinationSessionID, reason, now); err != nil {
+			return fmt.Errorf("audit recovery receipt cleanup: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *sqliteRepository) redactRecoveryReceiptsIfEmptyTx(ctx context.Context, tx *sqlx.Tx, sessionID string) error {
+	var count int
+	if err := tx.GetContext(ctx, &count, r.db.Rebind(`SELECT COUNT(*) FROM queued_messages WHERE session_id = ?`), sessionID); err != nil {
+		return fmt.Errorf("count queue before recovery receipt cleanup: %w", err)
+	}
+	if count == 0 {
+		return redactRecoveryReceiptsTx(ctx, tx, r.db, "", sessionID, "destination_dispositioned")
+	}
+	return nil
 }
 
 func (r *sqliteRepository) insertQueueRecoveryReceipt(

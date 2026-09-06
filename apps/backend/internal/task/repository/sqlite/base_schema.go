@@ -994,7 +994,15 @@ const sessionWorktreeSchemaDDL = `
 		entry_count            INTEGER NOT NULL,
 		snapshot_sha256        TEXT NOT NULL,
 		snapshot_json          TEXT NOT NULL,
+		snapshot_redacted      INTEGER NOT NULL DEFAULT 0,
+		redacted_at            TIMESTAMP,
 		occurred_at            TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS queue_recovery_cleanup_events (
+		receipt_id TEXT NOT NULL, task_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+		source_session_id TEXT NOT NULL, destination_session_id TEXT NOT NULL,
+		reason TEXT NOT NULL, occurred_at TIMESTAMP NOT NULL
 	);
 
 	CREATE TABLE IF NOT EXISTS task_session_cleanup_receipts (

@@ -605,6 +605,14 @@ task's current primary, and that the source is still terminal and non-primary,
 inside the queue-transfer transaction; a concurrent promotion or resumed
 source is denied without moving any row.
 
+Recovery bodies have bounded retention: once the destination queue reaches zero
+after successful exact disposition or delivery acknowledgement, Kandev replaces
+the receipt snapshot with a body-free tombstone in the same transaction and
+appends an auditable cleanup event. The receipt ID, original count, hash, and
+task/workspace/session fences remain for retry and late-admission checks; a late
+replay after redaction fails closed instead of returning an empty queue. Hard
+task purge performs the same audited redaction for every recovery receipt.
+
 After recording the recovery response, call
 `close_task_session_kandev(target_session_id)`. Cleanup rejects the current
 primary, live or non-terminal sessions, cross-task targets, pending lifecycle

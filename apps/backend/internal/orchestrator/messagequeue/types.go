@@ -155,6 +155,9 @@ var (
 	// ErrQueueRecoveryTargetNotTerminal means the source session resumed before
 	// the transfer transaction acquired its authorization locks.
 	ErrQueueRecoveryTargetNotTerminal = errors.New("queue recovery source session is not terminal")
+	// ErrQueueRecoverySnapshotExpired is returned when an idempotent replay is
+	// requested after the audited retention cleanup has removed message bodies.
+	ErrQueueRecoverySnapshotExpired = errors.New("queue recovery snapshot has expired")
 )
 
 // QueueRecoveryScope is the server-derived ownership fence stored with one

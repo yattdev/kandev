@@ -40,7 +40,8 @@ func (h *Handlers) handleRecoverSessionQueue(ctx context.Context, msg *ws.Messag
 				"session queue recovery requires the calling task's current primary session", nil)
 		}
 		if errors.Is(err, messagequeue.ErrQueueRecoveryTargetNotTerminal) ||
-			errors.Is(err, messagequeue.ErrQueueRecoveryConflict) {
+			errors.Is(err, messagequeue.ErrQueueRecoveryConflict) ||
+			errors.Is(err, messagequeue.ErrQueueRecoverySnapshotExpired) {
 			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, err.Error(), nil)
 		}
 		h.logger.Error("session queue recovery failed", zap.String("target_session_id", req.TargetSessionID), zap.Error(err))

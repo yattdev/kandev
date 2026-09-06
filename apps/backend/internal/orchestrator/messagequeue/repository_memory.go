@@ -25,6 +25,7 @@ type memoryRepository struct {
 type memoryQueueRecovery struct {
 	destinationSessionID string
 	entries              []QueuedMessage
+	expired              bool
 }
 
 // NewMemoryRepository returns an in-memory Repository. Suitable for tests.
@@ -66,6 +67,16 @@ func (r *memoryRepository) PurgeTask(_ context.Context, taskID string) (int, err
 			continue
 		}
 		r.entries[sessionID] = kept
+	}
+	for sourceID, recovery := range r.recoveries {
+		for _, entry := range recovery.entries {
+			if entry.TaskID == taskID {
+				recovery.entries = nil
+				recovery.expired = true
+				r.recoveries[sourceID] = recovery
+				break
+			}
+		}
 	}
 	r.generation[taskID]++
 	return removed, nil
@@ -434,6 +445,15 @@ func (r *memoryRepository) DisposeExact(_ context.Context, sessionID string, cla
 		}
 	}
 	result.AfterCount = visibleQueueCount(r.entries[sessionID])
+	if len(remove) > 0 && result.AfterCount == 0 {
+		for sourceID, recovery := range r.recoveries {
+			if recovery.destinationSessionID == sessionID {
+				recovery.entries = nil
+				recovery.expired = true
+				r.recoveries[sourceID] = recovery
+			}
+		}
+	}
 	return result, nil
 }
 
@@ -1111,6 +1131,9 @@ func (r *memoryRepository) RecoverSessionQueue(_ context.Context, oldSessionID, 
 	if receipt, ok := r.recoveries[oldSessionID]; ok {
 		if receipt.destinationSessionID != newSessionID {
 			return nil, ErrQueueRecoveryConflict
+		}
+		if receipt.expired {
+			return nil, ErrQueueRecoverySnapshotExpired
 		}
 		return cloneQueuedMessages(receipt.entries), nil
 	}
