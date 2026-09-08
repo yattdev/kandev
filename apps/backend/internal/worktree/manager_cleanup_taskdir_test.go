@@ -65,6 +65,39 @@ func TestCleanupWorktrees_RemovesEmptyTaskDir(t *testing.T) {
 	}
 }
 
+func TestCleanupWorktrees_PreservesLocalSourceCheckout(t *testing.T) {
+	cfg := newTestConfig(t)
+	mgr, err := NewManager(cfg, newMockStore(), newTestLogger())
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	sourcePath := filepath.Join(t.TempDir(), "seed-repository")
+	if err := os.MkdirAll(sourcePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll source checkout: %v", err)
+	}
+	marker := filepath.Join(sourcePath, "seed.txt")
+	if err := os.WriteFile(marker, []byte("suite-owned"), 0o644); err != nil {
+		t.Fatalf("write source marker: %v", err)
+	}
+
+	// Standalone environments use their source checkout as the workspace path
+	// and therefore have no task-owned physical worktree ID.
+	if err := mgr.CleanupWorktrees(context.Background(), []*Worktree{{
+		TaskID:         "task-1",
+		SessionID:      "session-1",
+		RepositoryID:   "repository-1",
+		RepositoryPath: sourcePath,
+		Path:           sourcePath,
+	}}); err != nil {
+		t.Fatalf("CleanupWorktrees: %v", err)
+	}
+
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("local source checkout must survive task cleanup: %v", err)
+	}
+}
+
 // TestCleanupWorktrees_PreservesNonEmptyTaskDir verifies that workspace-
 // scoped content (or a sibling worktree from another session) left under
 // the task directory is preserved when one worktree is removed.

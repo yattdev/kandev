@@ -409,7 +409,11 @@ func (m *Manager) CleanupWorktrees(ctx context.Context, worktrees []*Worktree) e
 
 	var lastErr error
 	for _, wt := range worktrees {
-		if wt == nil {
+		// A blank ID represents a local source checkout rather than a
+		// task-owned physical worktree. It may be recorded as an environment
+		// workspace path for standalone execution, but task cleanup must never
+		// remove that external source repository.
+		if wt == nil || wt.ID == "" {
 			continue
 		}
 		if err := m.removeWorktree(ctx, wt, true); err != nil {

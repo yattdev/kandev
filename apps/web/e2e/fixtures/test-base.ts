@@ -260,6 +260,7 @@ export const test = backendFixture.extend<
     // previous tests in this worker. Keep the seeded workflow and the seed
     // agent profile so the worker-scoped seedData fixture remains valid.
     await apiClient.e2eReset(seedData.workspaceId, [seedData.workflowId]);
+    ensureSeedRepositoryCheckout(seedData);
     await apiClient.updateWorkspace(seedData.workspaceId, { default_agent_profile_id: "" });
     await apiClient.cleanupTestProfiles([seedData.agentProfileId]);
 
@@ -396,6 +397,20 @@ export function restoreSeedRepositoryOrigin(seedData: SeedData) {
   } catch {
     execFileSync("git", [...baseArgs, "add", "origin", seedData.repositoryRemoteURL]);
   }
+}
+
+// The source checkout is a worker-owned fixture, while e2eReset deletes task
+// projections that may have used it. Recreate only the fixture checkout from
+// its worker-owned bare origin; task workspace reuse still fails closed when a
+// task-owned checkout is unavailable.
+function ensureSeedRepositoryCheckout(seedData: SeedData) {
+  if (fs.existsSync(seedData.repositoryPath)) return;
+
+  const reposDir = path.dirname(seedData.repositoryPath);
+  fs.mkdirSync(reposDir, { recursive: true });
+  execFileSync("git", ["clone", seedData.repositoryRemoteURL, seedData.repositoryPath], {
+    env: makeGitEnv(path.dirname(reposDir)),
+  });
 }
 
 // Reset the active workspace pointer before every test so that specs which
