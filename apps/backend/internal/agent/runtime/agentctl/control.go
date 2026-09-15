@@ -109,13 +109,15 @@ type CreateInstanceResponse struct {
 
 // InstanceInfo contains information about an agent instance.
 type InstanceInfo struct {
-	ID            string            `json:"id"`
-	Port          int               `json:"port"`
-	Status        string            `json:"status"`
-	WorkspacePath string            `json:"workspace_path"`
-	AgentCommand  string            `json:"agent_command"`
-	Env           map[string]string `json:"env,omitempty"`
-	CreatedAt     time.Time         `json:"created_at"`
+	ID              string            `json:"id"`
+	Port            int               `json:"port"`
+	LeaseGeneration uint64            `json:"lease_generation"`
+	ListenerActive  bool              `json:"listener_active"`
+	Status          string            `json:"status"`
+	WorkspacePath   string            `json:"workspace_path"`
+	AgentCommand    string            `json:"agent_command"`
+	Env             map[string]string `json:"env,omitempty"`
+	CreatedAt       time.Time         `json:"created_at"`
 	// SessionID is the task session ID this instance was created for, if any.
 	SessionID string `json:"session_id,omitempty"`
 	// TaskID is the task ID this instance was created for, if any.
@@ -128,6 +130,23 @@ type InstanceInfo struct {
 	// back from the adopted instance (AC-EXECUTORS-SURVIVAL-002.14's
 	// "provider session identity" reconstruction row).
 	ProviderSessionID string `json:"provider_session_id,omitempty"`
+}
+
+// PortPoolSnapshot is the authenticated control-server diagnostic view of
+// standalone capacity. It contains counts only; identities stay in the
+// control-server logs and instance inventory.
+type PortPoolSnapshot struct {
+	Capacity               int    `json:"capacity"`
+	Reserved               int    `json:"reserved"`
+	ActiveListeners        int    `json:"active_listeners"`
+	TrackedInstances       int    `json:"tracked_instances"`
+	AllocationSuccess      uint64 `json:"allocation_success"`
+	AllocationExhausted    uint64 `json:"allocation_exhausted"`
+	AllocationAlreadyOwned uint64 `json:"allocation_already_owned"`
+	BindConflicts          uint64 `json:"bind_conflicts"`
+	ReleaseReleased        uint64 `json:"release_released"`
+	ReleaseAlreadyReleased uint64 `json:"release_already_released"`
+	ReleaseOwnerMismatch   uint64 `json:"release_owner_mismatch"`
 }
 
 // ControlClientOption configures optional ControlClient settings.
@@ -637,6 +656,27 @@ func (c *ControlClient) ListInstances(ctx context.Context) ([]*InstanceInfo, err
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 	return result.Instances, nil
+}
+
+// PortPoolSnapshot reads the authenticated standalone allocator diagnostic.
+func (c *ControlClient) PortPoolSnapshot(ctx context.Context) (*PortPoolSnapshot, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/debug/port-pool", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get port-pool snapshot: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get port-pool snapshot: status %d", resp.StatusCode)
+	}
+	var snapshot PortPoolSnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&snapshot); err != nil {
+		return nil, fmt.Errorf("decode port-pool snapshot: %w", err)
+	}
+	return &snapshot, nil
 }
 
 // TurnOutcome is a retained terminal turn outcome for one instance

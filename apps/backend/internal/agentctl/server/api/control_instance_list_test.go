@@ -120,3 +120,43 @@ func TestListInstancesReturnsLiveWorkspaceSourceRoots(t *testing.T) {
 		t.Errorf("WorkspaceSourceRoots = %v, want [%q]", got, workspacePath)
 	}
 }
+
+func TestPortPoolSnapshotRequiresControlCredentialAndReportsLiveLease(t *testing.T) {
+	log := logger.Default()
+	instanceCfg := &config.Config{
+		Ports:    config.PortConfig{Base: 0, Max: 0},
+		Defaults: config.InstanceDefaults{Protocol: agent.ProtocolACP},
+	}
+	mgr := instance.NewManager(instanceCfg, log)
+	t.Cleanup(func() { _ = mgr.Shutdown(t.Context()) })
+	mgr.SetServerFactory(func(*config.InstanceConfig, *process.Manager, *logger.Logger) http.Handler {
+		return http.NotFoundHandler()
+	})
+	created, err := mgr.CreateInstance(t.Context(), &instance.CreateRequest{WorkspacePath: t.TempDir()})
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.StopInstance(t.Context(), created.ID) })
+
+	controlCfg := &config.Config{AuthToken: "port-pool-secret"}
+	server := httptest.NewServer(NewControlServer(controlCfg, mgr, log).Router())
+	defer server.Close()
+	host, port := parseHostPort(t, server.URL)
+
+	unauthenticated := agentctl.NewControlClient(host, port, log)
+	if _, err := unauthenticated.PortPoolSnapshot(t.Context()); err == nil {
+		t.Fatal("unauthenticated PortPoolSnapshot succeeded")
+	}
+
+	authenticated := agentctl.NewControlClient(host, port, log, agentctl.WithControlAuthToken("port-pool-secret"))
+	snapshot, err := authenticated.PortPoolSnapshot(t.Context())
+	if err != nil {
+		t.Fatalf("PortPoolSnapshot: %v", err)
+	}
+	if snapshot.Capacity != 1 || snapshot.Reserved != 1 || snapshot.ActiveListeners != 1 || snapshot.TrackedInstances != 1 {
+		t.Fatalf("PortPoolSnapshot = %+v, want one live lease/listener/instance in a one-port pool", snapshot)
+	}
+	if snapshot.AllocationSuccess != 1 || snapshot.ReleaseReleased != 0 || snapshot.ReleaseOwnerMismatch != 0 {
+		t.Fatalf("PortPoolSnapshot counters = %+v, want one allocation and no releases", snapshot)
+	}
+}

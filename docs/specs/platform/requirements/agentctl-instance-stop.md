@@ -37,6 +37,7 @@ cleanup operation.
 - **AC-PLATFORM-AGENTCTL-INSTANCE-STOP-001.2:** When a stop request observes an unknown instance that was not part of a completed stop, the control API shall retain its HTTP 404 response and shall not release an unrelated port or instance.
 - **AC-PLATFORM-AGENTCTL-INSTANCE-STOP-001.3:** When HTTP-server or process-manager cleanup fails, the control API shall retain its HTTP 500 response and error-level diagnostic, and the instance and its allocated port shall remain retryable.
 - **AC-PLATFORM-AGENTCTL-INSTANCE-STOP-001.4:** When cleanup succeeds, the instance shall be removed from tracking and its port shall be released at most once, including when duplicate stop calls overlap.
+- **AC-PLATFORM-AGENTCTL-INSTANCE-STOP-001.5:** A port release shall name the immutable lease owner and allocation generation. A stale cleanup request shall leave a successor lease for the same numeric port intact.
 
 ## Out of scope
 

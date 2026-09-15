@@ -30,7 +30,7 @@ completed duplicate stop benign while preserving failure and retry semantics.
   serializes teardown with the instance's `stopMu`, and owns map and port
   mutation.
 - `instance.Instance` owns the per-instance stop lock and one-time port-release
-  state.
+  state, including its immutable allocator lease.
 - `internal/agent/runtime/agentctl.ControlClient` retains its existing rule that
   a 404 after a lost delete response satisfies the stopped postcondition.
 
@@ -46,6 +46,13 @@ If the ID is reused for a different tracked instance while an old stop finishes,
 the manager must not treat that different pointer as the old completed stop.
 That safety check prevents one lifecycle from mutating another lifecycle.
 
+The allocator records each reservation as a lease containing the numeric port,
+instance owner, and monotonically assigned generation. It maintains both
+port-to-lease and owner-to-lease indexes under one mutex. A release compares the
+complete lease before deleting it; an absent lease is idempotent, while an owner
+or generation mismatch leaves the current lease unchanged. Persistence records
+and numeric port values are diagnostic data only and cannot release a lease.
+
 ## Stop flow
 
 1. The control handler performs its existing lookup and returns 404 for an ID
@@ -57,8 +64,9 @@ That safety check prevents one lifecycle from mutating another lifecycle.
    returns the already-stopped success outcome. If a different pointer occupies
    the ID, it retains the safety error.
 4. The first successful teardown closes admission, stops the HTTP server and
-   process manager, releases the port once, and removes the pointer from the
-   instance map.
+   process manager, releases the matching lease once, and removes the pointer
+   from the instance map. A stale lease release cannot free a successor that
+   has reused the numeric port.
 5. The control handler returns the existing success response for a nil manager
    result. Real manager errors retain the existing failure response.
 
@@ -75,3 +83,7 @@ The normal completed-stop path continues to log successful instance removal.
 The already-stopped race path may use debug-level diagnostic context, but it
 must not emit the current `failed to stop instance` error with a stack trace.
 Real teardown failures keep their current error-level log and request status.
+The authenticated control-server diagnostic snapshot reports pool capacity,
+reserved leases, active listeners, tracked instances, and closed allocation and
+release outcome counters. A reserved lease with no active listener remains
+reserved until normal teardown resolves its owner.

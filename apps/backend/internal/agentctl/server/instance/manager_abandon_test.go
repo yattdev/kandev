@@ -59,7 +59,7 @@ func TestAbandonPartialInstanceReleasesPort(t *testing.T) {
 	}, log)
 	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
 
-	port, listener, err := mgr.allocatePortAndListener("abandoned")
+	lease, listener, err := mgr.allocatePortAndListener("abandoned")
 	if err != nil {
 		t.Fatalf("allocatePortAndListener: %v", err)
 	}
@@ -67,12 +67,12 @@ func TestAbandonPartialInstanceReleasesPort(t *testing.T) {
 
 	// A nil process manager stands in for abandonment before one exists; the
 	// port and the listener still have to be given back.
-	mgr.abandonPartialInstance("abandoned", port, listener, nil)
+	mgr.abandonPartialInstance("abandoned", lease, listener, nil)
 
 	// The listener is closed, so the address is bindable again.
 	reopened, err := net.Listen("tcp", addr)
 	if err != nil {
-		t.Fatalf("port %d still bound after abandon: %v", port, err)
+		t.Fatalf("port %d still bound after abandon: %v", lease.Port, err)
 	}
 	_ = reopened.Close()
 
@@ -127,12 +127,12 @@ func TestCreateInstanceAbandonsAfterTrackerStartup(t *testing.T) {
 	}
 
 	// With teardown drained, the port is back in the pool and bindable.
-	port, listener, err := mgr.allocatePortAndListener("after-abandon")
+	lease, listener, err := mgr.allocatePortAndListener("after-abandon")
 	if err != nil {
 		t.Fatalf("port was not released by the abandoned creation: %v", err)
 	}
 	_ = listener.Close()
-	mgr.portAlloc.Release(port)
+	mgr.portAlloc.Release(lease)
 }
 
 // TestCreateInstanceRefusedAfterShutdown closes the ordering window Shutdown

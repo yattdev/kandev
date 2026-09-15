@@ -146,7 +146,8 @@ func TestStopInstanceRetainsPortWhenHTTPServerCloseFails(t *testing.T) {
 	closeErr := errors.New("listener close failed")
 	inst := &Instance{
 		ID:        "close-failure",
-		Port:      port,
+		Port:      port.Port,
+		lease:     port,
 		Status:    "running",
 		CreatedAt: time.Now(),
 		server: &fakeHTTPServer{
@@ -181,7 +182,8 @@ func TestStopInstanceRetainsPortAfterProcessTeardownFailure(t *testing.T) {
 	server := &fakeHTTPServer{}
 	inst := &Instance{
 		ID:        "process-cleanup-failure",
-		Port:      port,
+		Port:      port.Port,
+		lease:     port,
 		Status:    "running",
 		CreatedAt: time.Now(),
 		manager:   procMgr,
@@ -206,7 +208,7 @@ func TestStopInstanceRetainsPortAfterProcessTeardownFailure(t *testing.T) {
 	require.False(t, ok)
 	reusedPort, err := mgr.portAlloc.Allocate("third-instance")
 	require.NoError(t, err)
-	require.Equal(t, port, reusedPort)
+	require.Equal(t, port.Port, reusedPort.Port)
 }
 
 func TestStopInstanceReturnsSuccessForCompletedDuplicateStop(t *testing.T) {
@@ -232,7 +234,8 @@ func TestStopInstanceReturnsSuccessForCompletedDuplicateStop(t *testing.T) {
 	}
 	inst := &Instance{
 		ID:        "duplicate-stop",
-		Port:      port,
+		Port:      port.Port,
+		lease:     port,
 		Status:    "running",
 		CreatedAt: time.Now(),
 		manager:   procMgr,
@@ -259,7 +262,7 @@ func TestStopInstanceReturnsSuccessForCompletedDuplicateStop(t *testing.T) {
 	require.False(t, ok, "duplicate stop must leave the instance removed")
 	reusedPort, err := mgr.portAlloc.Allocate("replacement-instance")
 	require.NoError(t, err)
-	require.Equal(t, port, reusedPort, "duplicate stop must release the port once")
+	require.Equal(t, port.Port, reusedPort.Port, "duplicate stop must release the port once")
 }
 
 func TestStopInstanceRejectsReplacementForCapturedInstance(t *testing.T) {

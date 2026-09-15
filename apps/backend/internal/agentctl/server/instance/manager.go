@@ -79,7 +79,8 @@ type Manager struct {
 	// lifetime, matching the AC's "unique across every turn of every
 	// instance the control server supervises for as long as that control
 	// server runs" -- deliberately NOT reset per instance.
-	turnIDSeq atomic.Int64
+	turnIDSeq         atomic.Int64
+	portBindConflicts atomic.Uint64
 }
 
 // NewManager creates a new instance manager.
@@ -160,10 +161,27 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 		return nil, fmt.Errorf("instance with ID %s already exists", id)
 	}
 
-	port, listener, err := m.allocatePortAndListener(id)
+	lease, listener, err := m.allocatePortAndListener(id)
 	if err != nil {
 		return nil, err
 	}
+
+	// From this point until registration, every exit owns the same provisional
+	// bundle. The cleanup runs asynchronously because tracker teardown can
+	// block, while the wait group keeps Shutdown from completing first.
+	var procMgr *process.Manager
+	cleanupArmed := true
+	m.abandonWG.Add(1)
+	defer func() {
+		if !cleanupArmed {
+			m.abandonWG.Done()
+			return
+		}
+		go func() {
+			defer m.abandonWG.Done()
+			m.abandonPartialInstance(id, lease, listener, procMgr)
+		}()
+	}()
 
 	agentCmd := m.resolveAgentCommand(req)
 	autoStart := req.AutoStart
@@ -206,13 +224,13 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 		zap.String("override_protocol", string(overrides.Protocol)))
 
 	// Create instance config using the unified method
-	instanceCfg := m.config.NewInstanceConfig(port, overrides)
+	instanceCfg := m.config.NewInstanceConfig(lease.Port, overrides)
 
 	m.logger.Info("CreateInstance: instance config created",
 		zap.String("config_protocol", string(instanceCfg.Protocol)))
 
 	// Create process manager
-	procMgr := process.NewManager(instanceCfg, m.logger)
+	procMgr = process.NewManager(instanceCfg, m.logger)
 	// Wire retained-outcome recording (AC-EXECUTORS-SURVIVAL-004) before
 	// anything that could reach Start(): this manager satisfies
 	// process.TurnOutcomeRecorder via RetainTurnOutcome above, and nothing
@@ -243,18 +261,14 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 		// Nothing can observe the instance meanwhile: it was never added to
 		// m.instances, and PortAllocator carries its own mutex. The wait group
 		// lets Shutdown drain these before it returns.
-		m.abandonWG.Add(1)
-		go func() {
-			defer m.abandonWG.Done()
-			m.abandonPartialInstance(id, port, listener, procMgr)
-		}()
 		return nil, fmt.Errorf("create instance abandoned during startup: %w", err)
 	}
 
 	// Create instance up-front so the activity middleware can reference it.
 	inst := &Instance{
 		ID:            id,
-		Port:          port,
+		Port:          lease.Port,
+		lease:         lease,
 		Status:        "running",
 		WorkspacePath: req.WorkspacePath,
 		AgentCommand:  agentCmd,
@@ -265,11 +279,13 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 		manager:       procMgr,
 	}
 	inst.MarkActivity()
+	inst.listenerActive.Store(true)
 
 	handler := activityMiddleware(inst)(m.buildHTTPHandler(instanceCfg, procMgr))
-	httpServer := m.startHTTPServer(port, listener, handler, id)
+	httpServer := m.startHTTPServer(lease.Port, listener, handler, inst)
 	inst.server = httpServer
 	m.instances[id] = inst
+	cleanupArmed = false
 
 	// Clamp to a minimum of 1ms so a genuinely sub-millisecond creation can't
 	// be stored as 0, which CreateReadyMillis's zero value reserves to mean
@@ -282,12 +298,12 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 
 	m.logger.Info("created instance",
 		zap.String("instance_id", id),
-		zap.Int("port", port),
+		zap.Int("port", lease.Port),
 		zap.String("workspace", req.WorkspacePath))
 
 	return &CreateResponse{
 		ID:   id,
-		Port: port,
+		Port: lease.Port,
 	}, nil
 }
 
@@ -304,7 +320,7 @@ const abandonPartialInstanceTimeout = 5 * time.Second
 // are slow and uninterruptible — and it does not route through StopInstance,
 // which would take that lock. The instance was never registered in
 // m.instances, so there is nothing there to remove.
-func (m *Manager) abandonPartialInstance(id string, port int, listener net.Listener, procMgr *process.Manager) {
+func (m *Manager) abandonPartialInstance(id string, lease PortLease, listener net.Listener, procMgr *process.Manager) {
 	// The request context is already cancelled, so teardown needs its own.
 	ctx, cancel := context.WithTimeout(context.Background(), abandonPartialInstanceTimeout)
 	defer cancel()
@@ -315,7 +331,7 @@ func (m *Manager) abandonPartialInstance(id string, port int, listener net.Liste
 	if listener != nil {
 		_ = listener.Close()
 	}
-	m.portAlloc.Release(port)
+	m.portAlloc.Release(lease)
 
 	if procMgr != nil {
 		procMgr.CloseAdmission()
@@ -328,34 +344,35 @@ func (m *Manager) abandonPartialInstance(id string, port int, listener net.Liste
 
 	m.logger.Warn("abandoned partially created instance",
 		zap.String("instance_id", id),
-		zap.Int("port", port))
+		zap.Int("port", lease.Port))
 }
 
 // allocatePortAndListener allocates a free port and binds a TCP listener to it.
-func (m *Manager) allocatePortAndListener(id string) (int, net.Listener, error) {
+func (m *Manager) allocatePortAndListener(id string) (PortLease, net.Listener, error) {
 	maxAttempts := m.config.Ports.Max - m.config.Ports.Base + 1
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		allocated, err := m.portAlloc.Allocate(id)
+		lease, err := m.portAlloc.Allocate(id)
 		if err != nil {
-			return 0, nil, fmt.Errorf("failed to allocate port: %w", err)
+			return PortLease{}, nil, fmt.Errorf("failed to allocate port: %w", err)
 		}
 		// Bind loopback-only when auth is disabled (no token); otherwise bind
 		// all interfaces so Docker/remote executors can reach the instance.
-		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", m.config.ListenHost(), allocated))
+		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", m.config.ListenHost(), lease.Port))
 		if err != nil {
 			if netutil.IsAddrInUse(err) {
-				m.portAlloc.MarkUnavailable(allocated)
+				m.portAlloc.MarkUnavailable(lease)
+				m.portBindConflicts.Add(1)
 				m.logger.Warn("port already in use; retrying",
 					zap.String("instance_id", id),
-					zap.Int("port", allocated))
+					zap.Int("port", lease.Port))
 				continue
 			}
-			m.portAlloc.Release(allocated)
-			return 0, nil, fmt.Errorf("failed to bind instance port %d: %w", allocated, err)
+			m.portAlloc.Release(lease)
+			return PortLease{}, nil, fmt.Errorf("failed to bind instance port %d: %w", lease.Port, err)
 		}
-		return allocated, ln, nil
+		return lease, ln, nil
 	}
-	return 0, nil, fmt.Errorf("failed to allocate an available port for instance %s", id)
+	return PortLease{}, nil, fmt.Errorf("failed to allocate an available port for instance %s", id)
 }
 
 // resolveAgentCommand returns the effective agent command for a create request.
@@ -450,7 +467,7 @@ func (m *Manager) buildHTTPHandler(instanceCfg *config.InstanceConfig, procMgr *
 }
 
 // startHTTPServer creates and starts an HTTP server on the given listener.
-func (m *Manager) startHTTPServer(port int, listener net.Listener, handler http.Handler, id string) *http.Server {
+func (m *Manager) startHTTPServer(port int, listener net.Listener, handler http.Handler, inst *Instance) *http.Server {
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: handler,
@@ -458,11 +475,57 @@ func (m *Manager) startHTTPServer(port int, listener net.Listener, handler http.
 	go func() {
 		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			m.logger.Error("instance server error",
-				zap.String("instance_id", id),
+				zap.String("instance_id", inst.ID),
 				zap.Error(err))
 		}
+		inst.listenerActive.Store(false)
 	}()
 	return httpServer
+}
+
+// PortPoolSnapshot reports the allocator and listener counts from one manager
+// snapshot. A reserved lease with no active listener remains reserved until
+// normal teardown resolves the owner, so callers can detect but never infer a
+// direct numeric-port release from this view.
+type PortPoolSnapshot struct {
+	Capacity               int    `json:"capacity"`
+	Reserved               int    `json:"reserved"`
+	ActiveListeners        int    `json:"active_listeners"`
+	TrackedInstances       int    `json:"tracked_instances"`
+	AllocationSuccess      uint64 `json:"allocation_success"`
+	AllocationExhausted    uint64 `json:"allocation_exhausted"`
+	AllocationAlreadyOwned uint64 `json:"allocation_already_owned"`
+	BindConflicts          uint64 `json:"bind_conflicts"`
+	ReleaseReleased        uint64 `json:"release_released"`
+	ReleaseAlreadyReleased uint64 `json:"release_already_released"`
+	ReleaseOwnerMismatch   uint64 `json:"release_owner_mismatch"`
+}
+
+func (m *Manager) PortPoolSnapshot() PortPoolSnapshot {
+	m.mu.RLock()
+	activeListeners := 0
+	for _, inst := range m.instances {
+		if inst.listenerActive.Load() {
+			activeListeners++
+		}
+	}
+	trackedInstances := len(m.instances)
+	m.mu.RUnlock()
+
+	pool := m.portAlloc.Snapshot()
+	return PortPoolSnapshot{
+		Capacity:               pool.Capacity,
+		Reserved:               pool.Reserved,
+		ActiveListeners:        activeListeners,
+		TrackedInstances:       trackedInstances,
+		AllocationSuccess:      pool.AllocationSuccess,
+		AllocationExhausted:    pool.AllocationExhausted,
+		AllocationAlreadyOwned: pool.AllocationAlreadyOwned,
+		BindConflicts:          m.portBindConflicts.Load(),
+		ReleaseReleased:        pool.ReleaseReleased,
+		ReleaseAlreadyReleased: pool.ReleaseAlreadyReleased,
+		ReleaseOwnerMismatch:   pool.ReleaseOwnerMismatch,
+	}
 }
 
 // GetInstance returns an instance by ID.
@@ -552,7 +615,7 @@ func (m *Manager) stopInstance(ctx context.Context, id string, inst *Instance) e
 		zap.Int("port", inst.Port))
 	m.mu.Lock()
 	if !inst.portReleased {
-		m.portAlloc.Release(inst.Port)
+		m.portAlloc.Release(inst.lease)
 		inst.portReleased = true
 	}
 	if stopErr == nil {
