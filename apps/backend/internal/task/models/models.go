@@ -18,6 +18,14 @@ var ErrExecutorRunningNotFound = errors.New("executor running not found")
 // ErrTaskSessionNotFound is returned when no task session record exists.
 var ErrTaskSessionNotFound = errors.New("task session not found")
 
+// ErrCoordinatorHandoffConflict rejects a stale, conflicting, or otherwise
+// unsafe coordinator-primary handoff without changing either session.
+var ErrCoordinatorHandoffConflict = errors.New("coordinator handoff conflict")
+
+// TaskSessionRouteStateCoordinatorHandoffFenced prevents a former Coordinator
+// primary from accepting mutations after its successor owns the task.
+const TaskSessionRouteStateCoordinatorHandoffFenced = "coordinator_handoff_fenced"
+
 // ErrTaskWalkthroughNotFound is returned when no walkthrough record exists.
 var ErrTaskWalkthroughNotFound = errors.New("task walkthrough not found")
 
