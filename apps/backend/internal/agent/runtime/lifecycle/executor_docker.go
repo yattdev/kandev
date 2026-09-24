@@ -273,6 +273,9 @@ func (r *DockerExecutor) seedSessionDir(ctx context.Context, req *ExecutorCreate
 }
 
 func (r *DockerExecutor) buildContainerLaunchConfig(req *ExecutorCreateRequest) (ContainerConfig, error) {
+	if len(req.GitMetadataProjections) != 0 {
+		return ContainerConfig{}, fmt.Errorf("%s: clone-inside Docker cannot use host worktree metadata", gitMetadataProjectionInvalid)
+	}
 	prepareScript, err := r.resolvePrepareScript(req)
 	if err != nil {
 		return ContainerConfig{}, err

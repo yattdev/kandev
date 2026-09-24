@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -234,6 +235,17 @@ func buildStandaloneCreateInstanceRequest(
 func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCreateRequest) (*ExecutorInstance, error) {
 	if err := r.waitForReady(ctx); err != nil {
 		return nil, err
+	}
+	for _, projection := range req.GitMetadataProjections {
+		if projection == nil || req.WorkspacePath == "" || projection.Revalidate() != nil {
+			return nil, errors.New(gitMetadataProjectionInvalid)
+		}
+		if _, err := containerCheckoutPath(req.WorkspacePath, projection.CheckoutPath); err != nil {
+			return nil, err
+		}
+		if err := prepareContainerGitDir(projection, projection.CheckoutPath); err != nil {
+			return nil, err
+		}
 	}
 
 	// Build environment variables
