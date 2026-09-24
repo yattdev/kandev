@@ -20,6 +20,7 @@ import (
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/repoclone"
 	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/worktree"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -1207,12 +1208,15 @@ type LaunchRequest struct {
 	// ExecutionProfileID selects the complete CLI runtime profile. Empty keeps
 	// backward-compatible behavior by using AgentProfileID.
 	ExecutionProfileID string
-	StartAgent         bool                // Transfer launch activity through initial startup/prompt
-	TurnID             string              // Durable Kandev turn for the initial prompt, when present
-	WorkspacePath      string              // Host path to workspace (original repository path)
-	TaskDescription    string              // Task description to send via ACP prompt
-	Attachments        []MessageAttachment // Attachments (images/files) for the initial prompt
-	Env                map[string]string   // Additional env vars
+	StartAgent         bool   // Transfer launch activity through initial startup/prompt
+	TurnID             string // Durable Kandev turn for the initial prompt, when present
+	WorkspacePath      string // Host path to workspace (original repository path)
+	// GitMetadataProjections are runtime-only grants derived after task
+	// worktrees are prepared. They must never be reconstructed from metadata.
+	GitMetadataProjections []*worktree.GitMetadataProjection
+	TaskDescription        string              // Task description to send via ACP prompt
+	Attachments            []MessageAttachment // Attachments (images/files) for the initial prompt
+	Env                    map[string]string   // Additional env vars
 	// AdditionalSkillSlugs are materialized for this launch in addition to the
 	// durable profile selection.
 	AdditionalSkillSlugs []string

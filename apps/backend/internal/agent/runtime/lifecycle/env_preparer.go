@@ -11,6 +11,7 @@ import (
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/repoclone"
 	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/worktree"
 )
 
 // RepositoryPreparationError identifies the repository whose preparation
@@ -234,19 +235,20 @@ type PrepareStep struct {
 // Populated by preparers that handle multi-repo launches; each entry corresponds
 // to one RepoPrepareSpec from the request.
 type RepoWorktreeResult struct {
-	TaskRepositoryID          string `json:"task_repository_id,omitempty"`
-	RepositoryID              string `json:"repository_id"`
-	BranchSlug                string `json:"branch_slug,omitempty"`
-	WorktreeID                string `json:"worktree_id,omitempty"`
-	WorktreeBranch            string `json:"worktree_branch,omitempty"`
-	WorktreeBranchOwner       string `json:"-"`
-	WorktreeIntegrationRef    string `json:"-"`
-	WorktreePath              string `json:"worktree_path,omitempty"`
-	MainRepoGitDir            string `json:"main_repo_git_dir,omitempty"`
-	RequestedBaseBranch       string `json:"requested_base_branch,omitempty"`
-	BaseBranch                string `json:"base_branch,omitempty"`
-	BaseBranchFallbackWarning string `json:"base_branch_fallback_warning,omitempty"`
-	ErrorMessage              string `json:"error_message,omitempty"`
+	TaskRepositoryID          string                          `json:"task_repository_id,omitempty"`
+	RepositoryID              string                          `json:"repository_id"`
+	BranchSlug                string                          `json:"branch_slug,omitempty"`
+	WorktreeID                string                          `json:"worktree_id,omitempty"`
+	WorktreeBranch            string                          `json:"worktree_branch,omitempty"`
+	WorktreeBranchOwner       string                          `json:"-"`
+	WorktreeIntegrationRef    string                          `json:"-"`
+	WorktreePath              string                          `json:"worktree_path,omitempty"`
+	MainRepoGitDir            string                          `json:"main_repo_git_dir,omitempty"`
+	RequestedBaseBranch       string                          `json:"requested_base_branch,omitempty"`
+	BaseBranch                string                          `json:"base_branch,omitempty"`
+	BaseBranchFallbackWarning string                          `json:"base_branch_fallback_warning,omitempty"`
+	GitMetadataProjection     *worktree.GitMetadataProjection `json:"-"`
+	ErrorMessage              string                          `json:"error_message,omitempty"`
 }
 
 // EnvPrepareResult contains the result of environment preparation.
@@ -259,14 +261,15 @@ type EnvPrepareResult struct {
 
 	// Worktree fields (populated when worktree preparer runs).
 	// Legacy single-worktree fields; for multi-repo results they mirror Worktrees[0].
-	WorktreeID                string `json:"worktree_id,omitempty"`
-	WorktreeBranch            string `json:"worktree_branch,omitempty"`
-	WorktreeBranchOwner       string `json:"-"`
-	WorktreeIntegrationRef    string `json:"-"`
-	MainRepoGitDir            string `json:"main_repo_git_dir,omitempty"`
-	RequestedBaseBranch       string `json:"requested_base_branch,omitempty"`
-	BaseBranch                string `json:"base_branch,omitempty"`
-	BaseBranchFallbackWarning string `json:"base_branch_fallback_warning,omitempty"`
+	WorktreeID                string                          `json:"worktree_id,omitempty"`
+	WorktreeBranch            string                          `json:"worktree_branch,omitempty"`
+	WorktreeBranchOwner       string                          `json:"-"`
+	WorktreeIntegrationRef    string                          `json:"-"`
+	MainRepoGitDir            string                          `json:"main_repo_git_dir,omitempty"`
+	RequestedBaseBranch       string                          `json:"requested_base_branch,omitempty"`
+	BaseBranch                string                          `json:"base_branch,omitempty"`
+	BaseBranchFallbackWarning string                          `json:"base_branch_fallback_warning,omitempty"`
+	GitMetadataProjection     *worktree.GitMetadataProjection `json:"-"`
 
 	// Worktrees is the per-repository outcome list when the preparer ran in
 	// multi-repo mode. Empty for single-repo or repo-less results.

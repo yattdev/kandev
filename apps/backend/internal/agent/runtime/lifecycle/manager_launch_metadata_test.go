@@ -312,7 +312,7 @@ func TestBuildLaunchMetadataProjectsWorktreeAndRepoFields(t *testing.T) {
 
 	metadata := buildLaunchMetadata(req, "/repos/widget/.git", "wt-1", "kandev/feature")
 
-	require.Equal(t, "/repos/widget/.git", metadata[MetadataKeyMainRepoGitDir])
+	require.NotContains(t, metadata, MetadataKeyMainRepoGitDir)
 	require.Equal(t, "wt-1", metadata[MetadataKeyWorktreeID])
 	require.Equal(t, "kandev/feature", metadata[MetadataKeyWorktreeBranch])
 	require.Equal(t, "/repos/widget", metadata[MetadataKeyRepositoryPath])

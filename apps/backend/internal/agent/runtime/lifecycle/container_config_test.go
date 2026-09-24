@@ -2,6 +2,8 @@ package lifecycle
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,7 +11,61 @@ import (
 	"github.com/kandev/kandev/internal/agent/agents"
 	"github.com/kandev/kandev/internal/agent/docker"
 	"github.com/kandev/kandev/internal/common/logger"
+	"github.com/kandev/kandev/internal/worktree"
 )
+
+func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	runContainerGit(t, "", "init", "-b", "main", repo)
+	runContainerGit(t, repo, "config", "user.email", "test@example.com")
+	runContainerGit(t, repo, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(repo, "file"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runContainerGit(t, repo, "add", "file")
+	runContainerGit(t, repo, "commit", "-m", "initial")
+	checkout := filepath.Join(t.TempDir(), "checkout")
+	runContainerGit(t, repo, "worktree", "add", "-b", "task", checkout)
+
+	projection, err := worktree.ResolveGitMetadataForRepository(checkout, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured, err := newCMTest(t).buildContainerConfig(ContainerConfig{
+		AgentConfig:            newConfigStubAgent(),
+		InstanceID:             "0123456789abcdef",
+		TaskID:                 "task-1",
+		GitMetadataProjections: []*worktree.GitMetadataProjection{projection},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounts := configured.Mounts
+	assertGitMount(t, mounts, projection.CommonDir, true)
+	for _, path := range projection.AgentWritablePaths {
+		assertGitMount(t, mounts, path, false)
+	}
+}
+
+func runContainerGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	if dir != "" {
+		args = append([]string{"-C", dir}, args...)
+	}
+	if output, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+}
+
+func assertGitMount(t *testing.T, mounts []docker.MountConfig, target string, readOnly bool) {
+	t.Helper()
+	for _, mount := range mounts {
+		if mount.Target == target && mount.ReadOnly == readOnly {
+			return
+		}
+	}
+	t.Fatalf("missing mount target=%q readOnly=%t: %#v", target, readOnly, mounts)
+}
 
 // configStubAgent wraps MockAgent and overrides Runtime() with a fixed
 // RuntimeConfig that mimics ACP agents (image+tag, {workspace} placeholder).

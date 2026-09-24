@@ -246,6 +246,16 @@ func TestWorktreePreparer_MultiRepo_CreatesWorktreePerRepo(t *testing.T) {
 		if _, err := os.Stat(w.WorktreePath); err != nil {
 			t.Errorf("worktree dir missing for %s: %v", w.RepositoryID, err)
 		}
+		if w.GitMetadataProjection == nil {
+			t.Errorf("missing Git metadata projection for %s", w.RepositoryID)
+			continue
+		}
+		if err := w.GitMetadataProjection.Revalidate(); err != nil {
+			t.Errorf("invalid Git metadata projection for %s: %v", w.RepositoryID, err)
+		}
+	}
+	if res.Worktrees[0].GitMetadataProjection.GitDir == res.Worktrees[1].GitMetadataProjection.GitDir {
+		t.Fatal("independent repositories must receive distinct owned Git metadata directories")
 	}
 }
 
@@ -276,6 +286,9 @@ func TestWorktreePreparer_SingleRepoProjectsBranchMetadata(t *testing.T) {
 	}
 	if result.WorktreeIntegrationRef != "main" {
 		t.Fatalf("single-repo integration ref = %q, want main", result.WorktreeIntegrationRef)
+	}
+	if result.GitMetadataProjection == nil {
+		t.Fatal("single-repo preparation must produce a Git metadata projection")
 	}
 }
 

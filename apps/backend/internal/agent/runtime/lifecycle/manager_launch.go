@@ -280,7 +280,7 @@ func hasCompleteKubernetesRecordedResumeMetadata(metadata map[string]interface{}
 // values the caller passed in req.Metadata. Other keys (per-task settings
 // like setup_script, base_branch, repo_setup_script, etc.) keep the caller's
 // value when present.
-func buildLaunchMetadata(req *LaunchRequest, mainRepoGitDir, worktreeID, worktreeBranch string) map[string]interface{} {
+func buildLaunchMetadata(req *LaunchRequest, _ string, worktreeID, worktreeBranch string) map[string]interface{} {
 	metadata := make(map[string]interface{})
 	for k, v := range req.Metadata {
 		metadata[k] = v
@@ -302,9 +302,6 @@ func buildLaunchMetadata(req *LaunchRequest, mainRepoGitDir, worktreeID, worktre
 		for _, key := range kubernetesConnectionMetadataKeys {
 			metadata[key] = req.ExecutorConfig[key]
 		}
-	}
-	if mainRepoGitDir != "" {
-		metadata[MetadataKeyMainRepoGitDir] = mainRepoGitDir
 	}
 	if worktreeID != "" {
 		metadata[MetadataKeyWorktreeID] = worktreeID
@@ -1067,6 +1064,7 @@ func (m *Manager) launchBuildExecutorRequest(ctx context.Context, executionID st
 		PromptTurnID:                   reqWithWorktree.TurnID,
 		WorkspacePath:                  reqWithWorktree.WorkspacePath,
 		WorkspaceSourceRoots:           workspaceSourceRoots(reqWithWorktree.WorkspaceFolders, workspaceRepositorySpecsFromLaunch(reqWithWorktree)),
+		GitMetadataProjections:         reqWithWorktree.GitMetadataProjections,
 		Protocol:                       string(agentConfig.Runtime().Protocol),
 		Env:                            env,
 		AutoApprovePermissions:         profileInfo != nil && profileInfo.AutoApprove,
@@ -1645,6 +1643,11 @@ func (m *Manager) launchInternal(ctx context.Context, req *LaunchRequest) (*Agen
 		// state; otherwise standalone receives the repository path (or an empty
 		// path) that was present before preparation completed.
 		reqWithWorktree.WorkspacePath = workspacePath
+		projections, err := projectionsFromPrepareResult(prepResult)
+		if err != nil {
+			return nil, err
+		}
+		reqWithWorktree.GitMetadataProjections = projections
 	}
 
 	// 6b. Deploy per-profile skills + custom prompt (ADR 0005 Wave A).

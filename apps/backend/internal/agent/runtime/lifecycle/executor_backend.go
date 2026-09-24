@@ -18,6 +18,7 @@ import (
 	commonconfig "github.com/kandev/kandev/internal/common/config"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/worktree"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 )
 
@@ -600,6 +601,7 @@ type ExecutorCreateRequest struct {
 	PromptTurnID           string
 	WorkspacePath          string
 	WorkspaceSourceRoots   []string
+	GitMetadataProjections []*worktree.GitMetadataProjection
 	Protocol               string
 	Env                    map[string]string
 	// ApprovedSecretEnvKeys contains repository binding keys explicitly
