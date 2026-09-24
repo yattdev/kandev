@@ -454,7 +454,7 @@ func (cm *ContainerManager) buildContainerConfig(config ContainerConfig) (docker
 	// sources resolve to a real on-disk location.
 	mounts := cm.expandMounts(rt.Mounts, config.WorkspacePath, ag, config.InstanceID)
 
-	gitMounts, err := gitMetadataMounts(config.GitMetadataProjections)
+	gitMounts, err := gitMetadataMounts(config.GitMetadataProjections, config.WorkspacePath)
 	if err != nil {
 		return docker.ContainerConfig{}, err
 	}

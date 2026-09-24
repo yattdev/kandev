@@ -24,6 +24,7 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 	}
 	runContainerGit(t, repo, "add", "file")
 	runContainerGit(t, repo, "commit", "-m", "initial")
+	runContainerGit(t, repo, "remote", "add", "origin", "https://github.com/example/project.git")
 	checkout := filepath.Join(t.TempDir(), "checkout")
 	runContainerGit(t, repo, "worktree", "add", "-b", "task", checkout)
 
@@ -33,6 +34,7 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 	}
 	configured, err := newCMTest(t).buildContainerConfig(ContainerConfig{
 		AgentConfig:            newConfigStubAgent(),
+		WorkspacePath:          checkout,
 		InstanceID:             "0123456789abcdef",
 		TaskID:                 "task-1",
 		GitMetadataProjections: []*worktree.GitMetadataProjection{projection},
@@ -42,8 +44,91 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 	}
 	mounts := configured.Mounts
 	assertGitMount(t, mounts, projection.CommonDir, true)
-	for _, path := range projection.AgentWritablePaths {
-		assertGitMount(t, mounts, path, false)
+	assertGitMount(t, mounts, projection.GitDir, false)
+	for _, mount := range mounts {
+		if mount.ReadOnly {
+			continue
+		}
+		if _, err := os.Stat(mount.Source); err != nil {
+			t.Errorf("writable Git mount source %q must exist before Docker creates the container: %v", mount.Source, err)
+		}
+	}
+	for _, mount := range mounts {
+		if mount.ReadOnly {
+			continue
+		}
+		for _, path := range []string{filepath.Dir(projection.CurrentRefPath), filepath.Dir(projection.ReflogPath)} {
+			if mount.Target == path {
+				t.Errorf("shared Git directory %q must not be mounted writable", path)
+			}
+		}
+	}
+	privateGitDir := filepath.Join(projection.GitDir, "kandev-agent-git")
+	if !hasGitMount(mounts, privateGitDir, projection.GitDir, false) {
+		t.Fatalf("task-private Git metadata must be mounted over the linked-worktree admin dir: %#v", mounts)
+	}
+	remoteURL := strings.TrimSpace(string(runContainerGitOutput(t, "--git-dir", privateGitDir, "remote", "get-url", "origin")))
+	if remoteURL != "https://github.com/example/project.git" {
+		t.Fatalf("task-private origin = %q, want source repository URL", remoteURL)
+	}
+	sharedSiblingRef := filepath.Join(projection.CommonDir, "refs", "heads", "main")
+	siblingBefore, err := os.ReadFile(sharedSiblingRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(privateGitDir, "refs", "heads", "task.lock")
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, "change"), []byte("task change"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) ([]byte, error) {
+		command := exec.Command("git", append([]string{"--git-dir", privateGitDir, "--work-tree", checkout}, args...)...)
+		command.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Task Agent", "GIT_AUTHOR_EMAIL=task@example.com", "GIT_COMMITTER_NAME=Task Agent", "GIT_COMMITTER_EMAIL=task@example.com")
+		return command.CombinedOutput()
+	}
+	if output, err := git("add", "change"); err != nil {
+		t.Fatalf("git add through task metadata: %v: %s", err, output)
+	}
+	if output, err := git("commit", "-m", "task commit"); err == nil {
+		t.Fatalf("commit must respect an occupied native ref lock: %s", output)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := git("commit", "-m", "task commit"); err != nil {
+		t.Fatalf("git commit through task metadata: %v: %s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(privateGitDir, "logs", "HEAD")); err != nil {
+		t.Fatalf("task reflog was not updated: %v", err)
+	}
+	siblingAfter, err := os.ReadFile(sharedSiblingRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(siblingAfter) != string(siblingBefore) {
+		t.Fatalf("task commit changed sibling ref from %q to %q", siblingBefore, siblingAfter)
+	}
+	if output, err := git("update-ref", "refs/heads/main", "HEAD~0"); err != nil {
+		t.Fatalf("mutate the task-private copy of a sibling ref: %v: %s", err, output)
+	}
+	siblingAfter, err = os.ReadFile(sharedSiblingRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(siblingAfter) != string(siblingBefore) {
+		t.Fatalf("task-private sibling ref update changed shared ref from %q to %q", siblingBefore, siblingAfter)
+	}
+	if _, err := os.Stat(filepath.Join(privateGitDir, "refs", "heads", "task.lock")); !os.IsNotExist(err) {
+		t.Fatalf("native ref lock was not released: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(privateGitDir, "logs", "refs", "heads", "task.lock")); !os.IsNotExist(err) {
+		t.Fatalf("native reflog lock was not released: %v", err)
 	}
 }
 
@@ -57,6 +142,15 @@ func runContainerGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
+func runContainerGitOutput(t *testing.T, args ...string) []byte {
+	t.Helper()
+	output, err := exec.Command("git", args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+	return output
+}
+
 func assertGitMount(t *testing.T, mounts []docker.MountConfig, target string, readOnly bool) {
 	t.Helper()
 	for _, mount := range mounts {
@@ -65,6 +159,15 @@ func assertGitMount(t *testing.T, mounts []docker.MountConfig, target string, re
 		}
 	}
 	t.Fatalf("missing mount target=%q readOnly=%t: %#v", target, readOnly, mounts)
+}
+
+func hasGitMount(mounts []docker.MountConfig, source, target string, readOnly bool) bool {
+	for _, mount := range mounts {
+		if mount.Source == source && mount.Target == target && mount.ReadOnly == readOnly {
+			return true
+		}
+	}
+	return false
 }
 
 // configStubAgent wraps MockAgent and overrides Runtime() with a fixed
