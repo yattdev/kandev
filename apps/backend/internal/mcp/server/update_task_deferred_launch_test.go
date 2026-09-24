@@ -8,6 +8,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUpdateTaskForwardsTerminalRetentionOnlyWhenSupplied(t *testing.T) {
+	backend := &testBackend{response: map[string]interface{}{"id": "task-1"}}
+	s := newTaskModeServer(t, backend, "task-current")
+
+	for _, held := range []bool{true, false} {
+		result := callTool(t, s, "update_task_kandev", map[string]interface{}{
+			"task_id": "task-1", "terminal_retention": held,
+		})
+		require.False(t, result.IsError)
+		payload, ok := backend.lastPayload.(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, held, payload["terminal_retention"])
+	}
+	result := callTool(t, s, "update_task_kandev", map[string]interface{}{"task_id": "task-1", "title": "Name"})
+	require.False(t, result.IsError)
+	payload, ok := backend.lastPayload.(map[string]interface{})
+	require.True(t, ok)
+	assert.NotContains(t, payload, "terminal_retention")
+
+	tool, ok := s.mcpServer.ListTools()["update_task_kandev"]
+	require.True(t, ok)
+	schema, err := json.Marshal(tool.Tool.InputSchema)
+	require.NoError(t, err)
+	var parsed map[string]interface{}
+	require.NoError(t, json.Unmarshal(schema, &parsed))
+	properties, ok := parsed["properties"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Contains(t, properties, "terminal_retention")
+}
+
 // update_task_kandev must forward deferred_launch_prompt, and only when the
 // caller sent one: an unconditional key would make every ordinary title edit
 // look like a launch-prompt rewrite and be rejected on started tasks.
