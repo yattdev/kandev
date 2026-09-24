@@ -71,6 +71,10 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 	if remoteURL != "https://github.com/example/project.git" {
 		t.Fatalf("task-private origin = %q, want source repository URL", remoteURL)
 	}
+	gitUser := strings.TrimSpace(string(runContainerGitOutput(t, "--git-dir", privateGitDir, "config", "user.name")))
+	if gitUser != "Test" {
+		t.Fatalf("task-private Git user = %q, want source repository user", gitUser)
+	}
 	sharedSiblingRef := filepath.Join(projection.CommonDir, "refs", "heads", "main")
 	siblingBefore, err := os.ReadFile(sharedSiblingRef)
 	if err != nil {
@@ -86,7 +90,6 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 	}
 	git := func(args ...string) ([]byte, error) {
 		command := exec.Command("git", append([]string{"--git-dir", privateGitDir, "--work-tree", checkout}, args...)...)
-		command.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Task Agent", "GIT_AUTHOR_EMAIL=task@example.com", "GIT_COMMITTER_NAME=Task Agent", "GIT_COMMITTER_EMAIL=task@example.com")
 		return command.CombinedOutput()
 	}
 	if output, err := git("add", "change"); err != nil {

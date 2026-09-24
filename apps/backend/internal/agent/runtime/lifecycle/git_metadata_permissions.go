@@ -149,11 +149,37 @@ func configureContainerGitDir(projection *worktree.GitMetadataProjection, privat
 			return fmt.Errorf("configure task Git metadata: %w: %s", configErr, strings.TrimSpace(string(output)))
 		}
 	}
+	keys := []string{"user.name", "user.email"}
+	if strings.HasPrefix(projection.CurrentRef, "refs/heads/") {
+		branch := strings.TrimPrefix(projection.CurrentRef, "refs/heads/")
+		keys = append(keys, "branch."+branch+".remote", "branch."+branch+".merge")
+	}
+	for _, key := range keys {
+		if err := copyGitConfigValue(projection.CheckoutPath, privateGitDir, key); err != nil {
+			return err
+		}
+	}
 	remoteURL, err := exec.Command("git", "-C", projection.CheckoutPath, "remote", "get-url", "origin").Output()
 	if err == nil {
 		if output, configErr := exec.Command("git", "--git-dir", privateGitDir, "remote", "set-url", "origin", strings.TrimSpace(string(remoteURL))).CombinedOutput(); configErr != nil {
 			return fmt.Errorf("configure task Git remote: %w: %s", configErr, strings.TrimSpace(string(output)))
 		}
+	}
+	return nil
+}
+
+func copyGitConfigValue(checkoutPath, gitDir, key string) error {
+	value, err := exec.Command("git", "-C", checkoutPath, "config", "--get", key).Output()
+	if err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+			return nil
+		}
+		return fmt.Errorf("read task Git config %q: %w", key, err)
+	}
+	args := []string{"--git-dir", gitDir, "config", "--replace-all", key, strings.TrimSpace(string(value))}
+	if output, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("copy task Git config %q: %w: %s", key, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
