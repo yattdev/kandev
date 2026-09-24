@@ -143,7 +143,7 @@ func resolveTrustedSubmoduleCommonDir(repositoryPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := rejectSymlinkComponents(gitDir); err != nil {
+	if err := rejectGitMetadataSymlinkComponents(gitDir); err != nil {
 		return "", err
 	}
 	if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err == nil {
@@ -189,7 +189,7 @@ func (p *GitMetadataProjection) Revalidate() error {
 }
 
 func resolveRegularGitMetadata(checkout, gitDir string) (*GitMetadataProjection, error) {
-	if err := rejectSymlinkComponents(gitDir); err != nil {
+	if err := rejectGitMetadataSymlinkComponents(gitDir); err != nil {
 		return nil, invalidGitMetadata(err)
 	}
 	if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err == nil {
@@ -205,7 +205,7 @@ func resolveLinkedGitMetadata(checkout, gitEntry string) (*GitMetadataProjection
 	if err != nil {
 		return nil, invalidGitMetadata(err)
 	}
-	if err := rejectSymlinkComponents(gitDir); err != nil {
+	if err := rejectGitMetadataSymlinkComponents(gitDir); err != nil {
 		return nil, invalidGitMetadata(err)
 	}
 	backPointer, err := readMetadataPathStrict(filepath.Join(gitDir, "gitdir"), gitDir)
@@ -216,7 +216,7 @@ func resolveLinkedGitMetadata(checkout, gitEntry string) (*GitMetadataProjection
 	if err != nil {
 		return nil, invalidGitMetadata(err)
 	}
-	if err := rejectSymlinkComponents(commonDir); err != nil {
+	if err := rejectGitMetadataSymlinkComponents(commonDir); err != nil {
 		return nil, invalidGitMetadata(err)
 	}
 	worktreesDir := filepath.Join(commonDir, "worktrees")
@@ -233,7 +233,7 @@ func buildGitMetadataProjection(checkout, gitDir, commonDir, worktreeName string
 		return nil, invalidGitMetadata(err)
 	}
 	objectDir := filepath.Join(commonDir, "objects")
-	if err := rejectSymlinkComponents(objectDir); err != nil {
+	if err := rejectGitMetadataSymlinkComponents(objectDir); err != nil {
 		return nil, invalidGitMetadata(err)
 	}
 	writablePaths := []string{gitDir, objectDir}
@@ -245,10 +245,10 @@ func buildGitMetadataProjection(checkout, gitDir, commonDir, worktreeName string
 	if ref != "" {
 		refPath = filepath.Join(commonDir, filepath.FromSlash(ref))
 		reflogPath = filepath.Join(commonDir, "logs", filepath.FromSlash(ref))
-		if err := rejectSymlinkComponents(refPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := rejectGitMetadataSymlinkComponents(refPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, invalidGitMetadata(err)
 		}
-		if err := rejectSymlinkComponents(reflogPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := rejectGitMetadataSymlinkComponents(reflogPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, invalidGitMetadata(err)
 		}
 		// Git creates ref.lock and reflog lock siblings before replacing the
@@ -322,7 +322,7 @@ func readGitdirPointer(gitEntry, checkout string) (string, error) {
 	}
 	// EvalSymlinks below is only for canonical identity comparison. Refuse a
 	// pointer that traverses one before canonicalization can erase the evidence.
-	if err := rejectSymlinkComponents(path); err != nil {
+	if err := rejectGitMetadataSymlinkComponents(path); err != nil {
 		return "", err
 	}
 	return canonicalExistingPath(path)
@@ -530,7 +530,7 @@ func ValidBranchRef(ref string) bool {
 	return true
 }
 
-func rejectSymlinkComponents(path string) error {
+func rejectGitMetadataSymlinkComponents(path string) error {
 	abs, err := filepath.Abs(filepath.Clean(path))
 	if err != nil {
 		return err
