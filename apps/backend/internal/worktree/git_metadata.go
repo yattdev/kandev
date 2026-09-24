@@ -16,20 +16,21 @@ import (
 // GitMetadataProjectionVersion changes whenever the shape of the metadata
 // permission contract changes. Hashes are freshness diagnostics only; callers
 // must always resolve the projection again before installing permissions.
-const GitMetadataProjectionVersion = 2
+const GitMetadataProjectionVersion = 3
 
 // ErrGitMetadataProjectionInvalid is returned when checkout metadata cannot
 // prove that it belongs to the checkout being authorized.
 var ErrGitMetadataProjectionInvalid = errors.New("git metadata projection invalid")
 
 // GitMetadataProjection describes exactly the Git metadata a task checkout
-// needs for ordinary add and commit operations. CommonDir is intentionally not
-// included in AgentWritablePaths: callers must grant only its listed children.
+// needs for ordinary add and commit operations. SharedCommonDir is intentionally
+// excluded from AgentWritablePaths: callers must grant only listed task paths.
 type GitMetadataProjection struct {
 	Version            int
 	CheckoutPath       string
 	GitDir             string
 	CommonDir          string
+	SharedCommonDir    string
 	WorktreesDir       string
 	ObjectDir          string
 	CurrentRef         string
@@ -91,7 +92,7 @@ func ResolveGitMetadataForRepository(checkoutPath, repositoryPath string) (*GitM
 	if err != nil {
 		return nil, invalidGitMetadata(errors.New("trusted repository checkout is invalid"))
 	}
-	if projection.CommonDir != trustedCommonDir {
+	if projection.SharedCommonDir != trustedCommonDir {
 		return nil, invalidGitMetadata(errors.New("checkout common directory does not match trusted repository"))
 	}
 	// A task checkout must be a distinct linked worktree, never the source
@@ -176,7 +177,7 @@ func (p *GitMetadataProjection) Revalidate() error {
 		return err
 	}
 	if p.TrustedCommonDir != "" {
-		if current.CommonDir != p.TrustedCommonDir {
+		if current.SharedCommonDir != p.TrustedCommonDir {
 			return invalidGitMetadata(errors.New("checkout common directory changed after resolution"))
 		}
 		current.TrustedCommonDir = p.TrustedCommonDir
@@ -185,6 +186,29 @@ func (p *GitMetadataProjection) Revalidate() error {
 	if current.Hash != p.Hash {
 		return invalidGitMetadata(errors.New("projection changed after resolution"))
 	}
+	return nil
+}
+
+// Refresh updates a projection after task-local Git metadata is materialized,
+// while retaining its binding to the original shared repository.
+func (p *GitMetadataProjection) Refresh() error {
+	if p == nil {
+		return invalidGitMetadata(errors.New("projection is nil"))
+	}
+	current, err := ResolveGitMetadata(p.CheckoutPath)
+	if err != nil {
+		return err
+	}
+	trustedCommonDir := p.TrustedCommonDir
+	if trustedCommonDir == "" {
+		trustedCommonDir = p.SharedCommonDir
+	}
+	if current.GitDir != p.GitDir || current.SharedCommonDir != trustedCommonDir {
+		return invalidGitMetadata(errors.New("task-local Git metadata changed repository binding"))
+	}
+	current.TrustedCommonDir = trustedCommonDir
+	current.Hash = projectionHash(current)
+	*p = *current
 	return nil
 }
 
@@ -219,12 +243,34 @@ func resolveLinkedGitMetadata(checkout, gitEntry string) (*GitMetadataProjection
 	if err := rejectGitMetadataSymlinkComponents(commonDir); err != nil {
 		return nil, invalidGitMetadata(err)
 	}
+	sharedCommonDir := commonDir
 	worktreesDir := filepath.Join(commonDir, "worktrees")
+	privateCommon := filepath.Join(gitDir, "kandev-agent-git")
+	if commonDir == privateCommon {
+		sharedCommonDir = filepath.Dir(filepath.Dir(gitDir))
+		if err := rejectGitMetadataSymlinkComponents(sharedCommonDir); err != nil {
+			return nil, invalidGitMetadata(err)
+		}
+		if _, err := directChildName(filepath.Join(sharedCommonDir, "worktrees"), gitDir); err != nil {
+			return nil, invalidGitMetadata(errors.New("private common directory is not owned by the linked worktree"))
+		}
+		alternates, err := readRegularMetadataFile(filepath.Join(commonDir, "objects", "info", "alternates"))
+		if err != nil || strings.TrimSpace(string(alternates)) != filepath.Join(sharedCommonDir, "objects") {
+			return nil, invalidGitMetadata(errors.New("private common directory has an invalid object alternate"))
+		}
+		worktreesDir = filepath.Join(sharedCommonDir, "worktrees")
+	}
 	name, err := directChildName(worktreesDir, gitDir)
-	if err != nil {
+	if err != nil && commonDir != privateCommon {
 		return nil, invalidGitMetadata(err)
 	}
-	return buildGitMetadataProjection(checkout, gitDir, commonDir, name)
+	projection, err := buildGitMetadataProjection(checkout, gitDir, commonDir, name)
+	if err != nil {
+		return nil, err
+	}
+	projection.SharedCommonDir = sharedCommonDir
+	projection.Hash = projectionHash(projection)
+	return projection, nil
 }
 
 func buildGitMetadataProjection(checkout, gitDir, commonDir, worktreeName string) (*GitMetadataProjection, error) {
@@ -267,6 +313,7 @@ func buildGitMetadataProjection(checkout, gitDir, commonDir, worktreeName string
 		CheckoutPath:       checkout,
 		GitDir:             gitDir,
 		CommonDir:          commonDir,
+		SharedCommonDir:    commonDir,
 		WorktreesDir:       filepath.Join(commonDir, "worktrees"),
 		ObjectDir:          objectDir,
 		CurrentRef:         ref,
@@ -573,7 +620,7 @@ func uniqueGitMetadataPaths(paths []string) []string {
 }
 
 func projectionHash(p *GitMetadataProjection) string {
-	parts := append([]string{fmt.Sprintf("v%d", p.Version), p.CheckoutPath, p.GitDir, p.CommonDir, p.TrustedCommonDir, p.CurrentRef}, p.AgentWritablePaths...)
+	parts := append([]string{fmt.Sprintf("v%d", p.Version), p.CheckoutPath, p.GitDir, p.CommonDir, p.SharedCommonDir, p.TrustedCommonDir, p.CurrentRef}, p.AgentWritablePaths...)
 	parts = append(parts, "mount-support")
 	parts = append(parts, p.MountSupportPaths...)
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))

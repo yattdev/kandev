@@ -45,37 +45,33 @@ func projectionsFromPrepareResult(result *EnvPrepareResult) ([]*worktree.GitMeta
 	return projections, nil
 }
 
-// gitMetadataMounts overlays task-owned Git metadata at each linked worktree's
-// admin path while keeping the shared object source read-only.
+// gitMetadataMounts exposes task-owned worktree metadata as writable while
+// keeping source repository metadata read-only.
 func gitMetadataMounts(projections []*worktree.GitMetadataProjection, workspacePath string) ([]docker.MountConfig, error) {
 	if len(projections) == 0 {
 		return nil, nil
 	}
 	common := make(map[string]struct{}, len(projections))
-	writable := make(map[string]string, len(projections))
+	writable := make(map[string]struct{}, len(projections))
 	for _, projection := range projections {
 		if projection == nil || projection.Revalidate() != nil {
 			return nil, errors.New(gitMetadataProjectionInvalid)
 		}
-		if projection.GitDir != projection.CommonDir {
-			common[projection.CommonDir] = struct{}{}
-		}
+		common[projection.SharedCommonDir] = struct{}{}
 		containerCheckoutPath, err := containerCheckoutPath(workspacePath, projection.CheckoutPath)
 		if err != nil {
 			return nil, err
 		}
-		privateGitDir, err := prepareContainerGitDir(projection, containerCheckoutPath)
-		if err != nil {
+		if err := prepareContainerGitDir(projection, containerCheckoutPath); err != nil {
 			return nil, err
 		}
-		writable[projection.GitDir] = privateGitDir
+		writable[projection.GitDir] = struct{}{}
 	}
 	for _, projection := range projections {
 		if err := projection.Revalidate(); err != nil {
 			return nil, errors.New(gitMetadataProjectionInvalid)
 		}
-		privateGitDir := filepath.Join(projection.GitDir, "kandev-agent-git")
-		if err := validateContainerGitDir(privateGitDir); err != nil {
+		if err := validateContainerGitDir(projection.CommonDir); err != nil {
 			return nil, err
 		}
 	}
@@ -84,13 +80,13 @@ func gitMetadataMounts(projections []*worktree.GitMetadataProjection, workspaceP
 	for _, path := range sortedGitMetadataPaths(common) {
 		mounts = append(mounts, docker.MountConfig{Source: path, Target: path, ReadOnly: true})
 	}
-	for _, target := range sortedGitMetadataMountTargets(writable) {
-		mounts = append(mounts, docker.MountConfig{Source: writable[target], Target: target})
+	for _, path := range sortedGitMetadataPathSet(writable) {
+		mounts = append(mounts, docker.MountConfig{Source: path, Target: path})
 	}
 	return mounts, nil
 }
 
-func prepareContainerGitDir(projection *worktree.GitMetadataProjection, containerCheckoutPath string) (string, error) {
+func prepareContainerGitDir(projection *worktree.GitMetadataProjection, containerCheckoutPath string) error {
 	containerGitDirMu.Lock()
 	defer containerGitDirMu.Unlock()
 
@@ -99,23 +95,67 @@ func prepareContainerGitDir(projection *worktree.GitMetadataProjection, containe
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		if err := initializeContainerGitDir(projection, privateGitDir, containerCheckoutPath); err != nil {
-			return "", err
+			return err
 		}
 	case err != nil:
-		return "", err
+		return err
 	case info.Mode()&os.ModeSymlink != 0 || !info.IsDir():
-		return "", errors.New(gitMetadataProjectionInvalid)
+		return errors.New(gitMetadataProjectionInvalid)
 	}
 	if err := configureContainerGitDir(projection, privateGitDir, containerCheckoutPath); err != nil {
-		return "", err
+		return err
 	}
-	if err := projection.Revalidate(); err != nil {
-		return "", errors.New(gitMetadataProjectionInvalid)
+	commondirPath := filepath.Join(projection.GitDir, "commondir")
+	commondir, err := os.ReadFile(commondirPath)
+	if err != nil {
+		return err
+	}
+	resolvedCommon, err := filepath.Abs(filepath.Join(projection.GitDir, strings.TrimSpace(string(commondir))))
+	if err != nil {
+		return err
+	}
+	if filepath.Clean(resolvedCommon) != filepath.Clean(privateGitDir) {
+		if err := projection.Revalidate(); err != nil {
+			return errors.New(gitMetadataProjectionInvalid)
+		}
+		if err := replaceGitMetadataPointer(commondirPath, "kandev-agent-git\n"); err != nil {
+			return err
+		}
+		if err := projection.Refresh(); err != nil {
+			return err
+		}
+	} else if err := projection.Revalidate(); err != nil {
+		return errors.New(gitMetadataProjectionInvalid)
 	}
 	if err := validateContainerGitDir(privateGitDir); err != nil {
-		return "", err
+		return err
 	}
-	return privateGitDir, nil
+	return nil
+}
+
+func replaceGitMetadataPointer(path, content string) (resultErr error) {
+	temp, err := os.CreateTemp(filepath.Dir(path), ".commondir-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer func() {
+		if cleanupErr := os.Remove(tempPath); cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) {
+			resultErr = errors.Join(resultErr, cleanupErr)
+		}
+	}()
+	if _, err := temp.WriteString(content); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
 }
 
 func initializeContainerGitDir(projection *worktree.GitMetadataProjection, privateGitDir, containerCheckoutPath string) (resultErr error) {
@@ -227,10 +267,10 @@ func sortedGitMetadataPaths(paths map[string]struct{}) []string {
 	return result
 }
 
-func sortedGitMetadataMountTargets(mounts map[string]string) []string {
+func sortedGitMetadataPathSet(mounts map[string]struct{}) []string {
 	result := make([]string, 0, len(mounts))
-	for target := range mounts {
-		result = append(result, target)
+	for path := range mounts {
+		result = append(result, path)
 	}
 	sort.Strings(result)
 	return result

@@ -43,7 +43,7 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	mounts := configured.Mounts
-	assertGitMount(t, mounts, projection.CommonDir, true)
+	assertGitMount(t, mounts, projection.SharedCommonDir, true)
 	assertGitMount(t, mounts, projection.GitDir, false)
 	for _, mount := range mounts {
 		if mount.ReadOnly {
@@ -64,8 +64,8 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 		}
 	}
 	privateGitDir := filepath.Join(projection.GitDir, "kandev-agent-git")
-	if !hasGitMount(mounts, privateGitDir, projection.GitDir, false) {
-		t.Fatalf("task-private Git metadata must be mounted over the linked-worktree admin dir: %#v", mounts)
+	if !hasGitMount(mounts, projection.GitDir, projection.GitDir, false) {
+		t.Fatalf("linked-worktree admin metadata must be shared with the host checkout: %#v", mounts)
 	}
 	remoteURL := strings.TrimSpace(string(runContainerGitOutput(t, "--git-dir", privateGitDir, "remote", "get-url", "origin")))
 	if remoteURL != "https://github.com/example/project.git" {
@@ -75,7 +75,7 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 	if gitUser != "Test" {
 		t.Fatalf("task-private Git user = %q, want source repository user", gitUser)
 	}
-	sharedSiblingRef := filepath.Join(projection.CommonDir, "refs", "heads", "main")
+	sharedSiblingRef := filepath.Join(projection.SharedCommonDir, "refs", "heads", "main")
 	siblingBefore, err := os.ReadFile(sharedSiblingRef)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	git := func(args ...string) ([]byte, error) {
-		command := exec.Command("git", append([]string{"--git-dir", privateGitDir, "--work-tree", checkout}, args...)...)
+		command := exec.Command("git", append([]string{"-C", checkout}, args...)...)
 		return command.CombinedOutput()
 	}
 	if output, err := git("add", "change"); err != nil {
@@ -107,7 +107,33 @@ func TestGitMetadataMountsAllowOnlyOwnedLinkedWorktreeMetadata(t *testing.T) {
 	if output, err := git("commit", "-m", "task commit"); err != nil {
 		t.Fatalf("git commit through task metadata: %v: %s", err, output)
 	}
-	if _, err := os.Stat(filepath.Join(privateGitDir, "logs", "HEAD")); err != nil {
+	containerHead := strings.TrimSpace(string(runContainerGitOutput(t, "--git-dir", privateGitDir, "rev-parse", "HEAD")))
+	hostHead := strings.TrimSpace(string(runContainerGitOutput(t, "-C", checkout, "rev-parse", "HEAD")))
+	if hostHead != containerHead {
+		t.Fatalf("host checkout HEAD = %q after task commit, want %q", hostHead, containerHead)
+	}
+	if status := strings.TrimSpace(string(runContainerGitOutput(t, "-C", checkout, "status", "--porcelain"))); status != "" {
+		t.Fatalf("host checkout status after task commit = %q, want clean", status)
+	}
+	secondLaunchProjection, err := worktree.ResolveGitMetadataForRepository(checkout, repo)
+	if err != nil {
+		t.Fatalf("resolve task Git metadata for a second launch: %v", err)
+	}
+	if secondLaunchProjection.SharedCommonDir != projection.SharedCommonDir {
+		t.Fatalf("second launch shared common directory = %q, want %q", secondLaunchProjection.SharedCommonDir, projection.SharedCommonDir)
+	}
+	secondLaunchMounts, err := gitMetadataMounts([]*worktree.GitMetadataProjection{secondLaunchProjection}, checkout)
+	if err != nil {
+		t.Fatalf("prepare task Git metadata for a second launch: %v", err)
+	}
+	if !hasGitMount(secondLaunchMounts, secondLaunchProjection.GitDir, secondLaunchProjection.GitDir, false) {
+		t.Fatalf("second launch must retain task Git metadata mount: %#v", secondLaunchMounts)
+	}
+	secondLaunchHead := strings.TrimSpace(string(runContainerGitOutput(t, "-C", checkout, "rev-parse", "HEAD")))
+	if secondLaunchHead != containerHead {
+		t.Fatalf("second launch HEAD = %q, want committed HEAD %q", secondLaunchHead, containerHead)
+	}
+	if _, err := os.Stat(filepath.Join(projection.GitDir, "logs", "HEAD")); err != nil {
 		t.Fatalf("task reflog was not updated: %v", err)
 	}
 	siblingAfter, err := os.ReadFile(sharedSiblingRef)
