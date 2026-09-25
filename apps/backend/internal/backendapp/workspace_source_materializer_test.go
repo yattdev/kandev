@@ -493,6 +493,63 @@ func TestWorkspaceSourceMaterializer_LocalClonesProviderRepositoryBeforeLinking(
 	}
 }
 
+func TestWorkspaceSourceMaterializer_ReclonesMissingManagedSourceBeforeLinking(t *testing.T) {
+	ctx := context.Background()
+	repo := newMaterializerRepo(t)
+	tasksBase := filepath.Join(canonicalTempDir(t), "tasks")
+	mgr := newMaterializerWorktreeMgr(t, filepath.Join(tasksBase, "task-1"))
+	seedWorkspaceSourceTask(t, repo, t.TempDir())
+	stalePath := filepath.Join(t.TempDir(), "missing-managed-clone")
+	clonePath := filepath.Join(t.TempDir(), "fresh-managed-clone")
+	if err := os.MkdirAll(clonePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clonePath, "notes.txt"), []byte("fresh"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateRepository(ctx, &models.Repository{
+		ID: "repo-remote", WorkspaceID: "ws-1", Name: "notes", SourceType: "provider",
+		Provider: "github", ProviderOwner: "owner", ProviderName: "notes", LocalPath: stalePath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateTaskRepository(ctx, &models.TaskRepository{
+		ID: "task-repo-remote", TaskID: "task-1", RepositoryID: "repo-remote",
+		BaseBranch: "main", Metadata: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cloner := &hostRepositoryClonerStub{path: clonePath}
+	materializer := &workspaceSourceMaterializer{repo: repo, worktreeMgr: mgr, hostCloner: cloner, logger: newTestLogger()}
+	if _, err := materializer.MaterializeWorkspaceSources(ctx, "task-1", &models.WorkspaceSourceBatch{TaskID: "task-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(cloner.calls) != 1 || cloner.calls[0].LocalPath != "" || cloner.calls[0].ID != "repo-remote" {
+		t.Fatalf("clone request = %+v; want exact repository with no stale path", cloner.calls)
+	}
+	if cloner.taskID != "task-1" || cloner.sessionID != "session-1" {
+		t.Fatalf("clone scope = %q/%q", cloner.taskID, cloner.sessionID)
+	}
+	if got, err := os.ReadFile(filepath.Join(tasksBase, "task-1", "notes", "notes.txt")); err != nil || string(got) != "fresh" {
+		t.Fatalf("materialized source = %q, %v", got, err)
+	}
+	if _, err := os.Lstat(stalePath); !os.IsNotExist(err) {
+		t.Fatalf("stale path was touched: %v", err)
+	}
+}
+
+func TestMissingManagedRepositoryCheckoutPreservesLocalSource(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	repo := &models.Repository{SourceType: "local", LocalPath: missing, ProviderOwner: "owner", ProviderName: "notes"}
+	if missingManagedRepositoryCheckout(repo) {
+		t.Fatal("local source would be redirected to a managed clone")
+	}
+	repo.SourceType = "provider"
+	if !missingManagedRepositoryCheckout(repo) {
+		t.Fatal("missing provider checkout was treated as materialized")
+	}
+}
+
 func TestWorkspaceSourceMaterializer_WorktreeAddsLiveFolderAtTaskRoot(t *testing.T) {
 	ctx := context.Background()
 	repoPath, taskRoot, primary := setupMaterializerScenario(t)

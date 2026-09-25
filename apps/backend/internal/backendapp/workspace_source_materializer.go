@@ -427,7 +427,7 @@ func (m *workspaceSourceMaterializer) ensureHostRepositoryPaths(
 	sessionID := workspaceSourceCredentialSessionID(state.sessions)
 	for _, taskRepository := range state.repositories {
 		repository := state.entities[taskRepository.RepositoryID]
-		if repository == nil || repository.LocalPath != "" {
+		if repository == nil || (repository.LocalPath != "" && !missingManagedRepositoryCheckout(repository)) {
 			continue
 		}
 		if repository.ProviderOwner == "" || repository.ProviderName == "" {
@@ -439,7 +439,13 @@ func (m *workspaceSourceMaterializer) ensureHostRepositoryPaths(
 		if sessionID == "" {
 			return fmt.Errorf("active task session is unavailable for repository %q", repository.Name)
 		}
-		path, err := m.hostCloner.EnsureRepositoryClonedForSession(ctx, taskID, sessionID, repository)
+		// The host cloner treats a nonempty LocalPath as already materialized.
+		// A provider record can retain that path after its managed checkout has
+		// disappeared, so pass a copy without the stale path to request a fresh
+		// workspace-scoped clone. Never redirect a user-managed local source.
+		cloneRequest := *repository
+		cloneRequest.LocalPath = ""
+		path, err := m.hostCloner.EnsureRepositoryClonedForSession(ctx, taskID, sessionID, &cloneRequest)
 		if err != nil {
 			return fmt.Errorf("clone repository %q: %w", repository.Name, err)
 		}
@@ -449,6 +455,15 @@ func (m *workspaceSourceMaterializer) ensureHostRepositoryPaths(
 		repository.LocalPath = path
 	}
 	return nil
+}
+
+func missingManagedRepositoryCheckout(repository *models.Repository) bool {
+	if repository == nil || repository.SourceType == "local" ||
+		repository.ProviderOwner == "" || repository.ProviderName == "" {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(repository.LocalPath, ".git"))
+	return err != nil || (!info.IsDir() && !info.Mode().IsRegular())
 }
 
 func workspaceSourceCredentialSessionID(sessions []*models.TaskSession) string {
