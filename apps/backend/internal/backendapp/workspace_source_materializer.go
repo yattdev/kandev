@@ -103,6 +103,9 @@ func newWorkspaceSourceMaterializer(repo workspaceSourceMaterializerRepo, mgr *w
 func (m *workspaceSourceMaterializer) SetHostRepositoryCloner(cloner orchestrator.RepositoryHostCloner) {
 	if m != nil {
 		m.hostCloner = cloner
+		if m.branches != nil {
+			m.branches.hostCloner = cloner
+		}
 	}
 }
 

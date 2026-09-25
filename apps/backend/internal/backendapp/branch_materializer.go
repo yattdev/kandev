@@ -10,6 +10,7 @@ import (
 
 	"github.com/kandev/kandev/internal/agent/runtime/lifecycle"
 	"github.com/kandev/kandev/internal/common/logger"
+	"github.com/kandev/kandev/internal/orchestrator"
 	"github.com/kandev/kandev/internal/task/models"
 	taskservice "github.com/kandev/kandev/internal/task/service"
 	"github.com/kandev/kandev/internal/worktree"
@@ -51,6 +52,7 @@ type agentctlRescanner interface {
 type branchMaterializer struct {
 	repo        branchMaterializerRepo
 	worktreeMgr *worktree.Manager
+	hostCloner  orchestrator.RepositoryHostCloner
 	rescanner   agentctlRescanner
 	logger      *logger.Logger
 }
@@ -149,13 +151,6 @@ func (b *branchMaterializer) prepareMaterializeRequest(
 	if err != nil {
 		return worktree.CreateRequest{}, nil, nil, "", false, err
 	}
-	if repo.LocalPath == "" {
-		// Provider-backed repos that haven't been cloned yet need the
-		// orchestrator's repoCloner path. Defer to next launch.
-		b.logger.Info("skipping materialize: repository has no local path",
-			zap.String("repository_id", repo.ID), zap.String("task_id", taskID))
-		return worktree.CreateRequest{}, nil, nil, "", false, nil
-	}
 	session, err := b.pickActiveSession(ctx, taskID)
 	if err != nil {
 		return worktree.CreateRequest{}, nil, nil, "", false, err
@@ -171,6 +166,12 @@ func (b *branchMaterializer) prepareMaterializeRequest(
 	}
 	if env == nil {
 		return worktree.CreateRequest{}, nil, nil, "", false, nil
+	}
+	if err := b.ensureRepositoryPath(ctx, taskID, session.ID, repo); err != nil {
+		return worktree.CreateRequest{}, nil, nil, "", false, err
+	}
+	if repo.LocalPath == "" {
+		return worktree.CreateRequest{}, nil, nil, "", false, fmt.Errorf("repository %q has no local path", repo.ID)
 	}
 	slug := deriveBranchSlugForRow(tr)
 	req := worktree.CreateRequest{
@@ -193,6 +194,27 @@ func (b *branchMaterializer) prepareMaterializeRequest(
 		BranchSlug:             slug,
 	}
 	return req, env, session, slug, true, nil
+}
+
+func (b *branchMaterializer) ensureRepositoryPath(ctx context.Context, taskID, sessionID string, repo *models.Repository) error {
+	if repo.SourceType == "local" || repo.ProviderOwner == "" || repo.ProviderName == "" ||
+		(repo.LocalPath != "" && !missingManagedRepositoryCheckout(repo)) {
+		return nil
+	}
+	if b.hostCloner == nil {
+		return fmt.Errorf("host repository cloner is unavailable for %q", repo.Name)
+	}
+	cloneRequest := *repo
+	cloneRequest.LocalPath = ""
+	path, err := b.hostCloner.EnsureRepositoryClonedForSession(ctx, taskID, sessionID, &cloneRequest)
+	if err != nil {
+		return fmt.Errorf("clone repository %q: %w", repo.Name, err)
+	}
+	if path == "" {
+		return fmt.Errorf("repository %q clone produced no local path", repo.Name)
+	}
+	repo.LocalPath = path
+	return nil
 }
 
 func (b *branchMaterializer) resolveMaterializationEnvironment(

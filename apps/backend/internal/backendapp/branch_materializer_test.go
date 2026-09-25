@@ -136,6 +136,49 @@ func TestBranchMaterializer_PromotesWorkspacePathAndTriggersRescan(t *testing.T)
 	}
 }
 
+func TestBranchMaterializer_ReclonesMissingManagedRepositoryForLiveTask(t *testing.T) {
+	ctx := context.Background()
+	repoPath, taskRoot, primaryPath := setupMaterializerScenario(t)
+	repo := newMaterializerRepo(t)
+	seedMaterializerTask(t, ctx, repo, repoPath, taskRoot, primaryPath)
+	stalePath := filepath.Join(t.TempDir(), "missing-managed-notes")
+	if err := repo.CreateRepository(ctx, &models.Repository{
+		ID: "notes-repo", WorkspaceID: "ws-1", Name: "notes", SourceType: "provider",
+		Provider: "github", ProviderOwner: "owner", ProviderName: "notes",
+		LocalPath: stalePath, DefaultBranch: "main",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateTaskRepository(ctx, &models.TaskRepository{
+		ID: "tr-notes", TaskID: "task-1", RepositoryID: "notes-repo",
+		BaseBranch: "main", Position: 1, Metadata: map[string]interface{}{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cloner := &hostRepositoryClonerStub{path: repoPath}
+	materializer := &branchMaterializer{
+		repo: repo, worktreeMgr: newMaterializerWorktreeMgr(t, taskRoot),
+		hostCloner: cloner, logger: newTestLogger(),
+	}
+	result, err := materializer.MaterializeBranch(ctx, "task-1", "tr-notes", taskservice.BranchMaterializationTarget{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.WorktreePath != filepath.Join(taskRoot, "notes-main") {
+		t.Fatalf("materialization result = %+v", result)
+	}
+	if got, err := os.ReadFile(filepath.Join(result.WorktreePath, "README.md")); err != nil || string(got) != "initial\n" {
+		t.Fatalf("materialized branch content = %q, %v", got, err)
+	}
+	if len(cloner.calls) != 1 || cloner.calls[0].ID != "notes-repo" || cloner.calls[0].LocalPath != "" ||
+		cloner.taskID != "task-1" || cloner.sessionID != "session-1" {
+		t.Fatalf("scoped clone request = %+v, task=%q session=%q", cloner.calls, cloner.taskID, cloner.sessionID)
+	}
+	if _, err := os.Lstat(stalePath); !os.IsNotExist(err) {
+		t.Fatalf("stale path was touched: %v", err)
+	}
+}
+
 // TestBranchMaterializer_SecondBranchKeepsTaskRootPromoted exercises the
 // idempotent promotion path: a task that's already been promoted to task
 // root must not be flipped back to a primary path on subsequent adds.
