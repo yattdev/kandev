@@ -764,6 +764,46 @@ func (s *Server) getTaskConversationHandler() server.ToolHandlerFunc {
 	}
 }
 
+func (s *Server) getMessageQueueCensusHandler() server.ToolHandlerFunc {
+	return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if s.taskID == "" || s.sessionID == "" {
+			return mcp.NewToolResultError("message queue identity is unavailable in this session"), nil
+		}
+		payload := map[string]interface{}{mcpKeyTaskID: s.taskID, "session_id": s.sessionID}
+		var result map[string]interface{}
+		if err := s.backend.RequestPayload(ctx, ws.ActionMCPGetMessageQueueCensus, payload, &result); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultStructured(result, string(data)), nil
+	}
+}
+
+func (s *Server) getTerminalSessionMessageQueueHandler() server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if s.taskID == "" || s.sessionID == "" {
+			return mcp.NewToolResultError("message queue identity is unavailable in this session"), nil
+		}
+		targetSessionID, err := req.RequireString("session_id")
+		if err != nil {
+			return mcp.NewToolResultError("session_id is required"), nil
+		}
+		payload := map[string]interface{}{mcpKeyTaskID: s.taskID, "session_id": targetSessionID}
+		copyOptionalStringArg(payload, req, "cursor")
+		if arguments, ok := req.Params.Arguments.(map[string]interface{}); ok {
+			if maxBodyBytes, exists := arguments["max_body_bytes"]; exists {
+				payload["max_body_bytes"] = maxBodyBytes
+			}
+		}
+		var result map[string]interface{}
+		if err := s.backend.RequestPayload(ctx, ws.ActionMCPGetTerminalSessionQueue, payload, &result); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultStructured(result, string(data)), nil
+	}
+}
+
 func (s *Server) listTaskSessionsHandler() server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		taskID, err := req.RequireString(mcpKeyTaskID)

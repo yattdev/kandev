@@ -1170,6 +1170,8 @@ func (s *Server) registerAutomationTools() {
 	s.registerConfigWorkflowTools()
 	s.registerConfigExecutorTools()
 	s.mcpServer.DeleteTools(
+		"get_message_queue_census_kandev",
+		"get_terminal_session_message_queue_kandev",
 		"delete_task_kandev",
 		"update_task_state_kandev",
 		"create_workflow_kandev",
@@ -1343,6 +1345,30 @@ func (s *Server) registerKanbanTools() {
 		s.wrapHandler("get_task_conversation_kandev", s.getTaskConversationHandler()),
 	)
 	s.registerListTaskSessionsTool()
+	censusTool := mcp.NewToolWithRawSchema(
+		"get_message_queue_census_kandev",
+		"Read metadata and hashes for the calling session's pending FIFO queue without message bodies.",
+		json.RawMessage(`{"type":"object","properties":{}}`),
+	)
+	censusTool.Annotations.ReadOnlyHint = mcp.ToBoolPtr(true)
+	censusTool.Annotations.DestructiveHint = mcp.ToBoolPtr(false)
+	censusTool.Annotations.IdempotentHint = mcp.ToBoolPtr(true)
+	censusTool.Annotations.OpenWorldHint = mcp.ToBoolPtr(false)
+	s.mcpServer.AddTool(censusTool,
+		s.wrapHandler("get_message_queue_census_kandev", s.getMessageQueueCensusHandler()))
+	s.mcpServer.AddTool(
+		mcp.NewTool("get_terminal_session_message_queue_kandev",
+			mcp.WithDescription("Read a bounded hash-verified FIFO snapshot of message bodies from an exact terminal session on the calling task. This never removes, acknowledges, or replays entries."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(false),
+			mcp.WithString("session_id", mcp.Required(), mcp.Description("Exact terminal predecessor session ID on the calling task")),
+			mcp.WithString("cursor", mcp.Description("Opaque next_cursor from the preceding page")),
+			mcp.WithNumber("max_body_bytes", mcp.Description("UTF-8 body byte budget, 1024-262144; default 65536")),
+		),
+		s.wrapSensitiveHandler("get_terminal_session_message_queue_kandev", s.getTerminalSessionMessageQueueHandler()),
+	)
 }
 
 func (s *Server) registerPRAutomationTools() {

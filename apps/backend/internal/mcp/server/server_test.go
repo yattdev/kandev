@@ -467,6 +467,8 @@ func TestServerModeTask_RegistersCorrectTools(t *testing.T) {
 	assert.Contains(t, tools, "message_task_kandev")
 	assert.Contains(t, tools, "stop_task_kandev")
 	assert.Contains(t, tools, "get_task_conversation_kandev")
+	assert.Contains(t, tools, "get_message_queue_census_kandev")
+	assert.Contains(t, tools, "get_terminal_session_message_queue_kandev")
 	assert.Contains(t, tools, "get_task_change_requests_kandev")
 	assert.Contains(t, tools, "update_task_change_request_automation_kandev")
 	assert.Contains(t, tools, "report_change_request_auto_fix_outcome_kandev")
