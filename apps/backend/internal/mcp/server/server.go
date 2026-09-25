@@ -1172,6 +1172,8 @@ func (s *Server) registerAutomationTools() {
 	s.mcpServer.DeleteTools(
 		"get_message_queue_census_kandev",
 		"get_terminal_session_message_queue_kandev",
+		"get_child_queue_inventory_kandev",
+		"get_child_session_message_queue_kandev",
 		"delete_task_kandev",
 		"update_task_state_kandev",
 		"create_workflow_kandev",
@@ -1368,6 +1370,27 @@ func (s *Server) registerKanbanTools() {
 			mcp.WithNumber("max_body_bytes", mcp.Description("UTF-8 body byte budget, 1024-262144; default 65536")),
 		),
 		s.wrapSensitiveHandler("get_terminal_session_message_queue_kandev", s.getTerminalSessionMessageQueueHandler()),
+	)
+	s.mcpServer.AddTool(
+		mcp.NewTool("get_child_queue_inventory_kandev",
+			mcp.WithDescription("Read body-free FIFO IDs, positions, sizes, hashes and snapshot digests for every session on an exact direct child in the same workspace. No queue mutation."),
+			mcp.WithReadOnlyHintAnnotation(true), mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true), mcp.WithOpenWorldHintAnnotation(false),
+			mcp.WithString("task_id", mcp.Required(), mcp.Description("Exact direct child task ID")),
+		),
+		s.wrapSensitiveHandler("get_child_queue_inventory_kandev", s.getChildQueueInventoryHandler()),
+	)
+	s.mcpServer.AddTool(
+		mcp.NewTool("get_child_session_message_queue_kandev",
+			mcp.WithDescription("Read bounded FIFO body pages from one exact direct-child session under a stable snapshot. Read-only; no acknowledgement or replay."),
+			mcp.WithReadOnlyHintAnnotation(true), mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true), mcp.WithOpenWorldHintAnnotation(false),
+			mcp.WithString("task_id", mcp.Required(), mcp.Description("Exact direct child task ID")),
+			mcp.WithString("session_id", mcp.Required(), mcp.Description("Exact session ID listed by the child inventory")),
+			mcp.WithString("cursor", mcp.Description("Opaque next_cursor from the preceding page")),
+			mcp.WithNumber("max_body_bytes", mcp.Description("UTF-8 body byte budget, 1024-262144; default 65536")),
+		),
+		s.wrapSensitiveHandler("get_child_session_message_queue_kandev", s.getChildSessionQueueHandler()),
 	)
 }
 

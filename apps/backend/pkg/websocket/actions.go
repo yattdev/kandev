@@ -560,6 +560,8 @@ const (
 	ActionMCPListTaskSessions            = "mcp.list_task_sessions"
 	ActionMCPGetMessageQueueCensus       = "mcp.get_message_queue_census"
 	ActionMCPGetTerminalSessionQueue     = "mcp.get_terminal_session_queue"
+	ActionMCPGetChildQueueInventory      = "mcp.get_child_queue_inventory"
+	ActionMCPGetChildSessionQueue        = "mcp.get_child_session_queue"
 	ActionMCPListPendingAgentPermissions = "mcp.list_pending_agent_permissions"
 	ActionMCPResolveAgentPermission      = "mcp.resolve_agent_permission"
 )

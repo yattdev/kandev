@@ -54,6 +54,53 @@ type QueueRecoveryPage struct {
 	NextCursor        string                  `json:"next_cursor,omitempty"`
 }
 
+// QueueRecoveryManifest is a body-free inventory of every stored entry,
+// including entries currently reserved by a consumer.
+type QueueRecoveryEntry struct {
+	ID               string `json:"id"`
+	Claim            string `json:"claim"`
+	Position         int64  `json:"position"`
+	QueuedAt         string `json:"queued_at"`
+	QueuedBy         string `json:"queued_by"`
+	ContentSHA256    string `json:"content_sha256"`
+	ContentBytes     int    `json:"content_bytes"`
+	AttachmentCount  int    `json:"attachment_count"`
+	ReservedInFlight bool   `json:"reserved_in_flight"`
+}
+
+type QueueRecoveryManifest struct {
+	SnapshotSHA256    string               `json:"snapshot_sha256"`
+	TotalEntries      int                  `json:"total_entries"`
+	TotalContentBytes int                  `json:"total_content_bytes"`
+	Entries           []QueueRecoveryEntry `json:"entries"`
+}
+
+func (s *Service) RecoverySnapshotManifest(ctx context.Context, sessionID string) (*QueueRecoveryManifest, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("%w: session id is required", ErrInvalidQueueRecoveryPage)
+	}
+	entries, err := s.repo.ListBySession(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list queue recovery manifest: %w", err)
+	}
+	snapshot, totalBytes, err := queueRecoveryManifest(sessionID, entries)
+	if err != nil {
+		return nil, err
+	}
+	result := &QueueRecoveryManifest{SnapshotSHA256: snapshot, TotalEntries: len(entries), TotalContentBytes: totalBytes, Entries: make([]QueueRecoveryEntry, 0, len(entries))}
+	for i := range entries {
+		entry := &entries[i]
+		digest := sha256.Sum256([]byte(entry.Content))
+		result.Entries = append(result.Entries, QueueRecoveryEntry{
+			ID: entry.ID, Claim: queueSnapshotClaim(entry), Position: entry.Position,
+			QueuedAt: entry.QueuedAt.UTC().Format(recoveryTimestampFormat), QueuedBy: entry.QueuedBy,
+			ContentSHA256: hex.EncodeToString(digest[:]), ContentBytes: len(entry.Content),
+			AttachmentCount: len(entry.Attachments), ReservedInFlight: entry.IsReservedInFlight(),
+		})
+	}
+	return result, nil
+}
+
 type queueRecoveryCursor struct {
 	Version        int    `json:"v"`
 	SessionID      string `json:"session_id"`
@@ -66,6 +113,8 @@ type queueRecoveryCursor struct {
 // acknowledging queue entries. Authorization and terminal-state validation
 // belong to the MCP handler, which resolves the caller principal and session
 // row before invoking this repository-facing operation.
+//
+//nolint:gocognit,cyclop,funlen // UTF-8 paging and immutable cursor checks share this bounded loop.
 func (s *Service) RecoverySnapshotPage(
 	ctx context.Context,
 	sessionID string,

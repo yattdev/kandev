@@ -514,6 +514,8 @@ func (h *Handlers) registerTaskReadHandlers(d *guardedMCPDispatcher) {
 	d.RegisterFunc(ws.ActionMCPListTaskSessions, h.handleListTaskSessions)
 	d.RegisterFunc(ws.ActionMCPGetMessageQueueCensus, h.handleGetMessageQueueCensus)
 	d.RegisterFunc(ws.ActionMCPGetTerminalSessionQueue, h.handleGetTerminalSessionQueue)
+	d.RegisterFunc(ws.ActionMCPGetChildQueueInventory, h.handleGetChildQueueInventory)
+	d.RegisterFunc(ws.ActionMCPGetChildSessionQueue, h.handleGetChildSessionQueue)
 	d.RegisterFunc(ws.ActionMCPListPendingAgentPermissions, h.handleListPendingAgentPermissions)
 	d.RegisterFunc(ws.ActionMCPResolveAgentPermission, h.handleResolveAgentPermission)
 }

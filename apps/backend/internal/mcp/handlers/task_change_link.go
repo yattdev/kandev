@@ -68,6 +68,7 @@ type TaskPRURLLinkResult struct {
 	StateKnown   bool             `json:"state_known"`
 }
 
+//nolint:cyclop // The existing authorization gates intentionally fail closed at each boundary.
 func (h *Handlers) handleLinkTaskPRByURL(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
 	var payload struct {
 		TaskID       string `json:"task_id"`

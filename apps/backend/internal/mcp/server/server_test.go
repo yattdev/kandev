@@ -469,6 +469,8 @@ func TestServerModeTask_RegistersCorrectTools(t *testing.T) {
 	assert.Contains(t, tools, "get_task_conversation_kandev")
 	assert.Contains(t, tools, "get_message_queue_census_kandev")
 	assert.Contains(t, tools, "get_terminal_session_message_queue_kandev")
+	assert.Contains(t, tools, "get_child_queue_inventory_kandev")
+	assert.Contains(t, tools, "get_child_session_message_queue_kandev")
 	assert.Contains(t, tools, "get_task_change_requests_kandev")
 	assert.Contains(t, tools, "update_task_change_request_automation_kandev")
 	assert.Contains(t, tools, "report_change_request_auto_fix_outcome_kandev")
@@ -809,7 +811,7 @@ drained:
 	// as in TestServerModeTask_ToolCount and
 	// TestRegisterTools_LoggedCountMatchesRegisteredTools (list_task_sessions_test.go),
 	// which pin the per-mode registration rather than this SetProviders rebuild.
-	require.Len(t, tools, 41, "final registry should contain the complete GitLab-only task tool set")
+	require.Len(t, tools, 46, "final registry should contain the complete GitLab-only task tool set")
 	assert.Contains(t, tools, "get_task_change_requests_kandev")
 	assert.Contains(t, tools, "manage_task_change_request_kandev")
 	assert.Contains(t, tools, "update_task_change_request_automation_kandev")
@@ -1001,7 +1003,7 @@ func TestServerModeTask_ToolCount(t *testing.T) {
 	assert.Contains(t, tools, "add_task_dependency_kandev", "dependency edges must be manageable in task mode")
 	assert.Contains(t, tools, "remove_task_dependency_kandev")
 	assert.Contains(t, tools, "show_rich_output_kandev", "native rich output must be registered in task mode")
-	assert.Equal(t, 42, len(tools))
+	assert.Equal(t, 47, len(tools))
 }
 
 func TestServerStepCompleteTool_TaskAndOfficeOnlyAndDiscoverable(t *testing.T) {
