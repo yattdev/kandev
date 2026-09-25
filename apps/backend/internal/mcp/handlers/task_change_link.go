@@ -83,7 +83,7 @@ func (h *Handlers) handleLinkTaskPRByURL(ctx context.Context, msg *ws.Message) (
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "task_id, repository_id, and pr_url are required", nil)
 	}
 	principal, ok := mcpscope.PrincipalFromContext(ctx)
-	if !ok || principal.CallerTaskID == "" || principal.CallerSessionID == "" ||
+	if !ok || principal.IsAutomation() || principal.CallerTaskID == "" || principal.CallerSessionID == "" ||
 		payload.CallerTaskID != principal.CallerTaskID || principal.WorkspaceID == "" {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "trusted task session is required", nil)
 	}
@@ -91,7 +91,7 @@ func (h *Handlers) handleLinkTaskPRByURL(ctx context.Context, msg *ws.Message) (
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "task service is unavailable", nil)
 	}
 	caller, callerErr := h.taskSvc.GetTask(ctx, principal.CallerTaskID)
-	if callerErr != nil || caller == nil || caller.WorkspaceID != principal.WorkspaceID {
+	if callerErr != nil || caller == nil || caller.WorkspaceID != principal.WorkspaceID || caller.ArchivedAt != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "caller task is outside the workspace", nil)
 	}
 	target, targetErr := h.taskSvc.GetTask(ctx, payload.TaskID)
