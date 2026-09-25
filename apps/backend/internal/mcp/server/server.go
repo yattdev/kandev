@@ -1368,6 +1368,13 @@ func (s *Server) registerPRAutomationTools() {
 
 func (s *Server) registerTaskPRLinkTools() {
 	s.mcpServer.AddTool(
+		mcp.NewToolWithRawSchema("link_task_pr_by_url_kandev",
+			"Link an existing canonical GitHub pull request URL to a direct child task. The authenticated caller must be that task's parent in the same workspace. The PR's source repository must match the repository attached to the child. Returns the persisted canonical URL, PR number, head SHA, and active task links. Does not change the provider PR or remove another task's link.",
+			json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","minLength":1},"repository_id":{"type":"string","minLength":1},"pr_url":{"type":"string","minLength":1}},"required":["task_id","repository_id","pr_url"]}`),
+		),
+		s.wrapHandler("link_task_pr_by_url_kandev", s.linkTaskPRByURLHandler()),
+	)
+	s.mcpServer.AddTool(
 		mcp.NewToolWithRawSchema("get_task_change_requests_kandev",
 			"Get the current task's linked GitHub pull requests and GitLab merge requests, automation settings, and provider capabilities. The task is bound to the calling session and is not a tool argument.",
 			json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),

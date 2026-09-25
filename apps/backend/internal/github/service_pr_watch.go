@@ -725,6 +725,56 @@ func (s *Service) AssociateExistingPRByURLForWorkspace(
 	return tp, nil
 }
 
+// AssociateVerifiedSourcePRByURLForWorkspace links one canonical upstream PR
+// only when its provider-reported source is the repository attached to the
+// target task. It does not create a watch or mutate the provider PR.
+func (s *Service) AssociateVerifiedSourcePRByURLForWorkspace(
+	ctx context.Context, workspaceID, userID, taskID, repositoryID, prURL, sourceOwner, sourceRepo string,
+) (*TaskPR, error) {
+	owner, repo, number, err := parseGitHubContributionURL(prURL)
+	if err != nil {
+		return nil, err
+	}
+	if !validGitHubPathPart(sourceOwner) || !validGitHubPathPart(sourceRepo) {
+		return nil, ErrInvalidRemoteContributionURL
+	}
+	if err := s.validateTaskRepositoryID(ctx, taskID, repositoryID); err != nil {
+		return nil, err
+	}
+	if err := s.ensureRepositoryInWorkspaceScope(ctx, workspaceID, owner, repo); err != nil {
+		return nil, err
+	}
+	resolved, err := s.resolvePersonalReadClient(ctx, workspaceID, userID, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	pr, err := resolved.Client.GetPR(ctx, owner, repo, number)
+	if err != nil {
+		return nil, fmt.Errorf("fetch PR: %w", err)
+	}
+	if err := validateGitHubContributionPR(owner, repo, number, pr); err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(pr.HeadRepoOwner, sourceOwner) || !strings.EqualFold(pr.HeadRepoName, sourceRepo) {
+		return nil, fmt.Errorf("GitHub pull request source repository does not match task repository")
+	}
+	byTask, err := s.ListTaskPRs(ctx, []string{taskID})
+	if err != nil {
+		return nil, fmt.Errorf("inspect existing task PR links: %w", err)
+	}
+	for _, existing := range byTask[taskID] {
+		if existing.RepositoryID == repositoryID && existing.PRNumber == number &&
+			!strings.EqualFold(strings.TrimSuffix(existing.PRURL, "/"), strings.TrimSuffix(prURL, "/")) {
+			return nil, errors.New("a different canonical PR already uses this task repository and number")
+		}
+	}
+	tp, err := s.associatePRWithTask(ctx, workspaceID, taskID, repositoryID, pr, true, true, TaskPRSourceURLLink)
+	if err != nil {
+		return nil, fmt.Errorf("associate PR with task: %w", err)
+	}
+	return tp, nil
+}
+
 // AssociatePRByURL parses a GitHub PR URL, fetches the PR data, creates a PR
 // watch, and associates it with the given task. Called after the user
 // creates a PR from the UI. `repositoryID` scopes the watch + association to

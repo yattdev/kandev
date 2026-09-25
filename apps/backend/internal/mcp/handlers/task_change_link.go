@@ -52,6 +52,63 @@ type TaskChangeLinkMutationService interface {
 	ManageTaskChangeRequest(context.Context, TaskChangeLinkRequest) (TaskChangeLinkMutationResult, error)
 }
 
+// TaskPRURLLinkService resolves a canonical upstream URL while retaining the
+// task's attached source repository as the association repository ID.
+type TaskPRURLLinkService interface {
+	LinkTaskPRByURL(context.Context, string, string, string) (TaskPRURLLinkResult, error)
+}
+
+type TaskPRURLLinkResult struct {
+	TaskID       string           `json:"task_id"`
+	RepositoryID string           `json:"repository_id"`
+	PRURL        string           `json:"pr_url"`
+	PRNumber     int              `json:"pr_number"`
+	HeadSHA      string           `json:"head_sha"`
+	Links        []TaskChangeLink `json:"links"`
+	StateKnown   bool             `json:"state_known"`
+}
+
+func (h *Handlers) handleLinkTaskPRByURL(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
+	var payload struct {
+		TaskID       string `json:"task_id"`
+		CallerTaskID string `json:"caller_task_id"`
+		RepositoryID string `json:"repository_id"`
+		PRURL        string `json:"pr_url"`
+	}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "invalid payload", nil)
+	}
+	if strings.TrimSpace(payload.TaskID) == "" || strings.TrimSpace(payload.RepositoryID) == "" ||
+		strings.TrimSpace(payload.PRURL) == "" {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "task_id, repository_id, and pr_url are required", nil)
+	}
+	principal, ok := mcpscope.PrincipalFromContext(ctx)
+	if !ok || principal.CallerTaskID == "" || principal.CallerSessionID == "" ||
+		payload.CallerTaskID != principal.CallerTaskID || principal.WorkspaceID == "" {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "trusted task session is required", nil)
+	}
+	if h.taskSvc == nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "task service is unavailable", nil)
+	}
+	caller, callerErr := h.taskSvc.GetTask(ctx, principal.CallerTaskID)
+	if callerErr != nil || caller == nil || caller.WorkspaceID != principal.WorkspaceID {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "caller task is outside the workspace", nil)
+	}
+	target, targetErr := h.taskSvc.GetTask(ctx, payload.TaskID)
+	if targetErr != nil || target == nil || !canDirectParentAccess(caller, target) || target.ArchivedAt != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "only the direct parent may link this active child", nil)
+	}
+	linker, ok := h.taskChangeLinks.(TaskPRURLLinkService)
+	if !ok {
+		return taskChangeLinksUnavailable(msg)
+	}
+	result, err := linker.LinkTaskPRByURL(ctx, target.ID, payload.RepositoryID, payload.PRURL)
+	if err != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "failed to link canonical GitHub PR", nil)
+	}
+	return ws.NewResponse(msg.ID, msg.Action, result)
+}
+
 type taskChangeRequestPayload struct {
 	Operation       string `json:"operation"`
 	TaskID          string `json:"task_id"`

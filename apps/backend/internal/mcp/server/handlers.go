@@ -324,6 +324,33 @@ func (s *Server) getTaskPRAutomationHandler() server.ToolHandlerFunc {
 	}
 }
 
+func (s *Server) linkTaskPRByURLHandler() server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		taskID, err := req.RequireString(mcpKeyTaskID)
+		if err != nil {
+			return mcp.NewToolResultError("task_id is required"), nil
+		}
+		repositoryID, err := req.RequireString("repository_id")
+		if err != nil {
+			return mcp.NewToolResultError("repository_id is required"), nil
+		}
+		prURL, err := req.RequireString("pr_url")
+		if err != nil {
+			return mcp.NewToolResultError("pr_url is required"), nil
+		}
+		payload := map[string]interface{}{
+			mcpKeyTaskID: taskID, "repository_id": repositoryID, "pr_url": prURL,
+			"caller_task_id": s.taskID,
+		}
+		var result map[string]interface{}
+		if err := s.backend.RequestPayload(ctx, ws.ActionMCPLinkTaskPRByURL, payload, &result); err != nil {
+			return backendToolError(err), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
 func (s *Server) manageTaskChangeRequestHandler() server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		operation, err := req.RequireString("operation")

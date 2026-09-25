@@ -38,12 +38,21 @@ type fakeGitLabChangeLinks struct {
 }
 
 type fakeGitHubChangeLinks struct {
-	linkErr           error
-	prs               []*github.TaskPR
-	linkedURL         string
-	linkedWorkspaceID string
-	linkedUserID      string
-	unlinked          []string
+	linkErr             error
+	prs                 []*github.TaskPR
+	linkedURL           string
+	linkedWorkspaceID   string
+	linkedUserID        string
+	unlinked            []string
+	verifiedSourceOwner string
+	verifiedSourceRepo  string
+}
+
+func (f *fakeGitHubChangeLinks) AssociateVerifiedSourcePRByURLForWorkspace(
+	ctx context.Context, workspaceID, userID, taskID, repositoryID, prURL, sourceOwner, sourceRepo string,
+) (*github.TaskPR, error) {
+	f.verifiedSourceOwner, f.verifiedSourceRepo = sourceOwner, sourceRepo
+	return f.AssociateExistingPRByURLForWorkspace(ctx, workspaceID, userID, taskID, repositoryID, prURL)
 }
 
 func (f *fakeGitHubChangeLinks) AssociateExistingPRByURLForWorkspace(_ context.Context, workspaceID, userID, taskID, repositoryID, prURL string) (*github.TaskPR, error) {
@@ -204,6 +213,26 @@ func TestTaskChangeURLsRequireCanonicalRepositoryIdentity(t *testing.T) {
 	if _, err := gitlabChangeURL("", "group", "api", 9); err == nil {
 		t.Fatal("gitlabChangeURL accepted an incomplete repository identity")
 	}
+}
+
+func TestLinkTaskPRByURLUsesForkSourceAndCanonicalUpstreamURL(t *testing.T) {
+	tasks, repos := newTaskChangeCoordinatorHarness(t)
+	seedTaskChangeCoordinatorTask(t, repos, "workspace", "replacement", "fork", "https://github.com", "yattdev", "kandev")
+	provider := &fakeGitHubChangeLinks{}
+	coordinator := taskChangeLinkCoordinator{
+		tasks: tasks, github: provider,
+		singleUserIdentity: func() (authn.Identity, bool) { return authn.Identity{UserID: "owner"}, true },
+	}
+	url := "https://github.com/kdlbs/kandev/pull/42"
+	result, err := coordinator.LinkTaskPRByURL(context.Background(), "replacement", "fork", url)
+	require.NoError(t, err)
+	require.True(t, result.StateKnown)
+	require.Equal(t, url, result.PRURL)
+	require.Equal(t, "yattdev", provider.verifiedSourceOwner)
+	require.Equal(t, "kandev", provider.verifiedSourceRepo)
+	require.Equal(t, "workspace", provider.linkedWorkspaceID)
+	require.Equal(t, "owner", provider.linkedUserID)
+	require.Equal(t, []mcphandlers.TaskChangeLink{{Provider: "github", RepositoryID: "fork", Number: 42}}, result.Links)
 }
 
 func TestGitHubChangeURLRejectsSubstringHostSpoofing(t *testing.T) {

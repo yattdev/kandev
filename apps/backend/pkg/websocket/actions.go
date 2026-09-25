@@ -469,6 +469,7 @@ const (
 	ActionMCPUnlinkTaskPR                          = "mcp.unlink_task_pr"
 	ActionMCPReplaceTaskPR                         = "mcp.replace_task_pr"
 	ActionMCPManageTaskChangeRequest               = "mcp.manage_task_change_request"
+	ActionMCPLinkTaskPRByURL                       = "mcp.link_task_pr_by_url"
 	ActionMCPGetTaskChangeRequests                 = "mcp.get_task_change_requests"
 	ActionMCPUpdateTaskChangeRequestAutomation     = "mcp.update_task_change_request_automation"
 	ActionMCPAddTaskDependency                     = "mcp.add_task_dependency"

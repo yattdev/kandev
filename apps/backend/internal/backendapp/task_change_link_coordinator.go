@@ -87,6 +87,67 @@ type githubChangeLinkProvider interface {
 	ListTaskPRs(context.Context, []string) (map[string][]*github.TaskPR, error)
 }
 
+type githubVerifiedURLLinkProvider interface {
+	AssociateVerifiedSourcePRByURLForWorkspace(context.Context, string, string, string, string, string, string, string) (*github.TaskPR, error)
+}
+
+func (c taskChangeLinkCoordinator) LinkTaskPRByURL(
+	ctx context.Context, taskID, repositoryID, prURL string,
+) (mcp.TaskPRURLLinkResult, error) {
+	result := mcp.TaskPRURLLinkResult{TaskID: taskID, RepositoryID: repositoryID}
+	task, repo, err := c.taskRepository(ctx, taskID, repositoryID)
+	if err != nil {
+		return result, err
+	}
+	verifiedProvider, ok := c.github.(githubVerifiedURLLinkProvider)
+	if !ok {
+		return result, errors.New("GitHub PR links are unavailable")
+	}
+	host, hostErr := normalizedGitHubHost(repo.ProviderHost)
+	if hostErr != nil || host != "github.com" || repo.ProviderOwner == "" || repo.ProviderName == "" {
+		return result, errors.New("task repository is not a GitHub repository")
+	}
+	identity, ok := authn.IdentityFromContext(ctx)
+	if !ok && c.singleUserIdentity != nil {
+		identity, ok = c.singleUserIdentity()
+	}
+	if !ok || strings.TrimSpace(identity.UserID) == "" {
+		return result, errors.New("authenticated user identity is required")
+	}
+	pr, err := verifiedProvider.AssociateVerifiedSourcePRByURLForWorkspace(ctx, task.WorkspaceID,
+		identity.UserID, task.ID, repo.ID, prURL, repo.ProviderOwner, repo.ProviderName)
+	if err != nil {
+		return result, err
+	}
+	links, err := c.list(ctx, task.ID)
+	if err != nil {
+		return result, err
+	}
+	readback, err := c.githubLinks(ctx, task.ID)
+	if err != nil {
+		return result, err
+	}
+	var exactRow *github.TaskPR
+	for _, row := range readback {
+		if row.RepositoryID == repo.ID && row.PRNumber == pr.PRNumber &&
+			strings.EqualFold(strings.TrimSuffix(row.PRURL, "/"), strings.TrimSuffix(prURL, "/")) {
+			exactRow = row
+			break
+		}
+	}
+	if exactRow == nil || exactRow.HeadSHA != pr.HeadSHA {
+		return result, errors.New("canonical PR association readback did not match")
+	}
+	result.PRURL, result.PRNumber, result.HeadSHA = exactRow.PRURL, exactRow.PRNumber, exactRow.HeadSHA
+	result.Links, result.StateKnown = links, true
+	if !taskChangeLinksContain(links, mcp.TaskChangeLink{
+		Provider: taskChangeProviderGitHub, RepositoryID: repo.ID, Number: pr.PRNumber,
+	}) || !strings.EqualFold(strings.TrimSuffix(pr.PRURL, "/"), strings.TrimSuffix(prURL, "/")) {
+		return mcp.TaskPRURLLinkResult{TaskID: taskID, RepositoryID: repositoryID}, errors.New("PR association readback did not match")
+	}
+	return result, nil
+}
+
 type gitlabChangeLinkProvider interface {
 	AssociateExistingMRByURL(context.Context, string, string, string, string) (*gitlab.TaskMR, error)
 	ListTaskMRsByTask(context.Context, string) ([]*gitlab.TaskMR, error)
