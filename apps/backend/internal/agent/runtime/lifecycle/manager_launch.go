@@ -760,6 +760,56 @@ func shouldPrepareEnvironment(req *LaunchRequest) bool {
 	return req.UseWorktree && req.RepositoryPath != ""
 }
 
+// validatePreparedWorktreeSourceRoot fences a deferred folder reconciliation
+// to the exact task root that the worktree manager owns. The preparer can
+// return the root itself for multiple repositories or a checkout below it for
+// one repository; neither may redirect folder links into a different task.
+func (m *Manager) validatePreparedWorktreeSourceRoot(req *LaunchRequest, workspacePath string) error {
+	if m.worktreeMgr == nil || req == nil || workspacePath == "" {
+		return fmt.Errorf("cannot verify prepared worktree source root")
+	}
+	taskRoot, err := m.preparedWorktreeTaskRoot(req)
+	if err != nil {
+		return err
+	}
+	return validatePreparedWorkspacePath(taskRoot, workspacePath)
+}
+
+func (m *Manager) preparedWorktreeTaskRoot(req *LaunchRequest) (string, error) {
+	if req.TaskID == "" || req.WorkspaceID == "" {
+		return "", fmt.Errorf("cannot verify prepared worktree owner")
+	}
+	taskRoot, err := m.worktreeMgr.TaskRoot(req.TaskDirName)
+	if err != nil {
+		return "", fmt.Errorf("resolve prepared worktree task root: %w", err)
+	}
+	info, err := os.Lstat(taskRoot)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("prepared worktree task root is not a real directory: %s", taskRoot)
+	}
+	marker, found, err := storageworkspaces.ReadOwnershipMarker(taskRoot)
+	if err != nil || !found || marker.TaskID != req.TaskID || marker.WorkspaceID != req.WorkspaceID || marker.TaskDirName != req.TaskDirName {
+		return "", fmt.Errorf("prepared worktree task root ownership does not match launch: %s", taskRoot)
+	}
+	return taskRoot, nil
+}
+
+func validatePreparedWorkspacePath(taskRoot, workspacePath string) error {
+	resolvedWorkspacePath, err := filepath.EvalSymlinks(workspacePath)
+	if err != nil {
+		return fmt.Errorf("resolve prepared workspace: %w", err)
+	}
+	rel, err := filepath.Rel(taskRoot, resolvedWorkspacePath)
+	if err != nil || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("prepared workspace is outside task root: %s", workspacePath)
+	}
+	info, err := os.Lstat(workspacePath)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("prepared workspace is not a real directory: %s", workspacePath)
+	}
+	return nil
+}
+
 // resolveScratchWorkspace creates and returns the scratch workspace path for a
 // repo-less task. Returns empty string when the path could not be created.
 func (m *Manager) resolveScratchWorkspace(ctx context.Context, req *LaunchRequest) string {
@@ -1601,8 +1651,15 @@ func (m *Manager) launchInternal(ctx context.Context, req *LaunchRequest) (*Agen
 		return nil, err
 	}
 	owner := ownedDirectoryLinkOwner(req.TaskID, req.TaskDirName)
-	if err := reconcileWorkspaceSources(ctx, workspacePath, req.WorkspaceFolders, owner); err != nil {
-		return nil, err
+	// A fresh worktree has no resolved workspace until its preparer has
+	// materialized (or reused) the task root. Reconcile durable folder links
+	// against that verified root, never against the empty pre-prepare path.
+	deferWorkspaceFolders := workspacePath == "" && req.ExecutorType == string(models.ExecutorTypeWorktree) &&
+		req.UseWorktree && req.RepositoryPath != "" && req.ACPSessionID == "" && len(req.WorkspaceFolders) > 0
+	if !deferWorkspaceFolders {
+		if err := reconcileWorkspaceSources(ctx, workspacePath, req.WorkspaceFolders, owner); err != nil {
+			return nil, err
+		}
 	}
 	if req.ExecutorType == string(models.ExecutorTypeLocal) || req.ExecutorType == legacyExecutorTypeLocalPC {
 		if err := reconcileWorkspaceRepositories(workspacePath, workspaceRepositorySpecsFromLaunch(req), m.logger, owner); err != nil {
@@ -1650,6 +1707,16 @@ func (m *Manager) launchInternal(ctx context.Context, req *LaunchRequest) (*Agen
 		// state; otherwise standalone receives the repository path (or an empty
 		// path) that was present before preparation completed.
 		reqWithWorktree.WorkspacePath = workspacePath
+	}
+	if deferWorkspaceFolders {
+		if err := m.validatePreparedWorktreeSourceRoot(req, workspacePath); err != nil {
+			m.publishLaunchPrepareCompleted(req, prepResult, progressRecorder, workspacePath, false, err)
+			return nil, err
+		}
+		if err := reconcileWorkspaceSources(ctx, workspacePath, req.WorkspaceFolders, owner); err != nil {
+			m.publishLaunchPrepareCompleted(req, prepResult, progressRecorder, workspacePath, false, err)
+			return nil, err
+		}
 	}
 
 	// 6b. Deploy per-profile skills + custom prompt (ADR 0005 Wave A).

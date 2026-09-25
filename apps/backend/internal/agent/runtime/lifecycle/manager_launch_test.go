@@ -1418,6 +1418,56 @@ func TestLaunch_UsesPreparedWorkspacePathForWorktree(t *testing.T) {
 		"worktree runtime must receive the path returned by preparation")
 }
 
+func TestLaunch_ReconcilesDurableFoldersAfterWorktreePreparation(t *testing.T) {
+	repoA := initBareGitRepo(t, "primary")
+	repoB := initBareGitRepo(t, "sdk")
+	profileResolver := &countingProfileResolver{info: &AgentProfileInfo{
+		ProfileID: "profile-worktree", AgentName: "auggie",
+	}}
+	mgr, backend := newEnvironmentExecutionTestManagerWithProfileResolver(t, nil, profileResolver)
+	_, worktreeMgr := newPreparerForTest(t)
+	mgr.preparerRegistry = NewPreparerRegistry(mgr.logger)
+	mgr.SetWorktreeManager(worktreeMgr)
+	taskRoot, err := worktreeMgr.TaskRoot("review-task")
+	require.NoError(t, err)
+	sdkPath := filepath.Join(taskRoot, "sdk")
+
+	_, err = mgr.Launch(context.Background(), &LaunchRequest{
+		TaskID: "review-task-id", WorkspaceID: "workspace-id", SessionID: "review-session-id",
+		TaskDirName: "review-task", AgentProfileID: "profile-worktree",
+		ExecutorType: string(models.ExecutorTypeWorktree), UseWorktree: true,
+		RepositoryID: "repo-primary", RepositoryPath: repoA, RepoName: "primary", BaseBranch: "main",
+		Repositories: []RepoLaunchSpec{
+			{RepositoryID: "repo-primary", RepositoryPath: repoA, RepoName: "primary", BaseBranch: "main"},
+			{RepositoryID: "repo-sdk", RepositoryPath: repoB, RepoName: "sdk", BaseBranch: "main"},
+		},
+		WorkspaceFolders: []WorkspaceFolderSpec{{Name: "sdk-link", LocalPath: sdkPath}},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, backend.lastRequest)
+	require.Equal(t, taskRoot, backend.lastRequest.WorkspacePath)
+	link, err := os.Readlink(filepath.Join(taskRoot, "sdk-link"))
+	require.NoError(t, err)
+	require.Equal(t, sdkPath, link)
+}
+
+func TestValidatePreparedWorktreeSourceRootRejectsForeignMarker(t *testing.T) {
+	mgr := newTestManager(t)
+	_, worktreeMgr := newPreparerForTest(t)
+	mgr.worktreeMgr = worktreeMgr
+	taskRoot, err := worktreeMgr.TaskRoot("review-task")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(taskRoot, 0o755))
+	require.NoError(t, storageworkspaces.WriteOwnershipMarker(taskRoot, storageworkspaces.OwnershipMarker{
+		TaskID: "another-task", WorkspaceID: "workspace-id", TaskDirName: "review-task",
+		LayoutVersion: storageworkspaces.LayoutVersionSemantic,
+	}))
+	err = mgr.validatePreparedWorktreeSourceRoot(&LaunchRequest{
+		TaskID: "review-task-id", WorkspaceID: "workspace-id", TaskDirName: "review-task",
+	}, taskRoot)
+	require.ErrorContains(t, err, "ownership does not match")
+}
+
 func TestLaunch_PublishesPrepareCompletionOnLegacyRouteEnvError(t *testing.T) {
 	log := newTestLogger()
 	eventBus := &MockEventBusWithTracking{}
