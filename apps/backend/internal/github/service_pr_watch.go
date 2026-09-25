@@ -755,18 +755,21 @@ func (s *Service) AssociateVerifiedSourcePRByURLForWorkspace(
 	if err := validateGitHubContributionPR(owner, repo, number, pr); err != nil {
 		return nil, err
 	}
+	if !strings.EqualFold(strings.TrimSuffix(pr.HTMLURL, "/"), strings.TrimSuffix(prURL, "/")) {
+		return nil, errors.New("GitHub pull request URL changed during resolution")
+	}
 	if !strings.EqualFold(pr.HeadRepoOwner, sourceOwner) || !strings.EqualFold(pr.HeadRepoName, sourceRepo) {
 		return nil, fmt.Errorf("GitHub pull request source repository does not match task repository")
 	}
-	byTask, err := s.ListTaskPRs(ctx, []string{taskID})
+	existing, err := s.store.GetTaskPRByRepoAndNumberIncludingDetached(ctx, taskID, repositoryID, number)
 	if err != nil {
 		return nil, fmt.Errorf("inspect existing task PR links: %w", err)
 	}
-	for _, existing := range byTask[taskID] {
-		if existing.RepositoryID == repositoryID && existing.PRNumber == number &&
-			!strings.EqualFold(strings.TrimSuffix(existing.PRURL, "/"), strings.TrimSuffix(prURL, "/")) {
-			return nil, errors.New("a different canonical PR already uses this task repository and number")
-		}
+	if existing != nil && !strings.EqualFold(strings.TrimSuffix(existing.PRURL, "/"), strings.TrimSuffix(prURL, "/")) {
+		return nil, errors.New("a different canonical PR already uses this task repository and number")
+	}
+	if existing != nil && existing.DetachedAt == nil && existing.HeadSHA != pr.HeadSHA {
+		return nil, errors.New("existing PR link has a stale head SHA")
 	}
 	tp, err := s.associatePRWithTask(ctx, workspaceID, taskID, repositoryID, pr, true, true, TaskPRSourceURLLink)
 	if err != nil {
