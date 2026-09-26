@@ -26,6 +26,13 @@ retains source-compatible aliases. This creates one receipt vocabulary for the
 future durable ledger without adding a force-removal route, claim, cleanup
 call, or physical mutation.
 
+The next bounded slice adds a private SQLite/PostgreSQL claim row keyed by the
+exact task, workspace, task generation, admission generation, operation, and
+request/preview digests. A matching replay returns the same claim; a foreign,
+stale, or changed request is rejected. New cleanup jobs are held while the
+claim exists. No route consumes this claim yet, and it does not hide a card or
+invoke cleanup.
+
 ## Verification
 
 ```bash

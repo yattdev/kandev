@@ -38,6 +38,9 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 	if err := recoveryclaim.EnsureTaskAvailableTx(ctx, r.db, tx, job.TaskID); err != nil {
 		return err
 	}
+	if err := ensureForceRemovalCleanupAvailableTx(ctx, r.db, tx, job.TaskID); err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_resource_cleanup_jobs (`+taskResourceCleanupColumns+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -38,6 +38,7 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		r.initAttachmentsSchema,
 		r.initPreviewFeedbackSchema,
 		r.initTaskResourceCleanupSchema,
+		r.initForceRemovalClaimSchema,
 		r.initControlServerRecordSchema,
 		r.initGitSchema,
 		r.initReviewSchema,
@@ -205,6 +206,22 @@ const taskResourceCleanupSchemaDDL = `
 
 func (r *Repository) initTaskResourceCleanupSchema() error {
 	_, err := r.db.ExecContext(r.migrationContext(), taskResourceCleanupSchemaDDL)
+	return err
+}
+
+func (r *Repository) initForceRemovalClaimSchema() error {
+	_, err := r.db.ExecContext(r.migrationContext(), `
+		CREATE TABLE IF NOT EXISTS task_force_removal_claims (
+			task_id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			task_generation TIMESTAMP NOT NULL,
+			admission_generation TEXT NOT NULL,
+			operation_id TEXT NOT NULL UNIQUE,
+			request_digest TEXT NOT NULL,
+			preview_digest TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL
+		)`)
 	return err
 }
 
