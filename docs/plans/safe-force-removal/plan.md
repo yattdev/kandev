@@ -48,7 +48,7 @@ reset, a force push, or draft PR creation.
 ## Delivery order
 
 1. [W01: Contract and dependency sync](task-01-contract-and-dependency-sync.md)
-2. [W02: Durable fence and ledger](task-02-durable-fence-and-ledger.md)
+2. [W02: Durable fence and ledger](task-02-durable-fence-and-ledger.md) (in progress)
 3. [W03: Shared service and HTTP API](task-03-shared-service-http-api.md)
 4. [W04: Agent tool surface](task-04-agent-tool-surface.md)
 5. [W05: Delete dialog and mobile interaction](task-05-delete-dialog-mobile.md)

@@ -14,29 +14,26 @@ import (
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 )
 
-// ExactRetirementPredicate is a closed inventory category. New evidence must
-// be added explicitly so an unavailable owner cannot appear safe by omission.
-type ExactRetirementPredicate string
+// ExactRetirementPredicate and ExactRetirementReceiptStatus remain aliases so
+// the W02 preview's public service contract stays source-compatible while the
+// durable force-removal ledger consumes the canonical task-model vocabulary.
+type ExactRetirementPredicate = models.ExactRetirementPredicate
+type ExactRetirementReceiptStatus = models.ExactRetirementReceiptStatus
 
 const (
-	ExactRetirementIdentityPredicate     ExactRetirementPredicate = "identity"
-	ExactRetirementQueuePredicate        ExactRetirementPredicate = "session_queue"
-	ExactRetirementMovePredicate         ExactRetirementPredicate = "move_dispatch"
-	ExactRetirementRelationshipPredicate ExactRetirementPredicate = "relationships"
-	ExactRetirementPRPredicate           ExactRetirementPredicate = "pr_watch"
-	ExactRetirementPreservationPredicate ExactRetirementPredicate = "preservation"
-	ExactRetirementGitPredicate          ExactRetirementPredicate = "git"
-	ExactRetirementEnvironmentPredicate  ExactRetirementPredicate = "environment_runtime"
-	ExactRetirementConsumerPredicate     ExactRetirementPredicate = "lease_consumer"
-	ExactRetirementOwnershipPredicate    ExactRetirementPredicate = "replacement_ownership"
-)
-
-type ExactRetirementReceiptStatus string
-
-const (
-	ExactRetirementReceiptPass    ExactRetirementReceiptStatus = "PASS"
-	ExactRetirementReceiptBlocked ExactRetirementReceiptStatus = "BLOCKED"
-	ExactRetirementReceiptUnknown ExactRetirementReceiptStatus = "UNKNOWN"
+	ExactRetirementIdentityPredicate     = models.ExactRetirementIdentityPredicate
+	ExactRetirementQueuePredicate        = models.ExactRetirementQueuePredicate
+	ExactRetirementMovePredicate         = models.ExactRetirementMovePredicate
+	ExactRetirementRelationshipPredicate = models.ExactRetirementRelationshipPredicate
+	ExactRetirementPRPredicate           = models.ExactRetirementPRPredicate
+	ExactRetirementPreservationPredicate = models.ExactRetirementPreservationPredicate
+	ExactRetirementGitPredicate          = models.ExactRetirementGitPredicate
+	ExactRetirementEnvironmentPredicate  = models.ExactRetirementEnvironmentPredicate
+	ExactRetirementConsumerPredicate     = models.ExactRetirementConsumerPredicate
+	ExactRetirementOwnershipPredicate    = models.ExactRetirementOwnershipPredicate
+	ExactRetirementReceiptPass           = models.ExactRetirementReceiptPass
+	ExactRetirementReceiptBlocked        = models.ExactRetirementReceiptBlocked
+	ExactRetirementReceiptUnknown        = models.ExactRetirementReceiptUnknown
 )
 
 var (
@@ -53,14 +50,7 @@ type ExactRetirementPreviewRequest struct {
 	ExpectedReplacementGeneration string
 }
 
-type ExactRetirementPredicateReceipt struct {
-	Predicate          ExactRetirementPredicate     `json:"predicate"`
-	Status             ExactRetirementReceiptStatus `json:"status"`
-	ReasonCode         string                       `json:"reason_code"`
-	ResourceID         string                       `json:"resource_id"`
-	ObservedGeneration string                       `json:"observed_generation"`
-	EvidenceDigest     string                       `json:"evidence_digest"`
-}
+type ExactRetirementPredicateReceipt = models.ExactRetirementPredicateReceipt
 
 type ExactRetirementPreview struct {
 	OldTaskID         string                            `json:"old_task_id"`
