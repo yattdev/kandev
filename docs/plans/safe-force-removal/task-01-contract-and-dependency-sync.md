@@ -51,4 +51,6 @@ git diff --check -- docs/decisions docs/specs docs/plans
 
 On 2026-09-26 PR #3937 was open, unmerged, at
 `9fbfa4caa7dbc53c6c5e782460dbeb277e5b0496`. This work order recorded the
-independent contract and did not touch its code or duplicate its preview.
+independent contract and did not touch its code or duplicate its preview. The
+W01 draft PR remains deferred pending substantive maintainer acceptance on
+[issue #3957](https://github.com/kdlbs/kandev/issues/3957).

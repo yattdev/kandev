@@ -28,6 +28,11 @@ sync its exact merge commit and re-read its contract. Do not fork its paired
 preview endpoint. W01 records source-independent contracts now; W02 onward
 remain blocked until this gate is satisfied.
 
+The W01 documentation PR is a large architectural proposal from a contributor
+without write access to the canonical repository. Its required maintainer
+discussion is [issue #3957](https://github.com/kdlbs/kandev/issues/3957). Do
+not open the draft PR until that issue has substantive maintainer acceptance.
+
 ## Delivery order
 
 1. [W01: Contract and dependency sync](task-01-contract-and-dependency-sync.md)
