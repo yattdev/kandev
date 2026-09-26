@@ -46,6 +46,7 @@ across a backend restart, and executor-specific failure and recovery contracts.
 - [Kubernetes retained compute visibility](requirements/kubernetes-retained-compute.md)
 - [SSH Session Transport Liveness](requirements/ssh-transport-liveness.md)
 - [SSH Host Reachability](requirements/ssh-reachability.md)
+- [Task Git execution isolation](requirements/task-git-execution-isolation.md)
 
 ### System design
 
@@ -67,6 +68,7 @@ across a backend restart, and executor-specific failure and recovery contracts.
 - [SSH Session Transport Liveness](system-design/ssh-transport-liveness.md)
 - [SSH Host Reachability](system-design/ssh-reachability.md)
 - [SSH Host Reachability Surfaces](system-design/ssh-reachability-surfaces.md)
+- [Task Git execution isolation](system-design/task-git-execution-isolation.md)
 
 ## Migration record
 
