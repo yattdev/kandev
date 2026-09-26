@@ -54,3 +54,8 @@ On 2026-09-26 PR #3937 was open, unmerged, at
 independent contract and did not touch its code or duplicate its preview. The
 W01 draft PR remains deferred pending substantive maintainer acceptance on
 [issue #3957](https://github.com/kdlbs/kandev/issues/3957).
+
+The retained branch is `feature/allow-safe-force-rem-yvu` at
+`1117a72f2df7cc5cec3c3c682bca288fc2f52f04`; its fork ref matched local head.
+The earlier `176a54a5d46d11cfe71e44f8c50efba421038f39` was its direct parent in
+this same checkout before the issue-gate update.

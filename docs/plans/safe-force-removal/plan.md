@@ -33,6 +33,18 @@ without write access to the canonical repository. Its required maintainer
 discussion is [issue #3957](https://github.com/kdlbs/kandev/issues/3957). Do
 not open the draft PR until that issue has substantive maintainer acceptance.
 
+### W01 preservation receipt
+
+The preserved checkout is
+`/data/tasks/allow-safe-force-rem_893t0211/kdlbs-kandev` on
+`feature/allow-safe-force-rem-yvu`. Its local head, `fork/` tracking ref, and
+the `yattdev/kandev` fork branch all matched
+`1117a72f2df7cc5cec3c3c682bca288fc2f52f04` on 2026-09-26. The earlier
+`176a54a5d46d11cfe71e44f8c50efba421038f39` receipt was this same branch's
+parent before the discussion-gate commit; it did not identify a different
+checkout or ref. The worktree was clean. This record does not authorize a
+reset, a force push, or draft PR creation.
+
 ## Delivery order
 
 1. [W01: Contract and dependency sync](task-01-contract-and-dependency-sync.md)
