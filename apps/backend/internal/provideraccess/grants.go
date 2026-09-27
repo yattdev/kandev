@@ -292,6 +292,25 @@ func (s *Store) ListWorkspaceGrants(ctx context.Context, workspaceID string) ([]
 	return grants, nil
 }
 
+// ListPluginGrants finds every retained grant for one installed plugin so its
+// shutdown path can fence all outstanding lease generations.
+func (s *Store) ListPluginGrants(ctx context.Context, pluginID string) ([]Grant, error) {
+	if pluginID == "" {
+		return nil, ErrGrantUnavailable
+	}
+	var rows []grantRow
+	err := s.db.SelectContext(ctx, &rows, s.db.Rebind(`SELECT `+grantColumns+`
+  FROM provider_access_grants WHERE plugin_id = ? ORDER BY id`), pluginID)
+	if err != nil {
+		return nil, err
+	}
+	grants := make([]Grant, 0, len(rows))
+	for _, row := range rows {
+		grants = append(grants, *row.grant())
+	}
+	return grants, nil
+}
+
 // GetActiveGrant returns the one nonexpired active exact-scope grant, if any.
 func (s *Store) GetActiveGrant(ctx context.Context, scope GrantScope) (*Grant, error) {
 	key, err := scopeKey(scope)

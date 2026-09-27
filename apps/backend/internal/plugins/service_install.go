@@ -387,6 +387,10 @@ func (s *Service) Uninstall(ctx context.Context, id string) error {
 	if s.runtime != nil {
 		s.runtime.Stop(id)
 	}
+	if err := s.stopProviderAccessPlugin(ctx, id); err != nil {
+		s.reconcileAbortedUninstall(id, wasRunning)
+		return fmt.Errorf("plugins: uninstall aborted, could not revoke provider access: %w", err)
+	}
 	s.revokeGitCredentialProviderLeases(rec.RepositoryProviders)
 	if rec.InstallationID != "" {
 		if err := s.approvalTombstoneInstallation(rec.InstallationID); err != nil {

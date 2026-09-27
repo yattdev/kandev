@@ -113,3 +113,7 @@ still injects the plain ledger because credential export remains disabled.
 The same uncomposed manager fences workspace admission and revokes all tokens
 it still holds during workspace cleanup; task deletion must inject this manager
 when redemption is enabled.
+Plugin disable, uninstall, error transitions and Host shutdown now call a
+configured provider-access service's teardown methods. A failed plugin token
+revocation keeps that plugin's runtime blocked and the grant fenced until a
+retry confirms provider revocation; the live service remains unconfigured.

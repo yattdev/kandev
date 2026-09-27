@@ -616,6 +616,14 @@ func (s *Service) providerAccessDeps() ProviderAccessService {
 	return s.providerAccessSvc
 }
 
+func (s *Service) stopProviderAccessPlugin(ctx context.Context, pluginID string) error {
+	service := s.providerAccessDeps()
+	if service == nil {
+		return nil
+	}
+	return service.StopPlugin(ctx, pluginID)
+}
+
 // writeDependencies returns the currently-wired task messenger and task
 // starter. Read live (not snapshotted at hostForPlugin time) so a plugin
 // spawned before SetWriteDeps still resolves them once it is called. Guarded by
@@ -714,6 +722,11 @@ func (s *Service) Runtime() PluginRuntime {
 func (s *Service) Shutdown() {
 	if s.runtime != nil {
 		s.runtime.StopAll()
+	}
+	if service := s.providerAccessDeps(); service != nil {
+		if err := service.Stop(context.Background()); err != nil && s.log != nil {
+			s.log.Warn("plugins: provider access shutdown failed", zap.Error(err))
+		}
 	}
 }
 

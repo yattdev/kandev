@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,7 +12,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type stubProviderAccessService struct{ pluginID string }
+type stubProviderAccessService struct {
+	pluginID string
+	stops    []string
+	closed   bool
+	stopErr  error
+}
 
 func (s *stubProviderAccessService) Issue(_ context.Context, pluginID string,
 	_ pluginsdk.ProviderAccessLeaseSpec) (pluginsdk.ProviderAccessLease, error) {
@@ -28,6 +34,56 @@ func (s *stubProviderAccessService) Redeem(_ context.Context, pluginID, _, _ str
 func (s *stubProviderAccessService) Release(_ context.Context, pluginID, _, _ string) (bool, error) {
 	s.pluginID = pluginID
 	return true, nil
+}
+
+func (s *stubProviderAccessService) StopPlugin(_ context.Context, pluginID string) error {
+	s.stops = append(s.stops, pluginID)
+	return s.stopErr
+}
+
+func TestPluginServiceStopsProviderAccessOnLifecycleTransitions(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	installTestPlugin(t, svc, "kandev-plugin-slack")
+	provider := &stubProviderAccessService{}
+	svc.SetProviderAccess(provider)
+	if err := svc.Disable("kandev-plugin-slack"); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.stops) != 1 || provider.stops[0] != "kandev-plugin-slack" {
+		t.Fatalf("disable provider stops = %v", provider.stops)
+	}
+	if err := svc.Uninstall(context.Background(), "kandev-plugin-slack"); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.stops) != 2 || provider.stops[1] != "kandev-plugin-slack" {
+		t.Fatalf("uninstall provider stops = %v", provider.stops)
+	}
+	svc.Shutdown()
+	if !provider.closed {
+		t.Fatal("provider access runtime not closed at shutdown")
+	}
+}
+
+func TestPluginServiceRetriesFailedProviderStopOnDisabledPlugin(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	installTestPlugin(t, svc, "kandev-plugin-slack")
+	provider := &stubProviderAccessService{stopErr: errors.New("provider revocation failed")}
+	svc.SetProviderAccess(provider)
+	if err := svc.Disable("kandev-plugin-slack"); !errors.Is(err, provider.stopErr) {
+		t.Fatalf("disable error = %v", err)
+	}
+	provider.stopErr = nil
+	if err := svc.Disable("kandev-plugin-slack"); err != nil {
+		t.Fatalf("repeat disable error = %v", err)
+	}
+	if len(provider.stops) != 2 {
+		t.Fatalf("provider stop attempts = %d", len(provider.stops))
+	}
+}
+
+func (s *stubProviderAccessService) Stop(context.Context) error {
+	s.closed = true
+	return nil
 }
 
 func TestPluginHostProviderAccessRequiresCapabilityAndWiring(t *testing.T) {

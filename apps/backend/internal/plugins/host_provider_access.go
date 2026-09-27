@@ -14,6 +14,8 @@ type ProviderAccessService interface {
 	Issue(context.Context, string, pluginsdk.ProviderAccessLeaseSpec) (pluginsdk.ProviderAccessLease, error)
 	Redeem(context.Context, string, string, string) (pluginsdk.ProviderAccessCredential, error)
 	Release(context.Context, string, string, string) (bool, error)
+	StopPlugin(context.Context, string) error
+	Stop(context.Context) error
 }
 
 type pluginProviderAccessManager struct{ host *pluginHost }

@@ -205,3 +205,67 @@ func TestProviderHostAccessWorkspaceCleanupFencesAndRevokes(t *testing.T) {
 		t.Fatalf("fenced workspace replacement error = %v", err)
 	}
 }
+
+func TestProviderHostAccessPluginStopRevokesTokenAndGrant(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	tokens := &hostTestTokens{}
+	host := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: tokens}
+	lease, err := host.Issue(ctx, grant.PluginID, hostTestSpec(target, *grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.StopPlugin(ctx, grant.PluginID); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.revokes != 1 {
+		t.Fatalf("plugin stop revocations = %d", tokens.revokes)
+	}
+	active, err := authority.store.GetActiveGrant(ctx, grant.Scope())
+	if err != nil || active != nil {
+		t.Fatalf("plugin stop active grant = %+v, err = %v", active, err)
+	}
+	if err := host.StopPlugin(ctx, grant.PluginID); err != nil {
+		t.Fatalf("repeat plugin stop: %v", err)
+	}
+}
+
+func TestProviderHostAccessPluginStopFailureBlocksNewRuntimeUntilRetry(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	tokens := &hostTestTokens{revokeErr: errors.New("provider fixture unavailable")}
+	host := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: tokens}
+	lease, err := host.Issue(ctx, grant.PluginID, hostTestSpec(target, *grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.StopPlugin(ctx, grant.PluginID); !errors.Is(err, provideraccess.ErrRevocationUnconfirmed) {
+		t.Fatalf("failed stop error = %v", err)
+	}
+	if _, err := host.runtime(grant.PluginID); !errors.Is(err, provideraccess.ErrGrantUnavailable) {
+		t.Fatalf("blocked runtime error = %v", err)
+	}
+	tokens.revokeErr = nil
+	if err := host.StopPlugin(ctx, grant.PluginID); err != nil {
+		t.Fatalf("retry stop error = %v", err)
+	}
+	if _, err := host.runtime(grant.PluginID); err != nil {
+		t.Fatalf("runtime after confirmed revocation = %v", err)
+	}
+}

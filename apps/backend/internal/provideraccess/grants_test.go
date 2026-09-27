@@ -66,6 +66,24 @@ func TestStoreReplaceGrantRevokesPreviousGeneration(t *testing.T) {
 	}
 }
 
+func TestStoreListPluginGrantsIncludesOnlyExactPlugin(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	first := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &first); err != nil {
+		t.Fatal(err)
+	}
+	other := testGrant("grant-2")
+	other.PluginID = "other-plugin"
+	if err := store.ReplaceGrant(ctx, &other); err != nil {
+		t.Fatal(err)
+	}
+	grants, err := store.ListPluginGrants(ctx, first.PluginID)
+	if err != nil || len(grants) != 1 || grants[0].ID != first.ID {
+		t.Fatalf("plugin grants = %+v, err = %v", grants, err)
+	}
+}
+
 func TestStoreRevokeGrantFencesActiveScope(t *testing.T) {
 	store := newGrantTestStore(t)
 	ctx := context.Background()

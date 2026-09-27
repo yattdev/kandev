@@ -20,6 +20,7 @@ type providerHostAccess struct {
 	tokens   provideraccess.RerunTokenSource
 	mu       sync.Mutex
 	runtimes map[string]*provideraccess.Runtime
+	blocked  map[string]bool
 	stopped  bool
 }
 
@@ -31,7 +32,7 @@ func (s *providerHostAccess) authority(pluginID string) *providerLeaseAuthority 
 func (s *providerHostAccess) runtime(pluginID string) (*provideraccess.Runtime, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.stopped || pluginID == "" || s.tokens == nil {
+	if s.stopped || s.blocked[pluginID] || pluginID == "" || s.tokens == nil {
 		return nil, provideraccess.ErrGrantUnavailable
 	}
 	if runtime := s.runtimes[pluginID]; runtime != nil {
@@ -215,6 +216,44 @@ func (s *providerHostAccess) CleanupWorkspaceProviderAccess(ctx context.Context,
 	for _, runtime := range s.runtimes {
 		_, err := runtime.FenceWorkspace(ctx, workspaceID)
 		result = errors.Join(result, err)
+	}
+	return result
+}
+
+// StopPlugin closes this plugin's transient runtime and fences every retained
+// grant. A failed provider revocation leaves its runtime available for retry.
+func (s *providerHostAccess) StopPlugin(ctx context.Context, pluginID string) error {
+	if pluginID == "" {
+		return provideraccess.ErrGrantUnavailable
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var result error
+	if runtime := s.runtimes[pluginID]; runtime != nil {
+		result = errors.Join(result, runtime.Stop(ctx))
+	}
+	grants, err := s.store.ListPluginGrants(ctx, pluginID)
+	if err != nil {
+		if s.blocked == nil {
+			s.blocked = make(map[string]bool)
+		}
+		s.blocked[pluginID] = true
+		return errors.Join(result, err)
+	}
+	for _, grant := range grants {
+		if grant.RevokedAt == nil {
+			result = errors.Join(result, s.store.RevokeGrant(ctx,
+				grant.WorkspaceID, grant.ID, time.Now().UTC()))
+		}
+	}
+	if result == nil {
+		delete(s.runtimes, pluginID)
+		delete(s.blocked, pluginID)
+	} else {
+		if s.blocked == nil {
+			s.blocked = make(map[string]bool)
+		}
+		s.blocked[pluginID] = true
 	}
 	return result
 }
