@@ -119,6 +119,20 @@ func TestProviderHostAccessBindsPluginAndExactGrantBeforeOneShotRedemption(t *te
 	if err != nil || !revoked || tokens.revokes != 1 {
 		t.Fatalf("owner release = %v, err = %v, revokes = %d", revoked, err, tokens.revokes)
 	}
+	audits, err = authority.store.ListLeaseAudits(ctx, lease.LeaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundRelease := false
+	for _, audit := range audits {
+		if audit.Outcome == provideraccess.AuditRevokedAtProvider && audit.RequestIDHash != "" &&
+			audit.RequestIDHash != "request-5" {
+			foundRelease = true
+		}
+	}
+	if !foundRelease {
+		t.Fatalf("missing correlated release receipt: %+v", audits)
+	}
 	if err := host.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -189,6 +203,13 @@ func TestProviderHostAccessReplacementRetainsFailedRevocationResidual(t *testing
 	state, err := authority.store.ExposureStateAt(ctx, lease.LeaseID, time.Now().UTC())
 	if err != nil || state != provideraccess.ExposureResidual {
 		t.Fatalf("failed revocation state = %s, err = %v", state, err)
+	}
+	// A restarted Host has lost the exact bearer but must still respect its
+	// durable exposure receipt before admitting a successor generation.
+	restarted := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: &hostTestTokens{}}
+	if err := restarted.ReplaceGrant(ctx, &successor); !errors.Is(err, provideraccess.ErrGrantUnavailable) {
+		t.Fatalf("replacement after failed revocation and restart = %v", err)
 	}
 }
 

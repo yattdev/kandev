@@ -64,6 +64,24 @@ func TestStoreReplaceGrantRevokesPreviousGeneration(t *testing.T) {
 	if err != nil || active == nil || active.ID != second.ID {
 		t.Fatalf("active grant = %+v, err = %v, want second grant", active, err)
 	}
+	var receipts []auditRow
+	if err := store.db.SelectContext(ctx, &receipts, `SELECT * FROM provider_access_audit ORDER BY at, id`); err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 3 {
+		t.Fatalf("grant audit receipts = %d, want create, revoke, create", len(receipts))
+	}
+	outcomes := map[string]map[AuditOutcome]bool{}
+	for _, receipt := range receipts {
+		if outcomes[receipt.GrantID] == nil {
+			outcomes[receipt.GrantID] = map[AuditOutcome]bool{}
+		}
+		outcomes[receipt.GrantID][AuditOutcome(receipt.Outcome)] = true
+	}
+	if !outcomes[first.ID][AuditGrantCreated] || !outcomes[first.ID][AuditGrantRevoked] ||
+		!outcomes[second.ID][AuditGrantCreated] {
+		t.Fatalf("grant audit outcomes = %+v", outcomes)
+	}
 }
 
 func TestStoreListPluginGrantsIncludesOnlyExactPlugin(t *testing.T) {
@@ -84,6 +102,54 @@ func TestStoreListPluginGrantsIncludesOnlyExactPlugin(t *testing.T) {
 	}
 }
 
+func TestStoreGrantAuditFailureRollsBackReplacementAndRevocation(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	first := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx, `CREATE TRIGGER reject_grant_audit
+  BEFORE INSERT ON provider_access_audit
+  BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`); err != nil {
+		t.Fatal(err)
+	}
+	second := testGrant("grant-2")
+	if err := store.ReplaceGrant(ctx, &second); err == nil {
+		t.Fatal("replacement succeeded without its audit receipt")
+	}
+	if err := store.RevokeGrant(ctx, first.WorkspaceID, first.ID, time.Now().UTC()); err == nil {
+		t.Fatal("revocation succeeded without its audit receipt")
+	}
+	active, err := store.GetActiveGrant(ctx, first.Scope())
+	if err != nil || active == nil || active.ID != first.ID {
+		t.Fatalf("grant after failed audit = %+v, err = %v", active, err)
+	}
+}
+
+func TestStoreReplacementRejectsUnknownMintAfterRevocation(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	first := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &first); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(first))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimMintIntent(ctx, testMintClaim(first, lease)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RevokeGrant(ctx, first.WorkspaceID, first.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	second := testGrant("grant-2")
+	if err := store.ReplaceGrant(ctx, &second); err != ErrGrantUnavailable {
+		t.Fatalf("replacement after ambiguous mint = %v, want unavailable", err)
+	}
+}
+
 func TestStoreRevokeGrantFencesActiveScope(t *testing.T) {
 	store := newGrantTestStore(t)
 	ctx := context.Background()
@@ -101,6 +167,22 @@ func TestStoreRevokeGrantFencesActiveScope(t *testing.T) {
 	if err != nil || active != nil {
 		t.Fatalf("active grant = %+v, err = %v, want none", active, err)
 	}
+	var outcomes []string
+	if err := store.db.SelectContext(ctx, &outcomes, `SELECT outcome FROM provider_access_audit WHERE grant_id = ?`, grant.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 2 || !containsOutcome(outcomes, AuditGrantCreated) || !containsOutcome(outcomes, AuditGrantRevoked) {
+		t.Fatalf("grant audit outcomes = %v", outcomes)
+	}
+}
+
+func containsOutcome(outcomes []string, expected AuditOutcome) bool {
+	for _, outcome := range outcomes {
+		if outcome == string(expected) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStoreListWorkspaceGrantsKeepsWorkspaceBoundary(t *testing.T) {

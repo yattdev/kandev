@@ -64,6 +64,35 @@ func TestPostgresExposureAdmissionWaitsForGrantRevocationLock(t *testing.T) {
 	}
 }
 
+func TestPostgresGrantReplacementPreservesResidualBearerFence(t *testing.T) {
+	store := newPostgresExposureTestStore(t)
+	ctx := context.Background()
+	first := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &first); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(first))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimTestMint(t, store, first, lease)
+	if err := store.RecordExposureOrRevoke(ctx, testExposureReceipt(first, lease),
+		func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RevokeGrant(ctx, first.WorkspaceID, first.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	second := testGrant("grant-2")
+	if err := store.ReplaceGrant(ctx, &second); !errors.Is(err, ErrGrantUnavailable) {
+		t.Fatalf("replacement while provider bearer remains valid = %v", err)
+	}
+	state, err := store.ExposureStateAt(ctx, lease.ID, time.Now().UTC())
+	if err != nil || state != ExposureResidual {
+		t.Fatalf("residual exposure = %s, err = %v", state, err)
+	}
+}
+
 func newPostgresExposureTestStore(t *testing.T) *Store {
 	t.Helper()
 	dsn := testutil.PostgresDSNFromEnv(t)

@@ -5041,6 +5041,11 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 }
 
 func (s *Service) deleteSessionAndCleanAttachments(ctx context.Context, session *models.TaskSession) error {
+	if s.providerAccessSessionRevoker != nil {
+		if err := s.providerAccessSessionRevoker.RevokeSession(ctx, session.ID); err != nil {
+			return fmt.Errorf("revoke provider access session: %w", err)
+		}
+	}
 	var deletedAttachments []*models.TaskMessageAttachment
 	var err error
 	if deleter, ok := s.repo.(sessionAttachmentDeleter); ok {

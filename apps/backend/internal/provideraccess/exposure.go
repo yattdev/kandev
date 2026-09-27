@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -237,14 +238,34 @@ func validateExposureReceipt(receipt ExposureReceipt) error {
 // RecordRevocationResult records the attempted provider result, not a lease policy decision.
 // confirmed must be true only after a successful provider revocation response.
 func (s *Store) RecordRevocationResult(ctx context.Context, leaseID string, at time.Time, confirmed bool) error {
+	return s.recordRevocationResult(ctx, leaseID, at, confirmed, "")
+}
+
+// RecordRevocationResultWithAudit binds a plugin release request to the exact
+// provider outcome in the same transaction as the exposure state change.
+func (s *Store) RecordRevocationResultWithAudit(ctx context.Context, leaseID string,
+	at time.Time, confirmed bool, requestHash string) error {
+	if requestHash == "" {
+		return ErrGrantUnavailable
+	}
+	return s.recordRevocationResult(ctx, leaseID, at, confirmed, requestHash)
+}
+
+func (s *Store) recordRevocationResult(ctx context.Context, leaseID string,
+	at time.Time, confirmed bool, requestHash string) error {
 	if leaseID == "" || at.IsZero() {
 		return errors.New("lease and revocation attempt time are required")
 	}
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
 	var confirmedAt any
 	if confirmed {
 		confirmedAt = at.Unix()
 	}
-	result, err := s.db.ExecContext(ctx, s.db.Rebind(`UPDATE provider_access_exposures
+	result, err := tx.ExecContext(ctx, tx.Rebind(`UPDATE provider_access_exposures
   SET revocation_attempted_at = ?, revoked_at_provider = ?
   WHERE lease_id = ? AND revoked_at_provider IS NULL`), at.Unix(), confirmedAt, leaseID)
 	if err != nil {
@@ -257,7 +278,32 @@ func (s *Store) RecordRevocationResult(ctx context.Context, leaseID string, at t
 	if count != 1 {
 		return sql.ErrNoRows
 	}
-	return nil
+	var row activeLeaseRow
+	if err := tx.GetContext(ctx, &row, tx.Rebind(`SELECT l.*,
+  g.plugin_installation_id, g.plugin_id, g.workspace_id, g.conversation_key,
+  g.target_task_id, g.repository_id, g.provider, g.purpose
+  FROM provider_access_leases l JOIN provider_access_grants g ON g.id = l.grant_id
+  WHERE l.id = ?`), leaseID); err != nil {
+		return err
+	}
+	outcome := AuditRevocationPending
+	if confirmed {
+		outcome = AuditRevokedAtProvider
+	}
+	audit := AuditEvent{ID: uuid.NewString(), GrantID: row.GrantID, LeaseID: leaseID,
+		PluginInstallationID: row.PluginInstallationID, WorkspaceID: row.WorkspaceID,
+		ManagedTaskID: row.ManagedTaskID, SessionID: row.SessionID,
+		TargetDigest: row.TargetDigest, GrantGeneration: row.GrantGeneration,
+		ApprovalRevision: uint64(row.ApprovalRevision), ConnectionGeneration: row.ConnectionGeneration,
+		Provider: row.Provider, Purpose: row.Purpose, Outcome: outcome,
+		RequestIDHash: requestHash, At: at}
+	if err := validateAudit(audit); err != nil {
+		return err
+	}
+	if err := insertAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ExposureStateAt reports provider invalidation or the remaining bearer window.

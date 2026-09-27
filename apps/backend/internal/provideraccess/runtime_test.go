@@ -108,6 +108,17 @@ func TestRuntimeStopRevokesHeldTokenAndPreservesFailedRevocation(t *testing.T) {
 		state != ExposureResidual {
 		t.Fatalf("stopped exposure = %s, err = %v", state, err)
 	}
+	audits, err := store.ListLeaseAudits(ctx, lease.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundPending := false
+	for _, audit := range audits {
+		foundPending = foundPending || audit.Outcome == AuditRevocationPending
+	}
+	if !foundPending {
+		t.Fatalf("missing failed-revocation receipt: %+v", audits)
+	}
 	if token, err := runtime.Redeem(ctx, lease.ID); !errors.Is(err, ErrGrantUnavailable) || token.Token != "" {
 		t.Fatalf("redemption after stop = %+v, err = %v", token, err)
 	}

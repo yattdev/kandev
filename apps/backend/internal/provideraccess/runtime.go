@@ -241,20 +241,46 @@ func (r *Runtime) RevokeGrant(ctx context.Context, workspaceID, grantID string) 
 
 // Release revokes the exact exported token and records the provider outcome.
 func (r *Runtime) Release(ctx context.Context, leaseID string) error {
+	return r.release(ctx, leaseID, "")
+}
+
+// ReleaseWithAudit hashes the RPC request identity before revoking the exact
+// exported token. Its outcome receipt is durable even on provider failure.
+func (r *Runtime) ReleaseWithAudit(ctx context.Context, leaseID, requestID string) error {
+	requestHash, err := HashRequestID(requestID)
+	if err != nil {
+		return ErrGrantUnavailable
+	}
+	return r.release(ctx, leaseID, requestHash)
+}
+
+func (r *Runtime) release(ctx context.Context, leaseID, requestHash string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	token, ok := r.active[leaseID]
 	if !ok {
 		return ErrRevocationUnconfirmed
 	}
-	return r.revokeActive(ctx, leaseID, token)
+	return r.revokeActiveWithAudit(ctx, leaseID, token, requestHash)
 }
 
 func (r *Runtime) revokeActive(ctx context.Context, leaseID string, token activeToken) error {
+	return r.revokeActiveWithAudit(ctx, leaseID, token, "")
+}
+
+func (r *Runtime) revokeActiveWithAudit(ctx context.Context, leaseID string,
+	token activeToken, requestHash string) error {
 	revokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	confirmed := r.tokens.Revoke(revokeCtx, token.value) == nil
-	if err := r.store.RecordRevocationResult(revokeCtx, leaseID, time.Now().UTC(), confirmed); err != nil {
+	var err error
+	if requestHash == "" {
+		err = r.store.RecordRevocationResult(revokeCtx, leaseID, time.Now().UTC(), confirmed)
+	} else {
+		err = r.store.RecordRevocationResultWithAudit(revokeCtx, leaseID,
+			time.Now().UTC(), confirmed, requestHash)
+	}
+	if err != nil {
 		return err
 	}
 	if !confirmed {

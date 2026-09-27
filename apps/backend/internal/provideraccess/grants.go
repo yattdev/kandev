@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/kandev/kandev/internal/db/dialect"
 )
@@ -177,6 +178,10 @@ func (s *Store) ReplaceGrant(ctx context.Context, grant *Grant) error {
 		}
 	}
 	now := time.Now().UTC()
+	previous, err := activeGrantForReplacement(ctx, tx, s.db.DriverName(), key, now)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, tx.Rebind(`UPDATE provider_access_grants
   SET revoked_at = ?, updated_at = ? WHERE scope_key = ? AND revoked_at IS NULL`), now.Unix(), now.Unix(), key); err != nil {
 		return err
@@ -198,11 +203,77 @@ func (s *Store) ReplaceGrant(ctx context.Context, grant *Grant) error {
 	if err != nil {
 		return err
 	}
+	if err := insertReplacementAudits(ctx, tx, previous, grant, now); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	grant.CreatedAt, grant.UpdatedAt = now, now
 	return nil
+}
+
+func activeGrantForReplacement(ctx context.Context, tx *sqlx.Tx,
+	driverName, key string, at time.Time) (*Grant, error) {
+	var previous grantRow
+	previousQuery := `SELECT ` + grantColumns + `
+  FROM provider_access_grants WHERE scope_key = ? AND revoked_at IS NULL`
+	if dialect.IsPostgres(driverName) {
+		previousQuery += ` FOR UPDATE`
+	}
+	err := tx.GetContext(ctx, &previous, tx.Rebind(previousQuery), key)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	residual, err := hasUnexpiredScopeAuthority(ctx, tx, key, at)
+	if err != nil {
+		return nil, err
+	}
+	if residual {
+		return nil, ErrGrantUnavailable
+	}
+	if previous.ID == "" {
+		return nil, nil
+	}
+	return previous.grant(), nil
+}
+
+func insertReplacementAudits(ctx context.Context, tx *sqlx.Tx,
+	previous, grant *Grant, at time.Time) error {
+	if previous != nil {
+		if err := insertAudit(ctx, tx, grantAudit(previous, AuditGrantRevoked, at)); err != nil {
+			return err
+		}
+	}
+	return insertAudit(ctx, tx, grantAudit(grant, AuditGrantCreated, at))
+}
+
+// This check runs under the active grant row lock, so a concurrent final
+// exposure admission either commits first and is observed or sees revocation.
+func hasUnexpiredScopeAuthority(ctx context.Context, tx *sqlx.Tx,
+	key string, at time.Time) (bool, error) {
+	var exposed int
+	err := tx.GetContext(ctx, &exposed, tx.Rebind(`SELECT COUNT(*)
+  FROM provider_access_exposures e JOIN provider_access_grants g ON g.id = e.grant_id
+  WHERE g.scope_key = ? AND e.provider_expires_at > ? AND e.revoked_at_provider IS NULL`),
+		key, at.Unix())
+	if err != nil || exposed > 0 {
+		return exposed > 0, err
+	}
+	var ambiguous int
+	err = tx.GetContext(ctx, &ambiguous, tx.Rebind(`SELECT COUNT(*)
+  FROM provider_access_redemptions r JOIN provider_access_grants g ON g.id = r.grant_id
+  LEFT JOIN provider_access_exposures e ON e.lease_id = r.lease_id
+  WHERE g.scope_key = ? AND r.possible_provider_expiry > ? AND e.lease_id IS NULL`),
+		key, at.Unix())
+	return ambiguous > 0, err
+}
+
+func grantAudit(grant *Grant, outcome AuditOutcome, at time.Time) AuditEvent {
+	return AuditEvent{ID: uuid.NewString(), GrantID: grant.ID,
+		PluginInstallationID: grant.PluginInstallationID, WorkspaceID: grant.WorkspaceID,
+		GrantGeneration: grant.Generation, Provider: grant.Provider, Purpose: grant.Purpose,
+		Outcome: outcome, At: at}
 }
 
 func checkWorkspaceFence(ctx context.Context, tx *sqlx.Tx, driverName, workspaceID string) error {
@@ -342,6 +413,12 @@ func (s *Store) RevokeGrant(ctx context.Context, workspaceID, id string, at time
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var row grantRow
+	if err := tx.GetContext(ctx, &row, tx.Rebind(`SELECT `+grantColumns+`
+  FROM provider_access_grants WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`),
+		id, workspaceID); err != nil {
+		return err
+	}
 	result, err := tx.ExecContext(ctx, tx.Rebind(`UPDATE provider_access_grants
   SET revoked_at = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`),
 		at.Unix(), at.Unix(), id, workspaceID)
@@ -357,6 +434,9 @@ func (s *Store) RevokeGrant(ctx context.Context, workspaceID, id string, at time
 	}
 	if _, err := tx.ExecContext(ctx, tx.Rebind(`UPDATE provider_access_leases SET revoked_at = ?
   WHERE grant_id = ? AND revoked_at IS NULL`), at.Unix(), id); err != nil {
+		return err
+	}
+	if err := insertAudit(ctx, tx, grantAudit(row.grant(), AuditGrantRevoked, at)); err != nil {
 		return err
 	}
 	return tx.Commit()

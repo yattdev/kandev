@@ -123,7 +123,7 @@ func providerTargetFromSDK(target pluginsdk.ProviderAccessGitHubRerunTarget) pro
 
 func (s *providerHostAccess) Redeem(ctx context.Context, pluginID, requestID,
 	leaseID string) (pluginsdk.ProviderAccessCredential, error) {
-	if requestID == "" || !s.ownsLease(ctx, pluginID, leaseID) {
+	if !s.ownsLease(ctx, pluginID, leaseID) {
 		return pluginsdk.ProviderAccessCredential{}, provideraccess.ErrGrantUnavailable
 	}
 	runtime, err := s.runtime(pluginID)
@@ -147,7 +147,7 @@ func (s *providerHostAccess) Release(ctx context.Context, pluginID, requestID,
 	if err != nil {
 		return false, err
 	}
-	if err := runtime.Release(ctx, leaseID); err != nil {
+	if err := runtime.ReleaseWithAudit(ctx, leaseID, requestID); err != nil {
 		return false, err
 	}
 	return true, nil
