@@ -117,3 +117,6 @@ Plugin disable, uninstall, error transitions and Host shutdown now call a
 configured provider-access service's teardown methods. A failed plugin token
 revocation keeps that plugin's runtime blocked and the grant fenced until a
 retry confirms provider revocation; the live service remains unconfigured.
+A session teardown component now fences all matching durable leases and revokes
+any exported exact token held by the Host. The real managed-session lifecycle
+must call it before credential delivery can be composed.

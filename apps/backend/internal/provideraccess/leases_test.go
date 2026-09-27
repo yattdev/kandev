@@ -107,6 +107,38 @@ func TestStoreGetLeasePluginIDRejectsUnknownLease(t *testing.T) {
 	}
 }
 
+func TestStoreRevokeSessionLeasesFencesOnlyMatchingSession(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherClaim := testLeaseClaim(grant)
+	otherClaim.ID = "lease-other"
+	otherClaim.SessionID = "session-other"
+	otherClaim.IdempotencyKey = "request-other"
+	other, err := store.IssueLease(ctx, otherClaim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RevokeSessionLeases(ctx, first.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	active, err := store.GetActiveLease(ctx, first.ID)
+	if err != nil || active != nil {
+		t.Fatalf("stopped session lease = %+v, err = %v", active, err)
+	}
+	active, err = store.GetActiveLease(ctx, other.ID)
+	if err != nil || active == nil {
+		t.Fatalf("other session lease = %+v, err = %v", active, err)
+	}
+}
+
 func TestStoreReplacementFencesPreviousGenerationLease(t *testing.T) {
 	store := newGrantTestStore(t)
 	ctx := context.Background()

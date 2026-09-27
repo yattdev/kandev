@@ -211,6 +211,34 @@ func TestRuntimeRedeemIsOneShotAndReleasesExactToken(t *testing.T) {
 	}
 }
 
+func TestRuntimeRevokesStoppedSessionWithoutAffectingOtherSession(t *testing.T) {
+	runtime, store, _, tokens, _, lease := newRuntimeTestFixture(t)
+	ctx := context.Background()
+	if _, err := runtime.Redeem(ctx, lease.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.RevokeSession(ctx, "session-other"); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.revocations != 0 {
+		t.Fatalf("unrelated session revocations = %d", tokens.revocations)
+	}
+	if err := runtime.RevokeSession(ctx, lease.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.revocations != 1 {
+		t.Fatalf("stopped session revocations = %d", tokens.revocations)
+	}
+	active, err := store.GetActiveLease(ctx, lease.ID)
+	if err != nil || active != nil {
+		t.Fatalf("stopped session active lease = %+v, err = %v", active, err)
+	}
+	state, err := store.ExposureStateAt(ctx, lease.ID, time.Now())
+	if err != nil || state != ExposureRevokedAtProvider {
+		t.Fatalf("stopped session exposure = %s, err = %v", state, err)
+	}
+}
+
 func TestRuntimeDeniesDriftAndRevokesUnexportedToken(t *testing.T) {
 	runtime, store, authority, tokens, _, lease := newRuntimeTestFixture(t)
 	authority.drift = true

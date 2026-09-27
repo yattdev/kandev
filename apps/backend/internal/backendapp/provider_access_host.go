@@ -257,3 +257,21 @@ func (s *providerHostAccess) StopPlugin(ctx context.Context, pluginID string) er
 	}
 	return result
 }
+
+// RevokeSession fences every lease for a managed session and revokes any token
+// held by this Host, regardless of which plugin runtime issued it.
+func (s *providerHostAccess) RevokeSession(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return provideraccess.ErrGrantUnavailable
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.runtimes) == 0 {
+		return s.store.RevokeSessionLeases(ctx, sessionID)
+	}
+	var result error
+	for _, runtime := range s.runtimes {
+		result = errors.Join(result, runtime.RevokeSession(ctx, sessionID))
+	}
+	return result
+}

@@ -269,3 +269,32 @@ func TestProviderHostAccessPluginStopFailureBlocksNewRuntimeUntilRetry(t *testin
 		t.Fatalf("runtime after confirmed revocation = %v", err)
 	}
 }
+
+func TestProviderHostAccessSessionTeardownFencesExportedToken(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	tokens := &hostTestTokens{}
+	host := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: tokens}
+	lease, err := host.Issue(ctx, grant.PluginID, hostTestSpec(target, *grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.RevokeSession(ctx, "session-1"); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.revokes != 1 {
+		t.Fatalf("session teardown revocations = %d", tokens.revokes)
+	}
+	active, err := authority.store.GetActiveLease(ctx, lease.LeaseID)
+	if err != nil || active != nil {
+		t.Fatalf("session teardown active lease = %+v, err = %v", active, err)
+	}
+}

@@ -254,3 +254,15 @@ func (s *Store) GetLeasePluginID(ctx context.Context, leaseID string) (string, e
 	}
 	return pluginID, nil
 }
+
+// RevokeSessionLeases fences every provider lease associated with one managed
+// session before its in-memory bearer revocation attempt.
+func (s *Store) RevokeSessionLeases(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return ErrGrantUnavailable
+	}
+	_, err := s.db.ExecContext(ctx, s.db.Rebind(`UPDATE provider_access_leases
+  SET revoked_at = ? WHERE session_id = ? AND revoked_at IS NULL`),
+		time.Now().UTC().Unix(), sessionID)
+	return err
+}

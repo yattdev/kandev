@@ -33,6 +33,7 @@ type RerunTokenSource interface {
 type activeToken struct {
 	grantID     string
 	workspaceID string
+	sessionID   string
 	value       string
 	expiresAt   time.Time
 }
@@ -40,12 +41,13 @@ type activeToken struct {
 // Runtime owns only transient exact-token revocation material. Its ledger
 // remains authoritative after process loss; a restart never recreates tokens.
 type Runtime struct {
-	store     *Store
-	authority LeaseAuthority
-	tokens    RerunTokenSource
-	mu        sync.Mutex
-	active    map[string]activeToken
-	stopped   bool
+	store           *Store
+	authority       LeaseAuthority
+	tokens          RerunTokenSource
+	mu              sync.Mutex
+	active          map[string]activeToken
+	blockedSessions map[string]bool
+	stopped         bool
 }
 
 func NewRuntime(store *Store, authority LeaseAuthority, tokens RerunTokenSource) (*Runtime, error) {
@@ -53,7 +55,7 @@ func NewRuntime(store *Store, authority LeaseAuthority, tokens RerunTokenSource)
 		return nil, errors.New("provider access runtime dependencies are required")
 	}
 	return &Runtime{store: store, authority: authority, tokens: tokens,
-		active: make(map[string]activeToken)}, nil
+		active: make(map[string]activeToken), blockedSessions: make(map[string]bool)}, nil
 }
 
 // Redeem returns one token only after a durable one-shot claim, fresh
@@ -70,6 +72,12 @@ func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.Installati
 		return github.InstallationToken{}, ErrGrantUnavailable
 	}
 	if !validVerifiedLease(first, leaseID) {
+		return github.InstallationToken{}, ErrGrantUnavailable
+	}
+	r.mu.Lock()
+	blocked := r.blockedSessions[first.Expected.SessionID]
+	r.mu.Unlock()
+	if blocked {
 		return github.InstallationToken{}, ErrGrantUnavailable
 	}
 	if _, err := r.store.ClaimMintIntent(ctx, MintClaim{
@@ -90,7 +98,7 @@ func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.Installati
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.stopped {
+	if r.stopped || r.blockedSessions[first.Expected.SessionID] {
 		return github.InstallationToken{}, r.revokeUnexported(ctx, token.Token, ErrGrantUnavailable)
 	}
 	current, verifyErr := r.authority.VerifyLease(ctx, leaseID)
@@ -111,8 +119,28 @@ func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.Installati
 	}
 	r.active[leaseID] = activeToken{grantID: first.GrantID,
 		workspaceID: first.Expected.Scope.WorkspaceID,
+		sessionID:   first.Expected.SessionID,
 		value:       token.Token, expiresAt: token.ExpiresAt}
 	return token, nil
+}
+
+// RevokeSession fences durable leases and revokes any exact token already
+// exported for this managed session. Failed provider revocation remains in the
+// exposure ledger and the session stays blocked in this runtime.
+func (r *Runtime) RevokeSession(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return ErrGrantUnavailable
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.blockedSessions[sessionID] = true
+	result := r.store.RevokeSessionLeases(ctx, sessionID)
+	for leaseID, token := range r.active {
+		if token.sessionID == sessionID {
+			result = errors.Join(result, r.revokeActive(ctx, leaseID, token))
+		}
+	}
+	return result
 }
 
 // Stop closes redemption and attempts to revoke every exact token still held
