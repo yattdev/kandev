@@ -28,6 +28,21 @@ type SetWorkspaceConnectionRequest struct {
 	Login  string           `json:"login,omitempty"`
 }
 
+// GetWorkspaceConnection returns the current non-secret automation principal
+// after the caller's workspace access check. It never returns credential data.
+func (s *Service) GetWorkspaceConnection(ctx context.Context, workspaceID string) (*WorkspaceConnection, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, ErrGitHubWorkspaceRequired
+	}
+	if err := s.authorizeWorkspaceAccess(ctx, workspaceID); err != nil {
+		return nil, err
+	}
+	if s == nil || s.store == nil {
+		return nil, ErrGitHubNotConfigured
+	}
+	return s.store.GetWorkspaceConnection(ctx, workspaceID)
+}
+
 // GetWorkspaceConnectionHealth exposes aggregate persisted connection state
 // for system health without falling back to startup or ambient credentials.
 func (s *Service) GetWorkspaceConnectionHealth(ctx context.Context) (WorkspaceConnectionHealth, error) {

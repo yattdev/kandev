@@ -79,6 +79,7 @@ import (
 	"github.com/kandev/kandev/internal/profiles"
 	promptcontroller "github.com/kandev/kandev/internal/prompts/controller"
 	prompthandlers "github.com/kandev/kandev/internal/prompts/handlers"
+	"github.com/kandev/kandev/internal/provideraccess"
 	"github.com/kandev/kandev/internal/quickterminal"
 	"github.com/kandev/kandev/internal/repoclone"
 	"github.com/kandev/kandev/internal/runtimeflags"
@@ -1318,6 +1319,11 @@ func registerTaskRoutes(p routeParams, planService *taskservice.PlanService, han
 		p.log.Warn("prompt attachment routes disabled: attachment service is unavailable")
 	}
 	taskhandlers.RegisterWorkspaceRoutes(p.router, p.gateway.Dispatcher, p.taskSvc, p.log)
+	if p.services.ProviderAccess != nil && p.services.Plugins != nil && p.services.GitHub != nil {
+		provideraccess.RegisterAdminRoutes(p.router, p.services.ProviderAccess, &providerGrantAuthority{
+			tasks: p.taskSvc, plugins: p.services.Plugins, connections: p.services.GitHub,
+		})
+	}
 	taskhandlers.RegisterMemberRoutes(p.router, p.taskSvc, p.log)
 	if p.services != nil && p.services.Org != nil {
 		org.NewController(p.services.Org, p.log).RegisterRoutes(p.router)

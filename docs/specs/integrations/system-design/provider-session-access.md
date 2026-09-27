@@ -39,8 +39,11 @@ until the Host and plugin integration gates pass.
 the application database. An authenticated administrator creates a grant for
 one plugin installation, workspace, managed conversation key, target task,
 repository, provider, permission purpose, and bounded expiry. The controller
-uses the existing `authn` administrator and workspace checks; task MCP cannot
-create grants. An exact-scope replacement increments the generation and
+requires a real authenticated identity and the workspace's `secret.manage`
+scope at `POST/GET/DELETE /api/v1/workspaces/:id/provider-access/grants`;
+task MCP cannot create grants. The current route manages non-secret grant
+records and cannot issue or export a provider credential. An exact-scope
+replacement increments the generation and
 revokes the old generation transactionally. Grant and lease reads use the
 write DB transaction for admission; concurrent replacements cannot leave two
 active generations. Workspace deletion removes leases and audits before grants.

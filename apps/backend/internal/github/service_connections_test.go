@@ -88,6 +88,25 @@ func newWorkspaceConnectionService(t *testing.T, login string) (*Service, *fakeC
 	return service, secrets
 }
 
+func TestGetWorkspaceConnectionForProviderGrantHonorsWorkspaceAccess(t *testing.T) {
+	service, _ := newWorkspaceConnectionService(t, "octocat")
+	if _, err := service.SetWorkspaceConnection(context.Background(), "ws-1", SetWorkspaceConnectionRequest{
+		Source: ConnectionSourcePAT, Token: "ghp_workspace",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	denied := errors.New("workspace denied")
+	service.SetWorkspaceAuthorizer(func(context.Context, string) error { return denied })
+	if connection, err := service.GetWorkspaceConnection(context.Background(), "ws-1"); !errors.Is(err, denied) || connection != nil {
+		t.Fatalf("denied connection = %+v, err = %v", connection, err)
+	}
+	service.SetWorkspaceAuthorizer(nil)
+	connection, err := service.GetWorkspaceConnection(context.Background(), "ws-1")
+	if err != nil || connection == nil || connection.Source != ConnectionSourcePAT {
+		t.Fatalf("connection = %+v, err = %v", connection, err)
+	}
+}
+
 func TestSetWorkspaceConnectionPATIsScopedAndValidatedBeforeWrite(t *testing.T) {
 	service, secrets := newWorkspaceConnectionService(t, "octocat")
 	connection, err := service.SetWorkspaceConnection(context.Background(), "ws-1", SetWorkspaceConnectionRequest{

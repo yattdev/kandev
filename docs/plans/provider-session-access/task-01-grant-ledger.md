@@ -88,6 +88,10 @@ failure is redacted. Final admission also transactionally compares the full
 Host-verified grant/lease identity, including session, target, approval and
 connection generations. The active-lease read is inspection only. SQLite race
 tests and an isolated PostgreSQL 16 row-lock regression cover these cases.
-Administrator API, Host admission, automatic audit wiring and PostgreSQL
-coverage beyond the row-lock regression remain pending. No credential issuance
-is enabled.
+The administrator grant create/list/revoke API now requires a real identity and
+`secret.manage` workspace scope. Creation derives the installed plugin identity
+and rechecks its current H6 approval, target task repository attachment, and
+active GitHub App connection; expiry is capped at 24 hours. The API is live for
+non-secret grant records only. Exact PR/fork/head/run admission, automatic audit
+wiring, runtime-aware revocation, and PostgreSQL coverage beyond the row-lock
+regression remain pending. No credential issuance is enabled.
