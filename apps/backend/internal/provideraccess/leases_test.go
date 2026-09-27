@@ -31,6 +31,7 @@ func TestStoreIssueLeaseReplaysExactIdentityAndRejectsChangedScope(t *testing.T)
 		t.Fatalf("first lease = %+v, err = %v", first, err)
 	}
 	claim.ID = "ignored-on-replay"
+	claim.ExpiresAt = claim.ExpiresAt.Add(15 * time.Second)
 	replay, err := store.IssueLease(ctx, claim)
 	if err != nil || replay == nil || replay.ID != first.ID {
 		t.Fatalf("replay = %+v, err = %v, want original lease", replay, err)

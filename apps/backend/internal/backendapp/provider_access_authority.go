@@ -136,14 +136,18 @@ func validGrantRepository(repo *models.Repository, workspaceID string) bool {
 
 func (a *providerGrantAuthority) verifyGrantAppConnection(ctx context.Context, workspaceID string) error {
 	connection, err := a.connections.GetWorkspaceConnection(ctx, workspaceID)
-	if err != nil || connection == nil || connection.WorkspaceID != workspaceID ||
-		connection.Source != github.ConnectionSourceGitHubAppInstallation ||
-		connection.Status != github.ConnectionStatusActive || connection.InstallationID == nil ||
-		*connection.InstallationID <= 0 || connection.AppRegistrationID == "" ||
-		connection.GitHubHost != gitCredentialGitHubHost {
+	if err != nil || !validGrantAppConnection(connection, workspaceID) {
 		return provideraccess.ErrGrantUnavailable
 	}
 	return nil
+}
+
+func validGrantAppConnection(connection *github.WorkspaceConnection, workspaceID string) bool {
+	return connection != nil && connection.WorkspaceID == workspaceID &&
+		connection.Source == github.ConnectionSourceGitHubAppInstallation &&
+		connection.Status == github.ConnectionStatusActive && connection.InstallationID != nil &&
+		*connection.InstallationID > 0 && connection.AppRegistrationID != "" &&
+		connection.GitHubHost == gitCredentialGitHubHost
 }
 
 func validRequestedGrantScope(scope provideraccess.GrantScope) bool {

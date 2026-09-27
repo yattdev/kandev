@@ -196,7 +196,7 @@ func (r leaseRow) matches(claim LeaseClaim, key string) bool {
 	return r.GrantGeneration == claim.GrantGeneration && r.ScopeKey == key &&
 		r.ManagedTaskID == claim.ManagedTaskID && r.SessionID == claim.SessionID &&
 		r.TargetDigest == claim.TargetDigest && r.ApprovalRevision == int64(claim.ApprovalRevision) &&
-		r.ConnectionGeneration == claim.ConnectionGeneration && r.ExpiresAt == claim.ExpiresAt.Unix()
+		r.ConnectionGeneration == claim.ConnectionGeneration
 }
 
 type activeLeaseRow struct {
