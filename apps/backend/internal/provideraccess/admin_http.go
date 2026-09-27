@@ -25,13 +25,22 @@ type AdminGrantAuthority interface {
 }
 
 type adminGrantController struct {
-	store     *Store
+	store     AdminGrantStore
 	authority AdminGrantAuthority
+}
+
+// AdminGrantStore must fence any exported token when credential delivery is
+// enabled. The plain Store is safe only while redemption is unwired.
+type AdminGrantStore interface {
+	ReplaceGrant(context.Context, *Grant) error
+	ListWorkspaceGrants(context.Context, string) ([]Grant, error)
+	GetGrant(context.Context, string) (*Grant, error)
+	RevokeGrant(context.Context, string, string, time.Time) error
 }
 
 // RegisterAdminRoutes exposes only non-secret grant administration. Credential
 // issuance and redemption use a separate connection-bound Host contract.
-func RegisterAdminRoutes(router *gin.Engine, store *Store, authority AdminGrantAuthority) {
+func RegisterAdminRoutes(router *gin.Engine, store AdminGrantStore, authority AdminGrantAuthority) {
 	if router == nil || store == nil || authority == nil {
 		return
 	}

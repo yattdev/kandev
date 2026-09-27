@@ -11,7 +11,10 @@ import (
 	"github.com/kandev/kandev/pkg/pluginsdk"
 )
 
-type hostTestTokens struct{ mints, revokes int }
+type hostTestTokens struct {
+	mints, revokes int
+	revokeErr      error
+}
 
 func (f *hostTestTokens) Mint(_ context.Context, installationID int64,
 	repository string) (github.InstallationToken, error) {
@@ -23,7 +26,10 @@ func (f *hostTestTokens) Mint(_ context.Context, installationID int64,
 			"pull_requests": github.PermissionRead, "metadata": github.PermissionRead}}, nil
 }
 
-func (f *hostTestTokens) Revoke(context.Context, string) error { f.revokes++; return nil }
+func (f *hostTestTokens) Revoke(context.Context, string) error {
+	f.revokes++
+	return f.revokeErr
+}
 
 func hostTestSpec(target provideraccess.GitHubRerunTarget,
 	grant provideraccess.Grant) pluginsdk.ProviderAccessLeaseSpec {
@@ -98,5 +104,70 @@ func TestProviderHostAccessBindsPluginAndExactGrantBeforeOneShotRedemption(t *te
 	}
 	if _, err := host.Issue(ctx, grant.PluginID, spec); !errors.Is(err, provideraccess.ErrGrantUnavailable) {
 		t.Fatalf("stopped Host issue error = %v", err)
+	}
+}
+
+func TestProviderHostAccessAdminRevocationRevokesExportedToken(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	tokens := &hostTestTokens{}
+	host := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: tokens}
+	spec := hostTestSpec(target, *grant)
+	lease, err := host.Issue(ctx, grant.PluginID, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.RevokeGrant(ctx, grant.WorkspaceID, grant.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.revokes != 1 {
+		t.Fatalf("revoke calls = %d, want one", tokens.revokes)
+	}
+	state, err := authority.store.ExposureStateAt(ctx, lease.LeaseID, time.Now().UTC())
+	if err != nil || state != provideraccess.ExposureRevokedAtProvider {
+		t.Fatalf("exposure state = %s, err = %v", state, err)
+	}
+}
+
+func TestProviderHostAccessReplacementRetainsFailedRevocationResidual(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	tokens := &hostTestTokens{revokeErr: errors.New("provider fixture unavailable")}
+	host := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: tokens}
+	lease, err := host.Issue(ctx, grant.PluginID, hostTestSpec(target, *grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	successor := *grant
+	successor.ID = "grant-successor"
+	if err := host.ReplaceGrant(ctx, &successor); !errors.Is(err, provideraccess.ErrRevocationUnconfirmed) {
+		t.Fatalf("failed replacement error = %v", err)
+	}
+	if tokens.revokes != 1 {
+		t.Fatalf("revoke calls = %d, want one", tokens.revokes)
+	}
+	active, err := authority.store.GetActiveGrant(ctx, grant.Scope())
+	if err != nil || active != nil {
+		t.Fatalf("active grant after failed revocation = %+v, err = %v", active, err)
+	}
+	state, err := authority.store.ExposureStateAt(ctx, lease.LeaseID, time.Now().UTC())
+	if err != nil || state != provideraccess.ExposureResidual {
+		t.Fatalf("failed revocation state = %s, err = %v", state, err)
 	}
 }

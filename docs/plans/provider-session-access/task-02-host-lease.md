@@ -104,3 +104,9 @@ administrator grant, binds a runtime to the connected plugin, checks lease
 ownership before redemption or release, and permits release after grant
 revocation. Production composition, lifecycle revocation hooks, audit
 correlation, and exact-head Review/QA/CI remain pending.
+
+The administrator route now accepts an injectable grant manager. The uncomposed
+runtime-backed manager revokes an exported exact token before replacing a grant
+and on explicit revocation; failed provider revocation fences the old grant,
+retains the residual exposure receipt, and prevents replacement. Production
+still injects the plain ledger because credential export remains disabled.

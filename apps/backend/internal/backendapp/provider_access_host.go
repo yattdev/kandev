@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/kandev/kandev/internal/provideraccess"
 	"github.com/kandev/kandev/pkg/pluginsdk"
@@ -144,4 +145,59 @@ func (s *providerHostAccess) Stop(ctx context.Context) error {
 		result = errors.Join(result, runtime.Stop(ctx))
 	}
 	return result
+}
+
+func (s *providerHostAccess) GetGrant(ctx context.Context, id string) (*provideraccess.Grant, error) {
+	return s.store.GetGrant(ctx, id)
+}
+
+func (s *providerHostAccess) ListWorkspaceGrants(ctx context.Context, workspaceID string) ([]provideraccess.Grant, error) {
+	return s.store.ListWorkspaceGrants(ctx, workspaceID)
+}
+
+// RevokeGrant fences the persisted grant before attempting exact-token
+// revocation. A failed provider response stays visible as residual exposure.
+func (s *providerHostAccess) RevokeGrant(ctx context.Context, workspaceID,
+	grantID string, at time.Time) error {
+	if at.IsZero() {
+		return provideraccess.ErrGrantUnavailable
+	}
+	grant, err := s.store.GetGrant(ctx, grantID)
+	if err != nil {
+		return err
+	}
+	if grant == nil || grant.WorkspaceID != workspaceID {
+		return provideraccess.ErrGrantUnavailable
+	}
+	runtime, err := s.runtime(grant.PluginID)
+	if err != nil {
+		return err
+	}
+	return runtime.RevokeGrant(ctx, workspaceID, grantID)
+}
+
+// ReplaceGrant revokes the previous exact-scope bearer before admitting a
+// successor generation. A failed revocation leaves the scope fenced.
+func (s *providerHostAccess) ReplaceGrant(ctx context.Context, grant *provideraccess.Grant) error {
+	if grant == nil {
+		return provideraccess.ErrGrantUnavailable
+	}
+	if _, err := s.runtime(grant.PluginID); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped {
+		return provideraccess.ErrGrantUnavailable
+	}
+	active, err := s.store.GetActiveGrant(ctx, grant.Scope())
+	if err != nil {
+		return err
+	}
+	if active != nil {
+		if err := s.runtimes[active.PluginID].RevokeGrant(ctx, active.WorkspaceID, active.ID); err != nil {
+			return err
+		}
+	}
+	return s.store.ReplaceGrant(ctx, grant)
 }
