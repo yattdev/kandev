@@ -56,3 +56,12 @@ func TestPluginHostCapabilityContextFailsClosedForMalformedApproval(t *testing.T
 	_, err := host.GetCapabilityContext(context.Background())
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
+
+func TestPluginHostExactReadAuthorizationFailsClosed(t *testing.T) {
+	host := &pluginHost{exactAuthorize: func(_ string, revision uint64, capabilityID, _ string) ApprovalDecision {
+		return ApprovalDecision{Allowed: revision == 2 && capabilityID == "host.v2.read:workspaces"}
+	}}
+	require.NoError(t, host.authorizeExactRead("workspace-1", 2, "host.v2.read:workspaces", "request"))
+	require.Equal(t, codes.PermissionDenied, status.Code(host.authorizeExactRead("workspace-1", 1, "host.v2.read:workspaces", "request")))
+	require.Equal(t, codes.PermissionDenied, status.Code(host.authorizeExactRead("workspace-1", 2, "host.v2.read:tasks", "request")))
+}

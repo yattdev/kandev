@@ -797,10 +797,13 @@ func (s *Service) hostForPlugin(pluginID string) pluginsdk.Host {
 	}
 	snapshots, _ := newConnectionExactSnapshotStore()
 	return &pluginHost{
-		pluginID:            pluginID,
-		installationID:      rec.InstallationID,
-		manifestDigest:      ManifestCapabilityDigest(rec.Manifest),
-		exactApprovals:      s.approvalListByInstallation,
+		pluginID:       pluginID,
+		installationID: rec.InstallationID,
+		manifestDigest: ManifestCapabilityDigest(rec.Manifest),
+		exactApprovals: s.approvalListByInstallation,
+		exactAuthorize: func(workspaceID string, revision uint64, capabilityID, requestDigest string) ApprovalDecision {
+			return s.authorizePluginCapability(rec.InstallationID, workspaceID, capabilityID, revision, requestDigest, "exact-read")
+		},
 		exactSnapshots:      snapshots,
 		capabilities:        rec.Capabilities,
 		repositoryProviders: rec.RepositoryProviders,

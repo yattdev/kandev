@@ -44,6 +44,7 @@ type pluginHost struct {
 	installationID string
 	manifestDigest string
 	exactApprovals exactApprovalReader
+	exactAuthorize exactReadAuthorizer
 	exactSnapshots *exactSnapshotStore
 	capabilities   manifest.Capabilities
 	// repositoryProviders is the manifest-declared set of provider IDs this

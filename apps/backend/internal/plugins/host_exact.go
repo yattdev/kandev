@@ -11,6 +11,18 @@ import (
 // exactApprovalReader reads current approval rows at request time so a
 // context response cannot outlive a revocation or manifest review.
 type exactApprovalReader func(string) ([]CapabilityApproval, error)
+type exactReadAuthorizer func(string, uint64, string, string) ApprovalDecision
+
+func (h *pluginHost) authorizeExactRead(workspaceID string, revision uint64, capabilityID, requestDigest string) error {
+	if h.exactAuthorize == nil || workspaceID == "" || revision == 0 {
+		return status.Error(codes.PermissionDenied, "exact read capability is denied")
+	}
+	decision := h.exactAuthorize(workspaceID, revision, capabilityID, requestDigest)
+	if !decision.Allowed {
+		return status.Error(codes.PermissionDenied, "exact read capability is denied")
+	}
+	return nil
+}
 
 // GetCapabilityContext returns only Host-derived connection identity and
 // ledger state. Callers must still present the current approval revision to
