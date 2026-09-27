@@ -270,6 +270,25 @@ func (s *Store) GetGrant(ctx context.Context, id string) (*Grant, error) {
 	return row.grant(), nil
 }
 
+// ListWorkspaceGrants returns current and revoked grants in one workspace.
+func (s *Store) ListWorkspaceGrants(ctx context.Context, workspaceID string) ([]Grant, error) {
+	if workspaceID == "" {
+		return nil, errors.New("workspace is required")
+	}
+	var rows []grantRow
+	err := s.db.SelectContext(ctx, &rows, s.db.Rebind(`SELECT `+grantColumns+`
+  FROM provider_access_grants WHERE workspace_id = ?
+  ORDER BY created_at DESC, generation DESC, id DESC`), workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	grants := make([]Grant, 0, len(rows))
+	for _, row := range rows {
+		grants = append(grants, *row.grant())
+	}
+	return grants, nil
+}
+
 // GetActiveGrant returns the one nonexpired active exact-scope grant, if any.
 func (s *Store) GetActiveGrant(ctx context.Context, scope GrantScope) (*Grant, error) {
 	key, err := scopeKey(scope)

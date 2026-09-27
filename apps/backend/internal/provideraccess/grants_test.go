@@ -85,6 +85,37 @@ func TestStoreRevokeGrantFencesActiveScope(t *testing.T) {
 	}
 }
 
+func TestStoreListWorkspaceGrantsKeepsWorkspaceBoundary(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	first := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &first); err != nil {
+		t.Fatal(err)
+	}
+	foreign := testGrant("foreign")
+	foreign.WorkspaceID = "workspace-2"
+	if err := store.ReplaceGrant(ctx, &foreign); err != nil {
+		t.Fatal(err)
+	}
+	second := testGrant("grant-2")
+	if err := store.ReplaceGrant(ctx, &second); err != nil {
+		t.Fatal(err)
+	}
+
+	grants, err := store.ListWorkspaceGrants(ctx, first.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(grants) != 2 || grants[0].ID != second.ID || grants[1].ID != first.ID ||
+		grants[0].RevokedAt != nil || grants[1].RevokedAt == nil {
+		t.Fatalf("workspace grants = %+v, want current then revoked generation", grants)
+	}
+	foreignGrants, err := store.ListWorkspaceGrants(ctx, foreign.WorkspaceID)
+	if err != nil || len(foreignGrants) != 1 || foreignGrants[0].ID != foreign.ID {
+		t.Fatalf("foreign grants = %+v, err = %v", foreignGrants, err)
+	}
+}
+
 func TestStoreConcurrentGrantReplacementHasOneActiveGeneration(t *testing.T) {
 	store := newGrantTestStore(t)
 	const count = 8
