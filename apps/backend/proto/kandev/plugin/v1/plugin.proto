@@ -157,6 +157,13 @@ service Host {
   rpc DispatchAgentConversation(DispatchAgentConversationRequest) returns (DispatchAgentConversationResponse);
   rpc DeleteAgentConversation(DeleteAgentConversationRequest) returns (DeleteAgentConversationResponse);
 
+  // Provider access — capability api_write:provider_access plus an exact
+  // administrator grant and current managed session. The plugin performs
+  // provider operations directly; these methods never mutate the provider.
+  rpc IssueProviderAccessLeaseExact(IssueProviderAccessLeaseExactRequest) returns (IssueProviderAccessLeaseExactResponse);
+  rpc RedeemProviderAccessLeaseExact(RedeemProviderAccessLeaseExactRequest) returns (RedeemProviderAccessLeaseExactResponse);
+  rpc ReleaseProviderAccessLeaseExact(ReleaseProviderAccessLeaseExactRequest) returns (ReleaseProviderAccessLeaseExactResponse);
+
   // Interaction responses — capability api_write:interactions. Each routes
   // through the same first-party service the native UI uses, so the agent
   // unblocks, the durable record turns terminal, and every surface converges
@@ -1078,6 +1085,74 @@ message DeleteAgentConversationRequest {
 // DeleteAgentConversationResponse carries the result.
 message DeleteAgentConversationResponse {
   int32 deleted_count = 1;
+}
+
+// provider-access/v1 binds one exact GitHub PR/fork/head and failed source run.
+// All fields are selectors that the Host compares with current records.
+message ProviderAccessGitHubRerunTarget {
+  string operation = 1;
+  int32 pr_number = 2;
+  int64 base_repository_id = 3;
+  string base_repository = 4;
+  string base_ref = 5;
+  string base_sha = 6;
+  int64 head_repository_id = 7;
+  string head_repository = 8;
+  string head_ref = 9;
+  string head_sha = 10;
+  int64 source_run_id = 11;
+  int32 source_attempt = 12;
+  int64 workflow_id = 13;
+}
+
+message IssueProviderAccessLeaseExactRequest {
+  string api_version = 1;
+  string request_id = 2;
+  string idempotency_key = 3;
+  string grant_id = 4;
+  string workspace_id = 5;
+  string managed_task_id = 6;
+  string session_id = 7;
+  string target_task_id = 8;
+  string repository_id = 9;
+  string provider = 10;
+  string purpose = 11;
+  ProviderAccessGitHubRerunTarget target = 12;
+}
+
+message IssueProviderAccessLeaseExactResponse {
+  string lease_id = 1;
+  string expires_at = 2; // RFC3339 UTC
+  string target_digest = 3;
+  int64 grant_generation = 4;
+  uint64 approval_revision = 5;
+  string connection_generation = 6;
+  string canonical_repository = 7;
+  ProviderAccessGitHubRerunTarget target = 8;
+}
+
+message RedeemProviderAccessLeaseExactRequest {
+  string api_version = 1;
+  string request_id = 2;
+  string lease_id = 3;
+}
+
+message RedeemProviderAccessLeaseExactResponse {
+  string token = 1 [debug_redact = true]; // transient bearer; never persist or log
+  string expires_at = 2; // RFC3339 UTC
+  string provider_principal_id = 3;
+  string canonical_repository = 4;
+  string permission_profile = 5;
+}
+
+message ReleaseProviderAccessLeaseExactRequest {
+  string api_version = 1;
+  string request_id = 2;
+  string lease_id = 3;
+}
+
+message ReleaseProviderAccessLeaseExactResponse {
+  bool revoked_at_provider = 1;
 }
 
 // Configuration and connection eligibility are always resolved within the host's workspace.

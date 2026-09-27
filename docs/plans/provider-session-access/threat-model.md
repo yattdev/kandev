@@ -53,6 +53,12 @@ Host crash leaves a non-secret `revocation_pending` / expiry-bounded residual
 receipt until provider expiry; restart cannot recreate the lost bearer to
 revoke it. The plugin may hold the bearer only in process memory and must not
 put it in its ledger, agent output, logs, environment, or errors.
+The protobuf response's `token` field carries debug-redaction metadata, but
+generated protobuf `String()` output can still print its value. Host and plugin
+logging/interceptors must never format or record redemption messages. The SDK
+credential keeps the bearer behind an explicit `Bearer()` accessor so ordinary
+Go formatting and JSON serialization omit it; this does not make a plugin
+process that has called `Bearer()` a security boundary.
 
 Provider references: [installation token creation and scope](https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app),
 [installation token expiry](https://docs.github.com/en/rest/apps/apps#about-github-apps),

@@ -491,45 +491,48 @@ var Plugin_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	Host_GetState_FullMethodName                      = "/kandev.plugin.v1.Host/GetState"
-	Host_SetState_FullMethodName                      = "/kandev.plugin.v1.Host/SetState"
-	Host_DeleteState_FullMethodName                   = "/kandev.plugin.v1.Host/DeleteState"
-	Host_ListState_FullMethodName                     = "/kandev.plugin.v1.Host/ListState"
-	Host_RevealSecret_FullMethodName                  = "/kandev.plugin.v1.Host/RevealSecret"
-	Host_EmitEvent_FullMethodName                     = "/kandev.plugin.v1.Host/EmitEvent"
-	Host_GetSecret_FullMethodName                     = "/kandev.plugin.v1.Host/GetSecret"
-	Host_SetSecret_FullMethodName                     = "/kandev.plugin.v1.Host/SetSecret"
-	Host_DeleteSecret_FullMethodName                  = "/kandev.plugin.v1.Host/DeleteSecret"
-	Host_GetConfig_FullMethodName                     = "/kandev.plugin.v1.Host/GetConfig"
-	Host_ListTasks_FullMethodName                     = "/kandev.plugin.v1.Host/ListTasks"
-	Host_GetTask_FullMethodName                       = "/kandev.plugin.v1.Host/GetTask"
-	Host_ListTaskStepTransitions_FullMethodName       = "/kandev.plugin.v1.Host/ListTaskStepTransitions"
-	Host_ListWorkspaces_FullMethodName                = "/kandev.plugin.v1.Host/ListWorkspaces"
-	Host_ListWorkflows_FullMethodName                 = "/kandev.plugin.v1.Host/ListWorkflows"
-	Host_ListWorkflowSteps_FullMethodName             = "/kandev.plugin.v1.Host/ListWorkflowSteps"
-	Host_ListWorkflowTransitionGroups_FullMethodName  = "/kandev.plugin.v1.Host/ListWorkflowTransitionGroups"
-	Host_ListAgentProfiles_FullMethodName             = "/kandev.plugin.v1.Host/ListAgentProfiles"
-	Host_ListExecutorProfiles_FullMethodName          = "/kandev.plugin.v1.Host/ListExecutorProfiles"
-	Host_ListRepositories_FullMethodName              = "/kandev.plugin.v1.Host/ListRepositories"
-	Host_ListSessions_FullMethodName                  = "/kandev.plugin.v1.Host/ListSessions"
-	Host_ListSessionCodeStats_FullMethodName          = "/kandev.plugin.v1.Host/ListSessionCodeStats"
-	Host_ListMessages_FullMethodName                  = "/kandev.plugin.v1.Host/ListMessages"
-	Host_ListPendingInteractions_FullMethodName       = "/kandev.plugin.v1.Host/ListPendingInteractions"
-	Host_GetInteraction_FullMethodName                = "/kandev.plugin.v1.Host/GetInteraction"
-	Host_InvokeUtilityAgent_FullMethodName            = "/kandev.plugin.v1.Host/InvokeUtilityAgent"
-	Host_InvokeUtilityAgentWithOptions_FullMethodName = "/kandev.plugin.v1.Host/InvokeUtilityAgentWithOptions"
-	Host_CreateTask_FullMethodName                    = "/kandev.plugin.v1.Host/CreateTask"
-	Host_UpdateTask_FullMethodName                    = "/kandev.plugin.v1.Host/UpdateTask"
-	Host_MoveTask_FullMethodName                      = "/kandev.plugin.v1.Host/MoveTask"
-	Host_SendMessage_FullMethodName                   = "/kandev.plugin.v1.Host/SendMessage"
-	Host_PreviewPluginOwnedTaskTree_FullMethodName    = "/kandev.plugin.v1.Host/PreviewPluginOwnedTaskTree"
-	Host_DeletePluginOwnedTaskTree_FullMethodName     = "/kandev.plugin.v1.Host/DeletePluginOwnedTaskTree"
-	Host_EnsureAgentConversation_FullMethodName       = "/kandev.plugin.v1.Host/EnsureAgentConversation"
-	Host_DispatchAgentConversation_FullMethodName     = "/kandev.plugin.v1.Host/DispatchAgentConversation"
-	Host_DeleteAgentConversation_FullMethodName       = "/kandev.plugin.v1.Host/DeleteAgentConversation"
-	Host_RespondToPermission_FullMethodName           = "/kandev.plugin.v1.Host/RespondToPermission"
-	Host_AnswerClarification_FullMethodName           = "/kandev.plugin.v1.Host/AnswerClarification"
-	Host_CancelClarification_FullMethodName           = "/kandev.plugin.v1.Host/CancelClarification"
+	Host_GetState_FullMethodName                        = "/kandev.plugin.v1.Host/GetState"
+	Host_SetState_FullMethodName                        = "/kandev.plugin.v1.Host/SetState"
+	Host_DeleteState_FullMethodName                     = "/kandev.plugin.v1.Host/DeleteState"
+	Host_ListState_FullMethodName                       = "/kandev.plugin.v1.Host/ListState"
+	Host_RevealSecret_FullMethodName                    = "/kandev.plugin.v1.Host/RevealSecret"
+	Host_EmitEvent_FullMethodName                       = "/kandev.plugin.v1.Host/EmitEvent"
+	Host_GetSecret_FullMethodName                       = "/kandev.plugin.v1.Host/GetSecret"
+	Host_SetSecret_FullMethodName                       = "/kandev.plugin.v1.Host/SetSecret"
+	Host_DeleteSecret_FullMethodName                    = "/kandev.plugin.v1.Host/DeleteSecret"
+	Host_GetConfig_FullMethodName                       = "/kandev.plugin.v1.Host/GetConfig"
+	Host_ListTasks_FullMethodName                       = "/kandev.plugin.v1.Host/ListTasks"
+	Host_GetTask_FullMethodName                         = "/kandev.plugin.v1.Host/GetTask"
+	Host_ListTaskStepTransitions_FullMethodName         = "/kandev.plugin.v1.Host/ListTaskStepTransitions"
+	Host_ListWorkspaces_FullMethodName                  = "/kandev.plugin.v1.Host/ListWorkspaces"
+	Host_ListWorkflows_FullMethodName                   = "/kandev.plugin.v1.Host/ListWorkflows"
+	Host_ListWorkflowSteps_FullMethodName               = "/kandev.plugin.v1.Host/ListWorkflowSteps"
+	Host_ListWorkflowTransitionGroups_FullMethodName    = "/kandev.plugin.v1.Host/ListWorkflowTransitionGroups"
+	Host_ListAgentProfiles_FullMethodName               = "/kandev.plugin.v1.Host/ListAgentProfiles"
+	Host_ListExecutorProfiles_FullMethodName            = "/kandev.plugin.v1.Host/ListExecutorProfiles"
+	Host_ListRepositories_FullMethodName                = "/kandev.plugin.v1.Host/ListRepositories"
+	Host_ListSessions_FullMethodName                    = "/kandev.plugin.v1.Host/ListSessions"
+	Host_ListSessionCodeStats_FullMethodName            = "/kandev.plugin.v1.Host/ListSessionCodeStats"
+	Host_ListMessages_FullMethodName                    = "/kandev.plugin.v1.Host/ListMessages"
+	Host_ListPendingInteractions_FullMethodName         = "/kandev.plugin.v1.Host/ListPendingInteractions"
+	Host_GetInteraction_FullMethodName                  = "/kandev.plugin.v1.Host/GetInteraction"
+	Host_InvokeUtilityAgent_FullMethodName              = "/kandev.plugin.v1.Host/InvokeUtilityAgent"
+	Host_InvokeUtilityAgentWithOptions_FullMethodName   = "/kandev.plugin.v1.Host/InvokeUtilityAgentWithOptions"
+	Host_CreateTask_FullMethodName                      = "/kandev.plugin.v1.Host/CreateTask"
+	Host_UpdateTask_FullMethodName                      = "/kandev.plugin.v1.Host/UpdateTask"
+	Host_MoveTask_FullMethodName                        = "/kandev.plugin.v1.Host/MoveTask"
+	Host_SendMessage_FullMethodName                     = "/kandev.plugin.v1.Host/SendMessage"
+	Host_PreviewPluginOwnedTaskTree_FullMethodName      = "/kandev.plugin.v1.Host/PreviewPluginOwnedTaskTree"
+	Host_DeletePluginOwnedTaskTree_FullMethodName       = "/kandev.plugin.v1.Host/DeletePluginOwnedTaskTree"
+	Host_EnsureAgentConversation_FullMethodName         = "/kandev.plugin.v1.Host/EnsureAgentConversation"
+	Host_DispatchAgentConversation_FullMethodName       = "/kandev.plugin.v1.Host/DispatchAgentConversation"
+	Host_DeleteAgentConversation_FullMethodName         = "/kandev.plugin.v1.Host/DeleteAgentConversation"
+	Host_IssueProviderAccessLeaseExact_FullMethodName   = "/kandev.plugin.v1.Host/IssueProviderAccessLeaseExact"
+	Host_RedeemProviderAccessLeaseExact_FullMethodName  = "/kandev.plugin.v1.Host/RedeemProviderAccessLeaseExact"
+	Host_ReleaseProviderAccessLeaseExact_FullMethodName = "/kandev.plugin.v1.Host/ReleaseProviderAccessLeaseExact"
+	Host_RespondToPermission_FullMethodName             = "/kandev.plugin.v1.Host/RespondToPermission"
+	Host_AnswerClarification_FullMethodName             = "/kandev.plugin.v1.Host/AnswerClarification"
+	Host_CancelClarification_FullMethodName             = "/kandev.plugin.v1.Host/CancelClarification"
 )
 
 // HostClient is the client API for Host service.
@@ -651,6 +654,12 @@ type HostClient interface {
 	EnsureAgentConversation(ctx context.Context, in *EnsureAgentConversationRequest, opts ...grpc.CallOption) (*EnsureAgentConversationResponse, error)
 	DispatchAgentConversation(ctx context.Context, in *DispatchAgentConversationRequest, opts ...grpc.CallOption) (*DispatchAgentConversationResponse, error)
 	DeleteAgentConversation(ctx context.Context, in *DeleteAgentConversationRequest, opts ...grpc.CallOption) (*DeleteAgentConversationResponse, error)
+	// Provider access — capability api_write:provider_access plus an exact
+	// administrator grant and current managed session. The plugin performs
+	// provider operations directly; these methods never mutate the provider.
+	IssueProviderAccessLeaseExact(ctx context.Context, in *IssueProviderAccessLeaseExactRequest, opts ...grpc.CallOption) (*IssueProviderAccessLeaseExactResponse, error)
+	RedeemProviderAccessLeaseExact(ctx context.Context, in *RedeemProviderAccessLeaseExactRequest, opts ...grpc.CallOption) (*RedeemProviderAccessLeaseExactResponse, error)
+	ReleaseProviderAccessLeaseExact(ctx context.Context, in *ReleaseProviderAccessLeaseExactRequest, opts ...grpc.CallOption) (*ReleaseProviderAccessLeaseExactResponse, error)
 	// Interaction responses — capability api_write:interactions. Each routes
 	// through the same first-party service the native UI uses, so the agent
 	// unblocks, the durable record turns terminal, and every surface converges
@@ -1032,6 +1041,36 @@ func (c *hostClient) DeleteAgentConversation(ctx context.Context, in *DeleteAgen
 	return out, nil
 }
 
+func (c *hostClient) IssueProviderAccessLeaseExact(ctx context.Context, in *IssueProviderAccessLeaseExactRequest, opts ...grpc.CallOption) (*IssueProviderAccessLeaseExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssueProviderAccessLeaseExactResponse)
+	err := c.cc.Invoke(ctx, Host_IssueProviderAccessLeaseExact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hostClient) RedeemProviderAccessLeaseExact(ctx context.Context, in *RedeemProviderAccessLeaseExactRequest, opts ...grpc.CallOption) (*RedeemProviderAccessLeaseExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RedeemProviderAccessLeaseExactResponse)
+	err := c.cc.Invoke(ctx, Host_RedeemProviderAccessLeaseExact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hostClient) ReleaseProviderAccessLeaseExact(ctx context.Context, in *ReleaseProviderAccessLeaseExactRequest, opts ...grpc.CallOption) (*ReleaseProviderAccessLeaseExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReleaseProviderAccessLeaseExactResponse)
+	err := c.cc.Invoke(ctx, Host_ReleaseProviderAccessLeaseExact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *hostClient) RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*RespondToPermissionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RespondToPermissionResponse)
@@ -1181,6 +1220,12 @@ type HostServer interface {
 	EnsureAgentConversation(context.Context, *EnsureAgentConversationRequest) (*EnsureAgentConversationResponse, error)
 	DispatchAgentConversation(context.Context, *DispatchAgentConversationRequest) (*DispatchAgentConversationResponse, error)
 	DeleteAgentConversation(context.Context, *DeleteAgentConversationRequest) (*DeleteAgentConversationResponse, error)
+	// Provider access — capability api_write:provider_access plus an exact
+	// administrator grant and current managed session. The plugin performs
+	// provider operations directly; these methods never mutate the provider.
+	IssueProviderAccessLeaseExact(context.Context, *IssueProviderAccessLeaseExactRequest) (*IssueProviderAccessLeaseExactResponse, error)
+	RedeemProviderAccessLeaseExact(context.Context, *RedeemProviderAccessLeaseExactRequest) (*RedeemProviderAccessLeaseExactResponse, error)
+	ReleaseProviderAccessLeaseExact(context.Context, *ReleaseProviderAccessLeaseExactRequest) (*ReleaseProviderAccessLeaseExactResponse, error)
 	// Interaction responses — capability api_write:interactions. Each routes
 	// through the same first-party service the native UI uses, so the agent
 	// unblocks, the durable record turns terminal, and every surface converges
@@ -1309,6 +1354,15 @@ func (UnimplementedHostServer) DispatchAgentConversation(context.Context, *Dispa
 }
 func (UnimplementedHostServer) DeleteAgentConversation(context.Context, *DeleteAgentConversationRequest) (*DeleteAgentConversationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteAgentConversation not implemented")
+}
+func (UnimplementedHostServer) IssueProviderAccessLeaseExact(context.Context, *IssueProviderAccessLeaseExactRequest) (*IssueProviderAccessLeaseExactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method IssueProviderAccessLeaseExact not implemented")
+}
+func (UnimplementedHostServer) RedeemProviderAccessLeaseExact(context.Context, *RedeemProviderAccessLeaseExactRequest) (*RedeemProviderAccessLeaseExactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RedeemProviderAccessLeaseExact not implemented")
+}
+func (UnimplementedHostServer) ReleaseProviderAccessLeaseExact(context.Context, *ReleaseProviderAccessLeaseExactRequest) (*ReleaseProviderAccessLeaseExactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReleaseProviderAccessLeaseExact not implemented")
 }
 func (UnimplementedHostServer) RespondToPermission(context.Context, *RespondToPermissionRequest) (*RespondToPermissionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RespondToPermission not implemented")
@@ -1988,6 +2042,60 @@ func _Host_DeleteAgentConversation_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Host_IssueProviderAccessLeaseExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IssueProviderAccessLeaseExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).IssueProviderAccessLeaseExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_IssueProviderAccessLeaseExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).IssueProviderAccessLeaseExact(ctx, req.(*IssueProviderAccessLeaseExactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Host_RedeemProviderAccessLeaseExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RedeemProviderAccessLeaseExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).RedeemProviderAccessLeaseExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_RedeemProviderAccessLeaseExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).RedeemProviderAccessLeaseExact(ctx, req.(*RedeemProviderAccessLeaseExactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Host_ReleaseProviderAccessLeaseExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseProviderAccessLeaseExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).ReleaseProviderAccessLeaseExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_ReleaseProviderAccessLeaseExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).ReleaseProviderAccessLeaseExact(ctx, req.(*ReleaseProviderAccessLeaseExactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Host_RespondToPermission_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RespondToPermissionRequest)
 	if err := dec(in); err != nil {
@@ -2192,6 +2300,18 @@ var Host_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteAgentConversation",
 			Handler:    _Host_DeleteAgentConversation_Handler,
+		},
+		{
+			MethodName: "IssueProviderAccessLeaseExact",
+			Handler:    _Host_IssueProviderAccessLeaseExact_Handler,
+		},
+		{
+			MethodName: "RedeemProviderAccessLeaseExact",
+			Handler:    _Host_RedeemProviderAccessLeaseExact_Handler,
+		},
+		{
+			MethodName: "ReleaseProviderAccessLeaseExact",
+			Handler:    _Host_ReleaseProviderAccessLeaseExact_Handler,
 		},
 		{
 			MethodName: "RespondToPermission",

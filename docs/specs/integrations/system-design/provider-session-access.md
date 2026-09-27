@@ -52,6 +52,12 @@ The Host RPC is an optional `pluginsdk` extension under the existing
 connection-bound `kandev.plugin.v1.Host` service. Methods have distinct exact
 names and typed DTOs: `IssueProviderAccessLeaseExact`,
 `RedeemProviderAccessLeaseExact`, and `ReleaseProviderAccessLeaseExact`.
+Their wire requests use `api_version: provider-access/v1`, a request ID, and
+typed exact-target fields. Issuance also carries an idempotency key and
+expected workspace/task/repository scope. The Host resolves these selectors
+from current records. The optional SDK extension is unavailable by default;
+the live service must not compose credential redemption until authority and
+teardown hooks are complete.
 The plugin manifest declares `api_write: [provider_access]`; current H6
 approval must contain `host.v2.write:provider_access` at the supplied
 capability revision. The Host derives installation identity from the plugin
@@ -100,7 +106,9 @@ them. A mismatch or a revocation that wins the lock race denies export and
 requires revocation of the minted in-memory token. After a successful
 admission commit, a later revocation must find the exposure receipt and revoke
 the exact token through the Host's transient token registry. The current
-storage package does not implement that runtime lifecycle.
+storage and runtime components implement those fences; production composition
+and all session/plugin/connection lifecycle hooks remain required before
+bearer export.
 The plugin owns the provider action ledger: its idempotency key includes grant
 generation, repository, PR/MR head, operation class, and source run/check
 identity. For GitHub CI recovery, it validates a completed failed
