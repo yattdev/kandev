@@ -352,6 +352,34 @@ func TestClaimForceRemovalBlocksClaimedCleanupCompletionWithoutPersistingIt(t *t
 	require.True(t, completed)
 }
 
+func TestClaimForceRemovalBlocksArchiveCleanupCancellationWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-archive-cancel-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-archive-cancel-task", "force-archive-cancel-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-archive-cancel-ws", Title: taskID}))
+	}
+	claimedJob := &models.TaskResourceCleanupJob{ID: "force-archive-cancel-job", OperationID: "force-archive-cancel-op", TaskID: "force-archive-cancel-task", Trigger: models.TaskResourceCleanupTriggerArchive}
+	foreignJob := &models.TaskResourceCleanupJob{ID: "force-archive-cancel-foreign-job", OperationID: "force-archive-cancel-foreign-op", TaskID: "force-archive-cancel-foreign", Trigger: models.TaskResourceCleanupTriggerCascadeArchive}
+	require.NoError(t, repo.CreateTaskResourceCleanupJob(ctx, claimedJob))
+	require.NoError(t, repo.CreateTaskResourceCleanupJob(ctx, foreignJob))
+	task, err := repo.GetTask(ctx, claimedJob.TaskID)
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "archive-cancel-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	require.ErrorIs(t, repo.CancelArchiveTaskResourceCleanupJobs(ctx, claimedJob.TaskID), ErrForceRemovalCleanupHeld)
+	stored, err := repo.GetTaskResourceCleanupJob(ctx, claimedJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, models.TaskResourceCleanupStatePending, stored.State)
+	require.Nil(t, stored.CompletedAt)
+
+	require.NoError(t, repo.CancelArchiveTaskResourceCleanupJobs(ctx, foreignJob.TaskID))
+	foreign, err := repo.GetTaskResourceCleanupJob(ctx, foreignJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, models.TaskResourceCleanupStateCancelled, foreign.State)
+}
+
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.2
 func TestClaimForceRemovalBlocksEnvironmentAndCleanupWorkerAdmissions(t *testing.T) {

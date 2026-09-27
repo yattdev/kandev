@@ -448,8 +448,19 @@ func (r *Repository) CompleteClaimedTaskResourceCleanupJob(
 }
 
 func (r *Repository) CancelArchiveTaskResourceCleanupJobs(ctx context.Context, taskID string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalCleanupAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, completed_at = ?, updated_at = ?
 		WHERE task_id = ? AND trigger IN (?, ?) AND state IN (?, ?, ?)
@@ -457,7 +468,10 @@ func (r *Repository) CancelArchiveTaskResourceCleanupJobs(ctx context.Context, t
 		models.TaskResourceCleanupTriggerArchive, models.TaskResourceCleanupTriggerCascadeArchive,
 		models.TaskResourceCleanupStatePrepared, models.TaskResourceCleanupStatePending,
 		models.TaskResourceCleanupStateRetryWait)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) ResetRunningTaskResourceCleanupJobs(ctx context.Context) error {
