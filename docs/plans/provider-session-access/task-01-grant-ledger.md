@@ -95,7 +95,9 @@ active GitHub App connection; expiry is capped at 24 hours. The API is live for
 non-secret grant records only. Grant creation, replacement, and revocation
 record audit in the mutation transaction. Exact PR/fork/head/run admission and
 runtime-aware revocation are implemented in Task 02. The task-owned PostgreSQL
-16 store-conformance suite and provider-access race suite pass at fork head
-`a08961f0a04798effe598d254a3863e17b4c1ac2`. Independent Review, distinct
-QA, and exact-head CI remain pending. Production credential redemption remains
-disconnected.
+16 store-conformance suite and provider-access race suite passed at source
+commit `a08961f0a04798effe598d254a3863e17b4c1ac2`. The later published
+`324ad996c164ac8e2083f9a09e734cb844735f44` was the first independent
+Host Review target; it must not be confused with that test head. Review
+fixup, distinct QA, and exact-head CI remain pending. Production credential
+redemption remains disconnected.

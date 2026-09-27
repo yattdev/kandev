@@ -1186,15 +1186,16 @@ func (s *Service) updateTaskSessionStateWithHook(
 	if session.State == nextState {
 		return session, false
 	}
+	if err := s.revokeProviderAccessForTerminal(ctx, sessionID, nextState); err != nil {
+		s.logger.Error("failed to revoke provider access before terminal session transition",
+			zap.String("session_id", sessionID), zap.Error(err))
+		return session, false
+	}
 	session, authoritativeUpdatedAt, changed := s.persistTaskSessionState(
 		ctx, sessionID, session, nextState, errorMessage,
 	)
 	if !changed {
 		return session, false
-	}
-	if err := s.revokeProviderAccessForTerminal(ctx, sessionID, nextState); err != nil {
-		s.logger.Error("failed to revoke provider access after terminal session transition",
-			zap.String("session_id", sessionID), zap.Error(err))
 	}
 	if onChanged != nil {
 		onChanged()

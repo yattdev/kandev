@@ -115,10 +115,12 @@ redacted, expiry-bounded residual receipt. A restarted Host reports
 cannot revoke rather than claiming teardown succeeded. Audit correlation
 stores only hashed request IDs and non-secret identities.
 
-At fork head `a08961f0a04798effe598d254a3863e17b4c1ac2`, the provider-access
-and PostgreSQL 16 store-conformance race suites, focused task/service teardown
-race tests, docs validation, spec lint, and changed-package Go lint pass. The
+At source commit `a08961f0a04798effe598d254a3863e17b4c1ac2`, the
+provider-access and PostgreSQL 16 store-conformance race suites, focused
+task/service teardown race tests, docs validation, spec lint, and changed-package
+Go lint passed. The later published `324ad996c164ac8e2083f9a09e734cb844735f44`
+was the first independent Host Review target, not that test head. The
 first broad orchestrator race run intermittently panicked in an unchanged
 queued-message nil-Executor path; one structured full orchestrator race rerun
-passed. Independent Review, distinct QA, exact-head CI/security, and the
-separately owned plugin adapter are still required before live token export.
+passed. Review fixup, distinct QA, exact-head CI/security, and the separately
+owned plugin adapter are still required before live token export.

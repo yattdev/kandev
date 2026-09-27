@@ -84,18 +84,21 @@ residual exported-bearer behavior, and the generic-egress comparison.
 
 The Host grant, admission, lease, uncached GitHub token fixture, redacted audit,
 revocation, and lifecycle fencing implementation is published on the
-task-owned fork branch at `a08961f0a04798effe598d254a3863e17b4c1ac2`,
-based on `yattdev/kandev:feat-coordinator-plugin` at
-`dfce4dac05809c0fcec156166f5479f14b0cdb76`. The exact-head
+task-owned fork branch targeting `yattdev/kandev:feat-coordinator-plugin`.
+Source commit `a08961f0a04798effe598d254a3863e17b4c1ac2` supplied the
 provider-access and PostgreSQL 16 store-conformance race suites, focused
 teardown race tests, docs validator, spec lint, changed-package Go lint, and
 diff check pass. A broad orchestrator race run intermittently panicked in an
 unchanged queued-message path; one structured full orchestrator race rerun
-passed. No live token was minted or exported. Production plugin credential RPC
-is disconnected; independent Host Review, distinct QA, exact-head fork CI,
-plugin adapter integration and beta validation remain before enablement or
-upstream delivery. The older action-specific proxy remains on upstream draft
-PR #3165 and will be retired only through the separately gated route.
+passed. The subsequent `324ad996c164ac8e2083f9a09e734cb844735f44` was
+the first independent Host Review target, not the earlier test head. That
+review found a terminal agent-event revocation retry gap and stale head labels;
+both are being corrected before a new Review. No live token was minted or
+exported. Production plugin credential RPC is disconnected; distinct QA,
+exact-head fork CI, plugin adapter integration and beta validation remain
+before enablement or upstream delivery. The older action-specific proxy
+remains on upstream draft PR #3165 and will be retired only through the
+separately gated route.
 
 ## Risks
 
