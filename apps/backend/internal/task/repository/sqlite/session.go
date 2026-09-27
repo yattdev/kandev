@@ -2725,8 +2725,29 @@ func (r *Repository) UpdateSessionMetadata(ctx context.Context, sessionID string
 	if err != nil {
 		return err
 	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), sessionID).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("agent session not found: %s", sessionID)
+		}
+		return err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
-	return r.updateSessionMetadataJSON(ctx, r.db, sessionID, metadataJSON, now)
+	if err := r.updateSessionMetadataJSON(ctx, tx, sessionID, metadataJSON, now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func marshalSessionMetadata(metadata map[string]interface{}) (string, error) {
