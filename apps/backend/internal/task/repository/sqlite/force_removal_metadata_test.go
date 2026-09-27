@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -136,6 +137,36 @@ func TestClaimForceRemovalBlocksAbsentLiveTaskMetadataWithoutPersistingIt(t *tes
 	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
 	require.False(t, written)
 	written, err = repo.SetTaskMetadataKeyIfAbsentNotArchived(ctx, "foreign-live", "marker", true)
+	require.NoError(t, err)
+	require.True(t, written)
+}
+
+func TestClaimForceRemovalBlocksRecoveryCurrentTaskMetadata(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	now := time.Now().UTC()
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-recovery-ws", Name: "Force"}))
+	for _, id := range []string{"held-recovery", "foreign-recovery"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: id, WorkspaceID: "force-recovery-ws", Title: id}))
+	}
+	for _, id := range []string{"held-recovery", "foreign-recovery"} {
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: id + "-session", TaskID: id, State: models.TaskSessionStateWaitingForInput, UpdatedAt: now, Metadata: map[string]interface{}{models.SessionMetaKeyRecoverySettlementPending: models.InterruptedRecoverySettlement{Token: id + "-token"}}}))
+	}
+	held, err := repo.GetTask(ctx, "held-recovery")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "a", OperationID: "recovery-current", RequestDigest: "r", PreviewDigest: "p"})
+	require.NoError(t, err)
+	hs, err := repo.GetTaskSession(ctx, "held-recovery-session")
+	require.NoError(t, err)
+	written, err := repo.SetTaskMetadataKeyIfRecoveryCurrent(ctx, held.ID, hs.ID, hs.UpdatedAt, "held-recovery-token", "marker", true)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	held, err = repo.GetTask(ctx, held.ID)
+	require.NoError(t, err)
+	require.NotContains(t, held.Metadata, "marker")
+	fs, err := repo.GetTaskSession(ctx, "foreign-recovery-session")
+	require.NoError(t, err)
+	written, err = repo.SetTaskMetadataKeyIfRecoveryCurrent(ctx, "foreign-recovery", fs.ID, fs.UpdatedAt, "foreign-recovery-token", "marker", true)
 	require.NoError(t, err)
 	require.True(t, written)
 }
