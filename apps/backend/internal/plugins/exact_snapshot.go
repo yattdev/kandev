@@ -2,11 +2,14 @@ package plugins
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 )
+
+const exactSnapshotSecretBytes = 32
 
 var errExactSnapshotCursor = errors.New("plugins: exact snapshot cursor is invalid")
 
@@ -26,6 +29,17 @@ type exactSnapshotStore struct{ secret []byte }
 
 func newExactSnapshotStore(secret []byte) *exactSnapshotStore {
 	return &exactSnapshotStore{secret: append([]byte(nil), secret...)}
+}
+
+// newConnectionExactSnapshotStore creates a secret that belongs only to one
+// broker-bound Host instance. Installation IDs are visible to the plugin and
+// therefore can never authenticate a cursor.
+func newConnectionExactSnapshotStore() (*exactSnapshotStore, error) {
+	secret := make([]byte, exactSnapshotSecretBytes)
+	if _, err := rand.Read(secret); err != nil {
+		return nil, err
+	}
+	return newExactSnapshotStore(secret), nil
 }
 
 func (s *exactSnapshotStore) create(binding exactSnapshotBinding, offset int) (string, error) {

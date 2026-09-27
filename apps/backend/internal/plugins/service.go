@@ -795,11 +795,13 @@ func (s *Service) hostForPlugin(pluginID string) pluginsdk.Host {
 	if err != nil {
 		rec = &store.Record{} // every capability check below denies; should not happen in practice
 	}
+	snapshots, _ := newConnectionExactSnapshotStore()
 	return &pluginHost{
 		pluginID:            pluginID,
 		installationID:      rec.InstallationID,
 		manifestDigest:      ManifestCapabilityDigest(rec.Manifest),
 		exactApprovals:      s.approvalListByInstallation,
+		exactSnapshots:      snapshots,
 		capabilities:        rec.Capabilities,
 		repositoryProviders: rec.RepositoryProviders,
 		configSchema:        rec.ConfigSchema,
