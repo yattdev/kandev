@@ -99,5 +99,8 @@ request and receipt fields. The plugin Host checks its declared capability
 and remains unwired in production, so credential redemption is disabled.
 Target persistence,
 fresh PR/fork/head/run readback, and a connection-bound authority component
-are present. Runtime composition, lifecycle revocation hooks, audit
+are present. An uncomposed backend adapter matches every issue selector to the
+administrator grant, binds a runtime to the connected plugin, checks lease
+ownership before redemption or release, and permits release after grant
+revocation. Production composition, lifecycle revocation hooks, audit
 correlation, and exact-head Review/QA/CI remain pending.

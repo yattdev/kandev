@@ -235,3 +235,22 @@ func (s *Store) GetActiveLease(ctx context.Context, id string) (*Lease, error) {
 		Provider: row.Provider, Purpose: row.Purpose,
 	}), nil
 }
+
+// GetLeasePluginID identifies the connected plugin allowed to release a
+// previously exported lease, including after its grant was revoked.
+func (s *Store) GetLeasePluginID(ctx context.Context, leaseID string) (string, error) {
+	if leaseID == "" {
+		return "", ErrGrantUnavailable
+	}
+	var pluginID string
+	err := s.db.GetContext(ctx, &pluginID, s.db.Rebind(`SELECT g.plugin_id
+  FROM provider_access_leases l JOIN provider_access_grants g ON g.id = l.grant_id
+  WHERE l.id = ?`), leaseID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrGrantUnavailable
+	}
+	if err != nil {
+		return "", err
+	}
+	return pluginID, nil
+}

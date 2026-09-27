@@ -90,9 +90,20 @@ func TestStoreRevocationFencesOutstandingLease(t *testing.T) {
 	if err := store.RevokeGrant(ctx, grant.WorkspaceID, grant.ID, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
+	owner, err := store.GetLeasePluginID(ctx, lease.ID)
+	if err != nil || owner != grant.PluginID {
+		t.Fatalf("revoked lease owner = %q, err = %v", owner, err)
+	}
 	active, err := store.GetActiveLease(ctx, lease.ID)
 	if err != nil || active != nil {
 		t.Fatalf("active lease = %+v, err = %v, want none", active, err)
+	}
+}
+
+func TestStoreGetLeasePluginIDRejectsUnknownLease(t *testing.T) {
+	store := newGrantTestStore(t)
+	if _, err := store.GetLeasePluginID(context.Background(), "missing"); !errors.Is(err, ErrGrantUnavailable) {
+		t.Fatalf("unknown lease owner error = %v", err)
 	}
 }
 
