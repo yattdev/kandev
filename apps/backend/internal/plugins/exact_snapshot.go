@@ -1,0 +1,60 @@
+package plugins
+
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+)
+
+var errExactSnapshotCursor = errors.New("plugins: exact snapshot cursor is invalid")
+
+type exactSnapshotBinding struct {
+	InstallationID    string `json:"installation_id"`
+	WorkspaceID       string `json:"workspace_id"`
+	FilterDigest      string `json:"filter_digest"`
+	ApprovalRevision  uint64 `json:"approval_revision"`
+	ProjectionVersion string `json:"projection_version"`
+}
+
+type exactSnapshotCursor struct {
+	exactSnapshotBinding
+	Offset int `json:"offset"`
+}
+type exactSnapshotStore struct{ secret []byte }
+
+func newExactSnapshotStore(secret []byte) *exactSnapshotStore {
+	return &exactSnapshotStore{secret: append([]byte(nil), secret...)}
+}
+
+func (s *exactSnapshotStore) create(binding exactSnapshotBinding, offset int) (string, error) {
+	if offset < 0 || binding.InstallationID == "" || binding.WorkspaceID == "" || binding.FilterDigest == "" || binding.ApprovalRevision == 0 || binding.ProjectionVersion == "" {
+		return "", errExactSnapshotCursor
+	}
+	payload, err := json.Marshal(exactSnapshotCursor{exactSnapshotBinding: binding, Offset: offset})
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, s.secret)
+	_, _ = mac.Write(payload)
+	return base64.RawURLEncoding.EncodeToString(append(payload, mac.Sum(nil)...)), nil
+}
+
+func (s *exactSnapshotStore) offset(cursor string, want exactSnapshotBinding) (int, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil || len(raw) <= sha256.Size {
+		return 0, errExactSnapshotCursor
+	}
+	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
+	mac := hmac.New(sha256.New, s.secret)
+	_, _ = mac.Write(payload)
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return 0, errExactSnapshotCursor
+	}
+	var got exactSnapshotCursor
+	if json.Unmarshal(payload, &got) != nil || got.Offset < 0 || got.exactSnapshotBinding != want {
+		return 0, errExactSnapshotCursor
+	}
+	return got.Offset, nil
+}
