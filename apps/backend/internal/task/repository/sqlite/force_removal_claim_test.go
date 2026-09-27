@@ -10,6 +10,7 @@ import (
 
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
+	v1 "github.com/kandev/kandev/pkg/api/v1"
 )
 
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
@@ -217,6 +218,24 @@ func TestClaimForceRemovalBlocksPriorityWriterWithoutPersistingIt(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, "low", stored.Priority)
 	require.NoError(t, repo.UpdateTaskPriority(ctx, "force-priority-foreign", "high"))
+}
+
+func TestClaimForceRemovalBlocksStateWriterWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-state-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-state-task", "force-state-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-state-ws", Title: taskID, State: v1.TaskStateTODO}))
+	}
+	task, err := repo.GetTask(ctx, "force-state-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "state-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+	require.ErrorIs(t, repo.UpdateTaskState(ctx, task.ID, v1.TaskStateInProgress), ErrForceRemovalTaskHeld)
+	stored, err := repo.GetTask(ctx, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, v1.TaskStateTODO, stored.State)
+	require.NoError(t, repo.UpdateTaskState(ctx, "force-state-foreign", v1.TaskStateInProgress))
 }
 
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
