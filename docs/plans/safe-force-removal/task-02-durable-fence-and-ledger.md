@@ -54,6 +54,10 @@ through the isolated-schema harness. It is skipped locally until
 `KANDEV_TEST_POSTGRES_DSN` is supplied, so executed PostgreSQL evidence remains
 an outstanding delivery gate.
 
+The receipt ledger now appends ordered, redacted predicate evidence under the
+private claim. The cleanup hold test also proves rejected cleanup admission
+rolls back without leaving a job row.
+
 ## Verification
 
 ```bash

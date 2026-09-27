@@ -221,6 +221,19 @@ func (r *Repository) initForceRemovalClaimSchema() error {
 			preview_digest TEXT NOT NULL,
 			created_at TIMESTAMP NOT NULL,
 			updated_at TIMESTAMP NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS task_force_removal_receipts (
+			operation_id TEXT NOT NULL,
+			ordinal INTEGER NOT NULL,
+			predicate TEXT NOT NULL,
+			status TEXT NOT NULL,
+			reason_code TEXT NOT NULL,
+			resource_id TEXT NOT NULL,
+			observed_generation TEXT NOT NULL,
+			evidence_digest TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (operation_id, ordinal),
+			FOREIGN KEY (operation_id) REFERENCES task_force_removal_claims(operation_id)
 		)`)
 	return err
 }

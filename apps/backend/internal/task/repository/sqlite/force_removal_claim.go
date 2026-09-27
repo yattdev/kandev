@@ -64,6 +64,41 @@ func validForceRemovalClaim(claim *models.ForceRemovalClaim) bool {
 		!claim.TaskGeneration.IsZero()
 }
 
+// AppendForceRemovalReceipt appends immutable redacted evidence to one claim.
+func (r *Repository) AppendForceRemovalReceipt(ctx context.Context, operationID string, receipt models.ExactRetirementPredicateReceipt) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var ordinal int
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT COALESCE(MAX(ordinal) + 1, 0) FROM task_force_removal_receipts WHERE operation_id = ?`), operationID).Scan(&ordinal); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_force_removal_receipts (operation_id, ordinal, predicate, status, reason_code, resource_id, observed_generation, evidence_digest, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`), operationID, ordinal, receipt.Predicate, receipt.Status, receipt.ReasonCode, receipt.ResourceID, receipt.ObservedGeneration, receipt.EvidenceDigest, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) ListForceRemovalReceipts(ctx context.Context, operationID string) ([]models.ExactRetirementPredicateReceipt, error) {
+	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`SELECT predicate, status, reason_code, resource_id, observed_generation, evidence_digest FROM task_force_removal_receipts WHERE operation_id = ? ORDER BY ordinal`), operationID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var receipts []models.ExactRetirementPredicateReceipt
+	for rows.Next() {
+		var receipt models.ExactRetirementPredicateReceipt
+		if err := rows.Scan(&receipt.Predicate, &receipt.Status, &receipt.ReasonCode, &receipt.ResourceID, &receipt.ObservedGeneration, &receipt.EvidenceDigest); err != nil {
+			return nil, err
+		}
+		receipts = append(receipts, receipt)
+	}
+	return receipts, rows.Err()
+}
+
 func ensureForceRemovalCleanupAvailableTx(ctx context.Context, db *sqlx.DB, tx *sqlx.Tx, taskID string) error {
 	var held bool
 	if err := tx.QueryRowContext(ctx, db.Rebind(`SELECT EXISTS (SELECT 1 FROM task_force_removal_claims WHERE task_id = ?)`), taskID).Scan(&held); err != nil {
