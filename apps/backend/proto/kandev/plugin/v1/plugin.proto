@@ -83,6 +83,7 @@ service Host {
   // current approval ledger state. It is informational only: every exact
   // read or command independently authorizes its own capability.
   rpc GetCapabilityContext(GetCapabilityContextRequest) returns (GetCapabilityContextResponse);
+  rpc ListWorkspacesExact(ListWorkspacesExactRequest) returns (ListWorkspacesExactResponse);
 
   // Reads — capability api_read:<resource>
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
@@ -1131,4 +1132,24 @@ message GetCapabilityContextResponse {
   string installation_id = 2;
   string manifest_digest = 3;
   repeated CapabilityApprovalContext approvals = 4;
+}
+
+message ExactPage {
+  int32 limit = 1;
+  string cursor = 2;
+  string snapshot_version = 3;
+}
+message ExactPageInfo {
+  string next_cursor = 1;
+  bool has_more = 2;
+  string snapshot_version = 3;
+}
+message ListWorkspacesExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListWorkspacesExactResponse {
+  repeated Workspace workspaces = 1;
+  ExactPageInfo page_info = 2;
 }

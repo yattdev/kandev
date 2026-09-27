@@ -502,6 +502,7 @@ const (
 	Host_DeleteSecret_FullMethodName                  = "/kandev.plugin.v1.Host/DeleteSecret"
 	Host_GetConfig_FullMethodName                     = "/kandev.plugin.v1.Host/GetConfig"
 	Host_GetCapabilityContext_FullMethodName          = "/kandev.plugin.v1.Host/GetCapabilityContext"
+	Host_ListWorkspacesExact_FullMethodName           = "/kandev.plugin.v1.Host/ListWorkspacesExact"
 	Host_ListTasks_FullMethodName                     = "/kandev.plugin.v1.Host/ListTasks"
 	Host_GetTask_FullMethodName                       = "/kandev.plugin.v1.Host/GetTask"
 	Host_ListTaskStepTransitions_FullMethodName       = "/kandev.plugin.v1.Host/ListTaskStepTransitions"
@@ -585,6 +586,7 @@ type HostClient interface {
 	// current approval ledger state. It is informational only: every exact
 	// read or command independently authorizes its own capability.
 	GetCapabilityContext(ctx context.Context, in *GetCapabilityContextRequest, opts ...grpc.CallOption) (*GetCapabilityContextResponse, error)
+	ListWorkspacesExact(ctx context.Context, in *ListWorkspacesExactRequest, opts ...grpc.CallOption) (*ListWorkspacesExactResponse, error)
 	// Reads — capability api_read:<resource>
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
@@ -781,6 +783,16 @@ func (c *hostClient) GetCapabilityContext(ctx context.Context, in *GetCapability
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetCapabilityContextResponse)
 	err := c.cc.Invoke(ctx, Host_GetCapabilityContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hostClient) ListWorkspacesExact(ctx context.Context, in *ListWorkspacesExactRequest, opts ...grpc.CallOption) (*ListWorkspacesExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWorkspacesExactResponse)
+	err := c.cc.Invoke(ctx, Host_ListWorkspacesExact_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1129,6 +1141,7 @@ type HostServer interface {
 	// current approval ledger state. It is informational only: every exact
 	// read or command independently authorizes its own capability.
 	GetCapabilityContext(context.Context, *GetCapabilityContextRequest) (*GetCapabilityContextResponse, error)
+	ListWorkspacesExact(context.Context, *ListWorkspacesExactRequest) (*ListWorkspacesExactResponse, error)
 	// Reads — capability api_read:<resource>
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
@@ -1253,6 +1266,9 @@ func (UnimplementedHostServer) GetConfig(context.Context, *GetConfigRequest) (*G
 }
 func (UnimplementedHostServer) GetCapabilityContext(context.Context, *GetCapabilityContextRequest) (*GetCapabilityContextResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCapabilityContext not implemented")
+}
+func (UnimplementedHostServer) ListWorkspacesExact(context.Context, *ListWorkspacesExactRequest) (*ListWorkspacesExactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListWorkspacesExact not implemented")
 }
 func (UnimplementedHostServer) ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListTasks not implemented")
@@ -1556,6 +1572,24 @@ func _Host_GetCapabilityContext_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(HostServer).GetCapabilityContext(ctx, req.(*GetCapabilityContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Host_ListWorkspacesExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWorkspacesExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).ListWorkspacesExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_ListWorkspacesExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).ListWorkspacesExact(ctx, req.(*ListWorkspacesExactRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2132,6 +2166,10 @@ var Host_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetCapabilityContext",
 			Handler:    _Host_GetCapabilityContext_Handler,
+		},
+		{
+			MethodName: "ListWorkspacesExact",
+			Handler:    _Host_ListWorkspacesExact_Handler,
 		},
 		{
 			MethodName: "ListTasks",
