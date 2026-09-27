@@ -13,8 +13,8 @@ owners:
 An approved managed plugin session may need to call its provider directly,
 including recovering a CI run for an unchanged linked PR head. Integrations
 owns the credential grant and provider identity boundary. The plugin owns the
-provider action and its outcome. This requirement supersedes the action-specific
-[scoped Coordinator CI run](scoped-coordinator-ci-runs.md) contract.
+provider action and its outcome. This requirement supersedes the earlier
+action-specific scoped Coordinator CI run contract.
 
 ## Terminology
 

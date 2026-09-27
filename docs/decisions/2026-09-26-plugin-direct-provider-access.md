@@ -7,8 +7,7 @@
 ## Context
 
 A managed Coordinator conversation may need to recover a CI run for a linked
-pull request without changing its head. The initial design in
-[ADR-2026-08-30](2026-08-30-server-owned-scoped-ci-runs.md) made Kandev perform
+pull request without changing its head. The initial design made Kandev perform
 that GitHub operation through `request_fresh_ci_run_kandev`. Maintainer review
 identified the architectural cost: every new provider operation would require
 another Kandev intermediary. The Human chose direct GitHub/GitLab API calls in
