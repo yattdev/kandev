@@ -34,6 +34,7 @@ type LeaseClaim struct {
 	ManagedTaskID        string
 	SessionID            string
 	TargetDigest         string
+	Target               *GitHubRerunTarget
 	ApprovalRevision     uint64
 	ConnectionGeneration string
 	IdempotencyKey       string
@@ -123,13 +124,7 @@ func (s *Store) IssueLease(ctx context.Context, claim LeaseClaim) (*Lease, error
   FROM provider_access_leases WHERE grant_id = ? AND idempotency_hash = ?`),
 		claim.GrantID, idempotencyHash)
 	if err == nil {
-		if !existing.matches(claim, key) || existing.RevokedAt.Valid || existing.ExpiresAt <= now.Unix() {
-			return nil, ErrLeaseConflict
-		}
-		if err := tx.Commit(); err != nil {
-			return nil, err
-		}
-		return existing.lease(claim.Scope), nil
+		return replayExistingLease(ctx, tx, existing, claim, key, now)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -140,6 +135,9 @@ func (s *Store) IssueLease(ctx context.Context, claim LeaseClaim) (*Lease, error
 		claim.SessionID, claim.TargetDigest, int64(claim.ApprovalRevision),
 		claim.ConnectionGeneration, idempotencyHash, claim.ExpiresAt.Unix(), nil, now.Unix())
 	if err != nil {
+		return nil, err
+	}
+	if err := insertLeaseTarget(ctx, tx, claim); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -167,6 +165,12 @@ func checkLeaseWithinGrant(ctx context.Context, tx *sqlx.Tx, claim LeaseClaim) e
 }
 
 func validateLeaseClaim(claim LeaseClaim) (string, error) {
+	if claim.Target != nil {
+		digest, err := claim.Target.Digest()
+		if err != nil || digest != claim.TargetDigest {
+			return "", ErrTargetInvalid
+		}
+	}
 	key, err := scopeKey(claim.Scope)
 	if err != nil {
 		return "", err

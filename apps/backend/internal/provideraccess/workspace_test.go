@@ -72,3 +72,25 @@ func TestFenceWorkspacePreservesUnknownMintAndRemovesUnusedLease(t *testing.T) {
 		t.Fatalf("retained unknown mint = %+v, err = %v", got, err)
 	}
 }
+
+func TestFenceWorkspaceRemovesUnusedTargetWithLease(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-target-cleanup")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	target := validGitHubRerunTarget()
+	claim := testLeaseClaim(grant)
+	claim.Target = &target
+	claim.TargetDigest, _ = target.Digest()
+	if _, err := store.IssueLease(ctx, claim); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FenceWorkspace(ctx, grant.WorkspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.GetLeaseTarget(ctx, claim.ID); err != nil || got != nil {
+		t.Fatalf("fenced target = %+v, err = %v", got, err)
+	}
+}

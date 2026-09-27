@@ -116,6 +116,9 @@ func NewStore(db *sqlx.DB) (*Store, error) {
    FOREIGN KEY(grant_id) REFERENCES provider_access_grants(id))`,
 		`CREATE INDEX IF NOT EXISTS provider_access_leases_grant
    ON provider_access_leases(grant_id, expires_at)`,
+		`CREATE TABLE IF NOT EXISTS provider_access_targets (
+   lease_id TEXT PRIMARY KEY, target_json TEXT NOT NULL,
+   FOREIGN KEY(lease_id) REFERENCES provider_access_leases(id))`,
 		`CREATE TABLE IF NOT EXISTS provider_access_audit (
    id TEXT PRIMARY KEY, grant_id TEXT NOT NULL, lease_id TEXT NOT NULL,
    plugin_installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,

@@ -41,6 +41,40 @@ func TestStoreIssueLeaseReplaysExactIdentityAndRejectsChangedScope(t *testing.T)
 	}
 }
 
+func TestStoreIssueLeasePersistsExactTargetForRestartRevalidation(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-target")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	target := validGitHubRerunTarget()
+	digest, err := target.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := testLeaseClaim(grant)
+	claim.TargetDigest = digest
+	claim.Target = &target
+	if _, err := store.IssueLease(ctx, claim); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewStore(store.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := reopened.GetLeaseTarget(ctx, claim.ID)
+	if err != nil || loaded == nil || *loaded != target {
+		t.Fatalf("reopened target = %+v, err = %v", loaded, err)
+	}
+	claim.ID = "lease-tampered"
+	claim.IdempotencyKey = "tampered"
+	claim.TargetDigest = "unbound"
+	if _, err := store.IssueLease(ctx, claim); !errors.Is(err, ErrTargetInvalid) {
+		t.Fatalf("unbound target error = %v, want ErrTargetInvalid", err)
+	}
+}
+
 func TestStoreRevocationFencesOutstandingLease(t *testing.T) {
 	store := newGrantTestStore(t)
 	ctx := context.Background()

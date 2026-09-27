@@ -3,6 +3,8 @@ package provideraccess
 import (
 	"strings"
 	"testing"
+
+	"github.com/kandev/kandev/internal/github"
 )
 
 func validGitHubRerunTarget() GitHubRerunTarget {
@@ -64,5 +66,49 @@ func TestGitHubRerunTargetDigestRejectsIncompleteIdentity(t *testing.T) {
 		if digest, err := target.Digest(); err == nil || digest != "" {
 			t.Fatalf("incomplete target digest = %q, err = %v", digest, err)
 		}
+	}
+}
+
+func TestGitHubRerunTargetMatchesCurrentProviderEvidence(t *testing.T) {
+	target := validGitHubRerunTarget()
+	pr := &github.PR{Number: target.PRNumber, State: "open",
+		BaseRepoID: target.BaseRepositoryID, BaseRepoOwner: "kdlbs", BaseRepoName: "kandev",
+		BaseBranch: target.BaseRef, BaseSHA: target.BaseSHA,
+		HeadRepoID: target.HeadRepositoryID, HeadRepoOwner: "yattdev", HeadRepoName: "kandev",
+		HeadBranch: target.HeadRef, HeadSHA: target.HeadSHA}
+	run := github.WorkflowRun{ID: target.SourceRunID, RunAttempt: target.SourceAttempt,
+		WorkflowID: target.WorkflowID, Event: "pull_request", Status: "completed", Conclusion: "failure",
+		HeadSHA: target.HeadSHA, HeadBranch: target.HeadRef, HeadRepoID: target.HeadRepositoryID,
+		HeadRepoOwner: "yattdev", HeadRepoName: "kandev"}
+	if err := target.MatchProviderEvidence(pr, &run); err != nil {
+		t.Fatalf("matching evidence: %v", err)
+	}
+	cases := map[string]func(*github.PR, *github.WorkflowRun){
+		"closed PR":      func(p *github.PR, _ *github.WorkflowRun) { p.State = "closed" },
+		"base drift":     func(p *github.PR, _ *github.WorkflowRun) { p.BaseSHA = strings.Repeat("c", 40) },
+		"fork swap":      func(p *github.PR, _ *github.WorkflowRun) { p.HeadRepoID++ },
+		"head drift":     func(p *github.PR, _ *github.WorkflowRun) { p.HeadSHA = strings.Repeat("c", 40) },
+		"run attempt":    func(_ *github.PR, r *github.WorkflowRun) { r.RunAttempt++ },
+		"workflow":       func(_ *github.PR, r *github.WorkflowRun) { r.WorkflowID++ },
+		"run source":     func(_ *github.PR, r *github.WorkflowRun) { r.Event = "workflow_dispatch" },
+		"pending run":    func(_ *github.PR, r *github.WorkflowRun) { r.Status = "in_progress" },
+		"successful run": func(_ *github.PR, r *github.WorkflowRun) { r.Conclusion = "success" },
+		"run fork swap":  func(_ *github.PR, r *github.WorkflowRun) { r.HeadRepoID++ },
+		"run head drift": func(_ *github.PR, r *github.WorkflowRun) { r.HeadSHA = strings.Repeat("c", 40) },
+		"foreign association": func(_ *github.PR, r *github.WorkflowRun) {
+			r.PullRequests = []github.WorkflowRunPullRequest{{Number: target.PRNumber + 1}}
+		},
+		"association fork swap": func(_ *github.PR, r *github.WorkflowRun) {
+			r.PullRequests = []github.WorkflowRunPullRequest{{Number: target.PRNumber, HeadRepoID: target.HeadRepositoryID + 1}}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			changedPR, changedRun := *pr, run
+			mutate(&changedPR, &changedRun)
+			if err := target.MatchProviderEvidence(&changedPR, &changedRun); err == nil {
+				t.Fatal("changed provider evidence was accepted")
+			}
+		})
 	}
 }

@@ -52,6 +52,7 @@ func TestValidGitHubCallbackState(t *testing.T) {
 type stubClient struct {
 	getPRFunc             func(ctx context.Context, owner, repo string, number int) (*PR, error)
 	getIssueFunc          func(ctx context.Context, owner, repo string, number int) (*Issue, error)
+	listWorkflowRunsFn    func(ctx context.Context, owner, repo, headSHA string) ([]WorkflowRun, error)
 	mergePRFn             func(ctx context.Context, owner, repo string, number int, mergeMethod string) (MergeOutcome, error)
 	getRepoMergeMethodsFn func() (RepoMergeMethods, error)
 	requestReviewersFn    func(ctx context.Context, owner, repo string, number int, reviewers []string) error
@@ -110,7 +111,10 @@ func (s *stubClient) ListPRComments(context.Context, string, string, int, *time.
 func (s *stubClient) ListCheckRuns(context.Context, string, string, string) ([]CheckRun, error) {
 	return nil, nil
 }
-func (s *stubClient) ListWorkflowRuns(context.Context, string, string, string) ([]WorkflowRun, error) {
+func (s *stubClient) ListWorkflowRuns(ctx context.Context, owner, repo, headSHA string) ([]WorkflowRun, error) {
+	if s.listWorkflowRunsFn != nil {
+		return s.listWorkflowRunsFn(ctx, owner, repo, headSHA)
+	}
 	return nil, nil
 }
 func (s *stubClient) ListWorkflowRunJobs(context.Context, string, string, int64, int) ([]WorkflowJob, error) {

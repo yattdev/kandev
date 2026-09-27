@@ -209,6 +209,25 @@ func TestGetPRForAutomationUsesWorkspaceCredential(t *testing.T) {
 	}
 }
 
+func TestListWorkflowRunsForAutomationUsesWorkspaceCredential(t *testing.T) {
+	ambient := &stubClient{listWorkflowRunsFn: func(context.Context, string, string, string) ([]WorkflowRun, error) {
+		t.Fatal("ambient credential used")
+		return nil, nil
+	}}
+	workspace := &stubClient{listWorkflowRunsFn: func(_ context.Context, owner, repo, headSHA string) ([]WorkflowRun, error) {
+		if owner != "acme" || repo != "widgets" || headSHA != "head-sha" {
+			t.Fatalf("provider selector = %s/%s@%s", owner, repo, headSHA)
+		}
+		return []WorkflowRun{{ID: 77}}, nil
+	}}
+	svc := NewService(ambient, AuthMethodPAT, nil, nil, nil, testLogger(t))
+	configureTestWorkspaceAuth(t, svc, workspace, "workspace-1")
+	runs, err := svc.ListWorkflowRunsForAutomation(context.Background(), "workspace-1", "acme", "widgets", "head-sha")
+	if err != nil || len(runs) != 1 || runs[0].ID != 77 {
+		t.Fatalf("workspace runs = %#v, err = %v", runs, err)
+	}
+}
+
 func TestListAllReviewWatchesRetainsIdentitylessInternalUse(t *testing.T) {
 	store := newTestStore(t)
 	svc := NewService(nil, AuthMethodNone, nil, store, nil, testLogger(t))

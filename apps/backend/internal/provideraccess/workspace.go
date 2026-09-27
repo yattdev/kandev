@@ -68,6 +68,11 @@ func (s *Store) FenceWorkspace(ctx context.Context, workspaceID string) (Workspa
 		`DELETE FROM provider_access_redemptions WHERE grant_id IN
    (SELECT id FROM provider_access_grants WHERE workspace_id = ?)
    AND possible_provider_expiry <= ?`,
+		`DELETE FROM provider_access_targets WHERE lease_id IN
+   (SELECT id FROM provider_access_leases WHERE grant_id IN
+   (SELECT id FROM provider_access_grants WHERE workspace_id = ?)
+   AND id NOT IN (SELECT lease_id FROM provider_access_exposures)
+   AND id NOT IN (SELECT lease_id FROM provider_access_redemptions))`,
 		`DELETE FROM provider_access_leases WHERE grant_id IN
    (SELECT id FROM provider_access_grants WHERE workspace_id = ?)
    AND id NOT IN (SELECT lease_id FROM provider_access_exposures)
