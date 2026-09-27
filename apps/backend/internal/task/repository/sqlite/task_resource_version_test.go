@@ -32,6 +32,17 @@ func TestTaskResourceVersionChangesOnlyAfterCommittedMutation(t *testing.T) {
 	}
 }
 
+func TestGetTaskReturnsResourceVersion(t *testing.T) {
+	repo := newRepoForArchiveTests(t, "task-resource-version-get")
+	task, err := repo.GetTask(context.Background(), "task-resource-version-get")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.ResourceVersion != 1 {
+		t.Fatalf("ResourceVersion = %d, want 1", task.ResourceVersion)
+	}
+}
+
 func taskResourceVersion(t *testing.T, repo *Repository, id string) int64 {
 	t.Helper()
 	var version int64

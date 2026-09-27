@@ -4015,7 +4015,7 @@ func (r *Repository) scanSingleTask(row *sql.Row) (*models.Task, error) {
 		&task.Title, &task.Description, &task.State, &task.Priority, &task.Position,
 		&task.WIPAdmitted, &task.QueuedForStepID, &queuedAt,
 		&metadata, &task.IsEphemeral, &task.ParentID, &task.Autopilot, &archivedAt, &task.ArchivedByCascadeID,
-		&task.CreatedAt, &task.UpdatedAt,
+		&task.CreatedAt, &task.UpdatedAt, &task.ResourceVersion,
 		&task.AssigneeAgentProfileID, &task.AssigneeUserID, &task.Origin, &task.ProjectID,
 		&task.Labels, &identifier, &externalID, &externalIDSettledAt, &task.IsFromOffice,
 	)
