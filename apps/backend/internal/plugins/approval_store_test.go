@@ -50,6 +50,21 @@ func TestApprovalLedgerGrantRevokeAndTombstone(t *testing.T) {
 	}
 }
 
+func TestApprovalLedgerPersistsOnlyAuthorizedReadReceipts(t *testing.T) {
+	ledger := newApprovalLedger(t.TempDir())
+	receipt := ApprovalReceipt{InstallationID: "inst-1", WorkspaceID: "ws-1", Revision: 1, CapabilityID: "host.v2.read:tasks", AuditID: "read-audit-1", Result: "allowed", ObservedAt: time.Now().UTC()}
+	if err := ledger.recordReadReceipt(receipt); err != nil {
+		t.Fatalf("record allowed receipt: %v", err)
+	}
+	if err := ledger.recordReadReceipt(ApprovalReceipt{AuditID: "denied-audit", Result: "denied"}); err == nil {
+		t.Fatal("record denied receipt succeeded")
+	}
+	file, err := newApprovalLedger(ledger.dir).load()
+	if err != nil || len(file.ReadReceipts) != 1 || file.ReadReceipts[0].AuditID != receipt.AuditID {
+		t.Fatalf("persisted read receipts = %#v, %v", file.ReadReceipts, err)
+	}
+}
+
 func TestAuthorizePluginCapabilityStableDenyReasons(t *testing.T) {
 	dir := t.TempDir()
 	svc := &Service{}

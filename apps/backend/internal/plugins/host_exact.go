@@ -12,16 +12,28 @@ import (
 // context response cannot outlive a revocation or manifest review.
 type exactApprovalReader func(string) ([]CapabilityApproval, error)
 type exactReadAuthorizer func(string, uint64, string, string) ApprovalDecision
+type exactReadReceiptRecorder func(ApprovalReceipt) error
 
 func (h *pluginHost) authorizeExactRead(workspaceID string, revision uint64, capabilityID, requestDigest string) error {
+	_, err := h.authorizeExactReadReceipt(workspaceID, revision, capabilityID, requestDigest)
+	return err
+}
+
+func (h *pluginHost) authorizeExactReadReceipt(workspaceID string, revision uint64, capabilityID, requestDigest string) (ApprovalReceipt, error) {
 	if h.exactAuthorize == nil || workspaceID == "" || revision == 0 {
-		return status.Error(codes.PermissionDenied, "exact read capability is denied")
+		return ApprovalReceipt{}, status.Error(codes.PermissionDenied, "exact read capability is denied")
 	}
 	decision := h.exactAuthorize(workspaceID, revision, capabilityID, requestDigest)
 	if !decision.Allowed {
-		return status.Error(codes.PermissionDenied, "exact read capability is denied")
+		return ApprovalReceipt{}, status.Error(codes.PermissionDenied, "exact read capability is denied")
 	}
-	return nil
+	if h.exactReadReceipt == nil {
+		return ApprovalReceipt{}, status.Error(codes.FailedPrecondition, "exact read receipt is unavailable")
+	}
+	if err := h.exactReadReceipt(decision.Receipt); err != nil {
+		return ApprovalReceipt{}, status.Error(codes.Unavailable, "exact read receipt is unavailable")
+	}
+	return decision.Receipt, nil
 }
 
 // GetCapabilityContext returns only Host-derived connection identity and

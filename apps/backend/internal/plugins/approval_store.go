@@ -15,8 +15,9 @@ import (
 type ApprovalState string
 
 const (
-	ApprovalStateActive  ApprovalState = "active"
-	ApprovalStateRevoked ApprovalState = "revoked"
+	ApprovalStateActive    ApprovalState = "active"
+	ApprovalStateRevoked   ApprovalState = "revoked"
+	approvalReceiptAllowed               = "allowed"
 )
 
 // HumanPolicyVersionImmutable is the only Human-policy version H6 currently
@@ -71,6 +72,28 @@ type approvalLedgerFile struct {
 	Tombstones        map[string]time.Time                `json:"tombstones"`
 	Idempotency       map[string]CapabilityApproval       `json:"idempotency,omitempty"`
 	IdempotencyInputs map[string]approvalIdempotencyInput `json:"idempotency_inputs,omitempty"`
+	ReadReceipts      []ApprovalReceipt                   `json:"read_receipts,omitempty"`
+}
+
+// recordReadReceipt durably records an allowed exact-read authorization. A
+// denied decision never reaches this method.
+func (l *approvalLedger) recordReadReceipt(receipt ApprovalReceipt) error {
+	if receipt.Result != approvalReceiptAllowed || receipt.AuditID == "" {
+		return errors.New("plugins: read receipt is not authorized")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	file, err := l.load()
+	if err != nil {
+		return err
+	}
+	for _, current := range file.ReadReceipts {
+		if current.AuditID == receipt.AuditID {
+			return nil
+		}
+	}
+	file.ReadReceipts = append(file.ReadReceipts, receipt)
+	return l.save(file)
 }
 
 type approvalIdempotencyInput struct {

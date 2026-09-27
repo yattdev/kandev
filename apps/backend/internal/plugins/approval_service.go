@@ -3,6 +3,7 @@ package plugins
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -149,13 +150,20 @@ func (s *Service) authorizePluginCapability(installationID, workspaceID, capabil
 		if allowed == capabilityID {
 			decision.Allowed = true
 			decision.Reason = ""
-			decision.Receipt.Result = "allowed"
+			decision.Receipt.Result = approvalReceiptAllowed
 			decision.AuditID = decision.Receipt.AuditID
 			return decision
 		}
 	}
 	decision.Reason = ApprovalDenyUndeclaredCapability
 	return decision
+}
+
+func (s *Service) recordExactReadReceipt(receipt ApprovalReceipt) error {
+	if s.approvals == nil {
+		return errors.New("plugins: approval ledger not configured")
+	}
+	return s.approvals.recordReadReceipt(receipt)
 }
 
 // malformedAuthorizationRequestReason validates the structural shape of an

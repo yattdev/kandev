@@ -41,12 +41,13 @@ type pluginHost struct {
 	pluginID string
 	// installationID and manifestDigest are captured when this Host is bound to
 	// its broker connection. Neither comes from an RPC request.
-	installationID string
-	manifestDigest string
-	exactApprovals exactApprovalReader
-	exactAuthorize exactReadAuthorizer
-	exactSnapshots *exactSnapshotStore
-	capabilities   manifest.Capabilities
+	installationID   string
+	manifestDigest   string
+	exactApprovals   exactApprovalReader
+	exactAuthorize   exactReadAuthorizer
+	exactReadReceipt exactReadReceiptRecorder
+	exactSnapshots   *exactSnapshotStore
+	capabilities     manifest.Capabilities
 	// repositoryProviders is the manifest-declared set of provider IDs this
 	// plugin owns. Only these IDs may use the trusted remote-descriptor path
 	// when creating a task; a plugin cannot claim another provider merely by

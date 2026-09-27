@@ -804,6 +804,7 @@ func (s *Service) hostForPlugin(pluginID string) pluginsdk.Host {
 		exactAuthorize: func(workspaceID string, revision uint64, capabilityID, requestDigest string) ApprovalDecision {
 			return s.authorizePluginCapability(rec.InstallationID, workspaceID, capabilityID, revision, requestDigest, "exact-read")
 		},
+		exactReadReceipt:    s.recordExactReadReceipt,
 		exactSnapshots:      snapshots,
 		capabilities:        rec.Capabilities,
 		repositoryProviders: rec.RepositoryProviders,

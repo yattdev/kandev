@@ -23,6 +23,7 @@ func TestPluginHost_ListWorkflowsExactBindsAuthorityAndCursor(t *testing.T) {
 	d.host.exactAuthorize = func(workspaceID string, revision uint64, capabilityID, _ string) ApprovalDecision {
 		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:workflows"}
 	}
+	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
 
 	items, page, err := d.host.ListWorkflowsExact(context.Background(), pluginsdk.ExactWorkflowQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1}})
 	if err != nil || len(items) != 1 || items[0].ID != "workflow-1" || !page.HasMore || page.NextCursor == "" {
