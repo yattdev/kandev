@@ -170,3 +170,28 @@ func TestClaimForceRemovalBlocksRecoveryCurrentTaskMetadata(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, written)
 }
+
+func TestClaimForceRemovalBlocksStateGuardedSessionMetadataWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-session-metadata-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-session-metadata-held", "force-session-metadata-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-session-metadata-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID, State: models.TaskSessionStateWaitingForInput}))
+	}
+	held, err := repo.GetTask(ctx, "force-session-metadata-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "a", OperationID: "session-metadata", RequestDigest: "r", PreviewDigest: "p"})
+	require.NoError(t, err)
+
+	written, err := repo.SetSessionMetadataKeyIfState(ctx, "force-session-metadata-held-session", "marker", true, models.TaskSessionStateWaitingForInput)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	heldSession, err := repo.GetTaskSession(ctx, "force-session-metadata-held-session")
+	require.NoError(t, err)
+	require.NotContains(t, heldSession.Metadata, "marker")
+
+	written, err = repo.SetSessionMetadataKeyIfState(ctx, "force-session-metadata-foreign-session", "marker", true, models.TaskSessionStateWaitingForInput)
+	require.NoError(t, err)
+	require.True(t, written)
+}
