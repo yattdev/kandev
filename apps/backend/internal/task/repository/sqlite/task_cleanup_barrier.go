@@ -29,6 +29,9 @@ func (r *Repository) taskCleanupBarrierLocked(ctx context.Context, tx *sqlx.Tx, 
 			return fmt.Errorf("lock task for creation barrier: %w", err)
 		}
 	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
 
 	var active bool
 	if err := tx.QueryRowContext(ctx, r.db.Rebind(`

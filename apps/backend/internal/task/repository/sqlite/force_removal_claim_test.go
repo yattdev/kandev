@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,4 +42,78 @@ func TestClaimForceRemovalRejectsStaleOrForeignTaskAndHoldsCleanup(t *testing.T)
 	jobs, err := repo.ListTaskResourceCleanupJobs(ctx, task.ID)
 	require.NoError(t, err)
 	require.Empty(t, jobs)
+
+	err = repo.CreateTaskSession(ctx, &models.TaskSession{ID: "force-session", TaskID: task.ID})
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	sessions, err := repo.ListTaskSessions(ctx, task.ID)
+	require.NoError(t, err)
+	require.Empty(t, sessions)
+
+	err = repo.CreateTaskSessionWithWorkspaceBinding(ctx, &models.TaskSession{ID: "force-worktree-session", TaskID: task.ID}, &models.TaskEnvironment{ID: "force-environment", TaskID: task.ID})
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	environment, err := repo.GetTaskEnvironmentByTaskID(ctx, task.ID)
+	require.NoError(t, err)
+	require.Nil(t, environment)
+}
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+func TestClaimForceRemovalOperationCannotBeReusedForAnotherTask(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-op-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-op-first", "force-op-second"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-op-ws", Title: taskID}))
+	}
+	first, err := repo.GetTask(ctx, "force-op-first")
+	require.NoError(t, err)
+	second, err := repo.GetTask(ctx, "force-op-second")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: first.ID, WorkspaceID: first.WorkspaceID, TaskGeneration: first.UpdatedAt, AdmissionGeneration: "admission", OperationID: "shared-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: second.ID, WorkspaceID: second.WorkspaceID, TaskGeneration: second.UpdatedAt, AdmissionGeneration: "admission", OperationID: "shared-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.ErrorIs(t, err, ErrForceRemovalClaimConflict)
+}
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+func TestClaimForceRemovalConcurrentExactRequestReplays(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-race-ws", Name: "Force"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "force-race-task", WorkspaceID: "force-race-ws", Title: "Force"}))
+	task, err := repo.GetTask(ctx, "force-race-task")
+	require.NoError(t, err)
+
+	claim := models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "operation", RequestDigest: "request", PreviewDigest: "preview"}
+	start := make(chan struct{})
+	results := make(chan bool, 2)
+	errs := make(chan error, 2)
+	var callers sync.WaitGroup
+	for range 2 {
+		callers.Add(1)
+		go func() {
+			defer callers.Done()
+			<-start
+			attempt := claim
+			_, replay, err := repo.ClaimForceRemoval(ctx, &attempt)
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- replay
+		}()
+	}
+	close(start)
+	callers.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	var replays int
+	for replay := range results {
+		if replay {
+			replays++
+		}
+	}
+	require.Equal(t, 1, replays)
 }

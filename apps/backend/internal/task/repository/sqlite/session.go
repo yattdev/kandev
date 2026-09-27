@@ -1040,6 +1040,9 @@ func (r *Repository) createTaskSession(ctx context.Context, exec taskSessionExec
 		session.State = models.TaskSessionStateCreated
 	}
 	if tx, ok := exec.(*sqlx.Tx); ok {
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, session.TaskID); err != nil {
+			return err
+		}
 		if err := r.verifyTaskRunnerResolutionTx(ctx, tx, session); err != nil {
 			return err
 		}

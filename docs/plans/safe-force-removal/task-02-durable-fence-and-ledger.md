@@ -58,6 +58,23 @@ The receipt ledger now appends ordered, redacted predicate evidence under the
 private claim. The cleanup hold test also proves rejected cleanup admission
 rolls back without leaving a job row.
 
+The retained-state seam now uses the existing task creation barrier, so all
+session and workspace-binding variants observe a private claim before creating
+session or environment rows. The exact-claim insert is conflict-safe: one
+concurrent identical request creates the claim and the other re-reads it as a
+replay; a reused operation ID for another task is a conflict. The focused
+SQLite package test suite passed after this change. `KANDEV_TEST_POSTGRES_DSN`
+is absent in this task-owned checkout, so the isolated PostgreSQL parity test
+is discovered and skipped locally rather than being run against CI or shared
+state.
+
+Remaining W02 work: extend the claim fence through message, move, environment
+mutation, worktree, queue, dispatch, cleanup-worker, and PR-watch writers;
+make receipt append ordering safe under concurrent appenders; and execute the
+existing PostgreSQL-gated parity test with a task-owned DSN. There is still no
+force-removal route, card hide, runtime stop, cleanup invocation, or physical
+mutation.
+
 ## Verification
 
 ```bash
