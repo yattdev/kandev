@@ -164,6 +164,13 @@ func (r *Repository) insertUsageEventAndRollup(ctx context.Context, event *model
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if err := r.lockTaskRowInTx(ctx, tx, event.TaskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, event.TaskID); err != nil {
+		return err
+	}
+
 	if err := r.insertUsageEventRowTx(ctx, tx, event); err != nil {
 		return err
 	}

@@ -13,8 +13,54 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/testutil"
 )
+
+func TestPostgresClaimForceRemovalBlocksUsageEventLedgerAndRollup(t *testing.T) {
+	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
+	repo, err := NewWithDB(db, db, nil)
+	require.NoError(t, err)
+	ctx := context.Background()
+	seedPostgresTaskSession(t, repo, "held-usage-event-pg", "held-usage-session-pg")
+	seedPostgresTaskSession(t, repo, "foreign-usage-event-pg", "foreign-usage-session-pg")
+
+	heldTask, err := repo.GetTask(ctx, "held-usage-event-pg")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
+		TaskID:              heldTask.ID,
+		WorkspaceID:         heldTask.WorkspaceID,
+		TaskGeneration:      heldTask.UpdatedAt,
+		AdmissionGeneration: "admission",
+		OperationID:         "usage-event-operation-pg",
+		RequestDigest:       "request",
+		PreviewDigest:       "preview",
+	})
+	require.NoError(t, err)
+
+	err = repo.CreateTaskUsageEvent(ctx, newTestUsageEvent("held-usage-event-pg", heldTask.ID, "held-usage-session-pg"))
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	var heldEvents int
+	require.NoError(t, repo.db.Get(&heldEvents, `SELECT COUNT(*) FROM task_usage_events`))
+	require.Zero(t, heldEvents)
+	tokensIn, tokensCachedIn, tokensOut, costSubcents := readTaskSessionRollup(t, repo, "held-usage-session-pg")
+	require.Equal(t, int64(0), tokensIn)
+	require.Equal(t, int64(0), tokensCachedIn)
+	require.Equal(t, int64(0), tokensOut)
+	require.Equal(t, int64(0), costSubcents)
+
+	require.NoError(t, repo.CreateTaskUsageEvent(ctx, newTestUsageEvent("foreign-usage-event-pg", "foreign-usage-event-pg", "foreign-usage-session-pg")))
+	var foreignEvents int
+	require.NoError(t, repo.db.Get(&foreignEvents, `SELECT COUNT(*) FROM task_usage_events`))
+	require.Equal(t, 1, foreignEvents)
+	tokensIn, tokensCachedIn, tokensOut, costSubcents = readTaskSessionRollup(t, repo, "foreign-usage-session-pg")
+	require.Equal(t, int64(100), tokensIn)
+	require.Equal(t, int64(25), tokensCachedIn)
+	require.Equal(t, int64(30), tokensOut)
+	require.Equal(t, int64(42), costSubcents)
+}
 
 func TestPostgresCreateTaskUsageEvent_HappyPath_InsertsRowAndIncrementsRollup(t *testing.T) {
 	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
