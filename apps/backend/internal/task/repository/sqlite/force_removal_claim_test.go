@@ -437,6 +437,51 @@ func TestClaimForceRemovalBlocksPreparedCleanupSnapshotWithoutPersistingIt(t *te
 	require.Equal(t, `{"after":"foreign"}`, foreign.ResourceSnapshot)
 }
 
+func TestClaimForceRemovalBlocksClaimedCleanupSnapshotWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-claimed-snapshot-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-claimed-snapshot-task", "force-claimed-snapshot-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-claimed-snapshot-ws", Title: taskID}))
+	}
+	heldJob := &models.TaskResourceCleanupJob{ID: "force-claimed-snapshot-held", OperationID: "force-claimed-snapshot-held-op", TaskID: "force-claimed-snapshot-task", Trigger: models.TaskResourceCleanupTriggerDelete, ResourceSnapshot: `{"before":"held"}`, LastError: "retained-error"}
+	foreignJob := &models.TaskResourceCleanupJob{ID: "force-claimed-snapshot-foreign-job", OperationID: "force-claimed-snapshot-foreign-op", TaskID: "force-claimed-snapshot-foreign", Trigger: models.TaskResourceCleanupTriggerDelete, ResourceSnapshot: `{"before":"foreign"}`}
+	for _, job := range []*models.TaskResourceCleanupJob{heldJob, foreignJob} {
+		require.NoError(t, repo.CreateTaskResourceCleanupJob(ctx, job))
+		running, err := repo.MarkTaskResourceCleanupJobRunning(ctx, job.ID)
+		require.NoError(t, err)
+		require.True(t, running)
+	}
+	task, err := repo.GetTask(ctx, heldJob.TaskID)
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "claimed-snapshot-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	updated, err := repo.UpdateClaimedTaskResourceCleanupSnapshot(ctx, heldJob.ID, 1, `{"after":"held"}`)
+	require.ErrorIs(t, err, ErrForceRemovalCleanupHeld)
+	require.False(t, updated)
+	held, err := repo.GetTaskResourceCleanupJob(ctx, heldJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, `{"before":"held"}`, held.ResourceSnapshot)
+	require.Equal(t, "retained-error", held.LastError)
+	require.Equal(t, 1, held.Attempts)
+
+	updated, err = repo.UpdateClaimedTaskResourceCleanupSnapshot(ctx, foreignJob.ID, 2, `{"stale":"foreign"}`)
+	require.NoError(t, err)
+	require.False(t, updated)
+	foreign, err := repo.GetTaskResourceCleanupJob(ctx, foreignJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, `{"before":"foreign"}`, foreign.ResourceSnapshot)
+	require.Equal(t, 1, foreign.Attempts)
+
+	updated, err = repo.UpdateClaimedTaskResourceCleanupSnapshot(ctx, foreignJob.ID, 1, `{"after":"foreign"}`)
+	require.NoError(t, err)
+	require.True(t, updated)
+	foreign, err = repo.GetTaskResourceCleanupJob(ctx, foreignJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, `{"after":"foreign"}`, foreign.ResourceSnapshot)
+}
+
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.2
 func TestClaimForceRemovalBlocksEnvironmentAndCleanupWorkerAdmissions(t *testing.T) {

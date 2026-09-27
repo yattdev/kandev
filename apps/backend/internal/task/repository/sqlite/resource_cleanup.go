@@ -96,7 +96,15 @@ func (r *Repository) UpdateTaskResourceCleanupSnapshot(ctx context.Context, oper
 // exact running cleanup attempt. A newer retry or cancellation wins when the
 // claim no longer matches.
 func (r *Repository) UpdateClaimedTaskResourceCleanupSnapshot(ctx context.Context, id string, attempt int, snapshot string) (bool, error) {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := r.ensureForceRemovalCleanupWorkerAvailableTx(ctx, tx, id); err != nil {
+		return false, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET resource_snapshot = ?, updated_at = ?
 		WHERE id = ? AND state = ? AND attempts = ?
@@ -105,6 +113,9 @@ func (r *Repository) UpdateClaimedTaskResourceCleanupSnapshot(ctx context.Contex
 		return false, err
 	}
 	rows, _ := result.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
 	return rows == 1, nil
 }
 
