@@ -416,6 +416,14 @@ func (r *Repository) CompleteClaimedTaskResourceCleanupJob(
 	lastError string,
 	nextAttemptAt *time.Time,
 ) (bool, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := r.ensureForceRemovalCleanupWorkerAvailableTx(ctx, tx, id); err != nil {
+		return false, err
+	}
 	now := time.Now().UTC()
 	var completedAt *time.Time
 	if state == models.TaskResourceCleanupStateSucceeded ||
@@ -423,7 +431,7 @@ func (r *Repository) CompleteClaimedTaskResourceCleanupJob(
 		state == models.TaskResourceCleanupStateCancelled {
 		completedAt = &now
 	}
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, last_error = ?, next_attempt_at = ?, completed_at = ?, updated_at = ?
 		WHERE id = ? AND state = ? AND attempts = ?
@@ -433,6 +441,9 @@ func (r *Repository) CompleteClaimedTaskResourceCleanupJob(
 		return false, err
 	}
 	count, _ := result.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
 	return count == 1, nil
 }
 
