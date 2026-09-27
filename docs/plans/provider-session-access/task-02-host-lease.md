@@ -123,3 +123,8 @@ must call it before credential delivery can be composed.
 The token adapter also compares the returned credential kind and canonical
 installation principal ID to the verified installation; a mismatched token is
 revoked before export.
+Audited redemption now hashes the bounded RPC request ID and commits that
+correlation with the exposure receipt in one transaction before returning the
+bearer. Any failed audit admission revokes the minted token. Issuance,
+administrator and lifecycle audit correlation still require completion before
+production composition.

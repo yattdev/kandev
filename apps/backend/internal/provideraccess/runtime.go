@@ -2,10 +2,13 @@ package provideraccess
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kandev/kandev/internal/github"
 )
 
@@ -61,6 +64,19 @@ func NewRuntime(store *Store, authority LeaseAuthority, tokens RerunTokenSource)
 // Redeem returns one token only after a durable one-shot claim, fresh
 // authority recheck, and serialized final exposure admission.
 func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.InstallationToken, error) {
+	return r.redeem(ctx, leaseID, "")
+}
+
+// RedeemWithAudit persists a hashed RPC request correlation atomically with
+// exposure admission. The raw request ID never enters the ledger or logs.
+func (r *Runtime) RedeemWithAudit(ctx context.Context, leaseID, requestID string) (github.InstallationToken, error) {
+	if requestID == "" || len(requestID) > 128 {
+		return github.InstallationToken{}, ErrGrantUnavailable
+	}
+	return r.redeem(ctx, leaseID, requestID)
+}
+
+func (r *Runtime) redeem(ctx context.Context, leaseID, requestID string) (github.InstallationToken, error) {
 	r.mu.Lock()
 	stopped := r.stopped
 	r.mu.Unlock()
@@ -112,16 +128,35 @@ func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.Installati
 		PermissionProfile:   "github_actions_rerun",
 		ProviderExpiresAt:   token.ExpiresAt, Expected: first.Expected,
 	}
-	if err := r.store.RecordExposureOrRevoke(ctx, receipt, func(revokeCtx context.Context) error {
-		return r.tokens.Revoke(revokeCtx, token.Token)
-	}); err != nil {
-		return github.InstallationToken{}, err
+	revoke := func(revokeCtx context.Context) error { return r.tokens.Revoke(revokeCtx, token.Token) }
+	var exposureErr error
+	if requestID == "" {
+		exposureErr = r.store.RecordExposureOrRevoke(ctx, receipt, revoke)
+	} else {
+		exposureErr = r.store.RecordExposureWithAuditOrRevoke(ctx, receipt,
+			redemptionAudit(first, leaseID, requestID), revoke)
+	}
+	if exposureErr != nil {
+		return github.InstallationToken{}, exposureErr
 	}
 	r.active[leaseID] = activeToken{grantID: first.GrantID,
 		workspaceID: first.Expected.Scope.WorkspaceID,
 		sessionID:   first.Expected.SessionID,
 		value:       token.Token, expiresAt: token.ExpiresAt}
 	return token, nil
+}
+
+func redemptionAudit(verified VerifiedLease, leaseID, requestID string) AuditEvent {
+	hash := sha256.Sum256([]byte(requestID))
+	expected := verified.Expected
+	return AuditEvent{ID: uuid.NewString(), GrantID: verified.GrantID, LeaseID: leaseID,
+		PluginInstallationID: expected.Scope.PluginInstallationID,
+		WorkspaceID:          expected.Scope.WorkspaceID, ManagedTaskID: expected.ManagedTaskID,
+		SessionID: expected.SessionID, TargetDigest: expected.TargetDigest,
+		GrantGeneration: expected.GrantGeneration, ApprovalRevision: expected.ApprovalRevision,
+		ConnectionGeneration: expected.ConnectionGeneration, Provider: expected.Scope.Provider,
+		Purpose: expected.Scope.Purpose, Outcome: AuditTokenIssued,
+		RequestIDHash: hex.EncodeToString(hash[:]), At: time.Now().UTC()}
 }
 
 // RevokeSession fences durable leases and revokes any exact token already

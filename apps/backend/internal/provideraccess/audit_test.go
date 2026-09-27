@@ -16,13 +16,15 @@ func TestStoreAuditReceiptPersistsOnlyReviewedFields(t *testing.T) {
 		TargetDigest: "target-digest-1", GrantGeneration: 1,
 		ApprovalRevision: 3, ConnectionGeneration: "connection-1",
 		Provider: "github", Purpose: "actions_write",
-		Outcome: AuditLeaseIssued, At: time.Now().UTC(),
+		RequestIDHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Outcome:       AuditLeaseIssued, At: time.Now().UTC(),
 	}
 	if err := store.RecordAudit(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.GetAudit(context.Background(), event.ID)
-	if err != nil || got == nil || got.Outcome != event.Outcome || got.SessionID != event.SessionID {
+	if err != nil || got == nil || got.Outcome != event.Outcome ||
+		got.SessionID != event.SessionID || got.RequestIDHash != event.RequestIDHash {
 		t.Fatalf("audit = %+v, err = %v", got, err)
 	}
 	encoded, err := json.Marshal(got)
@@ -49,5 +51,14 @@ func TestStoreAuditRejectsUnknownOutcomeAndMissingIdentity(t *testing.T) {
 	event.Outcome = AuditLeaseIssued
 	if err := store.RecordAudit(context.Background(), event); err == nil {
 		t.Fatal("missing audit identity was accepted")
+	}
+	event = AuditEvent{
+		ID: "audit-invalid-correlation", GrantID: "grant-1",
+		PluginInstallationID: "installation-1", WorkspaceID: "workspace-1",
+		Provider: "github", Purpose: "actions_write", GrantGeneration: 1,
+		Outcome: AuditLeaseIssued, At: time.Now().UTC(), RequestIDHash: "raw-request-id",
+	}
+	if err := store.RecordAudit(context.Background(), event); err == nil {
+		t.Fatal("raw request ID was accepted as audit correlation")
 	}
 }

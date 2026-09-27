@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // ExposureReceipt records only the provider authority that has left the Host.
@@ -54,10 +56,24 @@ const (
 func (s *Store) RecordExposureOrRevoke(
 	ctx context.Context, receipt ExposureReceipt, revoke func(context.Context) error,
 ) error {
+	return s.recordExposureOrRevoke(ctx, receipt, nil, revoke)
+}
+
+// RecordExposureWithAuditOrRevoke commits the non-secret request correlation
+// in the same transaction as final exposure admission, before token export.
+func (s *Store) RecordExposureWithAuditOrRevoke(
+	ctx context.Context, receipt ExposureReceipt, audit AuditEvent, revoke func(context.Context) error,
+) error {
+	return s.recordExposureOrRevoke(ctx, receipt, &audit, revoke)
+}
+
+func (s *Store) recordExposureOrRevoke(
+	ctx context.Context, receipt ExposureReceipt, audit *AuditEvent, revoke func(context.Context) error,
+) error {
 	if revoke == nil {
 		return errors.New("provider access exact-token revoker is required")
 	}
-	err := s.recordExposureReceipt(ctx, receipt)
+	err := s.recordExposureReceipt(ctx, receipt, audit)
 	if err == nil {
 		return nil
 	}
@@ -71,8 +87,8 @@ func (s *Store) RecordExposureOrRevoke(
 }
 
 // recordExposureReceipt serializes final admission with grant/lease revocation.
-func (s *Store) recordExposureReceipt(ctx context.Context, receipt ExposureReceipt) error {
-	if err := validateExposureReceipt(receipt); err != nil {
+func (s *Store) recordExposureReceipt(ctx context.Context, receipt ExposureReceipt, audit *AuditEvent) error {
+	if err := validateExposureAdmission(receipt, audit); err != nil {
 		return err
 	}
 	key, err := scopeKey(receipt.Expected.Scope)
@@ -142,7 +158,56 @@ func (s *Store) recordExposureReceipt(ctx context.Context, receipt ExposureRecei
 	if count != 1 {
 		return ErrGrantUnavailable
 	}
+	if err := insertExposureAudit(ctx, tx, audit); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+func validateExposureAdmission(receipt ExposureReceipt, audit *AuditEvent) error {
+	if err := validateExposureReceipt(receipt); err != nil {
+		return err
+	}
+	if audit != nil {
+		return validateExposureAudit(receipt, *audit)
+	}
+	return nil
+}
+
+func insertExposureAudit(ctx context.Context, tx *sqlx.Tx, audit *AuditEvent) error {
+	if audit == nil {
+		return nil
+	}
+	return insertAudit(ctx, tx, *audit)
+}
+
+func validateExposureAudit(receipt ExposureReceipt, audit AuditEvent) error {
+	if err := validateAudit(audit); err != nil {
+		return err
+	}
+	if audit.Outcome != AuditTokenIssued || audit.RequestIDHash == "" {
+		return ErrGrantUnavailable
+	}
+	identity := auditIdentity{audit.LeaseID, audit.GrantID, audit.PluginInstallationID,
+		audit.WorkspaceID, audit.ManagedTaskID, audit.SessionID, audit.TargetDigest,
+		audit.GrantGeneration, audit.ApprovalRevision, audit.ConnectionGeneration,
+		audit.Provider, audit.Purpose}
+	expected := auditIdentity{receipt.LeaseID, receipt.GrantID,
+		receipt.Expected.Scope.PluginInstallationID, receipt.Expected.Scope.WorkspaceID,
+		receipt.Expected.ManagedTaskID, receipt.Expected.SessionID, receipt.Expected.TargetDigest,
+		receipt.Expected.GrantGeneration, receipt.Expected.ApprovalRevision,
+		receipt.Expected.ConnectionGeneration, receipt.Provider, receipt.Expected.Scope.Purpose}
+	if identity != expected {
+		return ErrGrantUnavailable
+	}
+	return nil
+}
+
+type auditIdentity struct {
+	leaseID, grantID, installationID, workspaceID, taskID, sessionID, targetDigest string
+	grantGeneration                                                                int64
+	approvalRevision                                                               uint64
+	connectionGeneration, provider, purpose                                        string
 }
 
 func validateExposureReceipt(receipt ExposureReceipt) error {

@@ -61,6 +61,8 @@ func (s *Store) FenceWorkspace(ctx context.Context, workspaceID string) (Workspa
 		return WorkspaceFenceResult{}, err
 	}
 	statements := []string{
+		`DELETE FROM provider_access_audit_correlations WHERE audit_id IN
+   (SELECT id FROM provider_access_audit WHERE workspace_id = ?)`,
 		`DELETE FROM provider_access_audit WHERE workspace_id = ?`,
 		`DELETE FROM provider_access_exposures WHERE grant_id IN
    (SELECT id FROM provider_access_grants WHERE workspace_id = ?)
@@ -82,7 +84,7 @@ func (s *Store) FenceWorkspace(ctx context.Context, workspaceID string) (Workspa
 	}
 	for i, stmt := range statements {
 		var execErr error
-		if i == 1 || i == 2 {
+		if i == 2 || i == 3 {
 			_, execErr = tx.ExecContext(ctx, tx.Rebind(stmt), workspaceID, now)
 		} else {
 			_, execErr = tx.ExecContext(ctx, tx.Rebind(stmt), workspaceID)

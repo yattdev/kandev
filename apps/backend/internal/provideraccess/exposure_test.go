@@ -34,6 +34,71 @@ func claimTestMint(t *testing.T, store *Store, grant Grant, lease *Lease) {
 	}
 }
 
+func TestExposureAndAuditCommitTogetherBeforeBearerExport(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-audited")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimTestMint(t, store, grant, lease)
+	receipt := testExposureReceipt(grant, lease)
+	audit := AuditEvent{ID: "audit-exposure-1", GrantID: grant.ID, LeaseID: lease.ID,
+		PluginInstallationID: grant.PluginInstallationID, WorkspaceID: grant.WorkspaceID,
+		ManagedTaskID: lease.ManagedTaskID, SessionID: lease.SessionID,
+		TargetDigest: lease.TargetDigest, GrantGeneration: grant.Generation,
+		ApprovalRevision: lease.ApprovalRevision, ConnectionGeneration: lease.ConnectionGeneration,
+		Provider: grant.Provider, Purpose: grant.Purpose, Outcome: AuditTokenIssued,
+		RequestIDHash: strings.Repeat("a", 64), At: time.Now().UTC()}
+	if err := store.RecordExposureWithAuditOrRevoke(ctx, receipt, audit, func(context.Context) error {
+		t.Fatal("successful audited exposure revoked token")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetAudit(ctx, audit.ID)
+	if err != nil || got == nil || got.RequestIDHash != audit.RequestIDHash {
+		t.Fatalf("audited exposure = %+v, err = %v", got, err)
+	}
+	if state, err := store.ExposureStateAt(ctx, lease.ID, time.Now()); err != nil || state != ExposureActive {
+		t.Fatalf("exposure state = %s, err = %v", state, err)
+	}
+}
+
+func TestInvalidExposureAuditRevokesUnexportedToken(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-audited")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimTestMint(t, store, grant, lease)
+	receipt := testExposureReceipt(grant, lease)
+	audit := AuditEvent{ID: "audit-invalid-exposure", GrantID: grant.ID, LeaseID: "foreign-lease",
+		PluginInstallationID: grant.PluginInstallationID, WorkspaceID: grant.WorkspaceID,
+		ManagedTaskID: lease.ManagedTaskID, SessionID: lease.SessionID,
+		TargetDigest: lease.TargetDigest, GrantGeneration: grant.Generation,
+		ApprovalRevision: lease.ApprovalRevision, ConnectionGeneration: lease.ConnectionGeneration,
+		Provider: grant.Provider, Purpose: grant.Purpose, Outcome: AuditTokenIssued,
+		RequestIDHash: strings.Repeat("a", 64), At: time.Now().UTC()}
+	revoked := false
+	if err := store.RecordExposureWithAuditOrRevoke(ctx, receipt, audit,
+		func(context.Context) error { revoked = true; return nil }); !errors.Is(err, ErrGrantUnavailable) || !revoked {
+		t.Fatalf("invalid audit error = %v, revoked = %v", err, revoked)
+	}
+	if state, err := store.ExposureStateAt(ctx, lease.ID, time.Now()); err != nil || state != ExposureUnknown {
+		t.Fatalf("denied exposure state = %s, err = %v", state, err)
+	}
+}
+
 func TestExportedBearerRemainsResidualAfterLeaseExpiryAndFailedRevoke(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "provider-access.db")
 	open := func() (*sqlx.DB, *Store) {

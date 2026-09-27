@@ -129,6 +129,9 @@ func NewStore(db *sqlx.DB) (*Store, error) {
    at BIGINT NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS provider_access_audit_workspace
    ON provider_access_audit(workspace_id, at)`,
+		`CREATE TABLE IF NOT EXISTS provider_access_audit_correlations (
+   audit_id TEXT PRIMARY KEY, request_id_hash TEXT NOT NULL,
+   FOREIGN KEY(audit_id) REFERENCES provider_access_audit(id))`,
 		`CREATE TABLE IF NOT EXISTS provider_access_exposures (
    lease_id TEXT PRIMARY KEY, grant_id TEXT NOT NULL,
    provider TEXT NOT NULL, provider_principal_id TEXT NOT NULL,

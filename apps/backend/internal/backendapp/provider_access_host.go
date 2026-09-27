@@ -106,7 +106,7 @@ func (s *providerHostAccess) Redeem(ctx context.Context, pluginID, requestID,
 	if err != nil {
 		return pluginsdk.ProviderAccessCredential{}, err
 	}
-	token, err := runtime.Redeem(ctx, leaseID)
+	token, err := runtime.RedeemWithAudit(ctx, leaseID, requestID)
 	if err != nil {
 		return pluginsdk.ProviderAccessCredential{}, err
 	}

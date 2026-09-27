@@ -212,6 +212,25 @@ func TestRuntimeRedeemIsOneShotAndReleasesExactToken(t *testing.T) {
 	}
 }
 
+func TestRuntimeAuditedRedemptionPersistsHashedRequestBeforeReturn(t *testing.T) {
+	runtime, store, _, _, _, lease := newRuntimeTestFixture(t)
+	ctx := context.Background()
+	if _, err := runtime.RedeemWithAudit(ctx, lease.ID, "opaque-request-1"); err != nil {
+		t.Fatal(err)
+	}
+	var auditID string
+	if err := store.db.GetContext(ctx, &auditID, store.db.Rebind(`SELECT id
+  FROM provider_access_audit WHERE lease_id = ? AND outcome = ?`),
+		lease.ID, AuditTokenIssued); err != nil {
+		t.Fatal(err)
+	}
+	audit, err := store.GetAudit(ctx, auditID)
+	if err != nil || audit == nil || audit.RequestIDHash == "" ||
+		audit.RequestIDHash == "opaque-request-1" {
+		t.Fatalf("audited redemption = %+v, err = %v", audit, err)
+	}
+}
+
 func TestRuntimeRevokesStoppedSessionWithoutAffectingOtherSession(t *testing.T) {
 	runtime, store, _, tokens, _, lease := newRuntimeTestFixture(t)
 	ctx := context.Background()

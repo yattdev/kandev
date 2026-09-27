@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // AuditOutcome is a closed vocabulary; provider response text never enters the ledger.
@@ -40,25 +42,27 @@ type AuditEvent struct {
 	Provider             string
 	Purpose              string
 	Outcome              AuditOutcome
+	RequestIDHash        string
 	At                   time.Time
 }
 
 type auditRow struct {
-	ID                   string `db:"id"`
-	GrantID              string `db:"grant_id"`
-	LeaseID              string `db:"lease_id"`
-	PluginInstallationID string `db:"plugin_installation_id"`
-	WorkspaceID          string `db:"workspace_id"`
-	ManagedTaskID        string `db:"managed_task_id"`
-	SessionID            string `db:"session_id"`
-	TargetDigest         string `db:"target_digest"`
-	GrantGeneration      int64  `db:"grant_generation"`
-	ApprovalRevision     int64  `db:"approval_revision"`
-	ConnectionGeneration string `db:"connection_generation"`
-	Provider             string `db:"provider"`
-	Purpose              string `db:"purpose"`
-	Outcome              string `db:"outcome"`
-	At                   int64  `db:"at"`
+	ID                   string         `db:"id"`
+	GrantID              string         `db:"grant_id"`
+	LeaseID              string         `db:"lease_id"`
+	PluginInstallationID string         `db:"plugin_installation_id"`
+	WorkspaceID          string         `db:"workspace_id"`
+	ManagedTaskID        string         `db:"managed_task_id"`
+	SessionID            string         `db:"session_id"`
+	TargetDigest         string         `db:"target_digest"`
+	GrantGeneration      int64          `db:"grant_generation"`
+	ApprovalRevision     int64          `db:"approval_revision"`
+	ConnectionGeneration string         `db:"connection_generation"`
+	Provider             string         `db:"provider"`
+	Purpose              string         `db:"purpose"`
+	Outcome              string         `db:"outcome"`
+	RequestIDHash        sql.NullString `db:"request_id_hash"`
+	At                   int64          `db:"at"`
 }
 
 // RecordAudit appends a non-secret receipt; callers cannot provide freeform errors.
@@ -66,7 +70,19 @@ func (s *Store) RecordAudit(ctx context.Context, event AuditEvent) error {
 	if err := validateAudit(event); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, s.db.Rebind(`INSERT INTO provider_access_audit (
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := insertAudit(ctx, tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func insertAudit(ctx context.Context, tx *sqlx.Tx, event AuditEvent) error {
+	_, err := tx.ExecContext(ctx, tx.Rebind(`INSERT INTO provider_access_audit (
   id, grant_id, lease_id, plugin_installation_id, workspace_id,
   managed_task_id, session_id, target_digest, grant_generation,
   approval_revision, connection_generation, provider, purpose, outcome, at)
@@ -75,6 +91,11 @@ func (s *Store) RecordAudit(ctx context.Context, event AuditEvent) error {
 		event.WorkspaceID, event.ManagedTaskID, event.SessionID, event.TargetDigest,
 		event.GrantGeneration, int64(event.ApprovalRevision), event.ConnectionGeneration,
 		event.Provider, event.Purpose, event.Outcome, event.At.Unix())
+	if err != nil || event.RequestIDHash == "" {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, tx.Rebind(`INSERT INTO provider_access_audit_correlations
+  (audit_id, request_id_hash) VALUES (?, ?)`), event.ID, event.RequestIDHash)
 	return err
 }
 
@@ -87,6 +108,12 @@ func validateAudit(event AuditEvent) error {
 	}
 	if event.GrantGeneration <= 0 || event.ApprovalRevision > math.MaxInt64 || event.At.IsZero() {
 		return errors.New("valid provider access audit generation and time are required")
+	}
+	if event.RequestIDHash != "" && (len(event.RequestIDHash) != 64 ||
+		strings.IndexFunc(event.RequestIDHash, func(ch rune) bool {
+			return (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f')
+		}) != -1) {
+		return errors.New("provider access audit correlation must be a SHA-256 hex digest")
 	}
 	switch event.Outcome {
 	case AuditGrantCreated, AuditGrantRevoked, AuditLeaseIssued, AuditLeaseReplayed,
@@ -101,7 +128,9 @@ func validateAudit(event AuditEvent) error {
 // GetAudit reads a receipt by immutable ID.
 func (s *Store) GetAudit(ctx context.Context, id string) (*AuditEvent, error) {
 	var row auditRow
-	err := s.db.GetContext(ctx, &row, s.db.Rebind(`SELECT * FROM provider_access_audit WHERE id = ?`), id)
+	err := s.db.GetContext(ctx, &row, s.db.Rebind(`SELECT a.*, c.request_id_hash
+  FROM provider_access_audit a LEFT JOIN provider_access_audit_correlations c ON c.audit_id = a.id
+  WHERE a.id = ?`), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -116,6 +145,7 @@ func (s *Store) GetAudit(ctx context.Context, id string) (*AuditEvent, error) {
 		ApprovalRevision:     uint64(row.ApprovalRevision),
 		ConnectionGeneration: row.ConnectionGeneration, Provider: row.Provider,
 		Purpose: row.Purpose, Outcome: AuditOutcome(row.Outcome),
-		At: time.Unix(row.At, 0).UTC(),
+		RequestIDHash: row.RequestIDHash.String,
+		At:            time.Unix(row.At, 0).UTC(),
 	}, nil
 }
