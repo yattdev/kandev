@@ -43,3 +43,32 @@ func TestClaimForceRemovalBlocksConditionalTaskMetadataWithoutPersistingIt(t *te
 	require.NoError(t, err)
 	require.Equal(t, true, foreign.Metadata["force_marker"])
 }
+
+func TestClaimForceRemovalBlocksArchiveGuardedTaskMetadataWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-archive-metadata-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-archive-metadata-task", "force-archive-metadata-archived", "force-archive-metadata-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-archive-metadata-ws", Title: taskID}))
+	}
+	heldTask, err := repo.GetTask(ctx, "force-archive-metadata-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: heldTask.ID, WorkspaceID: heldTask.WorkspaceID, TaskGeneration: heldTask.UpdatedAt, AdmissionGeneration: "admission", OperationID: "archive-metadata-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	written, err := repo.SetTaskMetadataKeyIfNotArchived(ctx, heldTask.ID, "force_marker", true)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	held, err := repo.GetTask(ctx, heldTask.ID)
+	require.NoError(t, err)
+	require.NotContains(t, held.Metadata, "force_marker")
+
+	require.NoError(t, repo.ArchiveTask(ctx, "force-archive-metadata-archived"))
+	written, err = repo.SetTaskMetadataKeyIfNotArchived(ctx, "force-archive-metadata-archived", "force_marker", true)
+	require.NoError(t, err)
+	require.False(t, written)
+
+	written, err = repo.SetTaskMetadataKeyIfNotArchived(ctx, "force-archive-metadata-foreign", "force_marker", true)
+	require.NoError(t, err)
+	require.True(t, written)
+}
