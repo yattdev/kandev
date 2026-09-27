@@ -45,6 +45,7 @@ type Runtime struct {
 	tokens    RerunTokenSource
 	mu        sync.Mutex
 	active    map[string]activeToken
+	stopped   bool
 }
 
 func NewRuntime(store *Store, authority LeaseAuthority, tokens RerunTokenSource) (*Runtime, error) {
@@ -58,6 +59,12 @@ func NewRuntime(store *Store, authority LeaseAuthority, tokens RerunTokenSource)
 // Redeem returns one token only after a durable one-shot claim, fresh
 // authority recheck, and serialized final exposure admission.
 func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.InstallationToken, error) {
+	r.mu.Lock()
+	stopped := r.stopped
+	r.mu.Unlock()
+	if stopped {
+		return github.InstallationToken{}, ErrGrantUnavailable
+	}
 	first, err := r.authority.VerifyLease(ctx, leaseID)
 	if err != nil {
 		return github.InstallationToken{}, ErrGrantUnavailable
@@ -83,6 +90,9 @@ func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.Installati
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.stopped {
+		return github.InstallationToken{}, r.revokeUnexported(ctx, token.Token, ErrGrantUnavailable)
+	}
 	current, verifyErr := r.authority.VerifyLease(ctx, leaseID)
 	if verifyErr != nil || current != first {
 		return github.InstallationToken{}, r.revokeUnexported(ctx, token.Token, ErrGrantUnavailable)
@@ -103,6 +113,19 @@ func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.Installati
 		workspaceID: first.Expected.Scope.WorkspaceID,
 		value:       token.Token, expiresAt: token.ExpiresAt}
 	return token, nil
+}
+
+// Stop closes redemption and attempts to revoke every exact token still held
+// in memory. Failed provider revocation remains visible in the durable ledger.
+func (r *Runtime) Stop(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stopped = true
+	var result error
+	for leaseID, token := range r.active {
+		result = errors.Join(result, r.revokeActive(ctx, leaseID, token))
+	}
+	return result
 }
 
 func validVerifiedLease(lease VerifiedLease, requestedID string) bool {

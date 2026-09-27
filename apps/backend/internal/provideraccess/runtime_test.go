@@ -93,6 +93,54 @@ func TestRuntimeAcceptsCanonicalRepositoryResolvedFromInternalID(t *testing.T) {
 	}
 }
 
+func TestRuntimeStopRevokesHeldTokenAndPreservesFailedRevocation(t *testing.T) {
+	runtime, store, _, tokens, _, lease := newRuntimeTestFixture(t)
+	ctx := context.Background()
+	if _, err := runtime.Redeem(ctx, lease.ID); err != nil {
+		t.Fatal(err)
+	}
+	tokens.revokeErr = errors.New("provider unavailable")
+	if err := runtime.Stop(ctx); !errors.Is(err, ErrRevocationUnconfirmed) {
+		t.Fatalf("stop error = %v, want unconfirmed revocation", err)
+	}
+	if state, err := store.ExposureStateAt(ctx, lease.ID, time.Now()); err != nil ||
+		state != ExposureResidual {
+		t.Fatalf("stopped exposure = %s, err = %v", state, err)
+	}
+	if token, err := runtime.Redeem(ctx, lease.ID); !errors.Is(err, ErrGrantUnavailable) || token.Token != "" {
+		t.Fatalf("redemption after stop = %+v, err = %v", token, err)
+	}
+}
+
+func TestRuntimeStopWinsInflightMintBeforeExport(t *testing.T) {
+	runtime, store, _, tokens, _, lease := newRuntimeTestFixture(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	tokens.onMint = func() { close(started); <-release }
+	type result struct {
+		token github.InstallationToken
+		err   error
+	}
+	redemption := make(chan result, 1)
+	go func() {
+		token, err := runtime.Redeem(context.Background(), lease.ID)
+		redemption <- result{token: token, err: err}
+	}()
+	<-started
+	if err := runtime.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	got := <-redemption
+	if !errors.Is(got.err, ErrGrantUnavailable) || got.token.Token != "" || tokens.revocations != 1 {
+		t.Fatalf("inflight redemption after stop = %+v, revocations = %d", got, tokens.revocations)
+	}
+	if state, err := store.ExposureStateAt(context.Background(), lease.ID, time.Now()); err != nil ||
+		state != ExposureUnknown {
+		t.Fatalf("stopped inflight exposure = %s, err = %v", state, err)
+	}
+}
+
 func TestRuntimeDeniesMalformedCanonicalRepositoryBeforeMint(t *testing.T) {
 	for _, repository := range []string{"", "repo-1", " owner/repo", "owner//repo"} {
 		t.Run(repository, func(t *testing.T) {
