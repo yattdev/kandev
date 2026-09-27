@@ -162,13 +162,20 @@ session/task/workspace teardown, provider disconnect/rotation, and plugin
 disable/uninstall immediately fence future issuance/redemption. The same
 events request revocation of every live issued token for the scope. A provider
 terminal callback must first reserve the still-current session state and,
-for bootstrap failures, the exact execution, start attempt, and error stamp
+for asynchronous failures, its original execution or the absence of an
+execution/start attempt; bootstrap failures also bind the exact error stamp
 in the session repository. That committed reservation blocks executor identity
-rotation until revocation and the terminal compare-and-set finish. A stale
+rotation, prompt admission, recovery and bulk cancellation until revocation
+and the terminal compare-and-set finish. A stale
 callback must neither revoke the successor's token nor publish a terminal
 state. A failed revocation releases the reservation and leaves the original
-state retryable; a crash with an unresolved reservation leaves executor
-rotation fenced until the owner is reconciled.
+state retryable. A crash leaves a non-secret durable claim descriptor and
+keeps the session fenced. Before normal session restart recovery, the Host
+retries revocation and checks the exposure ledger. Only confirmed revocation
+or provider expiry permits the claim-owned terminal commit and claim release.
+If revocation remains uncertain, restart leaves the claim and session state
+unchanged; the operator may retry by restarting after provider expiry or
+restoring provider revocation. No lease timeout alone clears the claim.
 The provider
 `204` confirms invalidation; failure records `revocation_pending` with
 provider expiry but never reports `revoked_at_provider`. After process loss,

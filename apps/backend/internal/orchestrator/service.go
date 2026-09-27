@@ -3192,6 +3192,7 @@ func (s *Service) Start(ctx context.Context) error {
 	// new launches, which would let a genuinely in-flight claim race this
 	// snapshot of "starting" routes.
 	s.reconcileOrphanedDynamicStartingRoutes(ctx)
+	s.reconcileProviderAccessTerminalClaimsOnStartup(ctx)
 	s.reconcileExecutorSessionsOnStartup(ctx)
 	// Executor reconciliation abandons turns left open by a pre-crash active
 	// session. Run the CI attempt sweep again after that transition so a
@@ -3457,6 +3458,7 @@ func (s *Service) reconcileSessionsOnStartup(ctx context.Context) {
 		s.logger.Error("failed to reconcile unpublished prompt turns on startup", zap.Error(err))
 		return
 	}
+	s.reconcileProviderAccessTerminalClaimsOnStartup(ctx)
 	s.reconcileExecutorSessionsOnStartup(ctx)
 }
 

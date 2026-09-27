@@ -1381,6 +1381,7 @@ func (r *Repository) scanTaskSession(ctx context.Context, row *sql.Row, noRowsEr
 		return nil, err
 	}
 	delete(session.Metadata, terminalProviderClaimKey)
+	delete(session.Metadata, terminalProviderRecoveryKey)
 	if err := unmarshalSessionJSON(agentProfileSnapshotJSON, &session.AgentProfileSnapshot, "agent profile snapshot"); err != nil {
 		return nil, err
 	}
@@ -1509,6 +1510,7 @@ func (r *Repository) claimPromptableTaskSessionIfActive(
 		WHERE id = ? AND state = ?
 		  AND (? = '' OR task_id = ?)
 		  AND (? = '' OR queue_incarnation_id = ?)
+		  AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 		  AND EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_sessions.task_id AND tasks.archived_at IS NULL)
 	`), models.TaskSessionStateRunning, time.Now().UTC(), id, state,
 		taskID, taskID, incarnationID, incarnationID)
@@ -2252,6 +2254,7 @@ func (r *Repository) CancelActiveTaskSessionsByTaskID(ctx context.Context, taskI
 		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
 		WHERE task_id = ?
 			AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
+			AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 		RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
 			review_status, metadata, task_environment_id, state, updated_at, is_primary
 	`), string(models.TaskSessionStateCancelled), reason, now, now, taskID)
@@ -2341,6 +2344,7 @@ func (r *Repository) CancelRunningTaskSessionByID(ctx context.Context, sessionID
 		WHERE id = ?
 			AND state IN ('STARTING', 'RUNNING')
 			AND updated_at < ?
+			AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 		RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
 			review_status, metadata, task_environment_id, state, updated_at, is_primary
 	`), string(models.TaskSessionStateCancelled), reason, now, now, sessionID, staleBefore)
@@ -2460,6 +2464,7 @@ func (r *Repository) RecoverTaskSessionByCandidate(
 		string(models.TaskSessionStateWaitingForInput), "", nil, now,
 		candidate.SessionID, candidate.TaskID, string(candidate.ExpectedState), candidate.ExpectedUpdatedAt,
 	)
+	query += " AND " + terminalProviderClaimAbsentPredicate(r.db.DriverName()) + "\n"
 	if !staleBefore.IsZero() {
 		query += " AND updated_at < ?\n"
 		args = append(args, staleBefore)
@@ -2544,6 +2549,7 @@ func (r *Repository) CancelActiveTaskSessionsByIDs(ctx context.Context, taskID s
 			WHERE task_id = ?
 				AND id IN (`+placeholders+`)
 				AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
+				AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 			RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
 				review_status, metadata, task_environment_id, state, updated_at, is_primary
 		`), args...)
@@ -2613,6 +2619,7 @@ func (r *Repository) CancelActiveTaskSessionsByCandidates(
 			WHERE task_id = ?
 			  AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
 			AND (`+strings.Join(predicates, " OR ")+`)
+			AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 			RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
 				review_status, metadata, task_environment_id, state, updated_at, is_primary
 		`), args...)
@@ -2713,6 +2720,7 @@ func scanCancelledTaskSessionRow(rows *sql.Rows, taskID string) (*models.TaskSes
 		return nil, err
 	}
 	delete(session.Metadata, terminalProviderClaimKey)
+	delete(session.Metadata, terminalProviderRecoveryKey)
 	if err := unmarshalSessionJSON(agentProfileSnapshotJSON, &session.AgentProfileSnapshot, "agent profile snapshot"); err != nil {
 		return nil, err
 	}
@@ -3925,6 +3933,7 @@ func unmarshalSessionSnapshots(
 		return err
 	}
 	delete(session.Metadata, terminalProviderClaimKey)
+	delete(session.Metadata, terminalProviderRecoveryKey)
 	if err := unmarshalSessionJSON(agentProfileSnapshotJSON, &session.AgentProfileSnapshot, "agent profile snapshot"); err != nil {
 		return err
 	}

@@ -25,14 +25,26 @@ func TestPostgresTerminalProviderClaimFencesExecutionRotation(t *testing.T) {
 	claim := models.TerminalProviderAccessClaim{
 		TaskID: taskID, SessionID: sessionID, AgentExecutionID: "exec-old",
 		RequireExecution: true, ExpectedState: models.TaskSessionStateStarting, CheckErrorStamp: true,
+		TargetState: models.TaskSessionStateFailed, ErrorMessage: "provider stopped",
 	}
 	claimID, reserved, err := repo.ClaimProviderAccessTerminal(ctx, claim)
 	require.NoError(t, err)
 	require.True(t, reserved)
+	pending, err := repo.ListPendingProviderAccessTerminalClaims(ctx)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.Equal(t, claimID, pending[0].ClaimID)
+	require.Equal(t, claim.TargetState, pending[0].TargetState)
+	cancelled, err := repo.CancelActiveTaskSessionsByTaskID(ctx, taskID, "archive")
+	require.NoError(t, err)
+	require.Empty(t, cancelled)
 	require.ErrorIs(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
 		ID: sessionID, SessionID: sessionID, TaskID: taskID, AgentExecutionID: "exec-new",
 	}), ErrTerminalProviderClaimPending)
 	require.NoError(t, repo.ReleaseProviderAccessTerminal(ctx, sessionID, claimID))
+	pending, err = repo.ListPendingProviderAccessTerminalClaims(ctx)
+	require.NoError(t, err)
+	require.Empty(t, pending)
 	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
 		ID: sessionID, SessionID: sessionID, TaskID: taskID, AgentExecutionID: "exec-new",
 	}))

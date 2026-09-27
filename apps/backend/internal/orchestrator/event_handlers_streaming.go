@@ -1187,8 +1187,13 @@ func (s *Service) updateTaskSessionStateWithHook(
 		return session, false
 	}
 	terminalExecutionID, _ := ctx.Value(terminalProviderExecutionKey{}).(string)
+	requireNoExecution, _ := ctx.Value(terminalProviderNoExecutionKey{}).(bool)
+	requireExecution, _ := ctx.Value(terminalProviderRequireExecutionKey{}).(bool)
 	ctx, releaseClaim, claimed, claimErr := s.claimProviderAccessForTerminal(ctx, models.TerminalProviderAccessClaim{
 		TaskID: taskID, SessionID: sessionID, AgentExecutionID: terminalExecutionID, ExpectedState: session.State,
+		RequireNoExecution: requireNoExecution, RequireNoStartAttempt: requireNoExecution,
+		RequireExecution: requireExecution,
+		TargetState:      nextState, ErrorMessage: errorMessage,
 	}, nextState)
 	if claimErr != nil {
 		s.logger.Error("failed to reserve terminal provider access", zap.String("session_id", sessionID), zap.Error(claimErr))
@@ -1402,6 +1407,7 @@ func (s *Service) transitionTaskSessionState(
 	oldState := session.State
 	ctx, releaseClaim, claimed, claimErr := s.claimProviderAccessForTerminal(ctx, models.TerminalProviderAccessClaim{
 		TaskID: taskID, SessionID: sessionID, ExpectedState: oldState,
+		TargetState: nextState, ErrorMessage: errorMessage,
 	}, nextState)
 	if claimErr != nil {
 		return false, oldState, claimErr
@@ -1482,6 +1488,7 @@ func (s *Service) transitionBootstrapFailure(
 		TaskID: taskID, SessionID: sessionID, AgentExecutionID: agentExecutionID, RequireExecution: true,
 		ExpectedState: expectedState, ExpectedErrorStamp: expectedStamp, CheckErrorStamp: true,
 		ExpectedStartAttemptID: expectedStartAttemptID,
+		TargetState:            models.TaskSessionStateFailed, ErrorMessage: errorValue.Message,
 	}, models.TaskSessionStateFailed)
 	if claimErr != nil {
 		return false, expectedState, claimErr
@@ -1602,6 +1609,8 @@ type bootstrapFailureAttemptClaimCommitter interface {
 }
 
 type terminalProviderExecutionKey struct{}
+type terminalProviderNoExecutionKey struct{}
+type terminalProviderRequireExecutionKey struct{}
 type terminalProviderClaimIDKey struct{}
 
 func (s *Service) claimProviderAccessForTerminal(

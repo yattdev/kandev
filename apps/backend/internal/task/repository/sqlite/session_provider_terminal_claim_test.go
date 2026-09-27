@@ -3,10 +3,100 @@ package sqlite
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBulkTerminalWritersDeferClaimedSession(t *testing.T) {
+	forms := map[string]func(context.Context, *Repository, models.ActiveSessionCancellationCandidate) (int, error){
+		"task": func(ctx context.Context, repo *Repository, _ models.ActiveSessionCancellationCandidate) (int, error) {
+			rows, err := repo.CancelActiveTaskSessionsByTaskID(ctx, "task-bulk-claim", "archive")
+			return len(rows), err
+		},
+		"stale session": func(ctx context.Context, repo *Repository, _ models.ActiveSessionCancellationCandidate) (int, error) {
+			row, err := repo.CancelRunningTaskSessionByID(ctx, "session-bulk-claim", "stale", time.Now().Add(time.Hour))
+			if row != nil {
+				return 1, err
+			}
+			return 0, err
+		},
+		"ids": func(ctx context.Context, repo *Repository, _ models.ActiveSessionCancellationCandidate) (int, error) {
+			rows, err := repo.CancelActiveTaskSessionsByIDs(ctx, "task-bulk-claim", []string{"session-bulk-claim"}, "archive")
+			return len(rows), err
+		},
+		"candidates": func(ctx context.Context, repo *Repository, candidate models.ActiveSessionCancellationCandidate) (int, error) {
+			rows, err := repo.CancelActiveTaskSessionsByCandidates(ctx, "task-bulk-claim", []models.ActiveSessionCancellationCandidate{candidate}, "stale")
+			return len(rows), err
+		},
+	}
+	for name, cancel := range forms {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := newRepoForSessionTests(t)
+			seedForMsgTest(t, repo, "task-bulk-claim", "session-bulk-claim", "turn-bulk-claim")
+			require.NoError(t, repo.UpdateTaskSessionState(ctx, "session-bulk-claim", models.TaskSessionStateRunning, ""))
+			session, err := repo.GetTaskSession(ctx, "session-bulk-claim")
+			require.NoError(t, err)
+			candidate := models.ActiveSessionCancellationCandidate{
+				SessionID: session.ID, ExpectedUpdatedAt: session.UpdatedAt,
+				ExpectedTurnID: "turn-bulk-claim",
+			}
+			claimID, claimed, err := repo.ClaimProviderAccessTerminal(ctx, models.TerminalProviderAccessClaim{
+				TaskID: "task-bulk-claim", SessionID: session.ID, ExpectedState: models.TaskSessionStateRunning,
+			})
+			require.NoError(t, err)
+			require.True(t, claimed)
+			count, err := cancel(ctx, repo, candidate)
+			require.NoError(t, err)
+			require.Zero(t, count)
+			check, err := repo.GetTaskSession(ctx, session.ID)
+			require.NoError(t, err)
+			require.Equal(t, models.TaskSessionStateRunning, check.State)
+			require.NoError(t, repo.ReleaseProviderAccessTerminal(ctx, session.ID, claimID))
+			count, err = cancel(ctx, repo, candidate)
+			require.NoError(t, err)
+			require.Equal(t, 1, count)
+		})
+	}
+}
+
+func TestProviderTerminalClaimDefersPromptAndRecoveryWriters(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForSessionTests(t)
+	seedForMsgTest(t, repo, "task-prompt-claim", "session-prompt-claim", "turn-prompt-claim")
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "session-prompt-claim", models.TaskSessionStateWaitingForInput, ""))
+	claimID, claimed, err := repo.ClaimProviderAccessTerminal(ctx, models.TerminalProviderAccessClaim{
+		TaskID: "task-prompt-claim", SessionID: "session-prompt-claim",
+		ExpectedState: models.TaskSessionStateWaitingForInput,
+	})
+	require.NoError(t, err)
+	require.True(t, claimed)
+	prompt, err := repo.ClaimPromptableTaskSessionIfActive(ctx, "session-prompt-claim")
+	require.NoError(t, err)
+	require.Equal(t, models.PromptableTaskSessionBusy, prompt.Status)
+	require.NoError(t, repo.ReleaseProviderAccessTerminal(ctx, "session-prompt-claim", claimID))
+	prompt, err = repo.ClaimPromptableTaskSessionIfActive(ctx, "session-prompt-claim")
+	require.NoError(t, err)
+	require.Equal(t, models.PromptableTaskSessionClaimed, prompt.Status)
+
+	session, err := repo.GetTaskSession(ctx, "session-prompt-claim")
+	require.NoError(t, err)
+	claimID, claimed, err = repo.ClaimProviderAccessTerminal(ctx, models.TerminalProviderAccessClaim{
+		TaskID: "task-prompt-claim", SessionID: session.ID, ExpectedState: models.TaskSessionStateRunning,
+	})
+	require.NoError(t, err)
+	require.True(t, claimed)
+	recovered, err := repo.RecoverTaskSessionByCandidate(ctx, models.ActiveSessionRecoveryCandidate{
+		TaskID: "task-prompt-claim", SessionID: session.ID,
+		ExpectedState: models.TaskSessionStateRunning, ExpectedUpdatedAt: session.UpdatedAt,
+		ExpectedTurnID: "turn-prompt-claim",
+	}, time.Time{})
+	require.NoError(t, err)
+	require.Nil(t, recovered)
+	require.NoError(t, repo.ReleaseProviderAccessTerminal(ctx, session.ID, claimID))
+}
 
 func TestTerminalProviderClaimFencesRotationAndMetadataReplacement(t *testing.T) {
 	ctx := context.Background()

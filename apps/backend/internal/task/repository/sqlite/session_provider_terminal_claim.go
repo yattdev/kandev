@@ -15,7 +15,10 @@ import (
 	"github.com/kandev/kandev/internal/task/models"
 )
 
-const terminalProviderClaimKey = "provider_access_terminal_claim"
+const (
+	terminalProviderClaimKey    = "provider_access_terminal_claim"
+	terminalProviderRecoveryKey = "provider_access_terminal_recovery"
+)
 
 var ErrTerminalProviderClaimPending = errors.New("provider access terminal claim pending")
 
@@ -51,7 +54,7 @@ func (r *Repository) ClaimProviderAccessTerminal(
 		return "", false, err
 	}
 	claimID := uuid.NewString()
-	if err := r.writeTerminalProviderClaimTx(ctx, tx, claim.SessionID, claimID); err != nil {
+	if err := r.writeTerminalProviderClaimTx(ctx, tx, claim, claimID); err != nil {
 		return "", false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -62,23 +65,39 @@ func (r *Repository) ClaimProviderAccessTerminal(
 
 func validTerminalProviderClaim(claim models.TerminalProviderAccessClaim) bool {
 	return claim.TaskID != "" && claim.SessionID != "" && claim.ExpectedState != "" &&
-		(!claim.RequireExecution || claim.AgentExecutionID != "")
+		(!claim.RequireExecution || claim.AgentExecutionID != "") &&
+		(!claim.RequireNoExecution || claim.AgentExecutionID == "") &&
+		(!claim.RequireExecution || !claim.RequireNoExecution)
 }
 
-func (r *Repository) writeTerminalProviderClaimTx(ctx context.Context, tx *sqlx.Tx, sessionID, claimID string) error {
+func (r *Repository) writeTerminalProviderClaimTx(ctx context.Context, tx *sqlx.Tx, claim models.TerminalProviderAccessClaim, claimID string) error {
+	recovery, err := json.Marshal(models.TerminalProviderAccessRecovery{
+		TaskID: claim.TaskID, SessionID: claim.SessionID, ClaimID: claimID,
+		ExpectedState: claim.ExpectedState, TargetState: claim.TargetState, ErrorMessage: claim.ErrorMessage,
+	})
+	if err != nil {
+		return err
+	}
 	var query string
 	if dialect.IsPostgres(r.db.DriverName()) {
-		query = `UPDATE task_sessions SET metadata = jsonb_set(` + postgresMetadataObject + `, '{` + terminalProviderClaimKey + `}', to_jsonb(?::text), true)::text WHERE id = ?`
+		query = `UPDATE task_sessions SET metadata = jsonb_set(jsonb_set(` + postgresMetadataObject + `, '{` + terminalProviderClaimKey + `}', to_jsonb(?::text), true), '{` + terminalProviderRecoveryKey + `}', ?::jsonb, true)::text WHERE id = ?`
 	} else {
-		query = `UPDATE task_sessions SET metadata = json_set(` + sqliteMetadataObject + `, '$.` + terminalProviderClaimKey + `', ?) WHERE id = ?`
+		query = `UPDATE task_sessions SET metadata = json_set(json_set(` + sqliteMetadataObject + `, '$.` + terminalProviderClaimKey + `', ?), '$.` + terminalProviderRecoveryKey + `', json(?)) WHERE id = ?`
 	}
-	_, err := tx.ExecContext(ctx, tx.Rebind(query), claimID, sessionID)
+	_, err = tx.ExecContext(ctx, tx.Rebind(query), claimID, string(recovery), claim.SessionID)
 	return err
 }
 
 func (r *Repository) terminalClaimOwnerMatches(
 	ctx context.Context, tx *sqlx.Tx, claim models.TerminalProviderAccessClaim, metadata string,
 ) (bool, error) {
+	if claim.RequireNoExecution {
+		var count int
+		err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT COUNT(*) FROM executors_running WHERE session_id = ?`), claim.SessionID).Scan(&count)
+		if err != nil || count != 0 {
+			return false, err
+		}
+	}
 	if claim.AgentExecutionID != "" {
 		matches, err := r.terminalClaimExecutionMatches(ctx, tx, claim)
 		if err != nil || !matches {
@@ -91,7 +110,17 @@ func (r *Repository) terminalClaimOwnerMatches(
 			return false, err
 		}
 	}
-	if claim.ExpectedStartAttemptID == "" {
+	if claim.RequireNoStartAttempt {
+		matches, err := noStartAttemptMatches(metadata)
+		if err != nil || !matches {
+			return matches, err
+		}
+	}
+	return startAttemptMatches(metadata, claim.ExpectedStartAttemptID)
+}
+
+func startAttemptMatches(metadata, expected string) (bool, error) {
+	if expected == "" {
 		return true, nil
 	}
 	var values map[string]json.RawMessage
@@ -102,7 +131,16 @@ func (r *Repository) terminalClaimOwnerMatches(
 	if err := json.Unmarshal(values[models.SessionMetaKeyAgentStartAttemptID], &attempt); err != nil {
 		return false, nil
 	}
-	return attempt == claim.ExpectedStartAttemptID, nil
+	return attempt == expected, nil
+}
+
+func noStartAttemptMatches(metadata string) (bool, error) {
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(metadata), &values); err != nil {
+		return false, err
+	}
+	value := values[models.SessionMetaKeyAgentStartAttemptID]
+	return len(value) == 0 || string(value) == "null" || string(value) == `""`, nil
 }
 
 func (r *Repository) terminalClaimExecutionMatches(
@@ -127,9 +165,9 @@ func (r *Repository) ReleaseProviderAccessTerminal(ctx context.Context, sessionI
 	}
 	var query string
 	if dialect.IsPostgres(r.db.DriverName()) {
-		query = `UPDATE task_sessions SET metadata = (` + postgresMetadataObject + ` - '` + terminalProviderClaimKey + `')::text WHERE id = ? AND jsonb_extract_path_text(` + postgresMetadataObject + `, '` + terminalProviderClaimKey + `') = ?`
+		query = `UPDATE task_sessions SET metadata = (` + postgresMetadataObject + ` - '` + terminalProviderClaimKey + `' - '` + terminalProviderRecoveryKey + `')::text WHERE id = ? AND jsonb_extract_path_text(` + postgresMetadataObject + `, '` + terminalProviderClaimKey + `') = ?`
 	} else {
-		query = `UPDATE task_sessions SET metadata = json_remove(` + sqliteMetadataObject + `, '$.` + terminalProviderClaimKey + `') WHERE id = ? AND json_extract(` + sqliteMetadataObject + `, '$.` + terminalProviderClaimKey + `') = ?`
+		query = `UPDATE task_sessions SET metadata = json_remove(` + sqliteMetadataObject + `, '$.` + terminalProviderClaimKey + `', '$.` + terminalProviderRecoveryKey + `') WHERE id = ? AND json_extract(` + sqliteMetadataObject + `, '$.` + terminalProviderClaimKey + `') = ?`
 	}
 	result, err := r.db.ExecContext(ctx, r.db.Rebind(query), sessionID, claimID)
 	if err != nil {
@@ -143,6 +181,44 @@ func (r *Repository) ReleaseProviderAccessTerminal(ctx context.Context, sessionI
 		return fmt.Errorf("provider access terminal claim %s no longer owns session %s", claimID, sessionID)
 	}
 	return nil
+}
+
+// ListPendingProviderAccessTerminalClaims exposes non-secret interrupted
+// reservations to the restart reconciler; ordinary session reads hide them.
+func (r *Repository) ListPendingProviderAccessTerminalClaims(ctx context.Context) ([]models.TerminalProviderAccessRecovery, error) {
+	rows, err := r.db.QueryContext(ctx, r.db.Rebind(`SELECT id, task_id, COALESCE(metadata, '{}') FROM task_sessions WHERE `+
+		"NOT ("+terminalProviderClaimAbsentPredicate(r.db.DriverName())+") ORDER BY id"))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var pending []models.TerminalProviderAccessRecovery
+	for rows.Next() {
+		var sessionID, taskID, metadata string
+		if err := rows.Scan(&sessionID, &taskID, &metadata); err != nil {
+			return nil, err
+		}
+		var values map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(metadata), &values); err != nil {
+			return nil, err
+		}
+		var claimID string
+		if err := json.Unmarshal(values[terminalProviderClaimKey], &claimID); err != nil {
+			return nil, err
+		}
+		var recovery models.TerminalProviderAccessRecovery
+		if len(values[terminalProviderRecoveryKey]) != 0 {
+			if err := json.Unmarshal(values[terminalProviderRecoveryKey], &recovery); err != nil {
+				return nil, err
+			}
+		}
+		if recovery.ClaimID != "" && recovery.ClaimID != claimID {
+			return nil, ErrTerminalProviderClaimPending
+		}
+		recovery.ClaimID, recovery.SessionID, recovery.TaskID = claimID, sessionID, taskID
+		pending = append(pending, recovery)
+	}
+	return pending, rows.Err()
 }
 
 func hasTerminalProviderClaim(metadata string) bool {

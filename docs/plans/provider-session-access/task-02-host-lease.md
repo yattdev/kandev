@@ -115,13 +115,17 @@ redacted, expiry-bounded residual receipt. A restarted Host reports
 cannot revoke rather than claiming teardown succeeded. Audit correlation
 stores only hashed request IDs and non-secret identities.
 
-Terminal session callbacks now reserve the current state and bootstrap
-execution/start-attempt/error stamp before invoking provider revocation.
-The repository blocks executor-row rotation and full metadata replacement
-while the reservation is held; failed revocation releases it so the same
-event can retry. A stale callback cannot revoke a successor's token before
-its final state CAS rejects. An interrupted reservation remains a durable,
-fail-closed fence until reconciled.
+Terminal session callbacks now reserve the current state and original
+execution or no-execution/no-start-attempt identity before invoking provider
+revocation. Bootstrap also binds the error stamp. The repository blocks
+executor rotation, prompt/recovery transitions and all four bulk cancellation
+forms while the reservation is held; failed revocation releases it so the
+same event can retry. Identity-less launch-failure callbacks fail closed when
+provider revocation is configured. A committed claim includes a non-secret
+target-state descriptor. Startup retries revocation against the Host exposure
+ledger, then commits only the exact claim-owned terminal state and releases
+the fence. An unconfirmed revocation leaves the claim fenced; an operator can
+retry by restarting after provider expiry or restored provider revocation.
 
 At source commit `a08961f0a04798effe598d254a3863e17b4c1ac2`, the
 provider-access and PostgreSQL 16 store-conformance race suites, focused

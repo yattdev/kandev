@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/kandev/kandev/internal/agent/runtime/lifecycle"
 	"github.com/kandev/kandev/internal/orchestrator/watcher"
 	"github.com/kandev/kandev/internal/task/models"
 	sqliterepo "github.com/kandev/kandev/internal/task/repository/sqlite"
@@ -204,6 +205,133 @@ func TestStoppedExecutionCannotRevokeRotatedExecutionAtSameState(t *testing.T) {
 	current, err := repo.GetTaskSession(ctx, "s1")
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateRunning, current.State)
+}
+
+func TestOldWorkspaceLaunchCannotRevokeNewExecutionAtSameState(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "s1", models.TaskSessionStateStarting, ""))
+	// The workspace-only launch began before an executor existed. A later
+	// attempt can register a new execution without changing session state.
+	oldLaunchCtx := context.WithValue(ctx, terminalProviderNoExecutionKey{}, true)
+	seedExecutorRunning(t, repo, "s1", "t1", "exec-new")
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	svc.messageQueue = nil
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+
+	changed := svc.recordSessionLaunchFailure(oldLaunchCtx, "t1", "s1", errors.New("old launch failed"))
+	require.False(t, changed)
+	require.Empty(t, revoker.calls)
+	current, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateStarting, current.State)
+	running, err := repo.GetExecutorRunningBySessionID(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, "exec-new", running.AgentExecutionID)
+}
+
+func TestWorkspaceLaunchFailureRevokesOnlyWhileNoExecutionOwnsSession(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "s1", models.TaskSessionStateStarting, ""))
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	svc.messageQueue = nil
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+
+	// An unbound callback cannot assert it owns the current attempt.
+	require.False(t, svc.recordSessionLaunchFailure(ctx, "t1", "s1", errors.New("unbound failure")))
+	require.Empty(t, revoker.calls)
+	launchCtx := context.WithValue(ctx, terminalProviderNoExecutionKey{}, true)
+	require.True(t, svc.recordSessionLaunchFailure(launchCtx, "t1", "s1", errors.New("workspace failed")))
+	require.Equal(t, []string{"s1"}, revoker.calls)
+	current, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateFailed, current.State)
+}
+
+func TestOldWorkspaceLaunchCannotRevokeNewAttemptBeforeExecutionRegisters(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "s1", models.TaskSessionStateStarting, ""))
+	oldLaunchCtx := context.WithValue(ctx, terminalProviderNoExecutionKey{}, true)
+	require.NoError(t, repo.SetSessionMetadataKey(ctx, "s1", models.SessionMetaKeyAgentStartAttemptID, "attempt-new"))
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	svc.messageQueue = nil
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+	require.False(t, svc.recordSessionLaunchFailure(oldLaunchCtx, "t1", "s1", errors.New("old launch failed")))
+	require.Empty(t, revoker.calls)
+	current, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateStarting, current.State)
+}
+
+func TestOldStallCallbackCannotRevokeRotatedExecution(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	seedExecutorRunning(t, repo, "s1", "t1", "exec-new")
+	agentMgr := &mockAgentManager{currentPromptExecutionID: "exec-old"}
+	agentMgr.currentPromptGeneration.Store(7)
+	svc := createTestServiceWithScheduler(repo, newMockStepGetter(), newMockTaskRepo(), agentMgr)
+	svc.turnService = &repoTurnService{repo: repo}
+	_, err := svc.turnService.StartTurn(ctx, "s1")
+	require.NoError(t, err)
+	svc.messageCreator = &mockMessageCreator{}
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+	svc.handleAgentStalled(ctx, lifecycle.AgentStalledPayload{
+		TaskID: "t1", SessionID: "s1", AgentExecutionID: "exec-old", PromptGeneration: 7, NeverStarted: true,
+	})
+	require.Empty(t, revoker.calls)
+	current, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateRunning, current.State)
+}
+
+func TestCommittedTerminalClaimReconcilesAfterServiceRestart(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	claimID, claimed, err := repo.ClaimProviderAccessTerminal(ctx, models.TerminalProviderAccessClaim{
+		TaskID: "t1", SessionID: "s1", ExpectedState: models.TaskSessionStateRunning,
+		TargetState: models.TaskSessionStateFailed, ErrorMessage: "launch failed",
+	})
+	require.NoError(t, err)
+	require.True(t, claimed)
+	require.NotEmpty(t, claimID)
+
+	// Construct a fresh service over the durable repository, as after a crash.
+	restarted := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	revoker := &providerSessionRevokeRecorder{err: errors.New("revocation unconfirmed")}
+	restarted.SetProviderAccessSessionRevoker(revoker)
+	restarted.reconcileSessionsOnStartup(ctx)
+	pending, err := repo.ListPendingProviderAccessTerminalClaims(ctx)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	state, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateRunning, state.State)
+	changed, _, err := repo.UpdateTaskSessionStateIfCurrent(ctx, "s1", models.TaskSessionStateRunning,
+		models.TaskSessionStateCancelled, "another writer")
+	require.NoError(t, err)
+	require.False(t, changed)
+
+	revoker.err = nil
+	restarted.reconcileSessionsOnStartup(ctx)
+	pending, err = repo.ListPendingProviderAccessTerminalClaims(ctx)
+	require.NoError(t, err)
+	require.Empty(t, pending)
+	state, err = repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateFailed, state.State)
+	require.Equal(t, "launch failed", state.ErrorMessage)
+	require.Equal(t, []string{"s1", "s1"}, revoker.calls)
 }
 
 type staleTerminalReadRepo struct {
