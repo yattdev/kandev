@@ -475,10 +475,69 @@ func (r *Repository) CancelArchiveTaskResourceCleanupJobs(ctx context.Context, t
 }
 
 func (r *Repository) ResetRunningTaskResourceCleanupJobs(ctx context.Context) error {
+	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
+		SELECT id, task_id FROM task_resource_cleanup_jobs WHERE state = ?
+	`), models.TaskResourceCleanupStateRunning)
+	if err != nil {
+		return err
+	}
+	type runningCleanupJob struct {
+		id     string
+		taskID string
+	}
+	var jobs []runningCleanupJob
+	for rows.Next() {
+		var jobID, taskID string
+		if err := rows.Scan(&jobID, &taskID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		jobs = append(jobs, runningCleanupJob{id: jobID, taskID: taskID})
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, job := range jobs {
+		if err := r.resetRunningTaskResourceCleanupJob(ctx, job.id, job.taskID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Repository) resetRunningTaskResourceCleanupJob(ctx context.Context, jobID, taskID string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+	}
+	if err := ensureForceRemovalCleanupAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		if errors.Is(err, ErrForceRemovalCleanupHeld) {
+			return nil
+		}
+		return err
+	}
 	now := time.Now().UTC()
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
-		SET state = ?, next_attempt_at = ?, updated_at = ? WHERE state = ?
-	`), models.TaskResourceCleanupStateRetryWait, now, now, models.TaskResourceCleanupStateRunning)
-	return err
+		SET state = ?, next_attempt_at = ?, updated_at = ?
+		WHERE id = ? AND state = ?
+	`), models.TaskResourceCleanupStateRetryWait, now, now, jobID, models.TaskResourceCleanupStateRunning)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
