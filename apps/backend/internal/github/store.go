@@ -18,6 +18,8 @@ import (
 	dbutil "github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/persistence"
+	"github.com/kandev/kandev/internal/task/forceclaim"
+	"github.com/kandev/kandev/internal/task/models"
 )
 
 // Store provides SQLite persistence for GitHub integration data.
@@ -47,6 +49,9 @@ func NewStore(writer, reader *sqlx.DB) (*Store, error) {
 	s := &Store{
 		db: writer, ro: reader,
 		appLifecycleLocks: make(map[string]*appRegistrationLifecycleLock),
+	}
+	if err := forceclaim.EnsureSchema(context.Background(), s.db); err != nil {
+		return nil, fmt.Errorf("initialize force-removal claim schema: %w", err)
 	}
 	settingsExists, err := dbutil.TableExists(s.db, "github_workspace_settings")
 	if err != nil {
@@ -2176,11 +2181,56 @@ func (s *Store) CreatePRWatch(ctx context.Context, w *PRWatch) error {
 	now := time.Now().UTC()
 	w.CreatedAt = now
 	w.UpdatedAt = now
-	_, err := s.db.ExecContext(ctx, s.db.Rebind(`
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.guardForceRemovalTaskTx(ctx, tx, w.TaskID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, s.db.Rebind(`
 		INSERT INTO github_pr_watches (id, workspace_id, session_id, task_id, repository_id, owner, repo, pr_number, branch, last_check_status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		w.ID, w.WorkspaceID, w.SessionID, w.TaskID, w.RepositoryID, w.Owner, w.Repo, w.PRNumber, w.Branch, w.LastCheckStatus, w.CreatedAt, w.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) guardForceRemovalTaskTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
+	var present bool
+	if err := tx.GetContext(ctx, &present, tx.Rebind(`SELECT EXISTS (SELECT 1 FROM task_force_removal_claims WHERE task_id = ?)`), taskID); err != nil {
+		return fmt.Errorf("check force-removal claim for PR watch: %w", err)
+	}
+	if present {
+		return models.ErrForceRemovalTaskHeld
+	}
+	return nil
+}
+
+func (s *Store) guardForceRemovalPRWatchTx(ctx context.Context, tx *sqlx.Tx, id string) (bool, error) {
+	var taskID string
+	err := tx.GetContext(ctx, &taskID, tx.Rebind(`SELECT task_id FROM github_pr_watches WHERE id = ?`), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, s.guardForceRemovalTaskTx(ctx, tx, taskID)
+}
+
+func guardForceRemovalPRWatchQuery(ctx context.Context, tx prWatchTx, rebind func(string) string, taskID string) error {
+	var held bool
+	if err := tx.QueryRowContext(ctx, rebind(`SELECT EXISTS (SELECT 1 FROM task_force_removal_claims WHERE task_id = ?)`), taskID).Scan(&held); err != nil {
+		return fmt.Errorf("check force-removal claim for PR watch: %w", err)
+	}
+	if held {
+		return models.ErrForceRemovalTaskHeld
+	}
+	return nil
 }
 
 // GetPRWatchBySession returns the first PR watch for a session. For
@@ -2408,28 +2458,62 @@ func (s *Store) ListActivePRWatchesForWorkspace(ctx context.Context, workspaceID
 
 // UpdatePRWatchTimestamps updates the last checked timestamps and status fields.
 func (s *Store) UpdatePRWatchTimestamps(ctx context.Context, id string, checkedAt time.Time, commentAt *time.Time, checkStatus, reviewState string) error {
-	_, err := s.db.ExecContext(ctx, s.db.Rebind(`
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	found, err := s.guardForceRemovalPRWatchTx(ctx, tx, id)
+	if err != nil || !found {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, s.db.Rebind(`
 		UPDATE github_pr_watches SET last_checked_at = ?, last_comment_at = ?, last_check_status = ?, last_review_state = ?, updated_at = ?
 		WHERE id = ?`),
 		checkedAt, commentAt, checkStatus, reviewState, time.Now().UTC(), id)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeletePRWatch deletes a PR watch by ID.
 func (s *Store) DeletePRWatch(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, s.db.Rebind(`DELETE FROM github_pr_watches WHERE id = ?`), id)
-	return err
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	found, err := s.guardForceRemovalPRWatchTx(ctx, tx, id)
+	if err != nil || !found {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, tx.Rebind(`DELETE FROM github_pr_watches WHERE id = ?`), id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeletePRWatchesByTaskID deletes all PR watches for a task. Returns the number
 // of rows removed so callers can log meaningful diagnostics.
 func (s *Store) DeletePRWatchesByTaskID(ctx context.Context, taskID string) (int64, error) {
-	res, err := s.db.ExecContext(ctx, s.db.Rebind(`DELETE FROM github_pr_watches WHERE task_id = ?`), taskID)
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.guardForceRemovalTaskTx(ctx, tx, taskID); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, tx.Rebind(`DELETE FROM github_pr_watches WHERE task_id = ?`), taskID)
 	if err != nil {
 		return 0, err
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -2443,13 +2527,6 @@ func (s *Store) DeletePRWatchesByTaskID(ctx context.Context, taskID string) (int
 // case the source watch is redundant (the sibling already owns the PR's
 // state) and is dropped rather than left to trip the unique index.
 func (s *Store) UpdatePRWatchPRNumber(ctx context.Context, id string, prNumber int) error {
-	if prNumber == 0 {
-		_, err := s.db.ExecContext(ctx,
-			s.db.Rebind(`UPDATE github_pr_watches SET pr_number = 0, updated_at = ? WHERE id = ?`),
-			time.Now().UTC(), id)
-		return err
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -2465,6 +2542,15 @@ func (s *Store) UpdatePRWatchPRNumber(ctx context.Context, id string, prNumber i
 	}
 	if err != nil {
 		return err
+	}
+	if err := guardForceRemovalPRWatchQuery(ctx, tx, s.db.Rebind, taskID); err != nil {
+		return err
+	}
+	if prNumber == 0 {
+		if _, err := tx.ExecContext(ctx, s.db.Rebind(`UPDATE github_pr_watches SET pr_number = 0, updated_at = ? WHERE id = ?`), time.Now().UTC(), id); err != nil {
+			return err
+		}
+		return tx.Commit()
 	}
 
 	var probe int // existence probe only; value unused
@@ -2502,10 +2588,21 @@ func (s *Store) UpdatePRWatchPRNumber(ctx context.Context, id string, prNumber i
 // discovery. A watch can start on a contributor fork while the PR targets the
 // canonical parent repository.
 func (s *Store) UpdatePRWatchRepository(ctx context.Context, id, owner, repo string) error {
-	_, err := s.db.ExecContext(ctx, s.db.Rebind(
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := s.guardForceRemovalPRWatchTx(ctx, tx, id); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, tx.Rebind(
 		`UPDATE github_pr_watches SET owner = ?, repo = ?, updated_at = ? WHERE id = ?`),
 		owner, repo, time.Now().UTC(), id)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ResetPRWatch atomically resets a watch to the searching state: updates the
@@ -2557,6 +2654,9 @@ func (s *Store) ResetPRWatch(ctx context.Context, id, branch string) error {
 		return commit()
 	}
 	if err != nil {
+		return err
+	}
+	if err := guardForceRemovalPRWatchQuery(ctx, tx, s.db.Rebind, taskID); err != nil {
 		return err
 	}
 
@@ -2688,6 +2788,9 @@ func (s *Store) UpdatePRWatchBranchIfSearching(ctx context.Context, id, branch s
 		return tx.Commit()
 	}
 	if err != nil {
+		return err
+	}
+	if err := guardForceRemovalPRWatchQuery(ctx, tx, s.db.Rebind, taskID); err != nil {
 		return err
 	}
 	if prNumber != 0 {
