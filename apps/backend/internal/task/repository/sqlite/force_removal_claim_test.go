@@ -482,6 +482,29 @@ func TestClaimForceRemovalBlocksClaimedCleanupSnapshotWithoutPersistingIt(t *tes
 	require.Equal(t, `{"after":"foreign"}`, foreign.ResourceSnapshot)
 }
 
+func TestClaimForceRemovalBlocksDirectTaskMetadataWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-metadata-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-metadata-task", "force-metadata-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-metadata-ws", Title: taskID}))
+	}
+	task, err := repo.GetTask(ctx, "force-metadata-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "metadata-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	require.ErrorIs(t, repo.SetTaskMetadataKey(ctx, task.ID, "force_marker", "held"), ErrForceRemovalTaskHeld)
+	held, err := repo.GetTask(ctx, task.ID)
+	require.NoError(t, err)
+	require.NotContains(t, held.Metadata, "force_marker")
+
+	require.NoError(t, repo.SetTaskMetadataKey(ctx, "force-metadata-foreign", "force_marker", "allowed"))
+	foreign, err := repo.GetTask(ctx, "force-metadata-foreign")
+	require.NoError(t, err)
+	require.Equal(t, "allowed", foreign.Metadata["force_marker"])
+}
+
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.2
 func TestClaimForceRemovalBlocksEnvironmentAndCleanupWorkerAdmissions(t *testing.T) {

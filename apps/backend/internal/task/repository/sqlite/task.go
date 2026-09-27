@@ -2272,6 +2272,23 @@ func (r *Repository) SetTaskMetadataKey(ctx context.Context, taskID, key string,
 	if err != nil {
 		return err
 	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
 	var query string
 	if dialect.IsPostgres(r.db.DriverName()) {
 		query = `UPDATE tasks SET metadata = jsonb_set(CASE WHEN metadata IS NULL OR metadata = 'null' OR metadata = '' THEN '{}'::jsonb ELSE metadata::jsonb END, ARRAY[?]::text[], ?::jsonb, true)::text, updated_at = ? WHERE id = ?`
@@ -2282,8 +2299,10 @@ func (r *Repository) SetTaskMetadataKey(ctx context.Context, taskID, key string,
 	if !dialect.IsPostgres(r.db.DriverName()) {
 		path = jsonPath(key)
 	}
-	_, err = r.db.ExecContext(ctx, r.db.Rebind(query), path, string(payload), time.Now().UTC(), taskID)
-	return err
+	if _, err := tx.ExecContext(ctx, r.db.Rebind(query), path, string(payload), time.Now().UTC(), taskID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetTaskMetadataKeyIfNoActiveSession writes one metadata key only when the
