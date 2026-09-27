@@ -16,6 +16,7 @@ var ErrWorkspaceNameMismatch = repoerrors.ErrWorkspaceNameMismatch
 var ErrWorkspaceNotFound = repoerrors.ErrWorkspaceNotFound
 var ErrTaskNotFound = repoerrors.ErrTaskNotFound
 var ErrExactTaskSnapshotUnavailable = repoerrors.ErrExactTaskSnapshotUnavailable
+var ErrExactSessionSnapshotUnavailable = repoerrors.ErrExactSessionSnapshotUnavailable
 var ErrNoPrimarySession = repoerrors.ErrNoPrimarySession
 var ErrTaskParentMismatch = repoerrors.ErrTaskParentMismatch
 var ErrTaskPlanNotFound = repoerrors.ErrTaskPlanNotFound
@@ -236,6 +237,15 @@ type ExactTaskSnapshotReader interface {
 	PageExactTaskSnapshot(ctx context.Context, token string, offset, limit int) ([]models.ExactTaskSnapshotTask, error)
 	GetExactTaskSnapshotTask(ctx context.Context, token, taskID string) (*models.ExactTaskSnapshotTask, error)
 	CleanupExpiredExactTaskSnapshots(ctx context.Context, limit int) (int, error)
+}
+
+// ExactSessionSnapshotReader is the opt-in counterpart for complete session
+// reads scoped to a single workspace.
+type ExactSessionSnapshotReader interface {
+	OpenExactSessionSnapshot(ctx context.Context, request models.ExactSessionSnapshotRequest) (*models.ExactSessionSnapshot, error)
+	PageExactSessionSnapshot(ctx context.Context, token string, offset, limit int) ([]models.ExactSessionSnapshotSession, error)
+	GetExactSessionSnapshotSession(ctx context.Context, token, sessionID string) (*models.ExactSessionSnapshotSession, error)
+	CleanupExpiredExactSessionSnapshots(ctx context.Context, limit int) (int, error)
 }
 
 // TaskPriorityRepository updates a task's priority without replacing the

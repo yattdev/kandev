@@ -60,6 +60,8 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		r.ensureTaskEnvironmentTaskUniqueIndex,
 		r.healSessionTaskEnvironmentIDs,
 		r.migrateGitSnapshotOwnership,
+		r.ensureExactSessionResourceVersion,
+		r.initExactSessionSnapshotSchema,
 		r.ensureWorkspaceIndexes,
 		r.ensureMessageMetadataIndexes,
 		r.ensurePromptOrderIndex,
@@ -1204,6 +1206,7 @@ const sessionWorktreeSchemaDDL = `
 		tokens_in INTEGER NOT NULL DEFAULT 0,
 		tokens_cached_in BIGINT NOT NULL DEFAULT 0,
 		tokens_out INTEGER NOT NULL DEFAULT 0,
+		resource_version BIGINT NOT NULL DEFAULT 1,
 		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 	);
 

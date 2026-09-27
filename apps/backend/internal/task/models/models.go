@@ -2050,6 +2050,9 @@ type TaskSession struct {
 	TokensIn       int64 `json:"tokens_in"`
 	TokensCachedIn int64 `json:"tokens_cached_in"`
 	TokensOut      int64 `json:"tokens_out"`
+	// ResourceVersion advances on every committed session-row mutation. Exact
+	// readers use it to identify the immutable session state they materialized.
+	ResourceVersion int64 `json:"resource_version"`
 }
 
 // ActiveSessionCancellationCandidate is the compare-and-set snapshot used by

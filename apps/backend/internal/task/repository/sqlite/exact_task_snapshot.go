@@ -187,22 +187,31 @@ func (r *Repository) GetExactTaskSnapshotTask(ctx context.Context, token, taskID
 }
 
 func (r *Repository) requireExactTaskSnapshotTx(ctx context.Context, tx *sqlx.Tx, token string) error {
+	return r.requireExactWorkspaceSnapshotTx(ctx, tx, token, "exact_task_snapshots", "exact_task_workspace_fences", r.exactTaskFenceLockClause(false), repoerrors.ErrExactTaskSnapshotUnavailable)
+}
+
+func (r *Repository) requireExactWorkspaceSnapshotTx(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	token, snapshotsTable, fencesTable, lockClause string,
+	unavailable error,
+) error {
 	if token == "" {
-		return repoerrors.ErrExactTaskSnapshotUnavailable
+		return unavailable
 	}
 	var workspaceID string
 	var revision int64
 	var expiresAt time.Time
-	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT workspace_id, workspace_revision, expires_at FROM exact_task_snapshots WHERE token = ?`), token).Scan(&workspaceID, &revision, &expiresAt)
+	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT workspace_id, workspace_revision, expires_at FROM `+snapshotsTable+` WHERE token = ?`), token).Scan(&workspaceID, &revision, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) || !expiresAt.After(r.nowUTC()) {
-		return repoerrors.ErrExactTaskSnapshotUnavailable
+		return unavailable
 	}
 	if err != nil {
 		return err
 	}
 	var current int64
-	if err = tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT revision FROM exact_task_workspace_fences WHERE workspace_id = ?`)+r.exactTaskFenceLockClause(false), workspaceID).Scan(&current); err != nil || current != revision {
-		return repoerrors.ErrExactTaskSnapshotUnavailable
+	if err = tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT revision FROM `+fencesTable+` WHERE workspace_id = ?`)+lockClause, workspaceID).Scan(&current); err != nil || current != revision {
+		return unavailable
 	}
 	return nil
 }

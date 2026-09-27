@@ -41,3 +41,35 @@ type ExactTaskSnapshotTask struct {
 	Archived        bool
 	ResourceVersion int64
 }
+
+// ExactSessionSnapshotRequest scopes a complete, materialized session read to
+// one workspace. Sessions belonging to archived tasks remain part of the
+// history, so this boundary has no archive filter.
+type ExactSessionSnapshotRequest struct {
+	WorkspaceID string
+	TTL         time.Duration
+}
+
+// ExactSessionSnapshot identifies a server-materialized session projection.
+type ExactSessionSnapshot struct {
+	Token       string
+	WorkspaceID string
+	ExpiresAt   time.Time
+}
+
+// ExactSessionSnapshotSession is the public-safe session identity and
+// lifecycle projection. Credentials, workspace paths, metadata, and execution
+// configuration remain outside this generic read boundary.
+type ExactSessionSnapshotSession struct {
+	ID                 string
+	TaskID             string
+	WorkspaceID        string
+	QueueIncarnationID string
+	State              TaskSessionState
+	RouteGeneration    int64
+	StartedAt          time.Time
+	CompletedAt        *time.Time
+	UpdatedAt          time.Time
+	IsPrimary          bool
+	ResourceVersion    int64
+}

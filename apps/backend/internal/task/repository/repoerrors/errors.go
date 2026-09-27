@@ -20,6 +20,10 @@ var ErrTaskNotFound = errors.New("task not found")
 // never returned after the workspace fence has changed.
 var ErrExactTaskSnapshotUnavailable = errors.New("exact task snapshot unavailable")
 
+// ErrExactSessionSnapshotUnavailable reports an expired, unknown, or
+// invalidated exact session snapshot.
+var ErrExactSessionSnapshotUnavailable = errors.New("exact session snapshot unavailable")
+
 // ErrNoPrimarySession reports that a task exists but has no primary session.
 // Callers can repair that state without hiding other repository failures.
 var ErrNoPrimarySession = errors.New("no primary session")
