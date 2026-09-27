@@ -145,6 +145,9 @@ func (r *Repository) PageExactTaskSnapshot(ctx context.Context, token string, of
 	if err := r.requireExactTaskSnapshotTx(ctx, tx, token); err != nil {
 		return nil, err
 	}
+	if r.exactSnapshotReadAfterFenceHook != nil {
+		r.exactSnapshotReadAfterFenceHook()
+	}
 	result, err := r.readExactTaskSnapshotRowsTx(ctx, tx, `WHERE snapshot_token = ? AND ordinal >= ? ORDER BY ordinal LIMIT ?`, token, offset, limit)
 	if err != nil {
 		return nil, err

@@ -144,3 +144,38 @@ func TestExactTaskSnapshotSurvivesRepositoryRestart(t *testing.T) {
 		t.Fatalf("GetExactTaskSnapshotTask after restart: %v", err)
 	}
 }
+
+func TestExactTaskSnapshotReadSerializesConcurrentWorkspaceMutation(t *testing.T) {
+	repo := newRepoForArchiveTests(t, "exact-snapshot-race")
+	ctx := context.Background()
+	snapshot, err := repo.OpenExactTaskSnapshot(ctx, models.ExactTaskSnapshotRequest{WorkspaceID: archiveWorkspaceID})
+	if err != nil {
+		t.Fatalf("OpenExactTaskSnapshot: %v", err)
+	}
+	fenceReached := make(chan struct{})
+	releaseRead := make(chan struct{})
+	repo.exactSnapshotReadAfterFenceHook = func() { close(fenceReached); <-releaseRead }
+	type pageResult struct {
+		items []models.ExactTaskSnapshotTask
+		err   error
+	}
+	readResult := make(chan pageResult, 1)
+	go func() {
+		items, err := repo.PageExactTaskSnapshot(ctx, snapshot.Token, 0, 1)
+		readResult <- pageResult{items: items, err: err}
+	}()
+	<-fenceReached
+	mutationResult := make(chan error, 1)
+	go func() { mutationResult <- repo.UpdateTaskState(ctx, "exact-snapshot-race", v1.TaskStateInProgress) }()
+	close(releaseRead)
+	read := <-readResult
+	if read.err != nil || len(read.items) != 1 || read.items[0].State != "" {
+		t.Fatalf("PageExactTaskSnapshot = %#v, %v", read.items, read.err)
+	}
+	if err := <-mutationResult; err != nil {
+		t.Fatalf("UpdateTaskState: %v", err)
+	}
+	if _, err := repo.PageExactTaskSnapshot(ctx, snapshot.Token, 0, 1); !errors.Is(err, repoerrors.ErrExactTaskSnapshotUnavailable) {
+		t.Fatalf("PageExactTaskSnapshot after mutation error = %v, want ErrExactTaskSnapshotUnavailable", err)
+	}
+}
