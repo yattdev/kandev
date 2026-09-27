@@ -7,9 +7,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 const exactSnapshotSecretBytes = 32
+const exactSnapshotCursorTTL = 5 * time.Minute
 
 var errExactSnapshotCursor = errors.New("plugins: exact snapshot cursor is invalid")
 
@@ -23,7 +25,8 @@ type exactSnapshotBinding struct {
 
 type exactSnapshotCursor struct {
 	exactSnapshotBinding
-	Offset int `json:"offset"`
+	Offset            int   `json:"offset"`
+	ExpiresAtUnixNano int64 `json:"expires_at_unix_nano"`
 }
 type exactSnapshotStore struct{ secret []byte }
 
@@ -46,7 +49,7 @@ func (s *exactSnapshotStore) create(binding exactSnapshotBinding, offset int) (s
 	if offset < 0 || binding.InstallationID == "" || binding.WorkspaceID == "" || binding.FilterDigest == "" || binding.ApprovalRevision == 0 || binding.ProjectionVersion == "" {
 		return "", errExactSnapshotCursor
 	}
-	payload, err := json.Marshal(exactSnapshotCursor{exactSnapshotBinding: binding, Offset: offset})
+	payload, err := json.Marshal(exactSnapshotCursor{exactSnapshotBinding: binding, Offset: offset, ExpiresAtUnixNano: time.Now().Add(exactSnapshotCursorTTL).UnixNano()})
 	if err != nil {
 		return "", err
 	}
@@ -67,7 +70,7 @@ func (s *exactSnapshotStore) offset(cursor string, want exactSnapshotBinding) (i
 		return 0, errExactSnapshotCursor
 	}
 	var got exactSnapshotCursor
-	if json.Unmarshal(payload, &got) != nil || got.Offset < 0 || got.exactSnapshotBinding != want {
+	if json.Unmarshal(payload, &got) != nil || got.Offset < 0 || got.exactSnapshotBinding != want || got.ExpiresAtUnixNano <= time.Now().UnixNano() {
 		return 0, errExactSnapshotCursor
 	}
 	return got.Offset, nil

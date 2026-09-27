@@ -64,3 +64,40 @@ func TestPluginHost_ListWorkspacesExactAuthorizesAndBindsSnapshot(t *testing.T) 
 		})
 	}
 }
+
+func TestPluginHost_ListWorkspacesExactRejectsExposedFieldDrift(t *testing.T) {
+	d := newTestDataHost(manifest.Capabilities{})
+	d.tasks.workspaces = []*taskmodels.Workspace{{ID: "workspace-1", Name: "Before"}}
+	d.host.installationID = "installation-1"
+	d.host.exactSnapshots = newExactSnapshotStore([]byte("01234567890123456789012345678901"))
+	d.host.exactAuthorize = func(_ string, _ uint64, _ string, _ string) ApprovalDecision { return ApprovalDecision{Allowed: true} }
+	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
+	query := pluginsdk.ExactWorkspaceQuery{WorkspaceID: "workspace-1", CapabilityRevision: 1}
+	_, page, err := d.host.ListWorkspacesExact(context.Background(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.tasks.workspaces[0].Name = "After"
+	query.Page.SnapshotVersion = page.SnapshotVersion
+	if _, _, err := d.host.ListWorkspacesExact(context.Background(), query); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("workspace name drift error = %v, want InvalidArgument", err)
+	}
+}
+
+func TestPluginHost_ListWorkspacesExactRejectsIncompleteProjection(t *testing.T) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("incomplete workspace projection panicked: %v", recovered)
+		}
+	}()
+	d := newTestDataHost(manifest.Capabilities{})
+	d.tasks.workspaces = []*taskmodels.Workspace{nil}
+	d.host.installationID = "installation-1"
+	d.host.exactSnapshots = newExactSnapshotStore([]byte("01234567890123456789012345678901"))
+	d.host.exactAuthorize = func(_ string, _ uint64, _ string, _ string) ApprovalDecision { return ApprovalDecision{Allowed: true} }
+	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
+	_, _, err := d.host.ListWorkspacesExact(context.Background(), pluginsdk.ExactWorkspaceQuery{WorkspaceID: "workspace-1", CapabilityRevision: 1})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("incomplete workspace projection error = %v, want FailedPrecondition", err)
+	}
+}

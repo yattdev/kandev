@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"context"
-	"time"
 
 	"github.com/kandev/kandev/pkg/pluginsdk"
 	"google.golang.org/grpc/codes"
@@ -26,21 +25,35 @@ func (h *pluginHost) ListWorkspacesExact(ctx context.Context, query pluginsdk.Ex
 		return nil, nil, err
 	}
 	for _, workspace := range workspaces {
+		if workspace == nil {
+			return nil, nil, status.Error(codes.FailedPrecondition, "exact workspace projection is incomplete")
+		}
 		if workspace.ID != query.WorkspaceID {
 			continue
 		}
-		version := CanonicalApprovalDigest(workspace.ID, workspace.UpdatedAt.UTC().Format(time.RFC3339Nano))
+		item := workspaceModelToDTO(workspace)
+		version, err := exactProjectionDigest(item)
+		if err != nil {
+			return nil, nil, status.Error(codes.FailedPrecondition, "exact workspace projection is incomplete")
+		}
 		binding := exactSnapshotBinding{InstallationID: h.installationID, WorkspaceID: query.WorkspaceID, FilterDigest: "workspaces", ApprovalRevision: query.CapabilityRevision, ProjectionVersion: version}
-		if query.Page.SnapshotVersion != "" && query.Page.SnapshotVersion != version {
-			return nil, nil, status.Error(codes.InvalidArgument, "exact snapshot version is invalid")
+		if err := h.validateExactWorkspacePage(binding, query.Page); err != nil {
+			return nil, nil, err
 		}
-		if query.Page.Cursor != "" {
-			offset, err := h.exactSnapshots.offset(query.Page.Cursor, binding)
-			if err != nil || offset != 0 {
-				return nil, nil, status.Error(codes.InvalidArgument, "exact snapshot cursor is invalid")
-			}
-		}
-		return []pluginsdk.Workspace{workspaceModelToDTO(workspace)}, &pluginsdk.ExactPageInfo{SnapshotVersion: version}, nil
+		return []pluginsdk.Workspace{item}, &pluginsdk.ExactPageInfo{SnapshotVersion: version}, nil
 	}
 	return nil, nil, status.Error(codes.NotFound, "workspace not found")
+}
+
+func (h *pluginHost) validateExactWorkspacePage(binding exactSnapshotBinding, page pluginsdk.ExactPage) error {
+	if page.SnapshotVersion != "" && page.SnapshotVersion != binding.ProjectionVersion {
+		return status.Error(codes.InvalidArgument, "exact snapshot version is invalid")
+	}
+	if page.Cursor != "" {
+		offset, err := h.exactSnapshots.offset(page.Cursor, binding)
+		if err != nil || offset != 0 {
+			return status.Error(codes.InvalidArgument, "exact snapshot cursor is invalid")
+		}
+	}
+	return nil
 }

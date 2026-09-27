@@ -1,6 +1,10 @@
 package plugins
 
-import "testing"
+import (
+	"testing"
+	"testing/synctest"
+	"time"
+)
 
 func TestConnectionExactSnapshotStoresUseDistinctRandomSecrets(t *testing.T) {
 	first, err := newConnectionExactSnapshotStore()
@@ -34,4 +38,19 @@ func TestExactSnapshotCursorRejectsChangedAuthorityOrProjection(t *testing.T) {
 			t.Fatalf("cursor accepted changed binding %#v", binding)
 		}
 	}
+}
+
+func TestExactSnapshotCursorExpires(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := newExactSnapshotStore([]byte("test-secret"))
+		binding := exactSnapshotBinding{InstallationID: "i1", WorkspaceID: "w1", FilterDigest: "f1", ApprovalRevision: 2, ProjectionVersion: "p1"}
+		cursor, err := store.create(binding, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Minute)
+		if _, err := store.offset(cursor, binding); err == nil {
+			t.Fatal("expired exact snapshot cursor was accepted")
+		}
+	})
 }

@@ -74,3 +74,26 @@ func TestPluginHost_ListWorkflowStepsExactRejectsExposedFieldDrift(t *testing.T)
 		t.Fatalf("step color drift error = %v, want InvalidArgument", err)
 	}
 }
+
+func TestPluginHost_ListWorkflowsExactRejectsExposedFieldDrift(t *testing.T) {
+	d := newTestDataHost(manifest.Capabilities{})
+	d.workflows.workflows = map[string][]*taskmodels.Workflow{"workspace-1": {
+		{ID: "workflow-1", WorkspaceID: "workspace-1", Name: "First"},
+		{ID: "workflow-2", WorkspaceID: "workspace-1", Name: "Second"},
+	}}
+	d.host.installationID = "installation-1"
+	d.host.exactSnapshots = newExactSnapshotStore([]byte("01234567890123456789012345678901"))
+	d.host.exactAuthorize = func(_ string, _ uint64, _ string, _ string) ApprovalDecision { return ApprovalDecision{Allowed: true} }
+	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
+
+	query := pluginsdk.ExactWorkflowQuery{WorkspaceID: "workspace-1", CapabilityRevision: 1, Page: pluginsdk.ExactPage{Limit: 1}}
+	_, page, err := d.host.ListWorkflowsExact(context.Background(), query)
+	if err != nil || !page.HasMore {
+		t.Fatalf("first exact workflow page = %#v, %v", page, err)
+	}
+	d.workflows.workflows["workspace-1"][1].Name = "Changed"
+	query.Page.Cursor, query.Page.SnapshotVersion = page.NextCursor, page.SnapshotVersion
+	if _, _, err := d.host.ListWorkflowsExact(context.Background(), query); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("workflow name drift error = %v, want InvalidArgument", err)
+	}
+}

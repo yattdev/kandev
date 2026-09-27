@@ -2,9 +2,11 @@ package plugins
 
 import (
 	"context"
-	"fmt"
-	"time"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 
+	wfmodels "github.com/kandev/kandev/internal/workflow/models"
 	"github.com/kandev/kandev/pkg/pluginsdk"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,15 +26,17 @@ func (h *pluginHost) ListWorkflowsExact(ctx context.Context, query pluginsdk.Exa
 		return nil, nil, err
 	}
 	items := make([]pluginsdk.Workflow, len(rows))
-	parts := make([]string, 0, len(rows)*2)
 	for i, row := range rows {
 		if row == nil || row.WorkspaceID != query.WorkspaceID {
 			return nil, nil, status.Error(codes.FailedPrecondition, "exact workflow projection is incomplete")
 		}
 		items[i] = workflowModelToDTO(row)
-		parts = append(parts, row.ID, row.UpdatedAt.UTC().Format(time.RFC3339Nano))
 	}
-	return h.pageExactWorkflows(query.WorkspaceID, query.CapabilityRevision, "workflows", CanonicalApprovalDigest(parts...), query.Page, items)
+	version, err := exactProjectionDigest(items)
+	if err != nil {
+		return nil, nil, status.Error(codes.FailedPrecondition, "exact workflow projection is incomplete")
+	}
+	return h.pageExactWorkflows(query.WorkspaceID, query.CapabilityRevision, "workflows", version, query.Page, items)
 }
 
 func (h *pluginHost) ListWorkflowStepsExact(ctx context.Context, query pluginsdk.ExactWorkflowStepsQuery) ([]pluginsdk.WorkflowStep, *pluginsdk.ExactPageInfo, error) {
@@ -60,32 +64,35 @@ func (h *pluginHost) ListWorkflowStepsExact(ctx context.Context, query pluginsdk
 	if err != nil {
 		return nil, nil, err
 	}
-	items := make([]pluginsdk.WorkflowStep, len(rows))
-	parts := make([]string, 0, len(rows)*10)
-	for i, row := range rows {
-		if row == nil || row.WorkflowID != query.WorkflowID {
-			return nil, nil, status.Error(codes.FailedPrecondition, "exact workflow step projection is incomplete")
-		}
-		items[i] = workflowStepModelToDTO(row)
-		parts = appendExactWorkflowStepDigestParts(parts, items[i])
+	items, version, err := exactWorkflowStepProjection(rows, query.WorkflowID)
+	if err != nil {
+		return nil, nil, err
 	}
-	return h.pageExactWorkflowSteps(query.WorkspaceID, query.CapabilityRevision, "workflow-steps:"+query.WorkflowID, CanonicalApprovalDigest(parts...), query.Page, items)
+	return h.pageExactWorkflowSteps(query.WorkspaceID, query.CapabilityRevision, "workflow-steps:"+query.WorkflowID, version, query.Page, items)
 }
 
-func appendExactWorkflowStepDigestParts(parts []string, step pluginsdk.WorkflowStep) []string {
-	parts = append(parts,
-		step.ID,
-		step.WorkflowID,
-		step.Name,
-		fmt.Sprint(step.Position),
-		step.StageType,
-		step.Color,
-		fmt.Sprint(step.IsStartStep),
-		fmt.Sprint(step.WIPLimit),
-		step.AgentProfileID,
-		fmt.Sprint(len(step.OnEnterActionTypes)),
-	)
-	return append(parts, step.OnEnterActionTypes...)
+func exactWorkflowStepProjection(rows []*wfmodels.WorkflowStep, workflowID string) ([]pluginsdk.WorkflowStep, string, error) {
+	items := make([]pluginsdk.WorkflowStep, len(rows))
+	for i, row := range rows {
+		if row == nil || row.WorkflowID != workflowID {
+			return nil, "", status.Error(codes.FailedPrecondition, "exact workflow step projection is incomplete")
+		}
+		items[i] = workflowStepModelToDTO(row)
+	}
+	version, err := exactProjectionDigest(items)
+	if err != nil {
+		return nil, "", status.Error(codes.FailedPrecondition, "exact workflow step projection is incomplete")
+	}
+	return items, version, nil
+}
+
+func exactProjectionDigest(items any) (string, error) {
+	payload, err := json.Marshal(items)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func (h *pluginHost) exactPageBinding(workspaceID string, revision uint64, filter, version string) exactSnapshotBinding {
