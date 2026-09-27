@@ -36,6 +36,7 @@ type sqliteRepository struct {
 	tasksTablePresent          bool
 	taskSessionsTablePresent   bool
 	taskStepTransitionsPresent bool
+	forceRemovalClaimsPresent  bool
 }
 
 // NewSQLiteRepository creates a SQLite-backed Repository. The supplied writer
@@ -76,6 +77,10 @@ func NewSQLiteRepository(writer, reader *sqlx.DB) (Repository, error) {
 	r.taskStepTransitionsPresent, err = r.sharedTablePresent("task_step_transitions")
 	if err != nil {
 		return nil, fmt.Errorf("messagequeue: resolve task step transitions table presence: %w", err)
+	}
+	r.forceRemovalClaimsPresent, err = r.sharedTablePresent("task_force_removal_claims")
+	if err != nil {
+		return nil, fmt.Errorf("messagequeue: resolve force removal claims table presence: %w", err)
 	}
 	if present {
 		// Older isolated queue fixtures can provide a task_sessions table
@@ -229,6 +234,44 @@ func (r *sqliteRepository) guardActiveTaskTx(ctx context.Context, tx *sqlx.Tx, t
 		return ErrTaskInactive
 	}
 	return nil
+}
+
+// guardForceRemovalTaskTx runs after guardActiveTaskTx has locked the task
+// row. The claim uses that same row lock, so a queue writer either completes
+// before the claim or sees the retained-task fence before changing queue state.
+func (r *sqliteRepository) guardForceRemovalTaskTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
+	if !r.forceRemovalClaimsPresent || taskID == "" {
+		return nil
+	}
+	var held bool
+	if err := tx.GetContext(ctx, &held, r.db.Rebind(`
+		SELECT EXISTS (SELECT 1 FROM task_force_removal_claims WHERE task_id = ?)
+	`), taskID); err != nil {
+		return fmt.Errorf("guard force removal task for queue writer: %w", err)
+	}
+	if held {
+		return models.ErrForceRemovalTaskHeld
+	}
+	return nil
+}
+
+func (r *sqliteRepository) guardSessionTaskForceRemovalTx(ctx context.Context, tx *sqlx.Tx, sessionID string, identity *QueueSessionIdentity) error {
+	if !r.tasksTablePresent || !r.taskSessionsTablePresent {
+		return nil
+	}
+	taskID := ""
+	if identity != nil {
+		taskID = identity.TaskID
+	} else if err := tx.GetContext(ctx, &taskID, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), sessionID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrTaskInactive
+		}
+		return fmt.Errorf("resolve queue session task for force removal guard: %w", err)
+	}
+	if err := r.guardActiveTaskTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	return r.guardForceRemovalTaskTx(ctx, tx, taskID)
 }
 
 // validateWorkflowEntryTx checks the launch-time entry after the task row has
@@ -707,6 +750,9 @@ func (r *sqliteRepository) insert(
 	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID); err != nil {
 		return err
 	}
+	if err := r.guardForceRemovalTaskTx(ctx, tx, msg.TaskID); err != nil {
+		return err
+	}
 	if err := r.validateWorkflowEntryTx(ctx, tx, msg.TaskID, workflowEntry); err != nil {
 		return err
 	}
@@ -1002,6 +1048,9 @@ func (r *sqliteRepository) requeuePreservingFIFO(
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID); err != nil {
+		return err
+	}
+	if err := r.guardForceRemovalTaskTx(ctx, tx, msg.TaskID); err != nil {
 		return err
 	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
@@ -1301,6 +1350,9 @@ func (r *sqliteRepository) restore(
 	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID); err != nil {
 		return err
 	}
+	if err := r.guardForceRemovalTaskTx(ctx, tx, msg.TaskID); err != nil {
+		return err
+	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
 		return err
 	}
@@ -1405,6 +1457,9 @@ func (r *sqliteRepository) appendOrInsertTail(ctx context.Context, identity *Que
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := r.guardActiveTaskTx(ctx, tx, taskID); err != nil {
+		return nil, false, err
+	}
+	if err := r.guardForceRemovalTaskTx(ctx, tx, taskID); err != nil {
 		return nil, false, err
 	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
@@ -1525,6 +1580,9 @@ func (r *sqliteRepository) insertOrReplaceByCoalesceKey(
 	if err := r.guardActiveTaskTx(ctx, tx, msg.TaskID); err != nil {
 		return nil, false, err
 	}
+	if err := r.guardForceRemovalTaskTx(ctx, tx, msg.TaskID); err != nil {
+		return nil, false, err
+	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
 		return nil, false, err
 	}
@@ -1627,6 +1685,9 @@ func (r *sqliteRepository) insertOrReplaceLifecycleByCoalesceKey(
 	}
 	if rows == 0 {
 		return nil, false, ErrTaskInactive
+	}
+	if err := r.guardForceRemovalTaskTx(ctx, tx, msg.TaskID); err != nil {
+		return nil, false, err
 	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
 		return nil, false, err
@@ -2566,6 +2627,9 @@ func (r *sqliteRepository) TakeHead(ctx context.Context, sessionID string) (*Que
 		return nil, fmt.Errorf("begin take tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, sessionID, nil); err != nil {
+		return nil, err
+	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
 		return nil, err
 	}
@@ -2994,7 +3058,7 @@ func (r *sqliteRepository) reserveHead(
 		return nil, true, fmt.Errorf("begin reserve tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.guardOptionalActiveTaskTx(ctx, tx, identity); err != nil {
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, sessionID, identity); err != nil {
 		return nil, true, err
 	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
@@ -3300,6 +3364,9 @@ func (r *sqliteRepository) AcknowledgeByID(ctx context.Context, sessionID, entry
 		return fmt.Errorf("begin acknowledge-by-id tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, sessionID, nil); err != nil {
+		return err
+	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
 		return err
 	}
@@ -3661,6 +3728,9 @@ func (r *sqliteRepository) takeByID(
 		return nil, fmt.Errorf("begin take tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, sessionID, identity); err != nil {
+		return nil, err
+	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
 		return nil, err
 	}
@@ -6253,6 +6323,9 @@ func (r *sqliteRepository) SetPendingMove(ctx context.Context, sessionID string,
 	if err := r.guardActiveTaskTx(ctx, tx, move.TaskID); err != nil {
 		return err
 	}
+	if err := r.guardForceRemovalTaskTx(ctx, tx, move.TaskID); err != nil {
+		return err
+	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
 		return err
 	}
@@ -6353,6 +6426,9 @@ func (r *sqliteRepository) TakePendingMove(ctx context.Context, sessionID string
 		return nil, fmt.Errorf("begin take pending tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, sessionID, nil); err != nil {
+		return nil, err
+	}
 	// Serialize on the per-session lock so two backend instances cannot both
 	// read and delete the same pending move, or race a transfer that moves it.
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {

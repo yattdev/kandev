@@ -16,7 +16,7 @@ import (
 var (
 	ErrForceRemovalClaimStale    = errors.New("force removal claim is stale")
 	ErrForceRemovalClaimConflict = errors.New("force removal claim conflicts")
-	ErrForceRemovalTaskHeld      = errors.New("force removal task is held")
+	ErrForceRemovalTaskHeld      = models.ErrForceRemovalTaskHeld
 	ErrForceRemovalCleanupHeld   = errors.New("force removal cleanup is held")
 )
 

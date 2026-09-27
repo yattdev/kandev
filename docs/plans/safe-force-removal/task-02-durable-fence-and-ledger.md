@@ -112,6 +112,17 @@ PostgreSQL execution remains blocked by the absent task-owned
 service is present in this checkout, and the CI postgres-boot service remains
 the verified harness path.
 
+Queue admission now discovers the private claim table outside a transaction and
+uses the task row lock shared with the claim before changing queue state. The
+main FIFO enqueue, tail append, coalesced/lifecycle enqueue, restore/requeue,
+head and ID drains, and pending-move set/take paths reject a claimed task. The
+focused integration test proves rejected enqueue, append, FIFO/ID drain, and
+pending-move writes leave the original queue row and pending move intact, while
+an unrelated task session remains writable. The claim/replay/stale/foreign
+negative coverage remains in the same repository suite. Dispatch recovery,
+send-now lifecycle acknowledgement, transfer, PR-watch, cleanup retry/reset,
+and remaining narrow task/environment writers are still separate W02 seams.
+
 ## Verification
 
 ```bash

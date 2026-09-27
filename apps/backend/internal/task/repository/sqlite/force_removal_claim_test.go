@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
 )
 
@@ -237,4 +238,59 @@ func TestClaimForceRemovalBlocksEnvironmentAndCleanupWorkerAdmissions(t *testing
 	prepared, err := repo.GetTaskResourceCleanupJob(ctx, "force-cleanup-prepared")
 	require.NoError(t, err)
 	require.Equal(t, models.TaskResourceCleanupStatePrepared, prepared.State)
+}
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.2
+func TestClaimForceRemovalPreservesQueueAndPendingMoveRows(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-queue-ws", Name: "Force"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "force-queue-task", WorkspaceID: "force-queue-ws", Title: "Force"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "force-queue-foreign-task", WorkspaceID: "force-queue-ws", Title: "Foreign"}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "force-queue-session", TaskID: "force-queue-task"}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "force-queue-foreign-session", TaskID: "force-queue-foreign-task"}))
+
+	queueRepo, err := messagequeue.NewSQLiteRepository(repo.db, repo.db)
+	require.NoError(t, err)
+	identity, err := queueRepo.ResolveSessionIdentity(ctx, "force-queue-task", "force-queue-session")
+	require.NoError(t, err)
+	foreignIdentity, err := queueRepo.ResolveSessionIdentity(ctx, "force-queue-foreign-task", "force-queue-foreign-session")
+	require.NoError(t, err)
+	entry := &messagequeue.QueuedMessage{ID: "force-queue-entry", SessionID: identity.SessionID, TaskID: identity.TaskID, Content: "retained", QueuedBy: messagequeue.QueuedByUser}
+	require.NoError(t, queueRepo.InsertForSession(ctx, identity, entry, messagequeue.DefaultMaxPerSession))
+	pending := &messagequeue.PendingMove{MoveID: "force-pending-move", TaskID: identity.TaskID, WorkflowID: "workflow", WorkflowStepID: "step"}
+	require.NoError(t, queueRepo.SetPendingMove(ctx, identity.SessionID, pending))
+
+	task, err := repo.GetTask(ctx, identity.TaskID)
+	require.NoError(t, err)
+	claim := &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "queue-operation", RequestDigest: "request", PreviewDigest: "preview"}
+	_, _, err = repo.ClaimForceRemoval(ctx, claim)
+	require.NoError(t, err)
+
+	err = queueRepo.InsertForSession(ctx, identity, &messagequeue.QueuedMessage{ID: "force-queue-new", SessionID: identity.SessionID, TaskID: identity.TaskID, Content: "blocked", QueuedBy: messagequeue.QueuedByUser}, messagequeue.DefaultMaxPerSession)
+	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
+	_, _, err = queueRepo.AppendOrInsertTailForSession(ctx, identity, "blocked append", "", messagequeue.QueuedByUser, false, nil, nil, messagequeue.DefaultMaxPerSession)
+	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
+	_, err = queueRepo.TakeByIDForSession(ctx, identity, entry.ID)
+	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
+	_, err = queueRepo.TakeHead(ctx, identity.SessionID)
+	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
+	require.ErrorIs(t, queueRepo.SetPendingMove(ctx, identity.SessionID, &messagequeue.PendingMove{MoveID: "force-pending-replacement", TaskID: identity.TaskID}), models.ErrForceRemovalTaskHeld)
+	_, err = queueRepo.TakePendingMove(ctx, identity.SessionID)
+	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
+
+	entries, err := queueRepo.ListBySession(ctx, identity.SessionID)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, entry.ID, entries[0].ID)
+	storedPending, err := queueRepo.GetPendingMove(ctx, identity.SessionID)
+	require.NoError(t, err)
+	require.NotNil(t, storedPending)
+	require.Equal(t, pending.MoveID, storedPending.MoveID)
+
+	require.NoError(t, queueRepo.InsertForSession(ctx, foreignIdentity, &messagequeue.QueuedMessage{ID: "force-queue-foreign-entry", SessionID: foreignIdentity.SessionID, TaskID: foreignIdentity.TaskID, Content: "allowed", QueuedBy: messagequeue.QueuedByUser}, messagequeue.DefaultMaxPerSession))
+	foreignEntries, err := queueRepo.ListBySession(ctx, foreignIdentity.SessionID)
+	require.NoError(t, err)
+	require.Len(t, foreignEntries, 1)
 }
