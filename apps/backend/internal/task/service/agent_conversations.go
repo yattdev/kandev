@@ -161,9 +161,7 @@ type AgentConversationService struct {
 	state                        agentConversationStateRepo
 	eventer                      agentConversationEventBus
 	deleter                      agentConversationTaskDeleter
-	providerAccessSessionRevoker interface {
-		RevokeSession(context.Context, string) error
-	}
+	providerAccessSessionRevoker ProviderAccessSessionRevoker
 
 	// dispatcher delivers Dispatch's text to the real agent runtime. It is
 	// wired late (SetDispatcher), after the orchestrator exists — mirroring
@@ -224,9 +222,7 @@ func (s *AgentConversationService) SetTaskDeleter(d agentConversationTaskDeleter
 
 // SetProviderAccessSessionRevoker fences a managed session's exported token
 // before its backing task can be deleted.
-func (s *AgentConversationService) SetProviderAccessSessionRevoker(revoker interface {
-	RevokeSession(context.Context, string) error
-}) {
+func (s *AgentConversationService) SetProviderAccessSessionRevoker(revoker ProviderAccessSessionRevoker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.providerAccessSessionRevoker = revoker

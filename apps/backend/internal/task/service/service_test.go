@@ -1599,6 +1599,53 @@ func TestService_DeleteTask(t *testing.T) {
 	}
 }
 
+func TestService_DeleteTaskRevokesProviderSessionBeforeTaskMutation(t *testing.T) {
+	svc, _, repo := createTestService(t)
+	ctx := context.Background()
+	_ = repo.CreateWorkspace(ctx, &models.Workspace{ID: "ws-1", Name: "Workspace"})
+	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-123", WorkspaceID: "ws-1", Name: "Workflow"})
+	_ = repo.CreateTask(ctx, &models.Task{ID: "task-123", WorkspaceID: "ws-1", WorkflowID: "wf-123", WorkflowStepID: "step-123", Title: "Test", Priority: "medium"})
+	if err := repo.CreateTaskSession(ctx, &models.TaskSession{ID: "session-1", TaskID: "task-123", State: models.TaskSessionStateIdle}); err != nil {
+		t.Fatal(err)
+	}
+	revokeErr := errors.New("provider revocation unconfirmed")
+	called := false
+	svc.SetProviderAccessSessionRevoker(managedSessionRevokerFunc(func(_ context.Context, sessionID string) error {
+		called = true
+		if sessionID != "session-1" {
+			t.Fatalf("revoked session = %q", sessionID)
+		}
+		return revokeErr
+	}))
+	if err := svc.DeleteTask(ctx, "task-123"); !errors.Is(err, revokeErr) {
+		t.Fatalf("delete with failed revocation = %v", err)
+	}
+	if task, err := repo.GetTask(ctx, "task-123"); err != nil || task == nil || !called {
+		t.Fatalf("task mutated before revocation, task = %+v, called = %v, err = %v", task, called, err)
+	}
+}
+
+func TestService_DeleteSessionRevokesProviderAccessBeforeRemoval(t *testing.T) {
+	svc, _, repo := createTestService(t)
+	ctx := context.Background()
+	_ = repo.CreateWorkspace(ctx, &models.Workspace{ID: "ws-1", Name: "Workspace"})
+	_ = repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-123", WorkspaceID: "ws-1", Name: "Workflow"})
+	_ = repo.CreateTask(ctx, &models.Task{ID: "task-123", WorkspaceID: "ws-1", WorkflowID: "wf-123", WorkflowStepID: "step-123", Title: "Test", Priority: "medium"})
+	if err := repo.CreateTaskSession(ctx, &models.TaskSession{ID: "session-1", TaskID: "task-123", State: models.TaskSessionStateIdle}); err != nil {
+		t.Fatal(err)
+	}
+	revokeErr := errors.New("provider revoke failed")
+	svc.SetProviderAccessSessionRevoker(managedSessionRevokerFunc(func(context.Context, string) error {
+		return revokeErr
+	}))
+	if err := svc.DeleteSessionAndPublishRemoval(ctx, "session-1"); !errors.Is(err, revokeErr) {
+		t.Fatalf("delete session error = %v", err)
+	}
+	if session, err := repo.GetTaskSession(ctx, "session-1"); err != nil || session == nil {
+		t.Fatalf("session removed before provider revoke, session = %+v, err = %v", session, err)
+	}
+}
+
 func TestService_DeleteTaskWithReason_PublishesReason(t *testing.T) {
 	svc, eventBus, repo := createTestService(t)
 	ctx := context.Background()
