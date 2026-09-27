@@ -389,6 +389,15 @@ func (h *grpcHostClient) GetCapabilityContext(ctx context.Context) (*CapabilityC
 	return capabilityContextFromProto(response)
 }
 
+func (h *grpcHostClient) ListWorkspacesExact(ctx context.Context, query ExactWorkspaceQuery) ([]Workspace, *ExactPageInfo, error) {
+	response, err := h.client.ListWorkspacesExact(ctx, &pluginv1.ListWorkspacesExactRequest{WorkspaceId: query.WorkspaceID, CapabilityRevision: query.CapabilityRevision, Page: &pluginv1.ExactPage{Limit: query.Page.Limit, Cursor: query.Page.Cursor, SnapshotVersion: query.Page.SnapshotVersion}})
+	if err != nil {
+		return nil, nil, err
+	}
+	page := response.GetPageInfo()
+	return workspacesFromProto(response.GetWorkspaces()), &ExactPageInfo{NextCursor: page.GetNextCursor(), HasMore: page.GetHasMore(), SnapshotVersion: page.GetSnapshotVersion()}, nil
+}
+
 func (h *grpcHostClient) RevealSecret(ctx context.Context, ref string) (string, error) {
 	resp, err := h.client.RevealSecret(ctx, &pluginv1.RevealSecretRequest{Ref: ref})
 	if err != nil {
@@ -790,6 +799,19 @@ func (s *grpcHostServer) GetCapabilityContext(ctx context.Context, _ *pluginv1.G
 		return nil, err
 	}
 	return capabilityContextToProto(capabilityContext), nil
+}
+
+func (s *grpcHostServer) ListWorkspacesExact(ctx context.Context, request *pluginv1.ListWorkspacesExactRequest) (*pluginv1.ListWorkspacesExactResponse, error) {
+	exact, ok := s.impl.(ExactWorkspaceHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_workspaces")
+	}
+	page := request.GetPage()
+	items, info, err := exact.ListWorkspacesExact(ctx, ExactWorkspaceQuery{WorkspaceID: request.GetWorkspaceId(), CapabilityRevision: request.GetCapabilityRevision(), Page: ExactPage{Limit: page.GetLimit(), Cursor: page.GetCursor(), SnapshotVersion: page.GetSnapshotVersion()}})
+	if err != nil {
+		return nil, err
+	}
+	return &pluginv1.ListWorkspacesExactResponse{Workspaces: workspacesToProto(items), PageInfo: &pluginv1.ExactPageInfo{NextCursor: info.NextCursor, HasMore: info.HasMore, SnapshotVersion: info.SnapshotVersion}}, nil
 }
 
 func (s *grpcHostServer) RevealSecret(ctx context.Context, req *pluginv1.RevealSecretRequest) (*pluginv1.RevealSecretResponse, error) {

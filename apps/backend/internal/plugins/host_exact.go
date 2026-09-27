@@ -59,3 +59,4 @@ func (h *pluginHost) GetCapabilityContext(_ context.Context) (*pluginsdk.Capabil
 }
 
 var _ pluginsdk.ExactHost = (*pluginHost)(nil)
+var _ pluginsdk.ExactWorkspaceHost = (*pluginHost)(nil)

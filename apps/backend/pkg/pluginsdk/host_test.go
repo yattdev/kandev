@@ -34,9 +34,13 @@ type recordingHost struct {
 		name    string
 		payload map[string]any
 	}
-	deleteStateCalled bool
-	taskTrees         PluginOwnedTaskTreeManager
-	capabilityContext *CapabilityContext
+	deleteStateCalled   bool
+	taskTrees           PluginOwnedTaskTreeManager
+	capabilityContext   *CapabilityContext
+	exactWorkspaces     []Workspace
+	exactPageInfo       *ExactPageInfo
+	exactWorkspaceErr   error
+	exactWorkspaceQuery ExactWorkspaceQuery
 }
 
 func (h *recordingHost) PluginOwnedTaskTrees() PluginOwnedTaskTreeManager {
@@ -110,6 +114,11 @@ func (h *recordingHost) EmitEvent(_ context.Context, name string, payload map[st
 
 func (h *recordingHost) GetCapabilityContext(context.Context) (*CapabilityContext, error) {
 	return h.capabilityContext, nil
+}
+
+func (h *recordingHost) ListWorkspacesExact(_ context.Context, query ExactWorkspaceQuery) ([]Workspace, *ExactPageInfo, error) {
+	h.exactWorkspaceQuery = query
+	return h.exactWorkspaces, h.exactPageInfo, h.exactWorkspaceErr
 }
 
 // dialHostOverBufconn wires a grpcHostServer (wrapping impl) to a
@@ -224,6 +233,23 @@ func TestHost_ExactCapabilityContext(t *testing.T) {
 	capabilityContext, err := exact.GetCapabilityContext(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, impl.capabilityContext, capabilityContext)
+}
+
+func TestHost_ListWorkspacesExact(t *testing.T) {
+	impl := &recordingHost{
+		exactWorkspaces: []Workspace{{ID: "workspace-1", Name: "Exact"}},
+		exactPageInfo:   &ExactPageInfo{SnapshotVersion: "snapshot-1"},
+	}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := ExactWorkspaces(host)
+	require.True(t, ok)
+
+	query := ExactWorkspaceQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: ExactPage{Limit: 1, SnapshotVersion: "snapshot-1"}}
+	workspaces, page, err := exact.ListWorkspacesExact(context.Background(), query)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactWorkspaces, workspaces)
+	require.Equal(t, impl.exactPageInfo, page)
+	require.Equal(t, query, impl.exactWorkspaceQuery)
 }
 
 func TestHost_RevealSecret(t *testing.T) {

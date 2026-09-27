@@ -43,10 +43,38 @@ type ExactHost interface {
 	GetCapabilityContext(context.Context) (*CapabilityContext, error)
 }
 
+// ExactWorkspaceHost is an optional exact-read extension. It is deliberately
+// separate from ExactHost so a Host that supports capability context does not
+// accidentally advertise a workspace read it has not implemented.
+type ExactWorkspaceHost interface {
+	ListWorkspacesExact(context.Context, ExactWorkspaceQuery) ([]Workspace, *ExactPageInfo, error)
+}
+
+type ExactWorkspaceQuery struct {
+	WorkspaceID        string
+	CapabilityRevision uint64
+	Page               ExactPage
+}
+type ExactPage struct {
+	Limit                   int32
+	Cursor, SnapshotVersion string
+}
+type ExactPageInfo struct {
+	NextCursor      string
+	HasMore         bool
+	SnapshotVersion string
+}
+
 // Exact returns the optional exact Host extension when the connected Host
 // supports it.
 func Exact(host Host) (ExactHost, bool) {
 	exact, ok := host.(ExactHost)
+	return exact, ok
+}
+
+// ExactWorkspaces returns the optional exact workspace-read extension.
+func ExactWorkspaces(host Host) (ExactWorkspaceHost, bool) {
+	exact, ok := host.(ExactWorkspaceHost)
 	return exact, ok
 }
 
