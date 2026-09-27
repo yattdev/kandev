@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -364,5 +365,41 @@ func (s *Store) HasUnexpiredWorkspaceAuthority(ctx context.Context, workspaceID 
   LEFT JOIN provider_access_exposures e ON e.lease_id = r.lease_id
   WHERE g.workspace_id = ? AND r.possible_provider_expiry > ? AND e.lease_id IS NULL`),
 		workspaceID, at.Unix())
+	return unknown > 0, err
+}
+
+// HasUnexpiredSessionAuthority reports token bytes that may still work after
+// the Host has lost its in-memory revocation material.
+func (s *Store) HasUnexpiredSessionAuthority(ctx context.Context, sessionID string, at time.Time) (bool, error) {
+	return s.hasUnexpiredAuthority(ctx, "l.session_id", sessionID, at)
+}
+
+// HasUnexpiredPluginAuthority reports residual bearer or unknown-mint
+// authority for every retained grant of one connected plugin.
+func (s *Store) HasUnexpiredPluginAuthority(ctx context.Context, pluginID string, at time.Time) (bool, error) {
+	return s.hasUnexpiredAuthority(ctx, "g.plugin_id", pluginID, at)
+}
+
+func (s *Store) hasUnexpiredAuthority(ctx context.Context, column, identity string,
+	at time.Time) (bool, error) {
+	if identity == "" || at.IsZero() {
+		return false, ErrGrantUnavailable
+	}
+	var exposed int
+	exposureQuery := fmt.Sprintf(`SELECT COUNT(*) FROM provider_access_exposures e
+  JOIN provider_access_leases l ON l.id = e.lease_id
+  JOIN provider_access_grants g ON g.id = e.grant_id
+  WHERE %s = ? AND e.provider_expires_at > ? AND e.revoked_at_provider IS NULL`, column)
+	err := s.db.GetContext(ctx, &exposed, s.db.Rebind(exposureQuery), identity, at.Unix())
+	if err != nil || exposed > 0 {
+		return exposed > 0, err
+	}
+	var unknown int
+	unknownQuery := fmt.Sprintf(`SELECT COUNT(*) FROM provider_access_redemptions r
+  JOIN provider_access_leases l ON l.id = r.lease_id
+  JOIN provider_access_grants g ON g.id = r.grant_id
+  LEFT JOIN provider_access_exposures e ON e.lease_id = r.lease_id
+  WHERE %s = ? AND r.possible_provider_expiry > ? AND e.lease_id IS NULL`, column)
+	err = s.db.GetContext(ctx, &unknown, s.db.Rebind(unknownQuery), identity, at.Unix())
 	return unknown > 0, err
 }

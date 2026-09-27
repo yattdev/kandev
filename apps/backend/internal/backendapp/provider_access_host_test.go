@@ -213,6 +213,60 @@ func TestProviderHostAccessReplacementRetainsFailedRevocationResidual(t *testing
 	}
 }
 
+func TestProviderHostAccessRestartReportsSessionResidual(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	host := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: &hostTestTokens{}}
+	lease, err := host.Issue(ctx, grant.PluginID, hostTestSpec(target, *grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: &hostTestTokens{}}
+	if err := restarted.RevokeSession(ctx, "session-1"); !errors.Is(err, provideraccess.ErrRevocationUnconfirmed) {
+		t.Fatalf("session teardown after restart = %v", err)
+	}
+	if state, err := authority.store.ExposureStateAt(ctx, lease.LeaseID, time.Now()); err != nil ||
+		state != provideraccess.ExposureResidual {
+		t.Fatalf("residual exposure = %s, err = %v", state, err)
+	}
+}
+
+func TestProviderHostAccessRestartReportsPluginResidual(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	host := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: &hostTestTokens{}}
+	lease, err := host.Issue(ctx, grant.PluginID, hostTestSpec(target, *grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: &hostTestTokens{}}
+	if err := restarted.StopPlugin(ctx, grant.PluginID); !errors.Is(err, provideraccess.ErrRevocationUnconfirmed) {
+		t.Fatalf("plugin teardown after restart = %v", err)
+	}
+	if state, err := authority.store.ExposureStateAt(ctx, lease.LeaseID, time.Now()); err != nil ||
+		state != provideraccess.ExposureResidual {
+		t.Fatalf("residual exposure = %s, err = %v", state, err)
+	}
+}
+
 func TestProviderHostAccessWorkspaceCleanupFencesAndRevokes(t *testing.T) {
 	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
 	ctx := context.Background()

@@ -322,3 +322,36 @@ func TestFinalExposureRejectsStaleExpectedLeaseIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestResidualAuthorityLookupIsolatedBySessionAndPlugin(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-residual")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimMintIntent(ctx, testMintClaim(grant, lease)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RevokeGrant(ctx, grant.WorkspaceID, grant.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	check := func(name string, lookup func(context.Context, string, time.Time) (bool, error),
+		id string, at time.Time, want bool) {
+		t.Helper()
+		got, err := lookup(ctx, id, at)
+		if err != nil || got != want {
+			t.Fatalf("%s residual = %v, err = %v, want %v", name, got, err, want)
+		}
+	}
+	now := time.Now().UTC()
+	check("session", store.HasUnexpiredSessionAuthority, lease.SessionID, now, true)
+	check("other session", store.HasUnexpiredSessionAuthority, "other-session", now, false)
+	check("plugin", store.HasUnexpiredPluginAuthority, grant.PluginID, now, true)
+	check("other plugin", store.HasUnexpiredPluginAuthority, "other-plugin", now, false)
+	check("expired session", store.HasUnexpiredSessionAuthority, lease.SessionID, now.Add(2*time.Hour), false)
+}

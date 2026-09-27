@@ -307,6 +307,11 @@ func (s *providerHostAccess) StopPlugin(ctx context.Context, pluginID string) er
 				grant.WorkspaceID, grant.ID, time.Now().UTC()))
 		}
 	}
+	residual, residualErr := s.store.HasUnexpiredPluginAuthority(ctx, pluginID, time.Now().UTC())
+	result = errors.Join(result, residualErr)
+	if residual {
+		result = errors.Join(result, provideraccess.ErrRevocationUnconfirmed)
+	}
 	if result == nil {
 		delete(s.runtimes, pluginID)
 		delete(s.blocked, pluginID)
@@ -328,11 +333,25 @@ func (s *providerHostAccess) RevokeSession(ctx context.Context, sessionID string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.runtimes) == 0 {
-		return s.store.RevokeSessionLeases(ctx, sessionID)
+		if err := s.store.RevokeSessionLeases(ctx, sessionID); err != nil {
+			return err
+		}
+		return s.sessionResidual(ctx, sessionID)
 	}
 	var result error
 	for _, runtime := range s.runtimes {
 		result = errors.Join(result, runtime.RevokeSession(ctx, sessionID))
 	}
-	return result
+	return errors.Join(result, s.sessionResidual(ctx, sessionID))
+}
+
+func (s *providerHostAccess) sessionResidual(ctx context.Context, sessionID string) error {
+	residual, err := s.store.HasUnexpiredSessionAuthority(ctx, sessionID, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if residual {
+		return provideraccess.ErrRevocationUnconfirmed
+	}
+	return nil
 }
