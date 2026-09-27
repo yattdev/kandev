@@ -73,7 +73,7 @@ func TestGrantCapabilityApprovalRequiresInstalledManifestBinding(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 	installed := &store.Record{
-		Manifest:       manifest.Manifest{ID: "plugin-a", Capabilities: manifest.Capabilities{APIRead: []string{"tasks"}}},
+		Manifest:       manifest.Manifest{ID: "plugin-a", Capabilities: manifest.Capabilities{HostV2Read: []string{"tasks"}}},
 		InstallationID: "inst-1",
 	}
 	svc.registry.Add(installed)

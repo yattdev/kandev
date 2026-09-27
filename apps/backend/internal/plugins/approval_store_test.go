@@ -491,7 +491,7 @@ func TestAuthorizePluginCapabilityRequiresCurrentInstalledManifest(t *testing.T)
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 	svc.registry.Add(&store.Record{
-		Manifest:       manifest.Manifest{ID: "plugin-a", Capabilities: manifest.Capabilities{APIRead: []string{"tasks"}}},
+		Manifest:       manifest.Manifest{ID: "plugin-a", Capabilities: manifest.Capabilities{HostV2Read: []string{"tasks"}}},
 		InstallationID: "inst-1",
 	})
 	if _, err := svc.approvalGrant("inst-1", "ws-1", 1, ManifestCapabilityDigest(svc.registry.List()[0].Manifest), []string{"host.v2.read:tasks"}, "human", "grant", "audit-1"); err != nil {

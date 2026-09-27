@@ -797,6 +797,9 @@ func (s *Service) hostForPlugin(pluginID string) pluginsdk.Host {
 	}
 	return &pluginHost{
 		pluginID:            pluginID,
+		installationID:      rec.InstallationID,
+		manifestDigest:      ManifestCapabilityDigest(rec.Manifest),
+		exactApprovals:      s.approvalListByInstallation,
 		capabilities:        rec.Capabilities,
 		repositoryProviders: rec.RepositoryProviders,
 		configSchema:        rec.ConfigSchema,

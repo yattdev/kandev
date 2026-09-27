@@ -381,6 +381,14 @@ func (h *grpcHostClient) GetConfig(ctx context.Context) (map[string]any, error) 
 	return config, nil
 }
 
+func (h *grpcHostClient) GetCapabilityContext(ctx context.Context) (*CapabilityContext, error) {
+	response, err := h.client.GetCapabilityContext(ctx, &pluginv1.GetCapabilityContextRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return capabilityContextFromProto(response)
+}
+
 func (h *grpcHostClient) RevealSecret(ctx context.Context, ref string) (string, error) {
 	resp, err := h.client.RevealSecret(ctx, &pluginv1.RevealSecretRequest{Ref: ref})
 	if err != nil {
@@ -770,6 +778,18 @@ func (s *grpcHostServer) GetConfig(ctx context.Context, req *pluginv1.GetConfigR
 		return nil, err
 	}
 	return &pluginv1.GetConfigResponse{Config: protoConfig}, nil
+}
+
+func (s *grpcHostServer) GetCapabilityContext(ctx context.Context, _ *pluginv1.GetCapabilityContextRequest) (*pluginv1.GetCapabilityContextResponse, error) {
+	exact, ok := s.impl.(ExactHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_capability_context")
+	}
+	capabilityContext, err := exact.GetCapabilityContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return capabilityContextToProto(capabilityContext), nil
 }
 
 func (s *grpcHostServer) RevealSecret(ctx context.Context, req *pluginv1.RevealSecretRequest) (*pluginv1.RevealSecretResponse, error) {

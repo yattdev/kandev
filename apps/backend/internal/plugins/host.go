@@ -38,8 +38,13 @@ type pluginHost struct {
 	// host_data.go; this embed only remains as defense-in-depth.
 	pluginsdk.UnimplementedHostData
 
-	pluginID     string
-	capabilities manifest.Capabilities
+	pluginID string
+	// installationID and manifestDigest are captured when this Host is bound to
+	// its broker connection. Neither comes from an RPC request.
+	installationID string
+	manifestDigest string
+	exactApprovals exactApprovalReader
+	capabilities   manifest.Capabilities
 	// repositoryProviders is the manifest-declared set of provider IDs this
 	// plugin owns. Only these IDs may use the trusted remote-descriptor path
 	// when creating a task; a plugin cannot claim another provider merely by

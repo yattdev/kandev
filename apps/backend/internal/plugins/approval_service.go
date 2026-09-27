@@ -205,12 +205,12 @@ func (s *Service) installedRecordByInstallationID(installationID string) *store.
 }
 
 func manifestDeclaresCapability(record *store.Record, capabilityID string) bool {
-	for _, resource := range record.Capabilities.APIRead {
+	for _, resource := range record.Capabilities.HostV2Read {
 		if capabilityID == "host.v2.read:"+resource {
 			return true
 		}
 	}
-	for _, resource := range record.Capabilities.APIWrite {
+	for _, resource := range record.Capabilities.HostV2Write {
 		if capabilityID == "host.v2.write:"+resource {
 			return true
 		}

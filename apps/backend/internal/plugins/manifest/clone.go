@@ -15,6 +15,8 @@ func (m Manifest) Clone() Manifest {
 	clone.Capabilities.Events = cloneStrings(m.Capabilities.Events)
 	clone.Capabilities.APIRead = cloneStrings(m.Capabilities.APIRead)
 	clone.Capabilities.APIWrite = cloneStrings(m.Capabilities.APIWrite)
+	clone.Capabilities.HostV2Read = cloneStrings(m.Capabilities.HostV2Read)
+	clone.Capabilities.HostV2Write = cloneStrings(m.Capabilities.HostV2Write)
 	clone.UI.Pages = append([]UIPage(nil), m.UI.Pages...)
 	clone.UI.Styles = cloneStrings(m.UI.Styles)
 	clone.UI.Keybindings = append([]UIKeybinding(nil), m.UI.Keybindings...)

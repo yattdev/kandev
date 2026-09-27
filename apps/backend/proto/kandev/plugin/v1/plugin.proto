@@ -79,6 +79,11 @@ service Host {
   // the plugin.
   rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
 
+  // GetCapabilityContext reports the connection-bound Host identity and
+  // current approval ledger state. It is informational only: every exact
+  // read or command independently authorizes its own capability.
+  rpc GetCapabilityContext(GetCapabilityContextRequest) returns (GetCapabilityContextResponse);
+
   // Reads — capability api_read:<resource>
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
@@ -1109,4 +1114,21 @@ message AutomationWebhookResponse {
   string outcome = 1;
   string event_kind = 2;
   bytes data = 3;
+}
+
+// An empty request deliberately carries no installation, workspace, or
+// approval identity. The Host derives all of those from the broker-bound
+// plugin installation.
+message GetCapabilityContextRequest {}
+message CapabilityApprovalContext {
+  string approval_id = 1;
+  string workspace_id = 2;
+  uint64 revision = 3;
+  string status = 4; // active | revoked
+}
+message GetCapabilityContextResponse {
+  string contract_version = 1;
+  string installation_id = 2;
+  string manifest_digest = 3;
+  repeated CapabilityApprovalContext approvals = 4;
 }

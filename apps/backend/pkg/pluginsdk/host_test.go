@@ -36,6 +36,7 @@ type recordingHost struct {
 	}
 	deleteStateCalled bool
 	taskTrees         PluginOwnedTaskTreeManager
+	capabilityContext *CapabilityContext
 }
 
 func (h *recordingHost) PluginOwnedTaskTrees() PluginOwnedTaskTreeManager {
@@ -105,6 +106,10 @@ func (h *recordingHost) DeleteSecret(_ context.Context, key string) error {
 func (h *recordingHost) EmitEvent(_ context.Context, name string, payload map[string]any) error {
 	h.emitEvent.name, h.emitEvent.payload = name, payload
 	return nil
+}
+
+func (h *recordingHost) GetCapabilityContext(context.Context) (*CapabilityContext, error) {
+	return h.capabilityContext, nil
 }
 
 // dialHostOverBufconn wires a grpcHostServer (wrapping impl) to a
@@ -205,6 +210,20 @@ func TestHost_GetConfig_EmptyIsNonNil(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, config)
 	require.Empty(t, config)
+}
+
+func TestHost_ExactCapabilityContext(t *testing.T) {
+	impl := &recordingHost{capabilityContext: &CapabilityContext{
+		ContractVersion: ExactHostContractVersion, InstallationID: "installation-1", ManifestDigest: "manifest-digest",
+		Approvals: []CapabilityApprovalContext{{ApprovalID: "approval-1", WorkspaceID: "workspace-1", Revision: 2, Status: CapabilityApprovalStatusActive}},
+	}}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := Exact(host)
+	require.True(t, ok)
+
+	capabilityContext, err := exact.GetCapabilityContext(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, impl.capabilityContext, capabilityContext)
 }
 
 func TestHost_RevealSecret(t *testing.T) {

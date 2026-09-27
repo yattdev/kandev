@@ -125,11 +125,11 @@ func ManifestCapabilityDigest(m manifest.Manifest) string {
 // ManifestCapabilityIDs returns the exact capability IDs declared by an
 // installed manifest in canonical order.
 func ManifestCapabilityIDs(m manifest.Manifest) ([]string, error) {
-	caps := make([]string, 0, len(m.Capabilities.APIRead)+len(m.Capabilities.APIWrite))
-	for _, resource := range m.Capabilities.APIRead {
+	caps := make([]string, 0, len(m.Capabilities.HostV2Read)+len(m.Capabilities.HostV2Write))
+	for _, resource := range m.Capabilities.HostV2Read {
 		caps = append(caps, "host.v2.read:"+strings.TrimSpace(resource))
 	}
-	for _, resource := range m.Capabilities.APIWrite {
+	for _, resource := range m.Capabilities.HostV2Write {
 		caps = append(caps, "host.v2.write:"+strings.TrimSpace(resource))
 	}
 	return CanonicalCapabilityList(caps)

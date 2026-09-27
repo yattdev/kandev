@@ -501,6 +501,7 @@ const (
 	Host_SetSecret_FullMethodName                     = "/kandev.plugin.v1.Host/SetSecret"
 	Host_DeleteSecret_FullMethodName                  = "/kandev.plugin.v1.Host/DeleteSecret"
 	Host_GetConfig_FullMethodName                     = "/kandev.plugin.v1.Host/GetConfig"
+	Host_GetCapabilityContext_FullMethodName          = "/kandev.plugin.v1.Host/GetCapabilityContext"
 	Host_ListTasks_FullMethodName                     = "/kandev.plugin.v1.Host/ListTasks"
 	Host_GetTask_FullMethodName                       = "/kandev.plugin.v1.Host/GetTask"
 	Host_ListTaskStepTransitions_FullMethodName       = "/kandev.plugin.v1.Host/ListTaskStepTransitions"
@@ -580,6 +581,10 @@ type HostClient interface {
 	// values included — that is how e.g. an operator-configured PAT reaches
 	// the plugin.
 	GetConfig(ctx context.Context, in *GetConfigRequest, opts ...grpc.CallOption) (*GetConfigResponse, error)
+	// GetCapabilityContext reports the connection-bound Host identity and
+	// current approval ledger state. It is informational only: every exact
+	// read or command independently authorizes its own capability.
+	GetCapabilityContext(ctx context.Context, in *GetCapabilityContextRequest, opts ...grpc.CallOption) (*GetCapabilityContextResponse, error)
 	// Reads — capability api_read:<resource>
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
@@ -766,6 +771,16 @@ func (c *hostClient) GetConfig(ctx context.Context, in *GetConfigRequest, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetConfigResponse)
 	err := c.cc.Invoke(ctx, Host_GetConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hostClient) GetCapabilityContext(ctx context.Context, in *GetCapabilityContextRequest, opts ...grpc.CallOption) (*GetCapabilityContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCapabilityContextResponse)
+	err := c.cc.Invoke(ctx, Host_GetCapabilityContext_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1110,6 +1125,10 @@ type HostServer interface {
 	// values included — that is how e.g. an operator-configured PAT reaches
 	// the plugin.
 	GetConfig(context.Context, *GetConfigRequest) (*GetConfigResponse, error)
+	// GetCapabilityContext reports the connection-bound Host identity and
+	// current approval ledger state. It is informational only: every exact
+	// read or command independently authorizes its own capability.
+	GetCapabilityContext(context.Context, *GetCapabilityContextRequest) (*GetCapabilityContextResponse, error)
 	// Reads — capability api_read:<resource>
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
@@ -1231,6 +1250,9 @@ func (UnimplementedHostServer) DeleteSecret(context.Context, *DeleteSecretReques
 }
 func (UnimplementedHostServer) GetConfig(context.Context, *GetConfigRequest) (*GetConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetConfig not implemented")
+}
+func (UnimplementedHostServer) GetCapabilityContext(context.Context, *GetCapabilityContextRequest) (*GetCapabilityContextResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCapabilityContext not implemented")
 }
 func (UnimplementedHostServer) ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListTasks not implemented")
@@ -1516,6 +1538,24 @@ func _Host_GetConfig_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(HostServer).GetConfig(ctx, req.(*GetConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Host_GetCapabilityContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCapabilityContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).GetCapabilityContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_GetCapabilityContext_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).GetCapabilityContext(ctx, req.(*GetCapabilityContextRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2088,6 +2128,10 @@ var Host_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetConfig",
 			Handler:    _Host_GetConfig_Handler,
+		},
+		{
+			MethodName: "GetCapabilityContext",
+			Handler:    _Host_GetCapabilityContext_Handler,
 		},
 		{
 			MethodName: "ListTasks",
