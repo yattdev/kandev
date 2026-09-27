@@ -35,6 +35,7 @@ type fakeRerunTokens struct {
 	revokeErr   error
 	onMint      func()
 	overbroad   bool
+	repository  string
 }
 
 func (f *fakeRerunTokens) Mint(_ context.Context, _ int64, _ string) (github.InstallationToken, error) {
@@ -52,11 +53,59 @@ func (f *fakeRerunTokens) Mint(_ context.Context, _ int64, _ string) (github.Ins
 			"actions": github.PermissionWrite, "pull_requests": github.PermissionRead,
 			"metadata": github.PermissionRead,
 		},
-		Repositories: []github.InstallationTokenRepository{{FullName: "repo-1"}}}
+		Repositories: []github.InstallationTokenRepository{{FullName: f.repositoryName()}}}
 	if f.overbroad {
 		token.Permissions["contents"] = github.PermissionWrite
 	}
 	return token, nil
+}
+
+func (f *fakeRerunTokens) repositoryName() string {
+	if f.repository != "" {
+		return f.repository
+	}
+	return "owner/repo"
+}
+
+func TestRuntimeAcceptsCanonicalRepositoryResolvedFromInternalID(t *testing.T) {
+	store := newGrantTestStore(t)
+	grant := testGrant("grant-internal-repository")
+	grant.RepositoryID = "internal-repository-row"
+	ctx := context.Background()
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority := &fakeLeaseAuthority{verified: VerifiedLease{
+		LeaseID: lease.ID, GrantID: grant.ID, Expected: testMintClaim(grant, lease).Expected,
+		InstallationID: 42, CanonicalRepository: "owner/repo"}}
+	tokens := &fakeRerunTokens{repository: "owner/repo"}
+	runtime, err := NewRuntime(store, authority, tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := runtime.Redeem(ctx, lease.ID)
+	if err != nil || token.Token == "" {
+		t.Fatalf("redeem internal repository ID via canonical provider repository: %+v, %v", token, err)
+	}
+}
+
+func TestRuntimeDeniesMalformedCanonicalRepositoryBeforeMint(t *testing.T) {
+	for _, repository := range []string{"", "repo-1", " owner/repo", "owner//repo"} {
+		t.Run(repository, func(t *testing.T) {
+			runtime, _, authority, tokens, _, lease := newRuntimeTestFixture(t)
+			authority.verified.CanonicalRepository = repository
+			if token, err := runtime.Redeem(context.Background(), lease.ID); !errors.Is(err, ErrGrantUnavailable) || token.Token != "" {
+				t.Fatalf("malformed repository %q yielded token %+v, err %v", repository, token, err)
+			}
+			if tokens.mintCount != 0 {
+				t.Fatalf("malformed repository %q minted %d tokens", repository, tokens.mintCount)
+			}
+		})
+	}
 }
 
 func (f *fakeRerunTokens) Revoke(_ context.Context, _ string) error {
@@ -80,7 +129,7 @@ func newRuntimeTestFixture(t *testing.T) (*Runtime, *Store, *fakeLeaseAuthority,
 	authority := &fakeLeaseAuthority{verified: VerifiedLease{
 		LeaseID: lease.ID, GrantID: grant.ID,
 		Expected:       testMintClaim(grant, lease).Expected,
-		InstallationID: 42, CanonicalRepository: grant.RepositoryID}}
+		InstallationID: 42, CanonicalRepository: "owner/repo"}}
 	tokens := &fakeRerunTokens{}
 	runtime, err := NewRuntime(store, authority, tokens)
 	if err != nil {

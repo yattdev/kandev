@@ -29,8 +29,7 @@ func (g GitHubRerunCredentials) Mint(
 	ctx context.Context, installationID int64, canonicalRepository string,
 ) (github.InstallationToken, error) {
 	parts := strings.Split(canonicalRepository, "/")
-	if g.Client == nil || installationID <= 0 || len(parts) != 2 ||
-		parts[0] == "" || parts[1] == "" || canonicalRepository != strings.TrimSpace(canonicalRepository) {
+	if g.Client == nil || installationID <= 0 || !validCanonicalGitHubRepository(canonicalRepository) {
 		return github.InstallationToken{}, ErrProviderTokenScope
 	}
 	permissions := github.InstallationPermissions{
@@ -50,6 +49,12 @@ func (g GitHubRerunCredentials) Mint(
 		return github.InstallationToken{}, errors.Join(ErrProviderTokenScope, ErrRevocationUnconfirmed)
 	}
 	return github.InstallationToken{}, ErrProviderTokenScope
+}
+
+func validCanonicalGitHubRepository(repository string) bool {
+	owner, name, ok := strings.Cut(repository, "/")
+	return ok && owner != "" && name != "" && !strings.Contains(name, "/") &&
+		!strings.ContainsAny(repository, " \t\r\n")
 }
 
 func validRerunToken(

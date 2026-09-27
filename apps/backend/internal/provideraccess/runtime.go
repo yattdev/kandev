@@ -90,7 +90,7 @@ func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.Installati
 	receipt := ExposureReceipt{
 		LeaseID: leaseID, GrantID: first.GrantID, Provider: "github",
 		ProviderPrincipalID: token.Principal.PrincipalID,
-		RepositoryID:        first.CanonicalRepository,
+		RepositoryID:        first.Expected.Scope.RepositoryID,
 		PermissionProfile:   "github_actions_rerun",
 		ProviderExpiresAt:   token.ExpiresAt, Expected: first.Expected,
 	}
@@ -108,7 +108,7 @@ func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.Installati
 func validVerifiedLease(lease VerifiedLease, requestedID string) bool {
 	return lease.LeaseID == requestedID && lease.GrantID != "" &&
 		lease.InstallationID > 0 && lease.CanonicalRepository != "" &&
-		lease.Expected.Scope.RepositoryID == lease.CanonicalRepository &&
+		lease.Expected.Scope.RepositoryID != "" && validCanonicalGitHubRepository(lease.CanonicalRepository) &&
 		lease.Expected.Scope.Provider == "github" &&
 		lease.Expected.Scope.Purpose == "actions_write"
 }

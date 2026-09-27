@@ -82,6 +82,9 @@ immediately before mutation and after any ambiguous response.
 The lease contains the exact target digest, grant generation, approval
 revision, connection generation, session identity, expiry, and a hash of the
 idempotency key. It exposes only opaque lease ID and non-secret target metadata.
+The grant's repository ID is Kandev's workspace attachment identity. The Host
+separately resolves the canonical provider `owner/repo` from that live attachment
+for one-repository token minting; these identifiers are not interchangeable.
 The persisted lease lifetime is capped at five minutes even when its grant
 lasts longer. Reading a lease for inspection does not authorize redemption;
 final exposure admission locks the grant and lease rows in the same order as
