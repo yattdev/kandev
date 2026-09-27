@@ -729,6 +729,9 @@ func startAgentInfrastructure(
 		log.Error("Failed to initialize orchestrator", zap.Error(err))
 		return false
 	}
+	if services.ProviderAccessHost != nil {
+		orchestratorSvc.SetProviderAccessSessionRevoker(services.ProviderAccessHost)
+	}
 	services.Task.SetWorkflowMovePreflight(orchestratorSvc)
 	orchestratorSvc.SetAgentctlBinaryPath(agentctlBinaryPath)
 	// The checker is populated by lifecycleMgr.Start below before the

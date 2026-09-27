@@ -98,7 +98,11 @@ func (r *Repository) setMetadataKeyIfStamp(
 		return false, true, nil
 	}
 
-	result, err := tx.ExecContext(ctx, r.db.Rebind(metadataKeyUpdateQuery(table, r.db.DriverName())), metadataKeyUpdateArgs(r.db.DriverName(), key, string(payload), r.nowUTC(), entityID)...)
+	query := metadataKeyUpdateQuery(table, r.db.DriverName())
+	if table == "task_sessions" && key == models.SessionMetaKeyAgentStartAttemptID {
+		query += " AND " + terminalProviderClaimAbsentPredicate(r.db.DriverName())
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(query), metadataKeyUpdateArgs(r.db.DriverName(), key, string(payload), r.nowUTC(), entityID)...)
 	if err != nil {
 		return false, false, err
 	}
@@ -194,7 +198,7 @@ func (r *Repository) CommitBootstrapFailureIfCurrentExecution(
 	errorValue models.LastAgentError,
 ) (bool, time.Time, error) {
 	return r.commitBootstrapFailureIfCurrentExecution(
-		ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, nil, errorValue,
+		ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, nil, errorValue, "",
 	)
 }
 
@@ -213,7 +217,30 @@ func (r *Repository) CommitBootstrapFailureIfCurrentAttempt(
 		return false, time.Time{}, nil
 	}
 	return r.commitBootstrapFailureIfCurrentExecution(
-		ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, &expectedStartAttemptID, errorValue,
+		ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, &expectedStartAttemptID, errorValue, "",
+	)
+}
+
+func (r *Repository) CommitBootstrapFailureIfCurrentExecutionClaim(
+	ctx context.Context, taskID, sessionID, agentExecutionID string,
+	expectedState models.TaskSessionState, expectedStamp string,
+	errorValue models.LastAgentError, claimID string,
+) (bool, time.Time, error) {
+	return r.commitBootstrapFailureIfCurrentExecution(
+		ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, nil, errorValue, claimID,
+	)
+}
+
+func (r *Repository) CommitBootstrapFailureIfCurrentAttemptClaim(
+	ctx context.Context, taskID, sessionID, agentExecutionID string,
+	expectedState models.TaskSessionState, expectedStamp, expectedStartAttemptID string,
+	errorValue models.LastAgentError, claimID string,
+) (bool, time.Time, error) {
+	if expectedStartAttemptID == "" {
+		return false, time.Time{}, nil
+	}
+	return r.commitBootstrapFailureIfCurrentExecution(
+		ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, &expectedStartAttemptID, errorValue, claimID,
 	)
 }
 
@@ -224,6 +251,7 @@ func (r *Repository) commitBootstrapFailureIfCurrentExecution(
 	expectedStamp string,
 	expectedStartAttemptID *string,
 	errorValue models.LastAgentError,
+	claimID string,
 ) (bool, time.Time, error) {
 	payload, err := json.Marshal(errorValue)
 	if err != nil {
@@ -240,7 +268,7 @@ func (r *Repository) commitBootstrapFailureIfCurrentExecution(
 	now := r.nowUTC()
 	completedAt := now
 	query, args := bootstrapFailureCommitQuery(r.db.DriverName(), string(payload), errorValue.Message, now, completedAt,
-		taskID, sessionID, agentExecutionID, string(expectedState), expectedStamp, expectedStartAttemptID)
+		taskID, sessionID, agentExecutionID, string(expectedState), expectedStamp, expectedStartAttemptID, claimID)
 	result, err := tx.ExecContext(ctx, r.db.Rebind(query), args...)
 	if err != nil {
 		return false, time.Time{}, err
@@ -279,10 +307,15 @@ func bootstrapFailureCommitQuery(
 	driver, payload, errorMessage string, now, completedAt time.Time,
 	taskID, sessionID, agentExecutionID, expectedState, expectedStamp string,
 	expectedStartAttemptID *string,
+	claimID string,
 ) (string, []interface{}) {
 	startAttemptPredicate := ""
 	if expectedStartAttemptID != nil {
 		startAttemptPredicate = " AND " + startAttemptIDPredicate(driver)
+	}
+	claimPredicate := " AND " + terminalProviderClaimAbsentPredicate(driver)
+	if claimID != "" {
+		claimPredicate = " AND " + terminalProviderClaimMatchPredicate(driver)
 	}
 	if dialect.IsPostgres(driver) {
 		base := postgresMetadataObject
@@ -291,7 +324,7 @@ func bootstrapFailureCommitQuery(
 			UPDATE task_sessions
 			SET metadata = jsonb_set(` + base + `, '{last_agent_error}', ?::jsonb, true)::text,
 				state = ?, error_message = ?, completed_at = ?, updated_at = ?
-			WHERE id = ? AND task_id = ? AND state = ?` + startAttemptPredicate + `
+			WHERE id = ? AND task_id = ? AND state = ?` + startAttemptPredicate + claimPredicate + `
 				AND EXISTS (
 					SELECT 1 FROM executors_running
 					WHERE session_id = ? AND agent_execution_id = ?
@@ -306,6 +339,9 @@ func bootstrapFailureCommitQuery(
 		if expectedStartAttemptID != nil {
 			args = append(args, *expectedStartAttemptID)
 		}
+		if claimID != "" {
+			args = append(args, claimID)
+		}
 		args = append(args, sessionID, agentExecutionID,
 			expectedStamp, expectedStamp, expectedStamp)
 		return query, args
@@ -317,7 +353,7 @@ func bootstrapFailureCommitQuery(
 		UPDATE task_sessions
 		SET metadata = json_set(` + base + `, '$.last_agent_error', json(?)),
 			state = ?, error_message = ?, completed_at = ?, updated_at = ?
-		WHERE id = ? AND task_id = ? AND state = ?` + startAttemptPredicate + `
+		WHERE id = ? AND task_id = ? AND state = ?` + startAttemptPredicate + claimPredicate + `
 			AND EXISTS (
 				SELECT 1 FROM executors_running
 				WHERE session_id = ? AND agent_execution_id = ?
@@ -331,6 +367,9 @@ func bootstrapFailureCommitQuery(
 		sessionID, taskID, expectedState}
 	if expectedStartAttemptID != nil {
 		args = append(args, *expectedStartAttemptID)
+	}
+	if claimID != "" {
+		args = append(args, claimID)
 	}
 	args = append(args, sessionID, agentExecutionID,
 		expectedStamp, expectedStamp, expectedStamp)

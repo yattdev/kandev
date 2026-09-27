@@ -3903,7 +3903,8 @@ func (s *Service) handleAgentStoppedLocked(ctx context.Context, data watcher.Age
 	s.completeTurnForSession(ctx, data.SessionID)
 
 	// Update session state to cancelled (already done by executor, but ensure consistency)
-	s.updateTaskSessionState(ctx, data.TaskID, data.SessionID, models.TaskSessionStateCancelled, "", false)
+	stopCtx := context.WithValue(ctx, terminalProviderExecutionKey{}, data.AgentExecutionID)
+	s.updateTaskSessionState(stopCtx, data.TaskID, data.SessionID, models.TaskSessionStateCancelled, "", false)
 
 	// NOTE: We do NOT update task state here because:
 	// 1. If this is from CompleteTask(), the task state will be set to COMPLETED by the caller

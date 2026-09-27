@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/kandev/kandev/internal/task/models"
@@ -24,6 +25,44 @@ func newAgentConversationServiceOverRealRepo(t *testing.T) (*AgentConversationSe
 	svc := NewAgentConversationService(repo, repo, nil, newACFakeStateRepo(), nil)
 	svc.SetDispatcher(newACFakeDispatcher())
 	return svc, repo
+}
+
+type managedSessionRevokerFunc func(context.Context, string) error
+
+func (f managedSessionRevokerFunc) RevokeSession(ctx context.Context, sessionID string) error {
+	return f(ctx, sessionID)
+}
+
+func TestDeleteManagedConversationRevokesProviderTokenBeforeTaskDelete(t *testing.T) {
+	svc, repo := newAgentConversationServiceOverRealRepo(t)
+	ctx := context.Background()
+	seedConversationWorkspace(t, repo, "ws-one")
+	desc := ensureConversation(t, svc, "plugin-coordinator", "ws-one", "coordinator")
+	revokeErr := errors.New("provider revocation unconfirmed")
+	calls := 0
+	svc.SetProviderAccessSessionRevoker(managedSessionRevokerFunc(func(_ context.Context, sessionID string) error {
+		calls++
+		if sessionID != desc.SessionID {
+			t.Fatalf("revoked session = %q", sessionID)
+		}
+		return revokeErr
+	}))
+	if _, err := svc.Delete(ctx, "plugin-coordinator", "ws-one", "coordinator"); !errors.Is(err, revokeErr) {
+		t.Fatalf("delete with failed revocation = %v", err)
+	}
+	if !taskExists(t, repo, desc.TaskID) || calls != 1 {
+		t.Fatalf("task deleted before revocation confirmation, calls = %d", calls)
+	}
+	svc.SetProviderAccessSessionRevoker(managedSessionRevokerFunc(func(context.Context, string) error {
+		calls++
+		return nil
+	}))
+	if count, err := svc.Delete(ctx, "plugin-coordinator", "ws-one", "coordinator"); err != nil || count != 1 {
+		t.Fatalf("delete after revocation = %d, %v", count, err)
+	}
+	if taskExists(t, repo, desc.TaskID) || calls != 2 {
+		t.Fatalf("task remains or revocation missed, calls = %d", calls)
+	}
 }
 
 func seedConversationWorkspace(t *testing.T, repo *sqliterepo.Repository, workspaceID string) {

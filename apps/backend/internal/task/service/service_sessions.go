@@ -98,6 +98,11 @@ func (s *Service) DeleteSessionAndPublishRemoval(ctx context.Context, sessionID 
 	if err != nil {
 		return err
 	}
+	if s.providerAccessSessionRevoker != nil {
+		if err := s.providerAccessSessionRevoker.RevokeSession(ctx, sessionID); err != nil {
+			return fmt.Errorf("revoke provider access before session removal: %w", err)
+		}
+	}
 	if err := s.sessions.DeleteTaskSession(ctx, session); err != nil {
 		return err
 	}

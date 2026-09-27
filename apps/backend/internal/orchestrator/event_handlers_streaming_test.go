@@ -518,6 +518,58 @@ func TestTransitionTaskSessionStateReportsAcceptedWrite(t *testing.T) {
 	require.Equal(t, []bool{true}, canceller.expireContextDeadline)
 }
 
+type providerSessionRevokeRecorder struct {
+	calls []string
+	err   error
+}
+
+func (r *providerSessionRevokeRecorder) RevokeSession(_ context.Context, sessionID string) error {
+	r.calls = append(r.calls, sessionID)
+	return r.err
+}
+
+func TestTerminalSessionTransitionReportsProviderRevocationFailureAndRetries(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	eb := &recordingEventBus{}
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	svc.eventBus = eb
+	revokeErr := errors.New("provider token revocation unconfirmed")
+	revoker := &providerSessionRevokeRecorder{err: revokeErr}
+	svc.SetProviderAccessSessionRevoker(revoker)
+	changed, finalState, err := svc.transitionTaskSessionState(ctx, "t1", "s1", nil,
+		models.TaskSessionStateCancelled, "coordinator stop", nil)
+	require.False(t, changed)
+	require.Equal(t, models.TaskSessionStateRunning, finalState)
+	require.ErrorIs(t, err, revokeErr)
+	require.Equal(t, []string{"s1"}, revoker.calls)
+	require.Empty(t, eb.events)
+	stored, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateRunning, stored.State)
+
+	revoker.err = nil
+	changed, finalState, err = svc.transitionTaskSessionState(ctx, "t1", "s1", nil,
+		models.TaskSessionStateCancelled, "coordinator stop", nil)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, models.TaskSessionStateCancelled, finalState)
+	require.Equal(t, []string{"s1", "s1"}, revoker.calls)
+	require.Len(t, eb.events, 1)
+}
+
+func TestLegacyTerminalSessionTransitionRevokesProviderAccess(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+	svc.updateTaskSessionState(ctx, "t1", "s1", models.TaskSessionStateFailed, "error", true)
+	require.Equal(t, []string{"s1"}, revoker.calls)
+}
+
 func TestTransitionTaskSessionStateRejectsUnexpectedSourceState(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
@@ -550,6 +602,7 @@ func TestTransitionTaskSessionStatePublishesMetadataWrittenByHook(t *testing.T) 
 	eb := &recordingEventBus{}
 	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
 	svc.eventBus = eb
+	svc.SetProviderAccessSessionRevoker(&providerSessionRevokeRecorder{})
 	errorValue := models.LastAgentError{
 		Message:    "The selected base branch is not available.",
 		Code:       "base_branch_missing",
@@ -3191,6 +3244,8 @@ func TestTransitionBootstrapFailurePersistsSessionHistory(t *testing.T) {
 	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
 	svc.taskLaunchRecoveryRepo = repo
 	svc.messageCreator = newServiceBackedMessageCreator(repo)
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
 	startupFailure := &lifecycle.BootstrapFailure{
 		Operation: models.AgentErrorCauseOperationResume,
 		Code:      models.AgentErrorCauseCodePermissionDenied,
@@ -3233,6 +3288,7 @@ func TestTransitionBootstrapFailurePersistsSessionHistory(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, models.TaskSessionStateFailed, state)
+	require.Equal(t, []string{"bootstrap-history-session"}, revoker.calls)
 
 	messages, err := repo.ListMessages(ctx, "bootstrap-history-session")
 	require.NoError(t, err)

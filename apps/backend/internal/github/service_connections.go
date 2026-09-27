@@ -21,11 +21,36 @@ var ErrWorkspaceConnectionStale = errors.New("GitHub workspace connection change
 // deployment host gh CLI account to a workspace.
 var ErrGHCLIOperatorRequired = errors.New("GitHub CLI operator access is required")
 
+// ProviderAccessConnectionRevoker fences provider leases and revokes held
+// installation tokens before an App connection identity changes.
+type ProviderAccessConnectionRevoker interface {
+	RevokeWorkspaceConnection(context.Context, string) error
+}
+
+func (s *Service) SetProviderAccessConnectionRevoker(revoker ProviderAccessConnectionRevoker) {
+	s.providerAccessRevoker = revoker
+}
+
 type SetWorkspaceConnectionRequest struct {
 	Source ConnectionSource `json:"source"`
 	Token  string           `json:"token,omitempty"`
 	Host   string           `json:"host,omitempty"`
 	Login  string           `json:"login,omitempty"`
+}
+
+// GetWorkspaceConnection returns the current non-secret automation principal
+// after the caller's workspace access check. It never returns credential data.
+func (s *Service) GetWorkspaceConnection(ctx context.Context, workspaceID string) (*WorkspaceConnection, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, ErrGitHubWorkspaceRequired
+	}
+	if err := s.authorizeWorkspaceAccess(ctx, workspaceID); err != nil {
+		return nil, err
+	}
+	if s == nil || s.store == nil {
+		return nil, ErrGitHubNotConfigured
+	}
+	return s.store.GetWorkspaceConnection(ctx, workspaceID)
 }
 
 // GetWorkspaceConnectionHealth exposes aggregate persisted connection state
@@ -279,6 +304,11 @@ func (s *Service) applyAutomationTransition(
 	existing, replacement *WorkspaceConnection,
 	mutation func() error,
 ) error {
+	if appConnectionIdentityChanged(existing, replacement) && s.providerAccessRevoker != nil {
+		if err := s.providerAccessRevoker.RevokeWorkspaceConnection(ctx, existing.WorkspaceID); err != nil {
+			return err
+		}
+	}
 	if existing == nil || existing.Source != ConnectionSourceGitHubAppInstallation ||
 		(replacement != nil && replacement.Source == ConnectionSourceGitHubAppInstallation &&
 			existing.AppRegistrationID == replacement.AppRegistrationID &&
@@ -289,6 +319,15 @@ func (s *Service) applyAutomationTransition(
 		return errors.New("personal GitHub connection repository is not configured")
 	}
 	return s.personalConnections.TransitionWorkspacePersonalConnections(ctx, existing.WorkspaceID, mutation)
+}
+
+func appConnectionIdentityChanged(existing, replacement *WorkspaceConnection) bool {
+	return existing != nil && existing.Source == ConnectionSourceGitHubAppInstallation &&
+		(replacement == nil || replacement.Source != existing.Source ||
+			replacement.AppRegistrationID != existing.AppRegistrationID ||
+			!equalInstallationID(existing.InstallationID, replacement.InstallationID) ||
+			replacement.CredentialGeneration != existing.CredentialGeneration ||
+			replacement.Status != existing.Status)
 }
 
 func equalInstallationID(left, right *int64) bool {

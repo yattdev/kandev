@@ -392,7 +392,7 @@ func (s *Service) PrepareTaskSession(ctx context.Context, taskID string, agentPr
 		// returns the session ID immediately. The frontend navigates to the session page
 		// and shows preparation progress via executor.prepare.progress WS events.
 		go func() {
-			bgCtx := context.Background()
+			bgCtx := context.WithValue(context.Background(), terminalProviderNoExecutionKey{}, true)
 			launchProfileID := agentProfileID
 			// This workspace-only launch (StartAgent unset) never starts the
 			// agent, so it never reaches "active" itself — the eventual
@@ -1060,6 +1060,13 @@ func (s *Service) handleSessionLaunchFailure(
 // transition (stopNeverStartedExecution) must not do so when this reports
 // false, or it kills the process while the session row still claims RUNNING.
 func (s *Service) recordSessionLaunchFailure(ctx context.Context, taskID, sessionID string, launchErr error, preloadedSession ...*models.TaskSession) bool {
+	noExecutionOwner, _ := ctx.Value(terminalProviderNoExecutionKey{}).(bool)
+	executionOwner, _ := ctx.Value(terminalProviderExecutionKey{}).(string)
+	if s.providerAccessSessionRevoker != nil && !noExecutionOwner && executionOwner == "" {
+		// A delayed callback without its original launch owner cannot revoke
+		// access now held by a successor execution in the same session state.
+		return false
+	}
 	_, changed := s.updateTaskSessionStateWithHook(
 		ctx, taskID, sessionID, models.TaskSessionStateFailed, launchErr.Error(), false,
 		nil, preloadedSession...,
@@ -5041,6 +5048,11 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 }
 
 func (s *Service) deleteSessionAndCleanAttachments(ctx context.Context, session *models.TaskSession) error {
+	if s.providerAccessSessionRevoker != nil {
+		if err := s.providerAccessSessionRevoker.RevokeSession(ctx, session.ID); err != nil {
+			return fmt.Errorf("revoke provider access session: %w", err)
+		}
+	}
 	var deletedAttachments []*models.TaskMessageAttachment
 	var err error
 	if deleter, ok := s.repo.(sessionAttachmentDeleter); ok {

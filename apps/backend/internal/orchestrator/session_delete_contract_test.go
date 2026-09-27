@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,6 +11,32 @@ import (
 	"github.com/kandev/kandev/internal/orchestrator/executor"
 	"github.com/kandev/kandev/internal/task/models"
 )
+
+func TestDeleteSessionRequiresProviderTokenRevocationBeforeRemovingRow(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedTaskAndSession(t, repo, "task-provider", "session-provider", models.TaskSessionStateCompleted)
+	svc := createTestServiceWithAgent(repo, newMockStepGetter(), newMockTaskRepo(), &mockAgentManager{})
+	revokeErr := errors.New("provider revocation unavailable")
+	revoker := &providerSessionRevokeRecorder{err: revokeErr}
+	svc.SetProviderAccessSessionRevoker(revoker)
+	if err := svc.DeleteSession(ctx, "session-provider"); !errors.Is(err, revokeErr) {
+		t.Fatalf("delete with failed provider revocation = %v", err)
+	}
+	if _, err := repo.GetTaskSession(ctx, "session-provider"); err != nil {
+		t.Fatalf("session removed before provider revocation: %v", err)
+	}
+	revoker.err = nil
+	if err := svc.DeleteSession(ctx, "session-provider"); err != nil {
+		t.Fatalf("delete after provider revocation: %v", err)
+	}
+	if _, err := repo.GetTaskSession(ctx, "session-provider"); err == nil {
+		t.Fatal("session retained after successful provider revocation")
+	}
+	if len(revoker.calls) != 2 || revoker.calls[0] != "session-provider" || revoker.calls[1] != "session-provider" {
+		t.Fatalf("provider revocation calls = %v", revoker.calls)
+	}
+}
 
 func TestDeleteSession_PreservesTaskWorkspaceAndNeverEnqueuesCleanup(t *testing.T) {
 	ctx := context.Background()

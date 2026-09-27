@@ -216,6 +216,13 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 	if _, err := lockTaskSessionRow(ctx, tx, running.SessionID); err != nil {
 		return err
 	}
+	var sessionMetadata sql.NullString
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT metadata FROM task_sessions WHERE id = ?`), running.SessionID).Scan(&sessionMetadata); err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if hasTerminalProviderClaim(sessionMetadata.String) {
+		return ErrTerminalProviderClaimPending
+	}
 	var environmentID sql.NullString
 	if queryErr := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT COALESCE(task_environment_id, '') FROM task_sessions WHERE id = ?`), running.SessionID).Scan(&environmentID); queryErr != nil && queryErr != sql.ErrNoRows {
 		return queryErr
@@ -514,20 +521,24 @@ func (r *Repository) DeleteExecutorRunningBySessionID(ctx context.Context, sessi
 	return tx.Commit()
 }
 
-// ensureExecutorRunningAvailableTx applies the environment recovery claim to
-// every mutation of an executors_running row. A session without an environment
-// is still allowed because initial materialization creates the environment
-// before it can be used for recovery.
+// ensureExecutorRunningAvailableTx applies the environment recovery claim and
+// the terminal provider-access reservation to executor-row mutations.
 func (r *Repository) ensureExecutorRunningAvailableTx(ctx context.Context, tx *sqlx.Tx, sessionID string) error {
-	var environmentID sql.NullString
+	if _, err := lockTaskSessionRow(ctx, tx, sessionID); err != nil {
+		return err
+	}
+	var environmentID, metadata sql.NullString
 	err := tx.QueryRowContext(ctx, r.db.Rebind(`
-		SELECT COALESCE(task_environment_id, '') FROM task_sessions WHERE id = ?
-	`), sessionID).Scan(&environmentID)
+		SELECT COALESCE(task_environment_id, ''), metadata FROM task_sessions WHERE id = ?
+	`), sessionID).Scan(&environmentID, &metadata)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+	if hasTerminalProviderClaim(metadata.String) {
+		return ErrTerminalProviderClaimPending
 	}
 	if !environmentID.Valid || environmentID.String == "" {
 		return nil

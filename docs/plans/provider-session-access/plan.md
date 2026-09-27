@@ -1,0 +1,131 @@
+---
+created: 2026-09-26
+status: in_progress
+requirements:
+  - REQ-INTEGRATIONS-PROVIDER-SESSION-ACCESS-001
+system_design:
+  - ../../specs/integrations/system-design/provider-session-access.md
+legacy_specs: []
+---
+
+# Implementation Plan: Direct provider access for managed plugin sessions
+
+## Overview
+
+Replace PR #3165's server-performed CI rerun with a reusable Host grant and
+credential lease. The installed Coordinator plugin calls GitHub directly and
+owns the provider-action ledger. Build and test the grant before retiring the
+old proxy so the draft branch always has a reviewable transition path.
+
+## Scope
+
+### In scope
+
+- Authenticated, generation-scoped, expiring administrator grants for one
+  plugin installation, managed conversation, workspace, target task and
+  repository, provider, and permission purpose.
+- Exact-session Host lease issuance/redemption/release with H6 approval,
+  provider identity checks, redacted audit, and no agent-visible token.
+- Fresh uncached, one-repository GitHub App token minting and explicit
+  provider-side token revocation; GitLab fails closed pending an eligible
+  short-lived token source.
+- A separately owned Coordinator-plugin adapter that validates the live
+  PR/fork/run, calls GitHub directly, and owns idempotent action receipts.
+- Remove the old `request_fresh_ci_run_kandev` proxy, its server operation
+  ledger, obsolete public docs and coverage claims. Keep PR #3165 draft until
+  the replacement has current-head review, QA, and CI evidence.
+
+### Out of scope
+
+- General Actions administration, workflow dispatch from mutable refs,
+  arbitrary repository or provider scopes, merge/deploy/release, a new UI,
+  live consumer CI, and delivery of workspace PATs or App private keys.
+
+## Technical approach
+
+`internal/provideraccess` owns grant/lease/audit persistence, admission,
+idempotency and revocation. It reuses the existing database and auth patterns,
+not Git HTTPS path-matching as provider API authority. `internal/plugins`
+adapts connection-bound Host RPCs and H6 `host.v2.write:provider_access`
+approval; `pkg/pluginsdk` and `proto/kandev/plugin/v1/plugin.proto` expose
+`provider-access/v1` as distinct exact methods. `internal/task/service`
+managed-conversation ownership and primary-session lookup validate the
+plugin-selected session. `internal/github` supplies a new uncached App token
+minter/revoker through the verified workspace installation; `backendapp`
+composes the dependencies and lifecycle revocation hooks.
+
+The plugin implementation remains in its dedicated repository under the
+existing plugin program owner. Its current coordinator-policy `1.1.0`
+contract and digest remain unchanged. `provider-access/v1` is a separate
+versioned addition, with one provider adapter/receipt slice. Host and plugin
+owners exchange request/response fixtures and a minimum compatible SDK/Host
+version before either side claims integration complete.
+The [threat model](threat-model.md) fixes the rerun permission profile,
+residual exported-bearer behavior, and the generic-egress comparison.
+
+## Tests
+
+| Criteria | Evidence |
+| --- | --- |
+| AC-001.1, AC-001.7 | SQLite/Postgres grant, generation, audit and idempotency tests in `internal/provideraccess` |
+| AC-001.2, AC-001.3 | Host integration tests for installation/approval/session/link/head/fork/generation drift |
+| AC-001.4, AC-001.5 | SDK wire round-trip and GitHub HTTP fixtures asserting exact repository/permissions and token redaction |
+| AC-001.6 | Session/grant/plugin/connection revocation tests, including provider revoke failure and restart residual |
+| AC-001.8, AC-001.9 | Negative MCP catalog tests, plugin direct-call/readback tests, GitLab PAT fail-closure |
+
+## Work orders
+
+- [ ] [Task 01: Persist and authorize provider grants](task-01-grant-ledger.md)
+- [ ] [Task 02: Expose exact Host lease and GitHub credential adapter](task-02-host-lease.md)
+- [ ] [Task 03: Integrate the Coordinator provider adapter](task-03-plugin-adapter.md)
+- [ ] [Task 04: Retire the old proxy and document the direct path](task-04-retirement.md)
+
+## Verification results
+
+The Host grant, admission, lease, uncached GitHub token fixture, redacted audit,
+revocation, and lifecycle fencing implementation is published on the
+task-owned fork branch targeting `yattdev/kandev:feat-coordinator-plugin`.
+Source commit `a08961f0a04798effe598d254a3863e17b4c1ac2` supplied the
+provider-access and PostgreSQL 16 store-conformance race suites, focused
+teardown race tests, docs validator, spec lint, changed-package Go lint, and
+diff check pass. A broad orchestrator race run intermittently panicked in an
+unchanged queued-message path; one structured full orchestrator race rerun
+passed. The subsequent `324ad996c164ac8e2083f9a09e734cb844735f44` was
+the first independent Host Review target, not the earlier test head. That
+review found a terminal agent-event revocation retry gap and stale head labels;
+both were corrected before the subsequent review. Review of published fork
+head `3562d5435cbc1bfb25af1c087ad41667737eb1fc` found a remaining
+pre-CAS ownership gap: a stale bootstrap failure could revoke a successor's
+token before its final CAS rejected the event. The follow-up reserves the
+current state, execution, start attempt, and error stamp before revocation,
+fences successor writes, and requires that same reservation on terminal
+commit. Its successor head still needs independent Review. No live token was minted or
+exported. Production plugin credential RPC is disconnected; distinct QA,
+exact-head fork CI, plugin adapter integration and beta validation remain
+before enablement or upstream delivery. The older action-specific proxy
+remains on upstream draft PR #3165 and will be retired only through the
+separately gated route.
+
+## Risks
+
+- GitHub's installation token is one-repository/permission scoped, not PR/run
+  scoped. The plugin is trusted to enforce the lease target. An unrevoked token
+  after Host crash may remain usable until provider expiry.
+- Existing `InstallationTokenCache` shares tokens and cannot be used for this
+  per-lease revocation path.
+- The Coordinator plugin currently has no admitted integration implementation
+  owner or branch. Host completion alone cannot satisfy AC-001.8.
+- Current GitLab workspace PATs cannot satisfy the temporary scoped grant.
+- The Human selected the uncached one-repository GitHub App token on
+  2026-09-27. Live issuance remains disabled until implementation, review,
+  QA, current-head CI, and plugin integration gates pass.
+- A generic origin-only egress policy cannot enforce one PR/run after bearer
+  export. A TLS-terminating gateway with exact request/live-state checks
+  becomes a provider-operation intermediary; see the threat model.
+
+## Open questions
+
+- Option A is recorded; keep live redemption disabled until the complete Host
+  and plugin security contract is reviewed and verified.
+- Plugin program owner admission and minimum SDK/Host version for the
+  `provider-access/v1` adapter.

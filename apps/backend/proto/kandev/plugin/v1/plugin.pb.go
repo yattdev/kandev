@@ -8295,6 +8295,620 @@ func (x *DeleteAgentConversationResponse) GetDeletedCount() int32 {
 	return 0
 }
 
+// provider-access/v1 binds one exact GitHub PR/fork/head and failed source run.
+// All fields are selectors that the Host compares with current records.
+type ProviderAccessGitHubRerunTarget struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Operation        string                 `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	PrNumber         int32                  `protobuf:"varint,2,opt,name=pr_number,json=prNumber,proto3" json:"pr_number,omitempty"`
+	BaseRepositoryId int64                  `protobuf:"varint,3,opt,name=base_repository_id,json=baseRepositoryId,proto3" json:"base_repository_id,omitempty"`
+	BaseRepository   string                 `protobuf:"bytes,4,opt,name=base_repository,json=baseRepository,proto3" json:"base_repository,omitempty"`
+	BaseRef          string                 `protobuf:"bytes,5,opt,name=base_ref,json=baseRef,proto3" json:"base_ref,omitempty"`
+	BaseSha          string                 `protobuf:"bytes,6,opt,name=base_sha,json=baseSha,proto3" json:"base_sha,omitempty"`
+	HeadRepositoryId int64                  `protobuf:"varint,7,opt,name=head_repository_id,json=headRepositoryId,proto3" json:"head_repository_id,omitempty"`
+	HeadRepository   string                 `protobuf:"bytes,8,opt,name=head_repository,json=headRepository,proto3" json:"head_repository,omitempty"`
+	HeadRef          string                 `protobuf:"bytes,9,opt,name=head_ref,json=headRef,proto3" json:"head_ref,omitempty"`
+	HeadSha          string                 `protobuf:"bytes,10,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	SourceRunId      int64                  `protobuf:"varint,11,opt,name=source_run_id,json=sourceRunId,proto3" json:"source_run_id,omitempty"`
+	SourceAttempt    int32                  `protobuf:"varint,12,opt,name=source_attempt,json=sourceAttempt,proto3" json:"source_attempt,omitempty"`
+	WorkflowId       int64                  `protobuf:"varint,13,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ProviderAccessGitHubRerunTarget) Reset() {
+	*x = ProviderAccessGitHubRerunTarget{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[128]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderAccessGitHubRerunTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderAccessGitHubRerunTarget) ProtoMessage() {}
+
+func (x *ProviderAccessGitHubRerunTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[128]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderAccessGitHubRerunTarget.ProtoReflect.Descriptor instead.
+func (*ProviderAccessGitHubRerunTarget) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{128}
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetOperation() string {
+	if x != nil {
+		return x.Operation
+	}
+	return ""
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetPrNumber() int32 {
+	if x != nil {
+		return x.PrNumber
+	}
+	return 0
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetBaseRepositoryId() int64 {
+	if x != nil {
+		return x.BaseRepositoryId
+	}
+	return 0
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetBaseRepository() string {
+	if x != nil {
+		return x.BaseRepository
+	}
+	return ""
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetBaseRef() string {
+	if x != nil {
+		return x.BaseRef
+	}
+	return ""
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetBaseSha() string {
+	if x != nil {
+		return x.BaseSha
+	}
+	return ""
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetHeadRepositoryId() int64 {
+	if x != nil {
+		return x.HeadRepositoryId
+	}
+	return 0
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetHeadRepository() string {
+	if x != nil {
+		return x.HeadRepository
+	}
+	return ""
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetHeadRef() string {
+	if x != nil {
+		return x.HeadRef
+	}
+	return ""
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetHeadSha() string {
+	if x != nil {
+		return x.HeadSha
+	}
+	return ""
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetSourceRunId() int64 {
+	if x != nil {
+		return x.SourceRunId
+	}
+	return 0
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetSourceAttempt() int32 {
+	if x != nil {
+		return x.SourceAttempt
+	}
+	return 0
+}
+
+func (x *ProviderAccessGitHubRerunTarget) GetWorkflowId() int64 {
+	if x != nil {
+		return x.WorkflowId
+	}
+	return 0
+}
+
+type IssueProviderAccessLeaseExactRequest struct {
+	state          protoimpl.MessageState           `protogen:"open.v1"`
+	ApiVersion     string                           `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	RequestId      string                           `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	IdempotencyKey string                           `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	GrantId        string                           `protobuf:"bytes,4,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
+	WorkspaceId    string                           `protobuf:"bytes,5,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	ManagedTaskId  string                           `protobuf:"bytes,6,opt,name=managed_task_id,json=managedTaskId,proto3" json:"managed_task_id,omitempty"`
+	SessionId      string                           `protobuf:"bytes,7,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	TargetTaskId   string                           `protobuf:"bytes,8,opt,name=target_task_id,json=targetTaskId,proto3" json:"target_task_id,omitempty"`
+	RepositoryId   string                           `protobuf:"bytes,9,opt,name=repository_id,json=repositoryId,proto3" json:"repository_id,omitempty"`
+	Provider       string                           `protobuf:"bytes,10,opt,name=provider,proto3" json:"provider,omitempty"`
+	Purpose        string                           `protobuf:"bytes,11,opt,name=purpose,proto3" json:"purpose,omitempty"`
+	Target         *ProviderAccessGitHubRerunTarget `protobuf:"bytes,12,opt,name=target,proto3" json:"target,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) Reset() {
+	*x = IssueProviderAccessLeaseExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[129]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueProviderAccessLeaseExactRequest) ProtoMessage() {}
+
+func (x *IssueProviderAccessLeaseExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[129]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueProviderAccessLeaseExactRequest.ProtoReflect.Descriptor instead.
+func (*IssueProviderAccessLeaseExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{129}
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetApiVersion() string {
+	if x != nil {
+		return x.ApiVersion
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetManagedTaskId() string {
+	if x != nil {
+		return x.ManagedTaskId
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetTargetTaskId() string {
+	if x != nil {
+		return x.TargetTaskId
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetRepositoryId() string {
+	if x != nil {
+		return x.RepositoryId
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetPurpose() string {
+	if x != nil {
+		return x.Purpose
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactRequest) GetTarget() *ProviderAccessGitHubRerunTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+type IssueProviderAccessLeaseExactResponse struct {
+	state                protoimpl.MessageState           `protogen:"open.v1"`
+	LeaseId              string                           `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	ExpiresAt            string                           `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // RFC3339 UTC
+	TargetDigest         string                           `protobuf:"bytes,3,opt,name=target_digest,json=targetDigest,proto3" json:"target_digest,omitempty"`
+	GrantGeneration      int64                            `protobuf:"varint,4,opt,name=grant_generation,json=grantGeneration,proto3" json:"grant_generation,omitempty"`
+	ApprovalRevision     uint64                           `protobuf:"varint,5,opt,name=approval_revision,json=approvalRevision,proto3" json:"approval_revision,omitempty"`
+	ConnectionGeneration string                           `protobuf:"bytes,6,opt,name=connection_generation,json=connectionGeneration,proto3" json:"connection_generation,omitempty"`
+	CanonicalRepository  string                           `protobuf:"bytes,7,opt,name=canonical_repository,json=canonicalRepository,proto3" json:"canonical_repository,omitempty"`
+	Target               *ProviderAccessGitHubRerunTarget `protobuf:"bytes,8,opt,name=target,proto3" json:"target,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) Reset() {
+	*x = IssueProviderAccessLeaseExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[130]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueProviderAccessLeaseExactResponse) ProtoMessage() {}
+
+func (x *IssueProviderAccessLeaseExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[130]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueProviderAccessLeaseExactResponse.ProtoReflect.Descriptor instead.
+func (*IssueProviderAccessLeaseExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{130}
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) GetTargetDigest() string {
+	if x != nil {
+		return x.TargetDigest
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) GetGrantGeneration() int64 {
+	if x != nil {
+		return x.GrantGeneration
+	}
+	return 0
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) GetApprovalRevision() uint64 {
+	if x != nil {
+		return x.ApprovalRevision
+	}
+	return 0
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) GetConnectionGeneration() string {
+	if x != nil {
+		return x.ConnectionGeneration
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) GetCanonicalRepository() string {
+	if x != nil {
+		return x.CanonicalRepository
+	}
+	return ""
+}
+
+func (x *IssueProviderAccessLeaseExactResponse) GetTarget() *ProviderAccessGitHubRerunTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+type RedeemProviderAccessLeaseExactRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	LeaseId       string                 `protobuf:"bytes,3,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RedeemProviderAccessLeaseExactRequest) Reset() {
+	*x = RedeemProviderAccessLeaseExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[131]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RedeemProviderAccessLeaseExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RedeemProviderAccessLeaseExactRequest) ProtoMessage() {}
+
+func (x *RedeemProviderAccessLeaseExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[131]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RedeemProviderAccessLeaseExactRequest.ProtoReflect.Descriptor instead.
+func (*RedeemProviderAccessLeaseExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{131}
+}
+
+func (x *RedeemProviderAccessLeaseExactRequest) GetApiVersion() string {
+	if x != nil {
+		return x.ApiVersion
+	}
+	return ""
+}
+
+func (x *RedeemProviderAccessLeaseExactRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RedeemProviderAccessLeaseExactRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+type RedeemProviderAccessLeaseExactResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Token               string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`                          // transient bearer; never persist or log
+	ExpiresAt           string                 `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // RFC3339 UTC
+	ProviderPrincipalId string                 `protobuf:"bytes,3,opt,name=provider_principal_id,json=providerPrincipalId,proto3" json:"provider_principal_id,omitempty"`
+	CanonicalRepository string                 `protobuf:"bytes,4,opt,name=canonical_repository,json=canonicalRepository,proto3" json:"canonical_repository,omitempty"`
+	PermissionProfile   string                 `protobuf:"bytes,5,opt,name=permission_profile,json=permissionProfile,proto3" json:"permission_profile,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *RedeemProviderAccessLeaseExactResponse) Reset() {
+	*x = RedeemProviderAccessLeaseExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[132]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RedeemProviderAccessLeaseExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RedeemProviderAccessLeaseExactResponse) ProtoMessage() {}
+
+func (x *RedeemProviderAccessLeaseExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[132]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RedeemProviderAccessLeaseExactResponse.ProtoReflect.Descriptor instead.
+func (*RedeemProviderAccessLeaseExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{132}
+}
+
+func (x *RedeemProviderAccessLeaseExactResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *RedeemProviderAccessLeaseExactResponse) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+func (x *RedeemProviderAccessLeaseExactResponse) GetProviderPrincipalId() string {
+	if x != nil {
+		return x.ProviderPrincipalId
+	}
+	return ""
+}
+
+func (x *RedeemProviderAccessLeaseExactResponse) GetCanonicalRepository() string {
+	if x != nil {
+		return x.CanonicalRepository
+	}
+	return ""
+}
+
+func (x *RedeemProviderAccessLeaseExactResponse) GetPermissionProfile() string {
+	if x != nil {
+		return x.PermissionProfile
+	}
+	return ""
+}
+
+type ReleaseProviderAccessLeaseExactRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	LeaseId       string                 `protobuf:"bytes,3,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReleaseProviderAccessLeaseExactRequest) Reset() {
+	*x = ReleaseProviderAccessLeaseExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[133]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseProviderAccessLeaseExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseProviderAccessLeaseExactRequest) ProtoMessage() {}
+
+func (x *ReleaseProviderAccessLeaseExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[133]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseProviderAccessLeaseExactRequest.ProtoReflect.Descriptor instead.
+func (*ReleaseProviderAccessLeaseExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{133}
+}
+
+func (x *ReleaseProviderAccessLeaseExactRequest) GetApiVersion() string {
+	if x != nil {
+		return x.ApiVersion
+	}
+	return ""
+}
+
+func (x *ReleaseProviderAccessLeaseExactRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ReleaseProviderAccessLeaseExactRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+type ReleaseProviderAccessLeaseExactResponse struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	RevokedAtProvider bool                   `protobuf:"varint,1,opt,name=revoked_at_provider,json=revokedAtProvider,proto3" json:"revoked_at_provider,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ReleaseProviderAccessLeaseExactResponse) Reset() {
+	*x = ReleaseProviderAccessLeaseExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[134]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseProviderAccessLeaseExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseProviderAccessLeaseExactResponse) ProtoMessage() {}
+
+func (x *ReleaseProviderAccessLeaseExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[134]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseProviderAccessLeaseExactResponse.ProtoReflect.Descriptor instead.
+func (*ReleaseProviderAccessLeaseExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{134}
+}
+
+func (x *ReleaseProviderAccessLeaseExactResponse) GetRevokedAtProvider() bool {
+	if x != nil {
+		return x.RevokedAtProvider
+	}
+	return false
+}
+
 // Configuration and connection eligibility are always resolved within the host's workspace.
 type AutomationConditionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -8307,7 +8921,7 @@ type AutomationConditionRequest struct {
 
 func (x *AutomationConditionRequest) Reset() {
 	*x = AutomationConditionRequest{}
-	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[128]
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8319,7 +8933,7 @@ func (x *AutomationConditionRequest) String() string {
 func (*AutomationConditionRequest) ProtoMessage() {}
 
 func (x *AutomationConditionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[128]
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8332,7 +8946,7 @@ func (x *AutomationConditionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AutomationConditionRequest.ProtoReflect.Descriptor instead.
 func (*AutomationConditionRequest) Descriptor() ([]byte, []int) {
-	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{128}
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *AutomationConditionRequest) GetWorkspaceId() string {
@@ -8370,7 +8984,7 @@ type AutomationConditionResponse struct {
 
 func (x *AutomationConditionResponse) Reset() {
 	*x = AutomationConditionResponse{}
-	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[129]
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8382,7 +8996,7 @@ func (x *AutomationConditionResponse) String() string {
 func (*AutomationConditionResponse) ProtoMessage() {}
 
 func (x *AutomationConditionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[129]
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8395,7 +9009,7 @@ func (x *AutomationConditionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AutomationConditionResponse.ProtoReflect.Descriptor instead.
 func (*AutomationConditionResponse) Descriptor() ([]byte, []int) {
-	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{129}
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *AutomationConditionResponse) GetAvailable() bool {
@@ -8449,7 +9063,7 @@ type AutomationWebhookRequest struct {
 
 func (x *AutomationWebhookRequest) Reset() {
 	*x = AutomationWebhookRequest{}
-	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[130]
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8461,7 +9075,7 @@ func (x *AutomationWebhookRequest) String() string {
 func (*AutomationWebhookRequest) ProtoMessage() {}
 
 func (x *AutomationWebhookRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[130]
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8474,7 +9088,7 @@ func (x *AutomationWebhookRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AutomationWebhookRequest.ProtoReflect.Descriptor instead.
 func (*AutomationWebhookRequest) Descriptor() ([]byte, []int) {
-	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{130}
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *AutomationWebhookRequest) GetWorkspaceId() string {
@@ -8545,7 +9159,7 @@ type AutomationWebhookResponse struct {
 
 func (x *AutomationWebhookResponse) Reset() {
 	*x = AutomationWebhookResponse{}
-	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[131]
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8557,7 +9171,7 @@ func (x *AutomationWebhookResponse) String() string {
 func (*AutomationWebhookResponse) ProtoMessage() {}
 
 func (x *AutomationWebhookResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[131]
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8570,7 +9184,7 @@ func (x *AutomationWebhookResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AutomationWebhookResponse.ProtoReflect.Descriptor instead.
 func (*AutomationWebhookResponse) Descriptor() ([]byte, []int) {
-	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{131}
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *AutomationWebhookResponse) GetOutcome() string {
@@ -9313,7 +9927,71 @@ const file_kandev_plugin_v1_plugin_proto_rawDesc = "" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12)\n" +
 	"\x10conversation_key\x18\x02 \x01(\tR\x0fconversationKey\"F\n" +
 	"\x1fDeleteAgentConversationResponse\x12#\n" +
-	"\rdeleted_count\x18\x01 \x01(\x05R\fdeletedCount\"|\n" +
+	"\rdeleted_count\x18\x01 \x01(\x05R\fdeletedCount\"\xe2\x03\n" +
+	"\x1fProviderAccessGitHubRerunTarget\x12\x1c\n" +
+	"\toperation\x18\x01 \x01(\tR\toperation\x12\x1b\n" +
+	"\tpr_number\x18\x02 \x01(\x05R\bprNumber\x12,\n" +
+	"\x12base_repository_id\x18\x03 \x01(\x03R\x10baseRepositoryId\x12'\n" +
+	"\x0fbase_repository\x18\x04 \x01(\tR\x0ebaseRepository\x12\x19\n" +
+	"\bbase_ref\x18\x05 \x01(\tR\abaseRef\x12\x19\n" +
+	"\bbase_sha\x18\x06 \x01(\tR\abaseSha\x12,\n" +
+	"\x12head_repository_id\x18\a \x01(\x03R\x10headRepositoryId\x12'\n" +
+	"\x0fhead_repository\x18\b \x01(\tR\x0eheadRepository\x12\x19\n" +
+	"\bhead_ref\x18\t \x01(\tR\aheadRef\x12\x19\n" +
+	"\bhead_sha\x18\n" +
+	" \x01(\tR\aheadSha\x12\"\n" +
+	"\rsource_run_id\x18\v \x01(\x03R\vsourceRunId\x12%\n" +
+	"\x0esource_attempt\x18\f \x01(\x05R\rsourceAttempt\x12\x1f\n" +
+	"\vworkflow_id\x18\r \x01(\x03R\n" +
+	"workflowId\"\xe0\x03\n" +
+	"$IssueProviderAccessLeaseExactRequest\x12\x1f\n" +
+	"\vapi_version\x18\x01 \x01(\tR\n" +
+	"apiVersion\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12\x19\n" +
+	"\bgrant_id\x18\x04 \x01(\tR\agrantId\x12!\n" +
+	"\fworkspace_id\x18\x05 \x01(\tR\vworkspaceId\x12&\n" +
+	"\x0fmanaged_task_id\x18\x06 \x01(\tR\rmanagedTaskId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\a \x01(\tR\tsessionId\x12$\n" +
+	"\x0etarget_task_id\x18\b \x01(\tR\ftargetTaskId\x12#\n" +
+	"\rrepository_id\x18\t \x01(\tR\frepositoryId\x12\x1a\n" +
+	"\bprovider\x18\n" +
+	" \x01(\tR\bprovider\x12\x18\n" +
+	"\apurpose\x18\v \x01(\tR\apurpose\x12I\n" +
+	"\x06target\x18\f \x01(\v21.kandev.plugin.v1.ProviderAccessGitHubRerunTargetR\x06target\"\x91\x03\n" +
+	"%IssueProviderAccessLeaseExactResponse\x12\x19\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x02 \x01(\tR\texpiresAt\x12#\n" +
+	"\rtarget_digest\x18\x03 \x01(\tR\ftargetDigest\x12)\n" +
+	"\x10grant_generation\x18\x04 \x01(\x03R\x0fgrantGeneration\x12+\n" +
+	"\x11approval_revision\x18\x05 \x01(\x04R\x10approvalRevision\x123\n" +
+	"\x15connection_generation\x18\x06 \x01(\tR\x14connectionGeneration\x121\n" +
+	"\x14canonical_repository\x18\a \x01(\tR\x13canonicalRepository\x12I\n" +
+	"\x06target\x18\b \x01(\v21.kandev.plugin.v1.ProviderAccessGitHubRerunTargetR\x06target\"\x82\x01\n" +
+	"%RedeemProviderAccessLeaseExactRequest\x12\x1f\n" +
+	"\vapi_version\x18\x01 \x01(\tR\n" +
+	"apiVersion\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x19\n" +
+	"\blease_id\x18\x03 \x01(\tR\aleaseId\"\xf8\x01\n" +
+	"&RedeemProviderAccessLeaseExactResponse\x12\x19\n" +
+	"\x05token\x18\x01 \x01(\tB\x03\x80\x01\x01R\x05token\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x02 \x01(\tR\texpiresAt\x122\n" +
+	"\x15provider_principal_id\x18\x03 \x01(\tR\x13providerPrincipalId\x121\n" +
+	"\x14canonical_repository\x18\x04 \x01(\tR\x13canonicalRepository\x12-\n" +
+	"\x12permission_profile\x18\x05 \x01(\tR\x11permissionProfile\"\x83\x01\n" +
+	"&ReleaseProviderAccessLeaseExactRequest\x12\x1f\n" +
+	"\vapi_version\x18\x01 \x01(\tR\n" +
+	"apiVersion\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x19\n" +
+	"\blease_id\x18\x03 \x01(\tR\aleaseId\"Y\n" +
+	"'ReleaseProviderAccessLeaseExactResponse\x12.\n" +
+	"\x13revoked_at_provider\x18\x01 \x01(\bR\x11revokedAtProvider\"|\n" +
 	"\x1aAutomationConditionRequest\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12#\n" +
 	"\rcondition_key\x18\x02 \x01(\tR\fconditionKey\x12\x16\n" +
@@ -9351,7 +10029,7 @@ const file_kandev_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x18AuthorizeEntityReference\x121.kandev.plugin.v1.AuthorizeEntityReferenceRequest\x1a2.kandev.plugin.v1.AuthorizeEntityReferenceResponse\x12u\n" +
 	"\x14ResolveGitCredential\x12-.kandev.plugin.v1.ResolveGitCredentialRequest\x1a..kandev.plugin.v1.ResolveGitCredentialResponse\x12x\n" +
 	"\x17GetGitCredentialBinding\x12-.kandev.plugin.v1.GitCredentialBindingRequest\x1a..kandev.plugin.v1.GitCredentialBindingResponse\x12Z\n" +
-	"\x0fInvokeAgentTool\x12\".kandev.plugin.v1.AgentToolRequest\x1a#.kandev.plugin.v1.AgentToolResponse2\x97 \n" +
+	"\x0fInvokeAgentTool\x12\".kandev.plugin.v1.AgentToolRequest\x1a#.kandev.plugin.v1.AgentToolResponse2\xd9#\n" +
 	"\x04Host\x12Q\n" +
 	"\bGetState\x12!.kandev.plugin.v1.GetStateRequest\x1a\".kandev.plugin.v1.GetStateResponse\x12Q\n" +
 	"\bSetState\x12!.kandev.plugin.v1.SetStateRequest\x1a\".kandev.plugin.v1.SetStateResponse\x12Z\n" +
@@ -9390,7 +10068,10 @@ const file_kandev_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x19DeletePluginOwnedTaskTree\x122.kandev.plugin.v1.DeletePluginOwnedTaskTreeRequest\x1a3.kandev.plugin.v1.DeletePluginOwnedTaskTreeResponse\x12~\n" +
 	"\x17EnsureAgentConversation\x120.kandev.plugin.v1.EnsureAgentConversationRequest\x1a1.kandev.plugin.v1.EnsureAgentConversationResponse\x12\x84\x01\n" +
 	"\x19DispatchAgentConversation\x122.kandev.plugin.v1.DispatchAgentConversationRequest\x1a3.kandev.plugin.v1.DispatchAgentConversationResponse\x12~\n" +
-	"\x17DeleteAgentConversation\x120.kandev.plugin.v1.DeleteAgentConversationRequest\x1a1.kandev.plugin.v1.DeleteAgentConversationResponse\x12r\n" +
+	"\x17DeleteAgentConversation\x120.kandev.plugin.v1.DeleteAgentConversationRequest\x1a1.kandev.plugin.v1.DeleteAgentConversationResponse\x12\x90\x01\n" +
+	"\x1dIssueProviderAccessLeaseExact\x126.kandev.plugin.v1.IssueProviderAccessLeaseExactRequest\x1a7.kandev.plugin.v1.IssueProviderAccessLeaseExactResponse\x12\x93\x01\n" +
+	"\x1eRedeemProviderAccessLeaseExact\x127.kandev.plugin.v1.RedeemProviderAccessLeaseExactRequest\x1a8.kandev.plugin.v1.RedeemProviderAccessLeaseExactResponse\x12\x96\x01\n" +
+	"\x1fReleaseProviderAccessLeaseExact\x128.kandev.plugin.v1.ReleaseProviderAccessLeaseExactRequest\x1a9.kandev.plugin.v1.ReleaseProviderAccessLeaseExactResponse\x12r\n" +
 	"\x13RespondToPermission\x12,.kandev.plugin.v1.RespondToPermissionRequest\x1a-.kandev.plugin.v1.RespondToPermissionResponse\x12r\n" +
 	"\x13AnswerClarification\x12,.kandev.plugin.v1.AnswerClarificationRequest\x1a-.kandev.plugin.v1.AnswerClarificationResponse\x12r\n" +
 	"\x13CancelClarification\x12,.kandev.plugin.v1.CancelClarificationRequest\x1a-.kandev.plugin.v1.CancelClarificationResponseB:Z8github.com/kandev/kandev/proto/kandev/plugin/v1;pluginv1b\x06proto3"
@@ -9407,166 +10088,173 @@ func file_kandev_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 	return file_kandev_plugin_v1_plugin_proto_rawDescData
 }
 
-var file_kandev_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 136)
+var file_kandev_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 143)
 var file_kandev_plugin_v1_plugin_proto_goTypes = []any{
-	(*Event)(nil),                                // 0: kandev.plugin.v1.Event
-	(*EventAck)(nil),                             // 1: kandev.plugin.v1.EventAck
-	(*AgentToolRequest)(nil),                     // 2: kandev.plugin.v1.AgentToolRequest
-	(*AgentToolContext)(nil),                     // 3: kandev.plugin.v1.AgentToolContext
-	(*AgentToolResponse)(nil),                    // 4: kandev.plugin.v1.AgentToolResponse
-	(*WebhookRequest)(nil),                       // 5: kandev.plugin.v1.WebhookRequest
-	(*WebhookResponse)(nil),                      // 6: kandev.plugin.v1.WebhookResponse
-	(*PluginActionRequest)(nil),                  // 7: kandev.plugin.v1.PluginActionRequest
-	(*VerifiedActionContext)(nil),                // 8: kandev.plugin.v1.VerifiedActionContext
-	(*PluginActionResponse)(nil),                 // 9: kandev.plugin.v1.PluginActionResponse
-	(*SearchEntityReferencesRequest)(nil),        // 10: kandev.plugin.v1.SearchEntityReferencesRequest
-	(*SearchEntityReferencesResponse)(nil),       // 11: kandev.plugin.v1.SearchEntityReferencesResponse
-	(*EntityReferenceCandidate)(nil),             // 12: kandev.plugin.v1.EntityReferenceCandidate
-	(*AuthorizeEntityReferenceRequest)(nil),      // 13: kandev.plugin.v1.AuthorizeEntityReferenceRequest
-	(*AuthorizeEntityReferenceResponse)(nil),     // 14: kandev.plugin.v1.AuthorizeEntityReferenceResponse
-	(*ResolveGitCredentialRequest)(nil),          // 15: kandev.plugin.v1.ResolveGitCredentialRequest
-	(*ResolveGitCredentialResponse)(nil),         // 16: kandev.plugin.v1.ResolveGitCredentialResponse
-	(*GitCredentialBindingRequest)(nil),          // 17: kandev.plugin.v1.GitCredentialBindingRequest
-	(*GitCredentialBindingResponse)(nil),         // 18: kandev.plugin.v1.GitCredentialBindingResponse
-	(*GetStateRequest)(nil),                      // 19: kandev.plugin.v1.GetStateRequest
-	(*GetStateResponse)(nil),                     // 20: kandev.plugin.v1.GetStateResponse
-	(*SetStateRequest)(nil),                      // 21: kandev.plugin.v1.SetStateRequest
-	(*SetStateResponse)(nil),                     // 22: kandev.plugin.v1.SetStateResponse
-	(*DeleteStateRequest)(nil),                   // 23: kandev.plugin.v1.DeleteStateRequest
-	(*DeleteStateResponse)(nil),                  // 24: kandev.plugin.v1.DeleteStateResponse
-	(*ListStateRequest)(nil),                     // 25: kandev.plugin.v1.ListStateRequest
-	(*ListStateResponse)(nil),                    // 26: kandev.plugin.v1.ListStateResponse
-	(*StateEntry)(nil),                           // 27: kandev.plugin.v1.StateEntry
-	(*GetConfigRequest)(nil),                     // 28: kandev.plugin.v1.GetConfigRequest
-	(*GetConfigResponse)(nil),                    // 29: kandev.plugin.v1.GetConfigResponse
-	(*GetSecretRequest)(nil),                     // 30: kandev.plugin.v1.GetSecretRequest
-	(*GetSecretResponse)(nil),                    // 31: kandev.plugin.v1.GetSecretResponse
-	(*SetSecretRequest)(nil),                     // 32: kandev.plugin.v1.SetSecretRequest
-	(*SetSecretResponse)(nil),                    // 33: kandev.plugin.v1.SetSecretResponse
-	(*DeleteSecretRequest)(nil),                  // 34: kandev.plugin.v1.DeleteSecretRequest
-	(*DeleteSecretResponse)(nil),                 // 35: kandev.plugin.v1.DeleteSecretResponse
-	(*RevealSecretRequest)(nil),                  // 36: kandev.plugin.v1.RevealSecretRequest
-	(*RevealSecretResponse)(nil),                 // 37: kandev.plugin.v1.RevealSecretResponse
-	(*EmitEventRequest)(nil),                     // 38: kandev.plugin.v1.EmitEventRequest
-	(*EmitEventResponse)(nil),                    // 39: kandev.plugin.v1.EmitEventResponse
-	(*Page)(nil),                                 // 40: kandev.plugin.v1.Page
-	(*PageInfo)(nil),                             // 41: kandev.plugin.v1.PageInfo
-	(*Task)(nil),                                 // 42: kandev.plugin.v1.Task
-	(*TaskRepository)(nil),                       // 43: kandev.plugin.v1.TaskRepository
-	(*TaskPullRequest)(nil),                      // 44: kandev.plugin.v1.TaskPullRequest
-	(*TaskDependencyRef)(nil),                    // 45: kandev.plugin.v1.TaskDependencyRef
-	(*TaskFilter)(nil),                           // 46: kandev.plugin.v1.TaskFilter
-	(*ListTasksRequest)(nil),                     // 47: kandev.plugin.v1.ListTasksRequest
-	(*ListTasksResponse)(nil),                    // 48: kandev.plugin.v1.ListTasksResponse
-	(*GetTaskRequest)(nil),                       // 49: kandev.plugin.v1.GetTaskRequest
-	(*GetTaskResponse)(nil),                      // 50: kandev.plugin.v1.GetTaskResponse
-	(*TaskStepTransition)(nil),                   // 51: kandev.plugin.v1.TaskStepTransition
-	(*ListTaskStepTransitionsRequest)(nil),       // 52: kandev.plugin.v1.ListTaskStepTransitionsRequest
-	(*ListTaskStepTransitionsResponse)(nil),      // 53: kandev.plugin.v1.ListTaskStepTransitionsResponse
-	(*Workspace)(nil),                            // 54: kandev.plugin.v1.Workspace
-	(*ListWorkspacesRequest)(nil),                // 55: kandev.plugin.v1.ListWorkspacesRequest
-	(*ListWorkspacesResponse)(nil),               // 56: kandev.plugin.v1.ListWorkspacesResponse
-	(*Workflow)(nil),                             // 57: kandev.plugin.v1.Workflow
-	(*ListWorkflowsRequest)(nil),                 // 58: kandev.plugin.v1.ListWorkflowsRequest
-	(*ListWorkflowsResponse)(nil),                // 59: kandev.plugin.v1.ListWorkflowsResponse
-	(*WorkflowTransitionGroup)(nil),              // 60: kandev.plugin.v1.WorkflowTransitionGroup
-	(*ListWorkflowTransitionGroupsRequest)(nil),  // 61: kandev.plugin.v1.ListWorkflowTransitionGroupsRequest
-	(*ListWorkflowTransitionGroupsResponse)(nil), // 62: kandev.plugin.v1.ListWorkflowTransitionGroupsResponse
-	(*WorkflowStep)(nil),                         // 63: kandev.plugin.v1.WorkflowStep
-	(*ListWorkflowStepsRequest)(nil),             // 64: kandev.plugin.v1.ListWorkflowStepsRequest
-	(*ListWorkflowStepsResponse)(nil),            // 65: kandev.plugin.v1.ListWorkflowStepsResponse
-	(*AgentProfile)(nil),                         // 66: kandev.plugin.v1.AgentProfile
-	(*ListAgentProfilesRequest)(nil),             // 67: kandev.plugin.v1.ListAgentProfilesRequest
-	(*ListAgentProfilesResponse)(nil),            // 68: kandev.plugin.v1.ListAgentProfilesResponse
-	(*ExecutorProfile)(nil),                      // 69: kandev.plugin.v1.ExecutorProfile
-	(*ListExecutorProfilesRequest)(nil),          // 70: kandev.plugin.v1.ListExecutorProfilesRequest
-	(*ListExecutorProfilesResponse)(nil),         // 71: kandev.plugin.v1.ListExecutorProfilesResponse
-	(*Repository)(nil),                           // 72: kandev.plugin.v1.Repository
-	(*ListRepositoriesRequest)(nil),              // 73: kandev.plugin.v1.ListRepositoriesRequest
-	(*ListRepositoriesResponse)(nil),             // 74: kandev.plugin.v1.ListRepositoriesResponse
-	(*Session)(nil),                              // 75: kandev.plugin.v1.Session
-	(*SessionFilter)(nil),                        // 76: kandev.plugin.v1.SessionFilter
-	(*ListSessionsRequest)(nil),                  // 77: kandev.plugin.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),                 // 78: kandev.plugin.v1.ListSessionsResponse
-	(*SessionCodeStats)(nil),                     // 79: kandev.plugin.v1.SessionCodeStats
-	(*ListSessionCodeStatsRequest)(nil),          // 80: kandev.plugin.v1.ListSessionCodeStatsRequest
-	(*ListSessionCodeStatsResponse)(nil),         // 81: kandev.plugin.v1.ListSessionCodeStatsResponse
-	(*Message)(nil),                              // 82: kandev.plugin.v1.Message
-	(*MessageFilter)(nil),                        // 83: kandev.plugin.v1.MessageFilter
-	(*ListMessagesRequest)(nil),                  // 84: kandev.plugin.v1.ListMessagesRequest
-	(*ListMessagesResponse)(nil),                 // 85: kandev.plugin.v1.ListMessagesResponse
-	(*InteractionOption)(nil),                    // 86: kandev.plugin.v1.InteractionOption
-	(*InteractionQuestion)(nil),                  // 87: kandev.plugin.v1.InteractionQuestion
-	(*Interaction)(nil),                          // 88: kandev.plugin.v1.Interaction
-	(*InteractionFilter)(nil),                    // 89: kandev.plugin.v1.InteractionFilter
-	(*ListPendingInteractionsRequest)(nil),       // 90: kandev.plugin.v1.ListPendingInteractionsRequest
-	(*ListPendingInteractionsResponse)(nil),      // 91: kandev.plugin.v1.ListPendingInteractionsResponse
-	(*GetInteractionRequest)(nil),                // 92: kandev.plugin.v1.GetInteractionRequest
-	(*GetInteractionResponse)(nil),               // 93: kandev.plugin.v1.GetInteractionResponse
-	(*RespondToPermissionRequest)(nil),           // 94: kandev.plugin.v1.RespondToPermissionRequest
-	(*RespondToPermissionResponse)(nil),          // 95: kandev.plugin.v1.RespondToPermissionResponse
-	(*ClarificationAnswer)(nil),                  // 96: kandev.plugin.v1.ClarificationAnswer
-	(*AnswerClarificationRequest)(nil),           // 97: kandev.plugin.v1.AnswerClarificationRequest
-	(*AnswerClarificationResponse)(nil),          // 98: kandev.plugin.v1.AnswerClarificationResponse
-	(*CancelClarificationRequest)(nil),           // 99: kandev.plugin.v1.CancelClarificationRequest
-	(*CancelClarificationResponse)(nil),          // 100: kandev.plugin.v1.CancelClarificationResponse
-	(*InvokeUtilityAgentRequest)(nil),            // 101: kandev.plugin.v1.InvokeUtilityAgentRequest
-	(*InvokeUtilityAgentWithOptionsRequest)(nil), // 102: kandev.plugin.v1.InvokeUtilityAgentWithOptionsRequest
-	(*InvokeUtilityAgentResponse)(nil),           // 103: kandev.plugin.v1.InvokeUtilityAgentResponse
-	(*CreateTaskRequest)(nil),                    // 104: kandev.plugin.v1.CreateTaskRequest
-	(*PluginTaskRepository)(nil),                 // 105: kandev.plugin.v1.PluginTaskRepository
-	(*RemoteRepositoryDescriptor)(nil),           // 106: kandev.plugin.v1.RemoteRepositoryDescriptor
-	(*PluginTaskLaunchOptions)(nil),              // 107: kandev.plugin.v1.PluginTaskLaunchOptions
-	(*CreateTaskResponse)(nil),                   // 108: kandev.plugin.v1.CreateTaskResponse
-	(*UpdateTaskRequest)(nil),                    // 109: kandev.plugin.v1.UpdateTaskRequest
-	(*UpdateTaskResponse)(nil),                   // 110: kandev.plugin.v1.UpdateTaskResponse
-	(*MoveTaskRequest)(nil),                      // 111: kandev.plugin.v1.MoveTaskRequest
-	(*MoveTaskResponse)(nil),                     // 112: kandev.plugin.v1.MoveTaskResponse
-	(*SendMessageRequest)(nil),                   // 113: kandev.plugin.v1.SendMessageRequest
-	(*SendMessageResponse)(nil),                  // 114: kandev.plugin.v1.SendMessageResponse
-	(*PreviewPluginOwnedTaskTreeRequest)(nil),    // 115: kandev.plugin.v1.PreviewPluginOwnedTaskTreeRequest
-	(*PreviewPluginOwnedTaskTreeResponse)(nil),   // 116: kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse
-	(*DeletePluginOwnedTaskTreeRequest)(nil),     // 117: kandev.plugin.v1.DeletePluginOwnedTaskTreeRequest
-	(*DeletePluginOwnedTaskTreeResponse)(nil),    // 118: kandev.plugin.v1.DeletePluginOwnedTaskTreeResponse
-	(*DeletePluginOwnedTaskTreeProgress)(nil),    // 119: kandev.plugin.v1.DeletePluginOwnedTaskTreeProgress
-	(*AgentConversationDescriptor)(nil),          // 120: kandev.plugin.v1.AgentConversationDescriptor
-	(*AgentConversationSpec)(nil),                // 121: kandev.plugin.v1.AgentConversationSpec
-	(*EnsureAgentConversationRequest)(nil),       // 122: kandev.plugin.v1.EnsureAgentConversationRequest
-	(*EnsureAgentConversationResponse)(nil),      // 123: kandev.plugin.v1.EnsureAgentConversationResponse
-	(*DispatchAgentConversationRequest)(nil),     // 124: kandev.plugin.v1.DispatchAgentConversationRequest
-	(*DispatchAgentConversationResponse)(nil),    // 125: kandev.plugin.v1.DispatchAgentConversationResponse
-	(*DeleteAgentConversationRequest)(nil),       // 126: kandev.plugin.v1.DeleteAgentConversationRequest
-	(*DeleteAgentConversationResponse)(nil),      // 127: kandev.plugin.v1.DeleteAgentConversationResponse
-	(*AutomationConditionRequest)(nil),           // 128: kandev.plugin.v1.AutomationConditionRequest
-	(*AutomationConditionResponse)(nil),          // 129: kandev.plugin.v1.AutomationConditionResponse
-	(*AutomationWebhookRequest)(nil),             // 130: kandev.plugin.v1.AutomationWebhookRequest
-	(*AutomationWebhookResponse)(nil),            // 131: kandev.plugin.v1.AutomationWebhookResponse
-	nil,                                          // 132: kandev.plugin.v1.WebhookRequest.HeadersEntry
-	nil,                                          // 133: kandev.plugin.v1.WebhookResponse.HeadersEntry
-	nil,                                          // 134: kandev.plugin.v1.PluginActionResponse.HeadersEntry
-	nil,                                          // 135: kandev.plugin.v1.AutomationWebhookRequest.HeadersEntry
-	(*structpb.Struct)(nil),                      // 136: google.protobuf.Struct
+	(*Event)(nil),                                   // 0: kandev.plugin.v1.Event
+	(*EventAck)(nil),                                // 1: kandev.plugin.v1.EventAck
+	(*AgentToolRequest)(nil),                        // 2: kandev.plugin.v1.AgentToolRequest
+	(*AgentToolContext)(nil),                        // 3: kandev.plugin.v1.AgentToolContext
+	(*AgentToolResponse)(nil),                       // 4: kandev.plugin.v1.AgentToolResponse
+	(*WebhookRequest)(nil),                          // 5: kandev.plugin.v1.WebhookRequest
+	(*WebhookResponse)(nil),                         // 6: kandev.plugin.v1.WebhookResponse
+	(*PluginActionRequest)(nil),                     // 7: kandev.plugin.v1.PluginActionRequest
+	(*VerifiedActionContext)(nil),                   // 8: kandev.plugin.v1.VerifiedActionContext
+	(*PluginActionResponse)(nil),                    // 9: kandev.plugin.v1.PluginActionResponse
+	(*SearchEntityReferencesRequest)(nil),           // 10: kandev.plugin.v1.SearchEntityReferencesRequest
+	(*SearchEntityReferencesResponse)(nil),          // 11: kandev.plugin.v1.SearchEntityReferencesResponse
+	(*EntityReferenceCandidate)(nil),                // 12: kandev.plugin.v1.EntityReferenceCandidate
+	(*AuthorizeEntityReferenceRequest)(nil),         // 13: kandev.plugin.v1.AuthorizeEntityReferenceRequest
+	(*AuthorizeEntityReferenceResponse)(nil),        // 14: kandev.plugin.v1.AuthorizeEntityReferenceResponse
+	(*ResolveGitCredentialRequest)(nil),             // 15: kandev.plugin.v1.ResolveGitCredentialRequest
+	(*ResolveGitCredentialResponse)(nil),            // 16: kandev.plugin.v1.ResolveGitCredentialResponse
+	(*GitCredentialBindingRequest)(nil),             // 17: kandev.plugin.v1.GitCredentialBindingRequest
+	(*GitCredentialBindingResponse)(nil),            // 18: kandev.plugin.v1.GitCredentialBindingResponse
+	(*GetStateRequest)(nil),                         // 19: kandev.plugin.v1.GetStateRequest
+	(*GetStateResponse)(nil),                        // 20: kandev.plugin.v1.GetStateResponse
+	(*SetStateRequest)(nil),                         // 21: kandev.plugin.v1.SetStateRequest
+	(*SetStateResponse)(nil),                        // 22: kandev.plugin.v1.SetStateResponse
+	(*DeleteStateRequest)(nil),                      // 23: kandev.plugin.v1.DeleteStateRequest
+	(*DeleteStateResponse)(nil),                     // 24: kandev.plugin.v1.DeleteStateResponse
+	(*ListStateRequest)(nil),                        // 25: kandev.plugin.v1.ListStateRequest
+	(*ListStateResponse)(nil),                       // 26: kandev.plugin.v1.ListStateResponse
+	(*StateEntry)(nil),                              // 27: kandev.plugin.v1.StateEntry
+	(*GetConfigRequest)(nil),                        // 28: kandev.plugin.v1.GetConfigRequest
+	(*GetConfigResponse)(nil),                       // 29: kandev.plugin.v1.GetConfigResponse
+	(*GetSecretRequest)(nil),                        // 30: kandev.plugin.v1.GetSecretRequest
+	(*GetSecretResponse)(nil),                       // 31: kandev.plugin.v1.GetSecretResponse
+	(*SetSecretRequest)(nil),                        // 32: kandev.plugin.v1.SetSecretRequest
+	(*SetSecretResponse)(nil),                       // 33: kandev.plugin.v1.SetSecretResponse
+	(*DeleteSecretRequest)(nil),                     // 34: kandev.plugin.v1.DeleteSecretRequest
+	(*DeleteSecretResponse)(nil),                    // 35: kandev.plugin.v1.DeleteSecretResponse
+	(*RevealSecretRequest)(nil),                     // 36: kandev.plugin.v1.RevealSecretRequest
+	(*RevealSecretResponse)(nil),                    // 37: kandev.plugin.v1.RevealSecretResponse
+	(*EmitEventRequest)(nil),                        // 38: kandev.plugin.v1.EmitEventRequest
+	(*EmitEventResponse)(nil),                       // 39: kandev.plugin.v1.EmitEventResponse
+	(*Page)(nil),                                    // 40: kandev.plugin.v1.Page
+	(*PageInfo)(nil),                                // 41: kandev.plugin.v1.PageInfo
+	(*Task)(nil),                                    // 42: kandev.plugin.v1.Task
+	(*TaskRepository)(nil),                          // 43: kandev.plugin.v1.TaskRepository
+	(*TaskPullRequest)(nil),                         // 44: kandev.plugin.v1.TaskPullRequest
+	(*TaskDependencyRef)(nil),                       // 45: kandev.plugin.v1.TaskDependencyRef
+	(*TaskFilter)(nil),                              // 46: kandev.plugin.v1.TaskFilter
+	(*ListTasksRequest)(nil),                        // 47: kandev.plugin.v1.ListTasksRequest
+	(*ListTasksResponse)(nil),                       // 48: kandev.plugin.v1.ListTasksResponse
+	(*GetTaskRequest)(nil),                          // 49: kandev.plugin.v1.GetTaskRequest
+	(*GetTaskResponse)(nil),                         // 50: kandev.plugin.v1.GetTaskResponse
+	(*TaskStepTransition)(nil),                      // 51: kandev.plugin.v1.TaskStepTransition
+	(*ListTaskStepTransitionsRequest)(nil),          // 52: kandev.plugin.v1.ListTaskStepTransitionsRequest
+	(*ListTaskStepTransitionsResponse)(nil),         // 53: kandev.plugin.v1.ListTaskStepTransitionsResponse
+	(*Workspace)(nil),                               // 54: kandev.plugin.v1.Workspace
+	(*ListWorkspacesRequest)(nil),                   // 55: kandev.plugin.v1.ListWorkspacesRequest
+	(*ListWorkspacesResponse)(nil),                  // 56: kandev.plugin.v1.ListWorkspacesResponse
+	(*Workflow)(nil),                                // 57: kandev.plugin.v1.Workflow
+	(*ListWorkflowsRequest)(nil),                    // 58: kandev.plugin.v1.ListWorkflowsRequest
+	(*ListWorkflowsResponse)(nil),                   // 59: kandev.plugin.v1.ListWorkflowsResponse
+	(*WorkflowTransitionGroup)(nil),                 // 60: kandev.plugin.v1.WorkflowTransitionGroup
+	(*ListWorkflowTransitionGroupsRequest)(nil),     // 61: kandev.plugin.v1.ListWorkflowTransitionGroupsRequest
+	(*ListWorkflowTransitionGroupsResponse)(nil),    // 62: kandev.plugin.v1.ListWorkflowTransitionGroupsResponse
+	(*WorkflowStep)(nil),                            // 63: kandev.plugin.v1.WorkflowStep
+	(*ListWorkflowStepsRequest)(nil),                // 64: kandev.plugin.v1.ListWorkflowStepsRequest
+	(*ListWorkflowStepsResponse)(nil),               // 65: kandev.plugin.v1.ListWorkflowStepsResponse
+	(*AgentProfile)(nil),                            // 66: kandev.plugin.v1.AgentProfile
+	(*ListAgentProfilesRequest)(nil),                // 67: kandev.plugin.v1.ListAgentProfilesRequest
+	(*ListAgentProfilesResponse)(nil),               // 68: kandev.plugin.v1.ListAgentProfilesResponse
+	(*ExecutorProfile)(nil),                         // 69: kandev.plugin.v1.ExecutorProfile
+	(*ListExecutorProfilesRequest)(nil),             // 70: kandev.plugin.v1.ListExecutorProfilesRequest
+	(*ListExecutorProfilesResponse)(nil),            // 71: kandev.plugin.v1.ListExecutorProfilesResponse
+	(*Repository)(nil),                              // 72: kandev.plugin.v1.Repository
+	(*ListRepositoriesRequest)(nil),                 // 73: kandev.plugin.v1.ListRepositoriesRequest
+	(*ListRepositoriesResponse)(nil),                // 74: kandev.plugin.v1.ListRepositoriesResponse
+	(*Session)(nil),                                 // 75: kandev.plugin.v1.Session
+	(*SessionFilter)(nil),                           // 76: kandev.plugin.v1.SessionFilter
+	(*ListSessionsRequest)(nil),                     // 77: kandev.plugin.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),                    // 78: kandev.plugin.v1.ListSessionsResponse
+	(*SessionCodeStats)(nil),                        // 79: kandev.plugin.v1.SessionCodeStats
+	(*ListSessionCodeStatsRequest)(nil),             // 80: kandev.plugin.v1.ListSessionCodeStatsRequest
+	(*ListSessionCodeStatsResponse)(nil),            // 81: kandev.plugin.v1.ListSessionCodeStatsResponse
+	(*Message)(nil),                                 // 82: kandev.plugin.v1.Message
+	(*MessageFilter)(nil),                           // 83: kandev.plugin.v1.MessageFilter
+	(*ListMessagesRequest)(nil),                     // 84: kandev.plugin.v1.ListMessagesRequest
+	(*ListMessagesResponse)(nil),                    // 85: kandev.plugin.v1.ListMessagesResponse
+	(*InteractionOption)(nil),                       // 86: kandev.plugin.v1.InteractionOption
+	(*InteractionQuestion)(nil),                     // 87: kandev.plugin.v1.InteractionQuestion
+	(*Interaction)(nil),                             // 88: kandev.plugin.v1.Interaction
+	(*InteractionFilter)(nil),                       // 89: kandev.plugin.v1.InteractionFilter
+	(*ListPendingInteractionsRequest)(nil),          // 90: kandev.plugin.v1.ListPendingInteractionsRequest
+	(*ListPendingInteractionsResponse)(nil),         // 91: kandev.plugin.v1.ListPendingInteractionsResponse
+	(*GetInteractionRequest)(nil),                   // 92: kandev.plugin.v1.GetInteractionRequest
+	(*GetInteractionResponse)(nil),                  // 93: kandev.plugin.v1.GetInteractionResponse
+	(*RespondToPermissionRequest)(nil),              // 94: kandev.plugin.v1.RespondToPermissionRequest
+	(*RespondToPermissionResponse)(nil),             // 95: kandev.plugin.v1.RespondToPermissionResponse
+	(*ClarificationAnswer)(nil),                     // 96: kandev.plugin.v1.ClarificationAnswer
+	(*AnswerClarificationRequest)(nil),              // 97: kandev.plugin.v1.AnswerClarificationRequest
+	(*AnswerClarificationResponse)(nil),             // 98: kandev.plugin.v1.AnswerClarificationResponse
+	(*CancelClarificationRequest)(nil),              // 99: kandev.plugin.v1.CancelClarificationRequest
+	(*CancelClarificationResponse)(nil),             // 100: kandev.plugin.v1.CancelClarificationResponse
+	(*InvokeUtilityAgentRequest)(nil),               // 101: kandev.plugin.v1.InvokeUtilityAgentRequest
+	(*InvokeUtilityAgentWithOptionsRequest)(nil),    // 102: kandev.plugin.v1.InvokeUtilityAgentWithOptionsRequest
+	(*InvokeUtilityAgentResponse)(nil),              // 103: kandev.plugin.v1.InvokeUtilityAgentResponse
+	(*CreateTaskRequest)(nil),                       // 104: kandev.plugin.v1.CreateTaskRequest
+	(*PluginTaskRepository)(nil),                    // 105: kandev.plugin.v1.PluginTaskRepository
+	(*RemoteRepositoryDescriptor)(nil),              // 106: kandev.plugin.v1.RemoteRepositoryDescriptor
+	(*PluginTaskLaunchOptions)(nil),                 // 107: kandev.plugin.v1.PluginTaskLaunchOptions
+	(*CreateTaskResponse)(nil),                      // 108: kandev.plugin.v1.CreateTaskResponse
+	(*UpdateTaskRequest)(nil),                       // 109: kandev.plugin.v1.UpdateTaskRequest
+	(*UpdateTaskResponse)(nil),                      // 110: kandev.plugin.v1.UpdateTaskResponse
+	(*MoveTaskRequest)(nil),                         // 111: kandev.plugin.v1.MoveTaskRequest
+	(*MoveTaskResponse)(nil),                        // 112: kandev.plugin.v1.MoveTaskResponse
+	(*SendMessageRequest)(nil),                      // 113: kandev.plugin.v1.SendMessageRequest
+	(*SendMessageResponse)(nil),                     // 114: kandev.plugin.v1.SendMessageResponse
+	(*PreviewPluginOwnedTaskTreeRequest)(nil),       // 115: kandev.plugin.v1.PreviewPluginOwnedTaskTreeRequest
+	(*PreviewPluginOwnedTaskTreeResponse)(nil),      // 116: kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse
+	(*DeletePluginOwnedTaskTreeRequest)(nil),        // 117: kandev.plugin.v1.DeletePluginOwnedTaskTreeRequest
+	(*DeletePluginOwnedTaskTreeResponse)(nil),       // 118: kandev.plugin.v1.DeletePluginOwnedTaskTreeResponse
+	(*DeletePluginOwnedTaskTreeProgress)(nil),       // 119: kandev.plugin.v1.DeletePluginOwnedTaskTreeProgress
+	(*AgentConversationDescriptor)(nil),             // 120: kandev.plugin.v1.AgentConversationDescriptor
+	(*AgentConversationSpec)(nil),                   // 121: kandev.plugin.v1.AgentConversationSpec
+	(*EnsureAgentConversationRequest)(nil),          // 122: kandev.plugin.v1.EnsureAgentConversationRequest
+	(*EnsureAgentConversationResponse)(nil),         // 123: kandev.plugin.v1.EnsureAgentConversationResponse
+	(*DispatchAgentConversationRequest)(nil),        // 124: kandev.plugin.v1.DispatchAgentConversationRequest
+	(*DispatchAgentConversationResponse)(nil),       // 125: kandev.plugin.v1.DispatchAgentConversationResponse
+	(*DeleteAgentConversationRequest)(nil),          // 126: kandev.plugin.v1.DeleteAgentConversationRequest
+	(*DeleteAgentConversationResponse)(nil),         // 127: kandev.plugin.v1.DeleteAgentConversationResponse
+	(*ProviderAccessGitHubRerunTarget)(nil),         // 128: kandev.plugin.v1.ProviderAccessGitHubRerunTarget
+	(*IssueProviderAccessLeaseExactRequest)(nil),    // 129: kandev.plugin.v1.IssueProviderAccessLeaseExactRequest
+	(*IssueProviderAccessLeaseExactResponse)(nil),   // 130: kandev.plugin.v1.IssueProviderAccessLeaseExactResponse
+	(*RedeemProviderAccessLeaseExactRequest)(nil),   // 131: kandev.plugin.v1.RedeemProviderAccessLeaseExactRequest
+	(*RedeemProviderAccessLeaseExactResponse)(nil),  // 132: kandev.plugin.v1.RedeemProviderAccessLeaseExactResponse
+	(*ReleaseProviderAccessLeaseExactRequest)(nil),  // 133: kandev.plugin.v1.ReleaseProviderAccessLeaseExactRequest
+	(*ReleaseProviderAccessLeaseExactResponse)(nil), // 134: kandev.plugin.v1.ReleaseProviderAccessLeaseExactResponse
+	(*AutomationConditionRequest)(nil),              // 135: kandev.plugin.v1.AutomationConditionRequest
+	(*AutomationConditionResponse)(nil),             // 136: kandev.plugin.v1.AutomationConditionResponse
+	(*AutomationWebhookRequest)(nil),                // 137: kandev.plugin.v1.AutomationWebhookRequest
+	(*AutomationWebhookResponse)(nil),               // 138: kandev.plugin.v1.AutomationWebhookResponse
+	nil,                                             // 139: kandev.plugin.v1.WebhookRequest.HeadersEntry
+	nil,                                             // 140: kandev.plugin.v1.WebhookResponse.HeadersEntry
+	nil,                                             // 141: kandev.plugin.v1.PluginActionResponse.HeadersEntry
+	nil,                                             // 142: kandev.plugin.v1.AutomationWebhookRequest.HeadersEntry
+	(*structpb.Struct)(nil),                         // 143: google.protobuf.Struct
 }
 var file_kandev_plugin_v1_plugin_proto_depIdxs = []int32{
-	136, // 0: kandev.plugin.v1.Event.payload:type_name -> google.protobuf.Struct
-	136, // 1: kandev.plugin.v1.AgentToolRequest.arguments:type_name -> google.protobuf.Struct
+	143, // 0: kandev.plugin.v1.Event.payload:type_name -> google.protobuf.Struct
+	143, // 1: kandev.plugin.v1.AgentToolRequest.arguments:type_name -> google.protobuf.Struct
 	3,   // 2: kandev.plugin.v1.AgentToolRequest.context:type_name -> kandev.plugin.v1.AgentToolContext
-	136, // 3: kandev.plugin.v1.AgentToolResponse.structured_content:type_name -> google.protobuf.Struct
-	132, // 4: kandev.plugin.v1.WebhookRequest.headers:type_name -> kandev.plugin.v1.WebhookRequest.HeadersEntry
-	133, // 5: kandev.plugin.v1.WebhookResponse.headers:type_name -> kandev.plugin.v1.WebhookResponse.HeadersEntry
+	143, // 3: kandev.plugin.v1.AgentToolResponse.structured_content:type_name -> google.protobuf.Struct
+	139, // 4: kandev.plugin.v1.WebhookRequest.headers:type_name -> kandev.plugin.v1.WebhookRequest.HeadersEntry
+	140, // 5: kandev.plugin.v1.WebhookResponse.headers:type_name -> kandev.plugin.v1.WebhookResponse.HeadersEntry
 	8,   // 6: kandev.plugin.v1.PluginActionRequest.context:type_name -> kandev.plugin.v1.VerifiedActionContext
-	134, // 7: kandev.plugin.v1.PluginActionResponse.headers:type_name -> kandev.plugin.v1.PluginActionResponse.HeadersEntry
+	141, // 7: kandev.plugin.v1.PluginActionResponse.headers:type_name -> kandev.plugin.v1.PluginActionResponse.HeadersEntry
 	12,  // 8: kandev.plugin.v1.SearchEntityReferencesResponse.candidates:type_name -> kandev.plugin.v1.EntityReferenceCandidate
-	136, // 9: kandev.plugin.v1.EntityReferenceCandidate.attributes:type_name -> google.protobuf.Struct
-	136, // 10: kandev.plugin.v1.AuthorizeEntityReferenceRequest.reference:type_name -> google.protobuf.Struct
-	136, // 11: kandev.plugin.v1.GetStateResponse.value:type_name -> google.protobuf.Struct
-	136, // 12: kandev.plugin.v1.SetStateRequest.value:type_name -> google.protobuf.Struct
+	143, // 9: kandev.plugin.v1.EntityReferenceCandidate.attributes:type_name -> google.protobuf.Struct
+	143, // 10: kandev.plugin.v1.AuthorizeEntityReferenceRequest.reference:type_name -> google.protobuf.Struct
+	143, // 11: kandev.plugin.v1.GetStateResponse.value:type_name -> google.protobuf.Struct
+	143, // 12: kandev.plugin.v1.SetStateRequest.value:type_name -> google.protobuf.Struct
 	27,  // 13: kandev.plugin.v1.ListStateResponse.entries:type_name -> kandev.plugin.v1.StateEntry
-	136, // 14: kandev.plugin.v1.StateEntry.value:type_name -> google.protobuf.Struct
-	136, // 15: kandev.plugin.v1.GetConfigResponse.config:type_name -> google.protobuf.Struct
-	136, // 16: kandev.plugin.v1.EmitEventRequest.payload:type_name -> google.protobuf.Struct
+	143, // 14: kandev.plugin.v1.StateEntry.value:type_name -> google.protobuf.Struct
+	143, // 15: kandev.plugin.v1.GetConfigResponse.config:type_name -> google.protobuf.Struct
+	143, // 16: kandev.plugin.v1.EmitEventRequest.payload:type_name -> google.protobuf.Struct
 	43,  // 17: kandev.plugin.v1.Task.repositories:type_name -> kandev.plugin.v1.TaskRepository
-	136, // 18: kandev.plugin.v1.Task.metadata:type_name -> google.protobuf.Struct
+	143, // 18: kandev.plugin.v1.Task.metadata:type_name -> google.protobuf.Struct
 	44,  // 19: kandev.plugin.v1.Task.pull_requests:type_name -> kandev.plugin.v1.TaskPullRequest
 	45,  // 20: kandev.plugin.v1.Task.depends_on:type_name -> kandev.plugin.v1.TaskDependencyRef
 	45,  // 21: kandev.plugin.v1.Task.blocks:type_name -> kandev.plugin.v1.TaskDependencyRef
@@ -9623,7 +10311,7 @@ var file_kandev_plugin_v1_plugin_proto_depIdxs = []int32{
 	88,  // 72: kandev.plugin.v1.CancelClarificationResponse.interaction:type_name -> kandev.plugin.v1.Interaction
 	105, // 73: kandev.plugin.v1.CreateTaskRequest.repositories:type_name -> kandev.plugin.v1.PluginTaskRepository
 	107, // 74: kandev.plugin.v1.CreateTaskRequest.launch:type_name -> kandev.plugin.v1.PluginTaskLaunchOptions
-	136, // 75: kandev.plugin.v1.CreateTaskRequest.metadata:type_name -> google.protobuf.Struct
+	143, // 75: kandev.plugin.v1.CreateTaskRequest.metadata:type_name -> google.protobuf.Struct
 	106, // 76: kandev.plugin.v1.PluginTaskRepository.remote:type_name -> kandev.plugin.v1.RemoteRepositoryDescriptor
 	42,  // 77: kandev.plugin.v1.CreateTaskResponse.task:type_name -> kandev.plugin.v1.Task
 	42,  // 78: kandev.plugin.v1.UpdateTaskResponse.task:type_name -> kandev.plugin.v1.Task
@@ -9632,110 +10320,118 @@ var file_kandev_plugin_v1_plugin_proto_depIdxs = []int32{
 	121, // 81: kandev.plugin.v1.EnsureAgentConversationRequest.spec:type_name -> kandev.plugin.v1.AgentConversationSpec
 	120, // 82: kandev.plugin.v1.EnsureAgentConversationResponse.conv_descriptor:type_name -> kandev.plugin.v1.AgentConversationDescriptor
 	120, // 83: kandev.plugin.v1.DispatchAgentConversationResponse.conv_descriptor:type_name -> kandev.plugin.v1.AgentConversationDescriptor
-	135, // 84: kandev.plugin.v1.AutomationWebhookRequest.headers:type_name -> kandev.plugin.v1.AutomationWebhookRequest.HeadersEntry
-	0,   // 85: kandev.plugin.v1.Plugin.DeliverEvent:input_type -> kandev.plugin.v1.Event
-	5,   // 86: kandev.plugin.v1.Plugin.HandleWebhook:input_type -> kandev.plugin.v1.WebhookRequest
-	128, // 87: kandev.plugin.v1.Plugin.DescribeAutomationCondition:input_type -> kandev.plugin.v1.AutomationConditionRequest
-	130, // 88: kandev.plugin.v1.Plugin.VerifyAutomationWebhook:input_type -> kandev.plugin.v1.AutomationWebhookRequest
-	7,   // 89: kandev.plugin.v1.Plugin.HandleAction:input_type -> kandev.plugin.v1.PluginActionRequest
-	10,  // 90: kandev.plugin.v1.Plugin.SearchEntityReferences:input_type -> kandev.plugin.v1.SearchEntityReferencesRequest
-	13,  // 91: kandev.plugin.v1.Plugin.AuthorizeEntityReference:input_type -> kandev.plugin.v1.AuthorizeEntityReferenceRequest
-	15,  // 92: kandev.plugin.v1.Plugin.ResolveGitCredential:input_type -> kandev.plugin.v1.ResolveGitCredentialRequest
-	17,  // 93: kandev.plugin.v1.Plugin.GetGitCredentialBinding:input_type -> kandev.plugin.v1.GitCredentialBindingRequest
-	2,   // 94: kandev.plugin.v1.Plugin.InvokeAgentTool:input_type -> kandev.plugin.v1.AgentToolRequest
-	19,  // 95: kandev.plugin.v1.Host.GetState:input_type -> kandev.plugin.v1.GetStateRequest
-	21,  // 96: kandev.plugin.v1.Host.SetState:input_type -> kandev.plugin.v1.SetStateRequest
-	23,  // 97: kandev.plugin.v1.Host.DeleteState:input_type -> kandev.plugin.v1.DeleteStateRequest
-	25,  // 98: kandev.plugin.v1.Host.ListState:input_type -> kandev.plugin.v1.ListStateRequest
-	36,  // 99: kandev.plugin.v1.Host.RevealSecret:input_type -> kandev.plugin.v1.RevealSecretRequest
-	38,  // 100: kandev.plugin.v1.Host.EmitEvent:input_type -> kandev.plugin.v1.EmitEventRequest
-	30,  // 101: kandev.plugin.v1.Host.GetSecret:input_type -> kandev.plugin.v1.GetSecretRequest
-	32,  // 102: kandev.plugin.v1.Host.SetSecret:input_type -> kandev.plugin.v1.SetSecretRequest
-	34,  // 103: kandev.plugin.v1.Host.DeleteSecret:input_type -> kandev.plugin.v1.DeleteSecretRequest
-	28,  // 104: kandev.plugin.v1.Host.GetConfig:input_type -> kandev.plugin.v1.GetConfigRequest
-	47,  // 105: kandev.plugin.v1.Host.ListTasks:input_type -> kandev.plugin.v1.ListTasksRequest
-	49,  // 106: kandev.plugin.v1.Host.GetTask:input_type -> kandev.plugin.v1.GetTaskRequest
-	52,  // 107: kandev.plugin.v1.Host.ListTaskStepTransitions:input_type -> kandev.plugin.v1.ListTaskStepTransitionsRequest
-	55,  // 108: kandev.plugin.v1.Host.ListWorkspaces:input_type -> kandev.plugin.v1.ListWorkspacesRequest
-	58,  // 109: kandev.plugin.v1.Host.ListWorkflows:input_type -> kandev.plugin.v1.ListWorkflowsRequest
-	64,  // 110: kandev.plugin.v1.Host.ListWorkflowSteps:input_type -> kandev.plugin.v1.ListWorkflowStepsRequest
-	61,  // 111: kandev.plugin.v1.Host.ListWorkflowTransitionGroups:input_type -> kandev.plugin.v1.ListWorkflowTransitionGroupsRequest
-	67,  // 112: kandev.plugin.v1.Host.ListAgentProfiles:input_type -> kandev.plugin.v1.ListAgentProfilesRequest
-	70,  // 113: kandev.plugin.v1.Host.ListExecutorProfiles:input_type -> kandev.plugin.v1.ListExecutorProfilesRequest
-	73,  // 114: kandev.plugin.v1.Host.ListRepositories:input_type -> kandev.plugin.v1.ListRepositoriesRequest
-	77,  // 115: kandev.plugin.v1.Host.ListSessions:input_type -> kandev.plugin.v1.ListSessionsRequest
-	80,  // 116: kandev.plugin.v1.Host.ListSessionCodeStats:input_type -> kandev.plugin.v1.ListSessionCodeStatsRequest
-	84,  // 117: kandev.plugin.v1.Host.ListMessages:input_type -> kandev.plugin.v1.ListMessagesRequest
-	90,  // 118: kandev.plugin.v1.Host.ListPendingInteractions:input_type -> kandev.plugin.v1.ListPendingInteractionsRequest
-	92,  // 119: kandev.plugin.v1.Host.GetInteraction:input_type -> kandev.plugin.v1.GetInteractionRequest
-	101, // 120: kandev.plugin.v1.Host.InvokeUtilityAgent:input_type -> kandev.plugin.v1.InvokeUtilityAgentRequest
-	102, // 121: kandev.plugin.v1.Host.InvokeUtilityAgentWithOptions:input_type -> kandev.plugin.v1.InvokeUtilityAgentWithOptionsRequest
-	104, // 122: kandev.plugin.v1.Host.CreateTask:input_type -> kandev.plugin.v1.CreateTaskRequest
-	109, // 123: kandev.plugin.v1.Host.UpdateTask:input_type -> kandev.plugin.v1.UpdateTaskRequest
-	111, // 124: kandev.plugin.v1.Host.MoveTask:input_type -> kandev.plugin.v1.MoveTaskRequest
-	113, // 125: kandev.plugin.v1.Host.SendMessage:input_type -> kandev.plugin.v1.SendMessageRequest
-	115, // 126: kandev.plugin.v1.Host.PreviewPluginOwnedTaskTree:input_type -> kandev.plugin.v1.PreviewPluginOwnedTaskTreeRequest
-	117, // 127: kandev.plugin.v1.Host.DeletePluginOwnedTaskTree:input_type -> kandev.plugin.v1.DeletePluginOwnedTaskTreeRequest
-	122, // 128: kandev.plugin.v1.Host.EnsureAgentConversation:input_type -> kandev.plugin.v1.EnsureAgentConversationRequest
-	124, // 129: kandev.plugin.v1.Host.DispatchAgentConversation:input_type -> kandev.plugin.v1.DispatchAgentConversationRequest
-	126, // 130: kandev.plugin.v1.Host.DeleteAgentConversation:input_type -> kandev.plugin.v1.DeleteAgentConversationRequest
-	94,  // 131: kandev.plugin.v1.Host.RespondToPermission:input_type -> kandev.plugin.v1.RespondToPermissionRequest
-	97,  // 132: kandev.plugin.v1.Host.AnswerClarification:input_type -> kandev.plugin.v1.AnswerClarificationRequest
-	99,  // 133: kandev.plugin.v1.Host.CancelClarification:input_type -> kandev.plugin.v1.CancelClarificationRequest
-	1,   // 134: kandev.plugin.v1.Plugin.DeliverEvent:output_type -> kandev.plugin.v1.EventAck
-	6,   // 135: kandev.plugin.v1.Plugin.HandleWebhook:output_type -> kandev.plugin.v1.WebhookResponse
-	129, // 136: kandev.plugin.v1.Plugin.DescribeAutomationCondition:output_type -> kandev.plugin.v1.AutomationConditionResponse
-	131, // 137: kandev.plugin.v1.Plugin.VerifyAutomationWebhook:output_type -> kandev.plugin.v1.AutomationWebhookResponse
-	9,   // 138: kandev.plugin.v1.Plugin.HandleAction:output_type -> kandev.plugin.v1.PluginActionResponse
-	11,  // 139: kandev.plugin.v1.Plugin.SearchEntityReferences:output_type -> kandev.plugin.v1.SearchEntityReferencesResponse
-	14,  // 140: kandev.plugin.v1.Plugin.AuthorizeEntityReference:output_type -> kandev.plugin.v1.AuthorizeEntityReferenceResponse
-	16,  // 141: kandev.plugin.v1.Plugin.ResolveGitCredential:output_type -> kandev.plugin.v1.ResolveGitCredentialResponse
-	18,  // 142: kandev.plugin.v1.Plugin.GetGitCredentialBinding:output_type -> kandev.plugin.v1.GitCredentialBindingResponse
-	4,   // 143: kandev.plugin.v1.Plugin.InvokeAgentTool:output_type -> kandev.plugin.v1.AgentToolResponse
-	20,  // 144: kandev.plugin.v1.Host.GetState:output_type -> kandev.plugin.v1.GetStateResponse
-	22,  // 145: kandev.plugin.v1.Host.SetState:output_type -> kandev.plugin.v1.SetStateResponse
-	24,  // 146: kandev.plugin.v1.Host.DeleteState:output_type -> kandev.plugin.v1.DeleteStateResponse
-	26,  // 147: kandev.plugin.v1.Host.ListState:output_type -> kandev.plugin.v1.ListStateResponse
-	37,  // 148: kandev.plugin.v1.Host.RevealSecret:output_type -> kandev.plugin.v1.RevealSecretResponse
-	39,  // 149: kandev.plugin.v1.Host.EmitEvent:output_type -> kandev.plugin.v1.EmitEventResponse
-	31,  // 150: kandev.plugin.v1.Host.GetSecret:output_type -> kandev.plugin.v1.GetSecretResponse
-	33,  // 151: kandev.plugin.v1.Host.SetSecret:output_type -> kandev.plugin.v1.SetSecretResponse
-	35,  // 152: kandev.plugin.v1.Host.DeleteSecret:output_type -> kandev.plugin.v1.DeleteSecretResponse
-	29,  // 153: kandev.plugin.v1.Host.GetConfig:output_type -> kandev.plugin.v1.GetConfigResponse
-	48,  // 154: kandev.plugin.v1.Host.ListTasks:output_type -> kandev.plugin.v1.ListTasksResponse
-	50,  // 155: kandev.plugin.v1.Host.GetTask:output_type -> kandev.plugin.v1.GetTaskResponse
-	53,  // 156: kandev.plugin.v1.Host.ListTaskStepTransitions:output_type -> kandev.plugin.v1.ListTaskStepTransitionsResponse
-	56,  // 157: kandev.plugin.v1.Host.ListWorkspaces:output_type -> kandev.plugin.v1.ListWorkspacesResponse
-	59,  // 158: kandev.plugin.v1.Host.ListWorkflows:output_type -> kandev.plugin.v1.ListWorkflowsResponse
-	65,  // 159: kandev.plugin.v1.Host.ListWorkflowSteps:output_type -> kandev.plugin.v1.ListWorkflowStepsResponse
-	62,  // 160: kandev.plugin.v1.Host.ListWorkflowTransitionGroups:output_type -> kandev.plugin.v1.ListWorkflowTransitionGroupsResponse
-	68,  // 161: kandev.plugin.v1.Host.ListAgentProfiles:output_type -> kandev.plugin.v1.ListAgentProfilesResponse
-	71,  // 162: kandev.plugin.v1.Host.ListExecutorProfiles:output_type -> kandev.plugin.v1.ListExecutorProfilesResponse
-	74,  // 163: kandev.plugin.v1.Host.ListRepositories:output_type -> kandev.plugin.v1.ListRepositoriesResponse
-	78,  // 164: kandev.plugin.v1.Host.ListSessions:output_type -> kandev.plugin.v1.ListSessionsResponse
-	81,  // 165: kandev.plugin.v1.Host.ListSessionCodeStats:output_type -> kandev.plugin.v1.ListSessionCodeStatsResponse
-	85,  // 166: kandev.plugin.v1.Host.ListMessages:output_type -> kandev.plugin.v1.ListMessagesResponse
-	91,  // 167: kandev.plugin.v1.Host.ListPendingInteractions:output_type -> kandev.plugin.v1.ListPendingInteractionsResponse
-	93,  // 168: kandev.plugin.v1.Host.GetInteraction:output_type -> kandev.plugin.v1.GetInteractionResponse
-	103, // 169: kandev.plugin.v1.Host.InvokeUtilityAgent:output_type -> kandev.plugin.v1.InvokeUtilityAgentResponse
-	103, // 170: kandev.plugin.v1.Host.InvokeUtilityAgentWithOptions:output_type -> kandev.plugin.v1.InvokeUtilityAgentResponse
-	108, // 171: kandev.plugin.v1.Host.CreateTask:output_type -> kandev.plugin.v1.CreateTaskResponse
-	110, // 172: kandev.plugin.v1.Host.UpdateTask:output_type -> kandev.plugin.v1.UpdateTaskResponse
-	112, // 173: kandev.plugin.v1.Host.MoveTask:output_type -> kandev.plugin.v1.MoveTaskResponse
-	114, // 174: kandev.plugin.v1.Host.SendMessage:output_type -> kandev.plugin.v1.SendMessageResponse
-	116, // 175: kandev.plugin.v1.Host.PreviewPluginOwnedTaskTree:output_type -> kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse
-	118, // 176: kandev.plugin.v1.Host.DeletePluginOwnedTaskTree:output_type -> kandev.plugin.v1.DeletePluginOwnedTaskTreeResponse
-	123, // 177: kandev.plugin.v1.Host.EnsureAgentConversation:output_type -> kandev.plugin.v1.EnsureAgentConversationResponse
-	125, // 178: kandev.plugin.v1.Host.DispatchAgentConversation:output_type -> kandev.plugin.v1.DispatchAgentConversationResponse
-	127, // 179: kandev.plugin.v1.Host.DeleteAgentConversation:output_type -> kandev.plugin.v1.DeleteAgentConversationResponse
-	95,  // 180: kandev.plugin.v1.Host.RespondToPermission:output_type -> kandev.plugin.v1.RespondToPermissionResponse
-	98,  // 181: kandev.plugin.v1.Host.AnswerClarification:output_type -> kandev.plugin.v1.AnswerClarificationResponse
-	100, // 182: kandev.plugin.v1.Host.CancelClarification:output_type -> kandev.plugin.v1.CancelClarificationResponse
-	134, // [134:183] is the sub-list for method output_type
-	85,  // [85:134] is the sub-list for method input_type
-	85,  // [85:85] is the sub-list for extension type_name
-	85,  // [85:85] is the sub-list for extension extendee
-	0,   // [0:85] is the sub-list for field type_name
+	128, // 84: kandev.plugin.v1.IssueProviderAccessLeaseExactRequest.target:type_name -> kandev.plugin.v1.ProviderAccessGitHubRerunTarget
+	128, // 85: kandev.plugin.v1.IssueProviderAccessLeaseExactResponse.target:type_name -> kandev.plugin.v1.ProviderAccessGitHubRerunTarget
+	142, // 86: kandev.plugin.v1.AutomationWebhookRequest.headers:type_name -> kandev.plugin.v1.AutomationWebhookRequest.HeadersEntry
+	0,   // 87: kandev.plugin.v1.Plugin.DeliverEvent:input_type -> kandev.plugin.v1.Event
+	5,   // 88: kandev.plugin.v1.Plugin.HandleWebhook:input_type -> kandev.plugin.v1.WebhookRequest
+	135, // 89: kandev.plugin.v1.Plugin.DescribeAutomationCondition:input_type -> kandev.plugin.v1.AutomationConditionRequest
+	137, // 90: kandev.plugin.v1.Plugin.VerifyAutomationWebhook:input_type -> kandev.plugin.v1.AutomationWebhookRequest
+	7,   // 91: kandev.plugin.v1.Plugin.HandleAction:input_type -> kandev.plugin.v1.PluginActionRequest
+	10,  // 92: kandev.plugin.v1.Plugin.SearchEntityReferences:input_type -> kandev.plugin.v1.SearchEntityReferencesRequest
+	13,  // 93: kandev.plugin.v1.Plugin.AuthorizeEntityReference:input_type -> kandev.plugin.v1.AuthorizeEntityReferenceRequest
+	15,  // 94: kandev.plugin.v1.Plugin.ResolveGitCredential:input_type -> kandev.plugin.v1.ResolveGitCredentialRequest
+	17,  // 95: kandev.plugin.v1.Plugin.GetGitCredentialBinding:input_type -> kandev.plugin.v1.GitCredentialBindingRequest
+	2,   // 96: kandev.plugin.v1.Plugin.InvokeAgentTool:input_type -> kandev.plugin.v1.AgentToolRequest
+	19,  // 97: kandev.plugin.v1.Host.GetState:input_type -> kandev.plugin.v1.GetStateRequest
+	21,  // 98: kandev.plugin.v1.Host.SetState:input_type -> kandev.plugin.v1.SetStateRequest
+	23,  // 99: kandev.plugin.v1.Host.DeleteState:input_type -> kandev.plugin.v1.DeleteStateRequest
+	25,  // 100: kandev.plugin.v1.Host.ListState:input_type -> kandev.plugin.v1.ListStateRequest
+	36,  // 101: kandev.plugin.v1.Host.RevealSecret:input_type -> kandev.plugin.v1.RevealSecretRequest
+	38,  // 102: kandev.plugin.v1.Host.EmitEvent:input_type -> kandev.plugin.v1.EmitEventRequest
+	30,  // 103: kandev.plugin.v1.Host.GetSecret:input_type -> kandev.plugin.v1.GetSecretRequest
+	32,  // 104: kandev.plugin.v1.Host.SetSecret:input_type -> kandev.plugin.v1.SetSecretRequest
+	34,  // 105: kandev.plugin.v1.Host.DeleteSecret:input_type -> kandev.plugin.v1.DeleteSecretRequest
+	28,  // 106: kandev.plugin.v1.Host.GetConfig:input_type -> kandev.plugin.v1.GetConfigRequest
+	47,  // 107: kandev.plugin.v1.Host.ListTasks:input_type -> kandev.plugin.v1.ListTasksRequest
+	49,  // 108: kandev.plugin.v1.Host.GetTask:input_type -> kandev.plugin.v1.GetTaskRequest
+	52,  // 109: kandev.plugin.v1.Host.ListTaskStepTransitions:input_type -> kandev.plugin.v1.ListTaskStepTransitionsRequest
+	55,  // 110: kandev.plugin.v1.Host.ListWorkspaces:input_type -> kandev.plugin.v1.ListWorkspacesRequest
+	58,  // 111: kandev.plugin.v1.Host.ListWorkflows:input_type -> kandev.plugin.v1.ListWorkflowsRequest
+	64,  // 112: kandev.plugin.v1.Host.ListWorkflowSteps:input_type -> kandev.plugin.v1.ListWorkflowStepsRequest
+	61,  // 113: kandev.plugin.v1.Host.ListWorkflowTransitionGroups:input_type -> kandev.plugin.v1.ListWorkflowTransitionGroupsRequest
+	67,  // 114: kandev.plugin.v1.Host.ListAgentProfiles:input_type -> kandev.plugin.v1.ListAgentProfilesRequest
+	70,  // 115: kandev.plugin.v1.Host.ListExecutorProfiles:input_type -> kandev.plugin.v1.ListExecutorProfilesRequest
+	73,  // 116: kandev.plugin.v1.Host.ListRepositories:input_type -> kandev.plugin.v1.ListRepositoriesRequest
+	77,  // 117: kandev.plugin.v1.Host.ListSessions:input_type -> kandev.plugin.v1.ListSessionsRequest
+	80,  // 118: kandev.plugin.v1.Host.ListSessionCodeStats:input_type -> kandev.plugin.v1.ListSessionCodeStatsRequest
+	84,  // 119: kandev.plugin.v1.Host.ListMessages:input_type -> kandev.plugin.v1.ListMessagesRequest
+	90,  // 120: kandev.plugin.v1.Host.ListPendingInteractions:input_type -> kandev.plugin.v1.ListPendingInteractionsRequest
+	92,  // 121: kandev.plugin.v1.Host.GetInteraction:input_type -> kandev.plugin.v1.GetInteractionRequest
+	101, // 122: kandev.plugin.v1.Host.InvokeUtilityAgent:input_type -> kandev.plugin.v1.InvokeUtilityAgentRequest
+	102, // 123: kandev.plugin.v1.Host.InvokeUtilityAgentWithOptions:input_type -> kandev.plugin.v1.InvokeUtilityAgentWithOptionsRequest
+	104, // 124: kandev.plugin.v1.Host.CreateTask:input_type -> kandev.plugin.v1.CreateTaskRequest
+	109, // 125: kandev.plugin.v1.Host.UpdateTask:input_type -> kandev.plugin.v1.UpdateTaskRequest
+	111, // 126: kandev.plugin.v1.Host.MoveTask:input_type -> kandev.plugin.v1.MoveTaskRequest
+	113, // 127: kandev.plugin.v1.Host.SendMessage:input_type -> kandev.plugin.v1.SendMessageRequest
+	115, // 128: kandev.plugin.v1.Host.PreviewPluginOwnedTaskTree:input_type -> kandev.plugin.v1.PreviewPluginOwnedTaskTreeRequest
+	117, // 129: kandev.plugin.v1.Host.DeletePluginOwnedTaskTree:input_type -> kandev.plugin.v1.DeletePluginOwnedTaskTreeRequest
+	122, // 130: kandev.plugin.v1.Host.EnsureAgentConversation:input_type -> kandev.plugin.v1.EnsureAgentConversationRequest
+	124, // 131: kandev.plugin.v1.Host.DispatchAgentConversation:input_type -> kandev.plugin.v1.DispatchAgentConversationRequest
+	126, // 132: kandev.plugin.v1.Host.DeleteAgentConversation:input_type -> kandev.plugin.v1.DeleteAgentConversationRequest
+	129, // 133: kandev.plugin.v1.Host.IssueProviderAccessLeaseExact:input_type -> kandev.plugin.v1.IssueProviderAccessLeaseExactRequest
+	131, // 134: kandev.plugin.v1.Host.RedeemProviderAccessLeaseExact:input_type -> kandev.plugin.v1.RedeemProviderAccessLeaseExactRequest
+	133, // 135: kandev.plugin.v1.Host.ReleaseProviderAccessLeaseExact:input_type -> kandev.plugin.v1.ReleaseProviderAccessLeaseExactRequest
+	94,  // 136: kandev.plugin.v1.Host.RespondToPermission:input_type -> kandev.plugin.v1.RespondToPermissionRequest
+	97,  // 137: kandev.plugin.v1.Host.AnswerClarification:input_type -> kandev.plugin.v1.AnswerClarificationRequest
+	99,  // 138: kandev.plugin.v1.Host.CancelClarification:input_type -> kandev.plugin.v1.CancelClarificationRequest
+	1,   // 139: kandev.plugin.v1.Plugin.DeliverEvent:output_type -> kandev.plugin.v1.EventAck
+	6,   // 140: kandev.plugin.v1.Plugin.HandleWebhook:output_type -> kandev.plugin.v1.WebhookResponse
+	136, // 141: kandev.plugin.v1.Plugin.DescribeAutomationCondition:output_type -> kandev.plugin.v1.AutomationConditionResponse
+	138, // 142: kandev.plugin.v1.Plugin.VerifyAutomationWebhook:output_type -> kandev.plugin.v1.AutomationWebhookResponse
+	9,   // 143: kandev.plugin.v1.Plugin.HandleAction:output_type -> kandev.plugin.v1.PluginActionResponse
+	11,  // 144: kandev.plugin.v1.Plugin.SearchEntityReferences:output_type -> kandev.plugin.v1.SearchEntityReferencesResponse
+	14,  // 145: kandev.plugin.v1.Plugin.AuthorizeEntityReference:output_type -> kandev.plugin.v1.AuthorizeEntityReferenceResponse
+	16,  // 146: kandev.plugin.v1.Plugin.ResolveGitCredential:output_type -> kandev.plugin.v1.ResolveGitCredentialResponse
+	18,  // 147: kandev.plugin.v1.Plugin.GetGitCredentialBinding:output_type -> kandev.plugin.v1.GitCredentialBindingResponse
+	4,   // 148: kandev.plugin.v1.Plugin.InvokeAgentTool:output_type -> kandev.plugin.v1.AgentToolResponse
+	20,  // 149: kandev.plugin.v1.Host.GetState:output_type -> kandev.plugin.v1.GetStateResponse
+	22,  // 150: kandev.plugin.v1.Host.SetState:output_type -> kandev.plugin.v1.SetStateResponse
+	24,  // 151: kandev.plugin.v1.Host.DeleteState:output_type -> kandev.plugin.v1.DeleteStateResponse
+	26,  // 152: kandev.plugin.v1.Host.ListState:output_type -> kandev.plugin.v1.ListStateResponse
+	37,  // 153: kandev.plugin.v1.Host.RevealSecret:output_type -> kandev.plugin.v1.RevealSecretResponse
+	39,  // 154: kandev.plugin.v1.Host.EmitEvent:output_type -> kandev.plugin.v1.EmitEventResponse
+	31,  // 155: kandev.plugin.v1.Host.GetSecret:output_type -> kandev.plugin.v1.GetSecretResponse
+	33,  // 156: kandev.plugin.v1.Host.SetSecret:output_type -> kandev.plugin.v1.SetSecretResponse
+	35,  // 157: kandev.plugin.v1.Host.DeleteSecret:output_type -> kandev.plugin.v1.DeleteSecretResponse
+	29,  // 158: kandev.plugin.v1.Host.GetConfig:output_type -> kandev.plugin.v1.GetConfigResponse
+	48,  // 159: kandev.plugin.v1.Host.ListTasks:output_type -> kandev.plugin.v1.ListTasksResponse
+	50,  // 160: kandev.plugin.v1.Host.GetTask:output_type -> kandev.plugin.v1.GetTaskResponse
+	53,  // 161: kandev.plugin.v1.Host.ListTaskStepTransitions:output_type -> kandev.plugin.v1.ListTaskStepTransitionsResponse
+	56,  // 162: kandev.plugin.v1.Host.ListWorkspaces:output_type -> kandev.plugin.v1.ListWorkspacesResponse
+	59,  // 163: kandev.plugin.v1.Host.ListWorkflows:output_type -> kandev.plugin.v1.ListWorkflowsResponse
+	65,  // 164: kandev.plugin.v1.Host.ListWorkflowSteps:output_type -> kandev.plugin.v1.ListWorkflowStepsResponse
+	62,  // 165: kandev.plugin.v1.Host.ListWorkflowTransitionGroups:output_type -> kandev.plugin.v1.ListWorkflowTransitionGroupsResponse
+	68,  // 166: kandev.plugin.v1.Host.ListAgentProfiles:output_type -> kandev.plugin.v1.ListAgentProfilesResponse
+	71,  // 167: kandev.plugin.v1.Host.ListExecutorProfiles:output_type -> kandev.plugin.v1.ListExecutorProfilesResponse
+	74,  // 168: kandev.plugin.v1.Host.ListRepositories:output_type -> kandev.plugin.v1.ListRepositoriesResponse
+	78,  // 169: kandev.plugin.v1.Host.ListSessions:output_type -> kandev.plugin.v1.ListSessionsResponse
+	81,  // 170: kandev.plugin.v1.Host.ListSessionCodeStats:output_type -> kandev.plugin.v1.ListSessionCodeStatsResponse
+	85,  // 171: kandev.plugin.v1.Host.ListMessages:output_type -> kandev.plugin.v1.ListMessagesResponse
+	91,  // 172: kandev.plugin.v1.Host.ListPendingInteractions:output_type -> kandev.plugin.v1.ListPendingInteractionsResponse
+	93,  // 173: kandev.plugin.v1.Host.GetInteraction:output_type -> kandev.plugin.v1.GetInteractionResponse
+	103, // 174: kandev.plugin.v1.Host.InvokeUtilityAgent:output_type -> kandev.plugin.v1.InvokeUtilityAgentResponse
+	103, // 175: kandev.plugin.v1.Host.InvokeUtilityAgentWithOptions:output_type -> kandev.plugin.v1.InvokeUtilityAgentResponse
+	108, // 176: kandev.plugin.v1.Host.CreateTask:output_type -> kandev.plugin.v1.CreateTaskResponse
+	110, // 177: kandev.plugin.v1.Host.UpdateTask:output_type -> kandev.plugin.v1.UpdateTaskResponse
+	112, // 178: kandev.plugin.v1.Host.MoveTask:output_type -> kandev.plugin.v1.MoveTaskResponse
+	114, // 179: kandev.plugin.v1.Host.SendMessage:output_type -> kandev.plugin.v1.SendMessageResponse
+	116, // 180: kandev.plugin.v1.Host.PreviewPluginOwnedTaskTree:output_type -> kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse
+	118, // 181: kandev.plugin.v1.Host.DeletePluginOwnedTaskTree:output_type -> kandev.plugin.v1.DeletePluginOwnedTaskTreeResponse
+	123, // 182: kandev.plugin.v1.Host.EnsureAgentConversation:output_type -> kandev.plugin.v1.EnsureAgentConversationResponse
+	125, // 183: kandev.plugin.v1.Host.DispatchAgentConversation:output_type -> kandev.plugin.v1.DispatchAgentConversationResponse
+	127, // 184: kandev.plugin.v1.Host.DeleteAgentConversation:output_type -> kandev.plugin.v1.DeleteAgentConversationResponse
+	130, // 185: kandev.plugin.v1.Host.IssueProviderAccessLeaseExact:output_type -> kandev.plugin.v1.IssueProviderAccessLeaseExactResponse
+	132, // 186: kandev.plugin.v1.Host.RedeemProviderAccessLeaseExact:output_type -> kandev.plugin.v1.RedeemProviderAccessLeaseExactResponse
+	134, // 187: kandev.plugin.v1.Host.ReleaseProviderAccessLeaseExact:output_type -> kandev.plugin.v1.ReleaseProviderAccessLeaseExactResponse
+	95,  // 188: kandev.plugin.v1.Host.RespondToPermission:output_type -> kandev.plugin.v1.RespondToPermissionResponse
+	98,  // 189: kandev.plugin.v1.Host.AnswerClarification:output_type -> kandev.plugin.v1.AnswerClarificationResponse
+	100, // 190: kandev.plugin.v1.Host.CancelClarification:output_type -> kandev.plugin.v1.CancelClarificationResponse
+	139, // [139:191] is the sub-list for method output_type
+	87,  // [87:139] is the sub-list for method input_type
+	87,  // [87:87] is the sub-list for extension type_name
+	87,  // [87:87] is the sub-list for extension extendee
+	0,   // [0:87] is the sub-list for field type_name
 }
 
 func init() { file_kandev_plugin_v1_plugin_proto_init() }
@@ -9766,7 +10462,7 @@ func file_kandev_plugin_v1_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_kandev_plugin_v1_plugin_proto_rawDesc), len(file_kandev_plugin_v1_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   136,
+			NumMessages:   143,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

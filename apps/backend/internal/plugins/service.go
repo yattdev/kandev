@@ -93,24 +93,26 @@ type Service struct {
 	// directory belongs to an install still waiting for it.
 	extractingPaths map[string]int
 
-	pluginsDir         string
-	store              store.Store
-	approvals          *approvalLedger
-	registry           *Registry
-	state              *state.Store
-	userState          *state.UserStore
-	instances          *instances.Store
-	instanceState      *state.InstanceStore
-	webArtifacts       *webapp.ArtifactStore
-	webRuntime         *webapp.Runtime
-	eventHub           *webapp.EventHub
-	eventSubscription  bus.Subscription
-	userStateCleanup   userStateCleanupStore
-	agentConvs         AgentConversationService
-	eventBus           bus.EventBus
-	conversationTokens *conversationTokenManager
-	conversationEpoch  string
-	log                *logger.Logger
+	pluginsDir              string
+	store                   store.Store
+	approvals               *approvalLedger
+	registry                *Registry
+	state                   *state.Store
+	userState               *state.UserStore
+	instances               *instances.Store
+	instanceState           *state.InstanceStore
+	webArtifacts            *webapp.ArtifactStore
+	webRuntime              *webapp.Runtime
+	eventHub                *webapp.EventHub
+	eventSubscription       bus.Subscription
+	userStateCleanup        userStateCleanupStore
+	agentConvs              AgentConversationService
+	providerAccessSvc       ProviderAccessService
+	providerAccessLifecycle ProviderAccessLifecycle
+	eventBus                bus.EventBus
+	conversationTokens      *conversationTokenManager
+	conversationEpoch       string
+	log                     *logger.Logger
 
 	deliverer                Deliverer
 	agentToolCatalogListener AgentToolCatalogListener
@@ -601,6 +603,45 @@ func (s *Service) agentConversationDeps() AgentConversationService {
 	return s.agentConvs
 }
 
+// SetProviderAccess connects the versioned Host transport after the complete
+// backend authority, credential runtime, and teardown hooks are ready.
+func (s *Service) SetProviderAccess(service ProviderAccessService) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.providerAccessSvc = service
+}
+
+// SetProviderAccessLifecycle installs teardown only. It does not expose the
+// provider-access/v1 Host transport to any plugin connection.
+func (s *Service) SetProviderAccessLifecycle(lifecycle ProviderAccessLifecycle) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.providerAccessLifecycle = lifecycle
+}
+
+func (s *Service) providerAccessDeps() ProviderAccessService {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.providerAccessSvc
+}
+
+func (s *Service) stopProviderAccessPlugin(ctx context.Context, pluginID string) error {
+	service := s.providerAccessLifecycleDeps()
+	if service == nil {
+		return nil
+	}
+	return service.StopPlugin(ctx, pluginID)
+}
+
+func (s *Service) providerAccessLifecycleDeps() ProviderAccessLifecycle {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.providerAccessLifecycle != nil {
+		return s.providerAccessLifecycle
+	}
+	return s.providerAccessSvc
+}
+
 // writeDependencies returns the currently-wired task messenger and task
 // starter. Read live (not snapshotted at hostForPlugin time) so a plugin
 // spawned before SetWriteDeps still resolves them once it is called. Guarded by
@@ -699,6 +740,11 @@ func (s *Service) Runtime() PluginRuntime {
 func (s *Service) Shutdown() {
 	if s.runtime != nil {
 		s.runtime.StopAll()
+	}
+	if service := s.providerAccessLifecycleDeps(); service != nil {
+		if err := service.Stop(context.Background()); err != nil && s.log != nil {
+			s.log.Warn("plugins: provider access shutdown failed", zap.Error(err))
+		}
 	}
 }
 
@@ -817,6 +863,7 @@ func (s *Service) hostForPlugin(pluginID string) pluginsdk.Host {
 		writeDeps:           s.writeDependencies,
 		interactionDeps:     s.interactionResponderDep,
 		agentConversations:  s.agentConversationDeps,
+		providerAccess:      s.providerAccessDeps,
 		log:                 s.log,
 	}
 }

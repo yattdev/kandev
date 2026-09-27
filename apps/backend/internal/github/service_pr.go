@@ -292,6 +292,21 @@ func (s *Service) GetPRForAutomation(
 	return resolved.Client.GetPR(ctx, owner, repo, number)
 }
 
+// ListWorkflowRunsForAutomation reads current runs with the workspace-owned
+// provider principal, scoped to an attached base repository and head SHA.
+func (s *Service) ListWorkflowRunsForAutomation(
+	ctx context.Context, workspaceID, owner, repo, headSHA string,
+) ([]WorkflowRun, error) {
+	if err := s.ensureRepositoryInWorkspaceScope(ctx, workspaceID, owner, repo); err != nil {
+		return nil, err
+	}
+	resolved, err := s.resolveAutomationClient(ctx, workspaceID, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	return resolved.Client.ListWorkflowRuns(ctx, owner, repo, headSHA)
+}
+
 // GetIssue fetches basic issue details from GitHub. The create-task dialog is
 // currently the only caller and dedupes requests per URL on the frontend.
 func (s *Service) GetIssue(ctx context.Context, owner, repo string, number int) (*Issue, error) {

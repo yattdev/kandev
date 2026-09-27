@@ -1,0 +1,357 @@
+package provideraccess
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+func testExposureReceipt(grant Grant, lease *Lease) ExposureReceipt {
+	return ExposureReceipt{
+		LeaseID: lease.ID, GrantID: grant.ID, Provider: "github",
+		ProviderPrincipalID: "installation:42", RepositoryID: grant.RepositoryID,
+		PermissionProfile: "github_actions_rerun",
+		ProviderExpiresAt: time.Now().UTC().Add(45 * time.Minute),
+		Expected: FinalLeaseIdentity{
+			GrantGeneration: grant.Generation, Scope: grant.Scope(),
+			ManagedTaskID: lease.ManagedTaskID, SessionID: lease.SessionID,
+			TargetDigest: lease.TargetDigest, ApprovalRevision: lease.ApprovalRevision,
+			ConnectionGeneration: lease.ConnectionGeneration,
+		},
+	}
+}
+
+func claimTestMint(t *testing.T, store *Store, grant Grant, lease *Lease) {
+	t.Helper()
+	if _, err := store.ClaimMintIntent(context.Background(), testMintClaim(grant, lease)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnexpiredWorkspaceAuthorityIncludesUnknownMintAndUnrevokedBearer(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-residual")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if residual, err := store.HasUnexpiredWorkspaceAuthority(ctx, grant.WorkspaceID, time.Now()); err != nil || residual {
+		t.Fatalf("unused lease residual = %v, err = %v", residual, err)
+	}
+	claimTestMint(t, store, grant, lease)
+	if residual, err := store.HasUnexpiredWorkspaceAuthority(ctx, grant.WorkspaceID, time.Now()); err != nil || !residual {
+		t.Fatalf("unknown mint residual = %v, err = %v", residual, err)
+	}
+	if err := store.RecordExposureOrRevoke(ctx, testExposureReceipt(grant, lease),
+		func(context.Context) error { t.Fatal("unexpected token revoke"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if residual, err := store.HasUnexpiredWorkspaceAuthority(ctx, grant.WorkspaceID, time.Now()); err != nil || !residual {
+		t.Fatalf("exported bearer residual = %v, err = %v", residual, err)
+	}
+	if err := store.RecordRevocationResult(ctx, lease.ID, time.Now().UTC(), true); err != nil {
+		t.Fatal(err)
+	}
+	if residual, err := store.HasUnexpiredWorkspaceAuthority(ctx, grant.WorkspaceID, time.Now()); err != nil || residual {
+		t.Fatalf("confirmed revoke residual = %v, err = %v", residual, err)
+	}
+}
+
+func TestExposureAndAuditCommitTogetherBeforeBearerExport(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-audited")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimTestMint(t, store, grant, lease)
+	receipt := testExposureReceipt(grant, lease)
+	audit := AuditEvent{ID: "audit-exposure-1", GrantID: grant.ID, LeaseID: lease.ID,
+		PluginInstallationID: grant.PluginInstallationID, WorkspaceID: grant.WorkspaceID,
+		ManagedTaskID: lease.ManagedTaskID, SessionID: lease.SessionID,
+		TargetDigest: lease.TargetDigest, GrantGeneration: grant.Generation,
+		ApprovalRevision: lease.ApprovalRevision, ConnectionGeneration: lease.ConnectionGeneration,
+		Provider: grant.Provider, Purpose: grant.Purpose, Outcome: AuditTokenIssued,
+		RequestIDHash: strings.Repeat("a", 64), At: time.Now().UTC()}
+	if err := store.RecordExposureWithAuditOrRevoke(ctx, receipt, audit, func(context.Context) error {
+		t.Fatal("successful audited exposure revoked token")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetAudit(ctx, audit.ID)
+	if err != nil || got == nil || got.RequestIDHash != audit.RequestIDHash {
+		t.Fatalf("audited exposure = %+v, err = %v", got, err)
+	}
+	if state, err := store.ExposureStateAt(ctx, lease.ID, time.Now()); err != nil || state != ExposureActive {
+		t.Fatalf("exposure state = %s, err = %v", state, err)
+	}
+}
+
+func TestInvalidExposureAuditRevokesUnexportedToken(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-audited")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimTestMint(t, store, grant, lease)
+	receipt := testExposureReceipt(grant, lease)
+	audit := AuditEvent{ID: "audit-invalid-exposure", GrantID: grant.ID, LeaseID: "foreign-lease",
+		PluginInstallationID: grant.PluginInstallationID, WorkspaceID: grant.WorkspaceID,
+		ManagedTaskID: lease.ManagedTaskID, SessionID: lease.SessionID,
+		TargetDigest: lease.TargetDigest, GrantGeneration: grant.Generation,
+		ApprovalRevision: lease.ApprovalRevision, ConnectionGeneration: lease.ConnectionGeneration,
+		Provider: grant.Provider, Purpose: grant.Purpose, Outcome: AuditTokenIssued,
+		RequestIDHash: strings.Repeat("a", 64), At: time.Now().UTC()}
+	revoked := false
+	if err := store.RecordExposureWithAuditOrRevoke(ctx, receipt, audit,
+		func(context.Context) error { revoked = true; return nil }); !errors.Is(err, ErrGrantUnavailable) || !revoked {
+		t.Fatalf("invalid audit error = %v, revoked = %v", err, revoked)
+	}
+	if state, err := store.ExposureStateAt(ctx, lease.ID, time.Now()); err != nil || state != ExposureUnknown {
+		t.Fatalf("denied exposure state = %s, err = %v", state, err)
+	}
+}
+
+func TestExportedBearerRemainsResidualAfterLeaseExpiryAndFailedRevoke(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "provider-access.db")
+	open := func() (*sqlx.DB, *Store) {
+		t.Helper()
+		conn, err := sqlx.Open("sqlite3", path+"?_busy_timeout=5000&_journal_mode=WAL")
+		if err != nil {
+			t.Fatal(err)
+		}
+		store, err := NewStore(conn)
+		if err != nil {
+			_ = conn.Close()
+			t.Fatal(err)
+		}
+		return conn, store
+	}
+	ctx := context.Background()
+	conn, store := open()
+	grant := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	claim := testLeaseClaim(grant)
+	lease, err := store.IssueLease(ctx, claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimTestMint(t, store, grant, lease)
+	providerExpiry := time.Now().UTC().Add(45 * time.Minute)
+	receipt := testExposureReceipt(grant, lease)
+	receipt.ProviderExpiresAt = providerExpiry
+	if err := store.RecordExposureOrRevoke(ctx, receipt, func(context.Context) error {
+		t.Fatal("successful admission revoked its token")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordRevocationResult(ctx, lease.ID, claim.ExpiresAt, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	conn, store = open() // Process memory, including exact-token revocation material, is gone.
+	defer func() { _ = conn.Close() }()
+	state, err := store.ExposureStateAt(ctx, lease.ID, claim.ExpiresAt.Add(time.Second))
+	if err != nil || state != ExposureResidual {
+		t.Fatalf("after failed revoke and restart: state = %s, err = %v, want residual", state, err)
+	}
+	state, err = store.ExposureStateAt(ctx, lease.ID, providerExpiry.Add(time.Second))
+	if err != nil || state != ExposureProviderExpired {
+		t.Fatalf("after provider expiry: state = %s, err = %v, want expired", state, err)
+	}
+}
+
+func TestConfirmedProviderRevocationEndsExposure(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimTestMint(t, store, grant, lease)
+	if err := store.RecordExposureOrRevoke(ctx, testExposureReceipt(grant, lease), func(context.Context) error {
+		t.Fatal("successful admission revoked its token")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordRevocationResult(ctx, lease.ID, time.Now().UTC(), true); err != nil {
+		t.Fatal(err)
+	}
+	state, err := store.ExposureStateAt(ctx, lease.ID, time.Now().UTC())
+	if err != nil || state != ExposureRevokedAtProvider {
+		t.Fatalf("confirmed revoke: state = %s, err = %v", state, err)
+	}
+}
+
+func TestExposureAdmissionFailureRevokesUnexportedToken(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimTestMint(t, store, grant, lease)
+	if err := store.RevokeGrant(ctx, grant.WorkspaceID, grant.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	receipt := testExposureReceipt(grant, lease)
+	revocations := 0
+	err = store.RecordExposureOrRevoke(ctx, receipt, func(context.Context) error {
+		revocations++
+		return nil
+	})
+	if !errors.Is(err, ErrGrantUnavailable) || revocations != 1 {
+		t.Fatalf("losing revocation race: err = %v, revocations = %d", err, revocations)
+	}
+	state, err := store.ExposureStateAt(ctx, lease.ID, time.Now().UTC())
+	if err != nil || state != ExposureUnknown {
+		t.Fatalf("exposure after denial: state = %s, err = %v", state, err)
+	}
+	err = store.RecordExposureOrRevoke(ctx, receipt, func(context.Context) error {
+		return errors.New("provider response with secret bytes")
+	})
+	if !errors.Is(err, ErrGrantUnavailable) || !errors.Is(err, ErrRevocationUnconfirmed) ||
+		strings.Contains(err.Error(), "secret bytes") {
+		t.Fatalf("failed provider revocation error = %v", err)
+	}
+}
+
+func TestDuplicateExposureAdmissionRevokesSecondToken(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-1")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimTestMint(t, store, grant, lease)
+	receipt := testExposureReceipt(grant, lease)
+	if err := store.RecordExposureOrRevoke(ctx, receipt, func(context.Context) error {
+		t.Fatal("first token was revoked")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	revocations := 0
+	if err := store.RecordExposureOrRevoke(ctx, receipt, func(context.Context) error {
+		revocations++
+		return nil
+	}); err == nil || revocations != 1 {
+		t.Fatalf("duplicate admission: err = %v, second-token revocations = %d", err, revocations)
+	}
+}
+
+func TestFinalExposureRejectsStaleExpectedLeaseIdentity(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*ExposureReceipt)
+	}{
+		{"grant generation", func(r *ExposureReceipt) { r.Expected.GrantGeneration++ }},
+		{"workspace", func(r *ExposureReceipt) { r.Expected.Scope.WorkspaceID = "other-workspace" }},
+		{"plugin installation", func(r *ExposureReceipt) { r.Expected.Scope.PluginInstallationID = "other-installation" }},
+		{"managed task", func(r *ExposureReceipt) { r.Expected.ManagedTaskID = "other-task" }},
+		{"session", func(r *ExposureReceipt) { r.Expected.SessionID = "other-session" }},
+		{"target", func(r *ExposureReceipt) { r.Expected.TargetDigest = "other-pr-head-run" }},
+		{"approval", func(r *ExposureReceipt) { r.Expected.ApprovalRevision++ }},
+		{"connection", func(r *ExposureReceipt) { r.Expected.ConnectionGeneration = "other-connection" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newGrantTestStore(t)
+			ctx := context.Background()
+			grant := testGrant("grant-1")
+			if err := store.ReplaceGrant(ctx, &grant); err != nil {
+				t.Fatal(err)
+			}
+			lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+			if err != nil {
+				t.Fatal(err)
+			}
+			claimTestMint(t, store, grant, lease)
+			receipt := testExposureReceipt(grant, lease)
+			test.mutate(&receipt)
+			revocations := 0
+			err = store.RecordExposureOrRevoke(ctx, receipt, func(context.Context) error {
+				revocations++
+				return nil
+			})
+			if !errors.Is(err, ErrGrantUnavailable) || revocations != 1 {
+				t.Fatalf("stale identity admission = %v, revocations = %d", err, revocations)
+			}
+			state, err := store.ExposureStateAt(ctx, lease.ID, time.Now().UTC())
+			if err != nil || state != ExposureUnknown {
+				t.Fatalf("stale identity exposure = %s, err = %v", state, err)
+			}
+		})
+	}
+}
+
+func TestResidualAuthorityLookupIsolatedBySessionAndPlugin(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-residual")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimMintIntent(ctx, testMintClaim(grant, lease)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RevokeGrant(ctx, grant.WorkspaceID, grant.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	check := func(name string, lookup func(context.Context, string, time.Time) (bool, error),
+		id string, at time.Time, want bool) {
+		t.Helper()
+		got, err := lookup(ctx, id, at)
+		if err != nil || got != want {
+			t.Fatalf("%s residual = %v, err = %v, want %v", name, got, err, want)
+		}
+	}
+	now := time.Now().UTC()
+	check("session", store.HasUnexpiredSessionAuthority, lease.SessionID, now, true)
+	check("other session", store.HasUnexpiredSessionAuthority, "other-session", now, false)
+	check("plugin", store.HasUnexpiredPluginAuthority, grant.PluginID, now, true)
+	check("other plugin", store.HasUnexpiredPluginAuthority, "other-plugin", now, false)
+	check("expired session", store.HasUnexpiredSessionAuthority, lease.SessionID, now.Add(2*time.Hour), false)
+}

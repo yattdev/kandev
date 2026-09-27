@@ -1186,6 +1186,28 @@ func (s *Service) updateTaskSessionStateWithHook(
 	if session.State == nextState {
 		return session, false
 	}
+	terminalExecutionID, _ := ctx.Value(terminalProviderExecutionKey{}).(string)
+	requireNoExecution, _ := ctx.Value(terminalProviderNoExecutionKey{}).(bool)
+	requireExecution, _ := ctx.Value(terminalProviderRequireExecutionKey{}).(bool)
+	ctx, releaseClaim, claimed, claimErr := s.claimProviderAccessForTerminal(ctx, models.TerminalProviderAccessClaim{
+		TaskID: taskID, SessionID: sessionID, AgentExecutionID: terminalExecutionID, ExpectedState: session.State,
+		RequireNoExecution: requireNoExecution, RequireNoStartAttempt: requireNoExecution,
+		RequireExecution: requireExecution,
+		TargetState:      nextState, ErrorMessage: errorMessage,
+	}, nextState)
+	if claimErr != nil {
+		s.logger.Error("failed to reserve terminal provider access", zap.String("session_id", sessionID), zap.Error(claimErr))
+		return session, false
+	}
+	if !claimed {
+		return session, false
+	}
+	defer releaseClaim()
+	if err := s.revokeProviderAccessForTerminal(ctx, sessionID, nextState); err != nil {
+		s.logger.Error("failed to revoke provider access before terminal session transition",
+			zap.String("session_id", sessionID), zap.Error(err))
+		return session, false
+	}
 	session, authoritativeUpdatedAt, changed := s.persistTaskSessionState(
 		ctx, sessionID, session, nextState, errorMessage,
 	)
@@ -1267,9 +1289,19 @@ func (s *Service) persistTaskSessionState(
 ) (*models.TaskSession, *time.Time, bool) {
 	priorState := session.State
 	if updater, ok := s.repo.(conditionalTaskSessionStateUpdater); ok {
-		changed, updatedAt, err := updater.UpdateTaskSessionStateIfCurrent(
-			ctx, sessionID, session.State, nextState, errorMessage,
-		)
+		claimID, _ := ctx.Value(terminalProviderClaimIDKey{}).(string)
+		var changed bool
+		var updatedAt time.Time
+		var err error
+		if claimID != "" {
+			claimUpdater, ok := s.repo.(terminalClaimStateUpdater)
+			if !ok {
+				return session, nil, false
+			}
+			changed, updatedAt, err = claimUpdater.UpdateTaskSessionStateIfCurrentClaim(ctx, sessionID, session.State, nextState, errorMessage, claimID)
+		} else {
+			changed, updatedAt, err = updater.UpdateTaskSessionStateIfCurrent(ctx, sessionID, session.State, nextState, errorMessage)
+		}
 		if err != nil {
 			s.logTaskSessionStateWriteError(sessionID, nextState, err)
 			return session, nil, false
@@ -1282,6 +1314,9 @@ func (s *Service) persistTaskSessionState(
 		t := updatedAt.UTC()
 		s.releaseCeilingIfLeftPopulation(sessionID, priorState, nextState)
 		return persisted, &t, true
+	}
+	if claimID, _ := ctx.Value(terminalProviderClaimIDKey{}).(string); claimID != "" {
+		return session, nil, false
 	}
 
 	if err := s.repo.UpdateTaskSessionState(ctx, sessionID, nextState, errorMessage); err != nil {
@@ -1363,10 +1398,27 @@ func (s *Service) transitionTaskSessionState(
 		return false, session.State, nil
 	}
 	if isTerminalSessionState(session.State) || session.State == nextState {
+		if err := s.revokeProviderAccessForTerminal(ctx, sessionID, session.State); err != nil {
+			return false, session.State, err
+		}
 		return false, session.State, nil
 	}
 
 	oldState := session.State
+	ctx, releaseClaim, claimed, claimErr := s.claimProviderAccessForTerminal(ctx, models.TerminalProviderAccessClaim{
+		TaskID: taskID, SessionID: sessionID, ExpectedState: oldState,
+		TargetState: nextState, ErrorMessage: errorMessage,
+	}, nextState)
+	if claimErr != nil {
+		return false, oldState, claimErr
+	}
+	if !claimed {
+		return false, oldState, nil
+	}
+	defer releaseClaim()
+	if err := s.revokeProviderAccessForTerminal(ctx, sessionID, nextState); err != nil {
+		return false, oldState, err
+	}
 	changed, refreshed, authoritativeUpdatedAt, err := s.persistStrictTaskSessionState(
 		ctx, sessionID, session, nextState, errorMessage,
 	)
@@ -1432,6 +1484,22 @@ func (s *Service) transitionBootstrapFailure(
 		}
 	}
 
+	ctx, releaseClaim, claimed, claimErr := s.claimProviderAccessForTerminal(ctx, models.TerminalProviderAccessClaim{
+		TaskID: taskID, SessionID: sessionID, AgentExecutionID: agentExecutionID, RequireExecution: true,
+		ExpectedState: expectedState, ExpectedErrorStamp: expectedStamp, CheckErrorStamp: true,
+		ExpectedStartAttemptID: expectedStartAttemptID,
+		TargetState:            models.TaskSessionStateFailed, ErrorMessage: errorValue.Message,
+	}, models.TaskSessionStateFailed)
+	if claimErr != nil {
+		return false, expectedState, claimErr
+	}
+	if !claimed {
+		return false, expectedState, nil
+	}
+	defer releaseClaim()
+	if err := s.revokeProviderAccessForTerminal(ctx, sessionID, models.TaskSessionStateFailed); err != nil {
+		return false, expectedState, err
+	}
 	var changed bool
 	var updatedAt time.Time
 	var err error
@@ -1442,9 +1510,17 @@ func (s *Service) transitionBootstrapFailure(
 				"bootstrap failure requires a startup-attempt-fenced repository commit",
 			)
 		}
-		changed, updatedAt, err = committer.CommitBootstrapFailureIfCurrentAttempt(
-			ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, expectedStartAttemptID, errorValue,
-		)
+		if claimID, _ := ctx.Value(terminalProviderClaimIDKey{}).(string); claimID != "" {
+			claimCommitter, ok := s.repo.(bootstrapFailureAttemptClaimCommitter)
+			if !ok {
+				return false, expectedState, errors.New("bootstrap failure requires a claim-fenced repository commit")
+			}
+			changed, updatedAt, err = claimCommitter.CommitBootstrapFailureIfCurrentAttemptClaim(
+				ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, expectedStartAttemptID, errorValue, claimID)
+		} else {
+			changed, updatedAt, err = committer.CommitBootstrapFailureIfCurrentAttempt(
+				ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, expectedStartAttemptID, errorValue)
+		}
 	} else {
 		committer, ok := s.repo.(bootstrapFailureCommitter)
 		if !ok {
@@ -1452,9 +1528,17 @@ func (s *Service) transitionBootstrapFailure(
 				"bootstrap failure requires an execution-fenced repository commit",
 			)
 		}
-		changed, updatedAt, err = committer.CommitBootstrapFailureIfCurrentExecution(
-			ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, errorValue,
-		)
+		if claimID, _ := ctx.Value(terminalProviderClaimIDKey{}).(string); claimID != "" {
+			claimCommitter, ok := s.repo.(bootstrapFailureClaimCommitter)
+			if !ok {
+				return false, expectedState, errors.New("bootstrap failure requires a claim-fenced repository commit")
+			}
+			changed, updatedAt, err = claimCommitter.CommitBootstrapFailureIfCurrentExecutionClaim(
+				ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, errorValue, claimID)
+		} else {
+			changed, updatedAt, err = committer.CommitBootstrapFailureIfCurrentExecution(
+				ctx, taskID, sessionID, agentExecutionID, expectedState, expectedStamp, errorValue)
+		}
 	}
 	if err != nil || !changed {
 		return changed, expectedState, err
@@ -1479,9 +1563,78 @@ func (s *Service) transitionBootstrapFailure(
 		refreshed,
 	)
 	if messageErr != nil {
-		return true, models.TaskSessionStateFailed, fmt.Errorf("persist bootstrap failure history: %w", messageErr)
+		messageErr = fmt.Errorf("persist bootstrap failure history: %w", messageErr)
 	}
-	return true, models.TaskSessionStateFailed, nil
+	return true, models.TaskSessionStateFailed, messageErr
+}
+
+func (s *Service) revokeProviderAccessForTerminal(
+	ctx context.Context, sessionID string, state models.TaskSessionState,
+) error {
+	if !isTerminalSessionState(state) || s.providerAccessSessionRevoker == nil {
+		return nil
+	}
+	return s.providerAccessSessionRevoker.RevokeSession(ctx, sessionID)
+}
+
+type terminalProviderAccessClaimer interface {
+	ClaimProviderAccessTerminal(context.Context, models.TerminalProviderAccessClaim) (string, bool, error)
+	ReleaseProviderAccessTerminal(context.Context, string, string) error
+}
+
+type terminalClaimStateUpdater interface {
+	UpdateTaskSessionStateIfCurrentClaim(context.Context, string, models.TaskSessionState, models.TaskSessionState, string, string) (bool, time.Time, error)
+}
+
+type terminalClaimActiveCanceller interface {
+	CancelActiveTaskSessionWithClaim(context.Context, string, string, models.TaskSessionState, string) (bool, time.Time, error)
+}
+
+type claimCancellerAdapter struct {
+	terminalClaimActiveCanceller
+	claimID       string
+	expectedState models.TaskSessionState
+}
+
+func (a claimCancellerAdapter) CancelActiveTaskSession(ctx context.Context, sessionID, reason string) (bool, time.Time, error) {
+	return a.CancelActiveTaskSessionWithClaim(ctx, sessionID, reason, a.expectedState, a.claimID)
+}
+
+type bootstrapFailureClaimCommitter interface {
+	CommitBootstrapFailureIfCurrentExecutionClaim(context.Context, string, string, string, models.TaskSessionState, string, models.LastAgentError, string) (bool, time.Time, error)
+}
+
+type bootstrapFailureAttemptClaimCommitter interface {
+	CommitBootstrapFailureIfCurrentAttemptClaim(context.Context, string, string, string, models.TaskSessionState, string, string, models.LastAgentError, string) (bool, time.Time, error)
+}
+
+type terminalProviderExecutionKey struct{}
+type terminalProviderNoExecutionKey struct{}
+type terminalProviderRequireExecutionKey struct{}
+type terminalProviderClaimIDKey struct{}
+
+func (s *Service) claimProviderAccessForTerminal(
+	ctx context.Context, claim models.TerminalProviderAccessClaim, state models.TaskSessionState,
+) (context.Context, func(), bool, error) {
+	if !isTerminalSessionState(state) || s.providerAccessSessionRevoker == nil {
+		return ctx, func() {}, true, nil
+	}
+	claimer, ok := s.repo.(terminalProviderAccessClaimer)
+	if !ok {
+		return ctx, nil, false, errors.New("terminal provider access requires an ownership-fenced repository")
+	}
+	claimID, claimed, err := claimer.ClaimProviderAccessTerminal(ctx, claim)
+	if err != nil || !claimed {
+		return ctx, nil, claimed, err
+	}
+	return context.WithValue(ctx, terminalProviderClaimIDKey{}, claimID), func() {
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if releaseErr := claimer.ReleaseProviderAccessTerminal(releaseCtx, claim.SessionID, claimID); releaseErr != nil {
+			s.logger.Error("failed to release terminal provider access reservation",
+				zap.String("session_id", claim.SessionID), zap.Error(releaseErr))
+		}
+	}, true, nil
 }
 
 // persistBootstrapFailureMessage records the accepted bootstrap failure as a
@@ -1569,10 +1722,20 @@ func (s *Service) persistStrictTaskSessionStateDispatch(
 	errorMessage string,
 ) (bool, *models.TaskSession, *time.Time, error) {
 	if canceller, ok := s.repo.(activeTaskSessionCanceller); ok && nextState == models.TaskSessionStateCancelled {
+		if claimID, _ := ctx.Value(terminalProviderClaimIDKey{}).(string); claimID != "" {
+			claimCanceller, ok := s.repo.(terminalClaimActiveCanceller)
+			if !ok {
+				return false, session, nil, errors.New("terminal provider access requires a claim-fenced cancellation")
+			}
+			return s.cancelActiveTaskSessionState(ctx, claimCancellerAdapter{claimCanceller, claimID, session.State}, sessionID, session, errorMessage)
+		}
 		return s.cancelActiveTaskSessionState(ctx, canceller, sessionID, session, errorMessage)
 	}
 	if updater, ok := s.repo.(conditionalTaskSessionStateUpdater); ok {
 		return s.persistConditionalTaskSessionState(ctx, updater, sessionID, session, nextState, errorMessage)
+	}
+	if claimID, _ := ctx.Value(terminalProviderClaimIDKey{}).(string); claimID != "" {
+		return false, session, nil, errors.New("terminal provider access requires a claim-fenced state commit")
 	}
 	if err := s.repo.UpdateTaskSessionState(ctx, sessionID, nextState, errorMessage); err != nil {
 		return false, session, nil, err
@@ -1603,13 +1766,19 @@ func (s *Service) persistConditionalTaskSessionState(
 	nextState models.TaskSessionState,
 	errorMessage string,
 ) (bool, *models.TaskSession, *time.Time, error) {
-	changed, updatedAt, err := updater.UpdateTaskSessionStateIfCurrent(
-		ctx,
-		sessionID,
-		session.State,
-		nextState,
-		errorMessage,
-	)
+	claimID, _ := ctx.Value(terminalProviderClaimIDKey{}).(string)
+	var changed bool
+	var updatedAt time.Time
+	var err error
+	if claimID != "" {
+		claimUpdater, ok := s.repo.(terminalClaimStateUpdater)
+		if !ok {
+			return false, session, nil, errors.New("terminal provider access requires a claim-fenced state commit")
+		}
+		changed, updatedAt, err = claimUpdater.UpdateTaskSessionStateIfCurrentClaim(ctx, sessionID, session.State, nextState, errorMessage, claimID)
+	} else {
+		changed, updatedAt, err = updater.UpdateTaskSessionStateIfCurrent(ctx, sessionID, session.State, nextState, errorMessage)
+	}
 	if err != nil {
 		return false, session, nil, err
 	}

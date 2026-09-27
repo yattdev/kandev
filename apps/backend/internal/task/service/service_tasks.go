@@ -3152,6 +3152,13 @@ func (s *Service) deleteTaskWithReasonAndDBDelete(
 			return false, fmt.Errorf("cleanup task canvases for delete: %w", err)
 		}
 	}
+	if s.providerAccessSessionRevoker != nil {
+		for _, session := range sessions {
+			if err := s.providerAccessSessionRevoker.RevokeSession(operationCtx, session.ID); err != nil {
+				return false, fmt.Errorf("revoke provider access for task session: %w", err)
+			}
+		}
+	}
 
 	envCleanup := taskEnvironmentCleanup{
 		env: taskEnv, deleteRow: false, discardWorktreeChanges: options.DiscardWorktreeChanges,

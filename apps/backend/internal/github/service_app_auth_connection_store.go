@@ -90,6 +90,26 @@ func (r *serviceAppConnectionStore) TransitionWorkspaceInstallationConnection(ct
 	lock := r.service.workspaceConnectionMutationLock(expected.WorkspaceID)
 	lock.Lock()
 	defer lock.Unlock()
+	if appConnectionIdentityChanged(expected, next) && r.service.providerAccessRevoker != nil {
+		if expected.InstallationID == nil {
+			return false, errors.New("expected installation ID is required")
+		}
+		current, err := r.service.store.GetWorkspaceConnection(ctx, expected.WorkspaceID)
+		if err != nil {
+			return false, err
+		}
+		installationID := *expected.InstallationID
+		if current == nil || current.Status != expected.Status ||
+			!matchesWorkspaceConnectionExpectation(current, WorkspaceConnectionExpectation{
+				Source: expected.Source, CredentialGeneration: expected.CredentialGeneration,
+				InstallationID: &installationID, AppRegistrationID: expected.AppRegistrationID,
+			}) {
+			return false, nil
+		}
+		if err := r.service.providerAccessRevoker.RevokeWorkspaceConnection(ctx, expected.WorkspaceID); err != nil {
+			return false, err
+		}
+	}
 	updated, err := r.service.store.TransitionWorkspaceInstallationConnection(ctx, expected, next)
 	if err != nil || !updated {
 		return updated, err
@@ -140,6 +160,11 @@ func (u *installationRepositorySettingsUpdater) ApplyInstallationRepositories(ct
 	expectedInstallationID := change.InstallationID
 	if !matchesWorkspaceConnectionExpectation(connection, WorkspaceConnectionExpectation{Source: change.ConnectionSource, CredentialGeneration: change.CredentialGeneration, InstallationID: &expectedInstallationID, AppRegistrationID: change.AppRegistrationID}) || connection.Status != ConnectionStatusActive {
 		return false, nil
+	}
+	if len(change.Removed) > 0 && u.service.providerAccessRevoker != nil {
+		if err := u.service.providerAccessRevoker.RevokeWorkspaceConnection(ctx, change.WorkspaceID); err != nil {
+			return false, err
+		}
 	}
 	u.service.InvalidateAppInstallationCredentials(change.AppRegistrationID, change.InstallationID)
 	u.service.invalidateWorkspaceCredential(change.WorkspaceID)

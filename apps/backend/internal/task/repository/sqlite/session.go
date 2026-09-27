@@ -1380,6 +1380,8 @@ func (r *Repository) scanTaskSession(ctx context.Context, row *sql.Row, noRowsEr
 	if err := unmarshalSessionJSON(metadataJSON, &session.Metadata, "agent session metadata"); err != nil {
 		return nil, err
 	}
+	delete(session.Metadata, terminalProviderClaimKey)
+	delete(session.Metadata, terminalProviderRecoveryKey)
 	if err := unmarshalSessionJSON(agentProfileSnapshotJSON, &session.AgentProfileSnapshot, "agent profile snapshot"); err != nil {
 		return nil, err
 	}
@@ -1508,6 +1510,7 @@ func (r *Repository) claimPromptableTaskSessionIfActive(
 		WHERE id = ? AND state = ?
 		  AND (? = '' OR task_id = ?)
 		  AND (? = '' OR queue_incarnation_id = ?)
+		  AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 		  AND EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_sessions.task_id AND tasks.archived_at IS NULL)
 	`), models.TaskSessionStateRunning, time.Now().UTC(), id, state,
 		taskID, taskID, incarnationID, incarnationID)
@@ -1847,6 +1850,12 @@ func (r *Repository) removeSessionMetadataKeys(
 			strings.Join(paths, ", "),
 		)
 	}
+	for _, key := range keys {
+		if key == models.SessionMetaKeyAgentStartAttemptID {
+			query += " AND " + terminalProviderClaimAbsentPredicate(driver)
+			break
+		}
+	}
 	args = append(args, updatedAt, sessionID)
 	result, err := exec.ExecContext(ctx, r.db.Rebind(query), args...)
 	if err != nil {
@@ -1971,7 +1980,7 @@ func (r *Repository) updateTaskSessionWithSnapshotGuard(
 			agent_profile_snapshot = ?, executor_snapshot = ?, environment_snapshot = ?, repository_snapshot = ?,
 			state = ?, error_message = ?, completed_at = ?, updated_at = ?,
 			is_primary = ?, review_status = ?, is_passthrough = ?, task_environment_id = ?
-		WHERE id = ?`
+		WHERE id = ? AND ` + terminalProviderClaimAbsentPredicate(r.db.DriverName())
 	args := []interface{}{agentProfileID, session.ExecutionProfileID, session.RouteGeneration, session.RouteState, session.RouteReason, session.DownstreamACPSessionID,
 		session.ExecutorID, session.ExecutorProfileID, session.EnvironmentID,
 		session.RepositoryID, session.BaseBranch, session.BaseCommitSHA, session.WorkspacePath,
@@ -2080,8 +2089,7 @@ func (r *Repository) UpdateTaskSessionState(ctx context.Context, id string, stat
 	completedAt := completedAtForTaskSessionState(status, now)
 
 	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
-		UPDATE task_sessions SET state = ?, error_message = ?, completed_at = ?, updated_at = ? WHERE id = ?
-	`), string(status), errorMessage, completedAt, now, id)
+		UPDATE task_sessions SET state = ?, error_message = ?, completed_at = ?, updated_at = ? WHERE id = ? AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())), string(status), errorMessage, completedAt, now, id)
 	if err != nil {
 		return err
 	}
@@ -2107,8 +2115,7 @@ func (r *Repository) UpdateTaskSessionStateIfCurrent(
 	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_sessions
 		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
-		WHERE id = ? AND state = ?
-	`), string(status), errorMessage, completedAt, now, id, string(expected))
+		WHERE id = ? AND state = ? AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())), string(status), errorMessage, completedAt, now, id, string(expected))
 	if err != nil {
 		return false, time.Time{}, err
 	}
@@ -2130,8 +2137,7 @@ func (r *Repository) UpdateTaskSessionStateIfCurrentIdentity(
 	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_sessions
 		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
-		WHERE id = ? AND task_id = ? AND queue_incarnation_id = ? AND state = ?
-	`), string(status), errorMessage, completedAt, now,
+		WHERE id = ? AND task_id = ? AND queue_incarnation_id = ? AND state = ? AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())), string(status), errorMessage, completedAt, now,
 		id, taskID, incarnationID, string(expected))
 	if err != nil {
 		return false, time.Time{}, err
@@ -2183,7 +2189,7 @@ func (r *Repository) CancelActiveTaskSession(ctx context.Context, id, reason str
 		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
 		WHERE id = ?
 			AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT', 'IDLE')
-	`), string(models.TaskSessionStateCancelled), reason, now, now, id)
+			AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())), string(models.TaskSessionStateCancelled), reason, now, now, id)
 	if err != nil {
 		return false, time.Time{}, err
 	}
@@ -2248,6 +2254,7 @@ func (r *Repository) CancelActiveTaskSessionsByTaskID(ctx context.Context, taskI
 		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
 		WHERE task_id = ?
 			AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
+			AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 		RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
 			review_status, metadata, task_environment_id, state, updated_at, is_primary
 	`), string(models.TaskSessionStateCancelled), reason, now, now, taskID)
@@ -2337,6 +2344,7 @@ func (r *Repository) CancelRunningTaskSessionByID(ctx context.Context, sessionID
 		WHERE id = ?
 			AND state IN ('STARTING', 'RUNNING')
 			AND updated_at < ?
+			AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 		RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
 			review_status, metadata, task_environment_id, state, updated_at, is_primary
 	`), string(models.TaskSessionStateCancelled), reason, now, now, sessionID, staleBefore)
@@ -2456,6 +2464,7 @@ func (r *Repository) RecoverTaskSessionByCandidate(
 		string(models.TaskSessionStateWaitingForInput), "", nil, now,
 		candidate.SessionID, candidate.TaskID, string(candidate.ExpectedState), candidate.ExpectedUpdatedAt,
 	)
+	query += " AND " + terminalProviderClaimAbsentPredicate(r.db.DriverName()) + "\n"
 	if !staleBefore.IsZero() {
 		query += " AND updated_at < ?\n"
 		args = append(args, staleBefore)
@@ -2540,6 +2549,7 @@ func (r *Repository) CancelActiveTaskSessionsByIDs(ctx context.Context, taskID s
 			WHERE task_id = ?
 				AND id IN (`+placeholders+`)
 				AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
+				AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 			RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
 				review_status, metadata, task_environment_id, state, updated_at, is_primary
 		`), args...)
@@ -2609,6 +2619,7 @@ func (r *Repository) CancelActiveTaskSessionsByCandidates(
 			WHERE task_id = ?
 			  AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
 			AND (`+strings.Join(predicates, " OR ")+`)
+			AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())+`
 			RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
 				review_status, metadata, task_environment_id, state, updated_at, is_primary
 		`), args...)
@@ -2708,6 +2719,8 @@ func scanCancelledTaskSessionRow(rows *sql.Rows, taskID string) (*models.TaskSes
 	if err := unmarshalSessionJSON(metadataJSON, &session.Metadata, "agent session metadata"); err != nil {
 		return nil, err
 	}
+	delete(session.Metadata, terminalProviderClaimKey)
+	delete(session.Metadata, terminalProviderRecoveryKey)
 	if err := unmarshalSessionJSON(agentProfileSnapshotJSON, &session.AgentProfileSnapshot, "agent profile snapshot"); err != nil {
 		return nil, err
 	}
@@ -2742,8 +2755,7 @@ func (r *Repository) updateSessionMetadataJSON(
 	updatedAt time.Time,
 ) error {
 	result, err := exec.ExecContext(ctx, r.db.Rebind(`
-		UPDATE task_sessions SET metadata = ?, updated_at = ? WHERE id = ?
-	`), metadataJSON, updatedAt, sessionID)
+		UPDATE task_sessions SET metadata = ?, updated_at = ? WHERE id = ? AND `+terminalProviderClaimAbsentPredicate(r.db.DriverName())), metadataJSON, updatedAt, sessionID)
 	if err != nil {
 		return err
 	}
@@ -2762,7 +2774,11 @@ func (r *Repository) SetSessionMetadataKey(ctx context.Context, sessionID, key s
 	if err != nil {
 		return fmt.Errorf("failed to serialize metadata value: %w", err)
 	}
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(metadataKeyUpdateQuery("task_sessions", r.db.DriverName())), metadataKeyUpdateArgs(r.db.DriverName(), key, string(valueJSON), r.nowUTC(), sessionID)...)
+	query := metadataKeyUpdateQuery("task_sessions", r.db.DriverName())
+	if key == models.SessionMetaKeyAgentStartAttemptID {
+		query += " AND " + terminalProviderClaimAbsentPredicate(r.db.DriverName())
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(query), metadataKeyUpdateArgs(r.db.DriverName(), key, string(valueJSON), r.nowUTC(), sessionID)...)
 	if err != nil {
 		return err
 	}
@@ -2791,6 +2807,9 @@ func (r *Repository) SetSessionMetadataKeyIfState(
 		return false, fmt.Errorf("failed to serialize metadata value: %w", err)
 	}
 	query := metadataKeyUpdateQuery("task_sessions", r.db.DriverName()) + " AND state = ?"
+	if key == models.SessionMetaKeyAgentStartAttemptID {
+		query += " AND " + terminalProviderClaimAbsentPredicate(r.db.DriverName())
+	}
 	args := metadataKeyUpdateArgs(r.db.DriverName(), key, string(valueJSON), r.nowUTC(), sessionID)
 	args = append(args, string(expectedState))
 	result, err := r.db.ExecContext(ctx, r.db.Rebind(query), args...)
@@ -3913,6 +3932,8 @@ func unmarshalSessionSnapshots(
 	if err := unmarshalSessionJSON(metadataJSON, &session.Metadata, "agent session metadata"); err != nil {
 		return err
 	}
+	delete(session.Metadata, terminalProviderClaimKey)
+	delete(session.Metadata, terminalProviderRecoveryKey)
 	if err := unmarshalSessionJSON(agentProfileSnapshotJSON, &session.AgentProfileSnapshot, "agent profile snapshot"); err != nil {
 		return err
 	}

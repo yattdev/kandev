@@ -88,6 +88,25 @@ func newWorkspaceConnectionService(t *testing.T, login string) (*Service, *fakeC
 	return service, secrets
 }
 
+func TestGetWorkspaceConnectionForProviderGrantHonorsWorkspaceAccess(t *testing.T) {
+	service, _ := newWorkspaceConnectionService(t, "octocat")
+	if _, err := service.SetWorkspaceConnection(context.Background(), "ws-1", SetWorkspaceConnectionRequest{
+		Source: ConnectionSourcePAT, Token: "ghp_workspace",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	denied := errors.New("workspace denied")
+	service.SetWorkspaceAuthorizer(func(context.Context, string) error { return denied })
+	if connection, err := service.GetWorkspaceConnection(context.Background(), "ws-1"); !errors.Is(err, denied) || connection != nil {
+		t.Fatalf("denied connection = %+v, err = %v", connection, err)
+	}
+	service.SetWorkspaceAuthorizer(nil)
+	connection, err := service.GetWorkspaceConnection(context.Background(), "ws-1")
+	if err != nil || connection == nil || connection.Source != ConnectionSourcePAT {
+		t.Fatalf("connection = %+v, err = %v", connection, err)
+	}
+}
+
 func TestSetWorkspaceConnectionPATIsScopedAndValidatedBeforeWrite(t *testing.T) {
 	service, secrets := newWorkspaceConnectionService(t, "octocat")
 	connection, err := service.SetWorkspaceConnection(context.Background(), "ws-1", SetWorkspaceConnectionRequest{
@@ -310,6 +329,94 @@ func TestDeleteWorkspaceAppConnectionRevokesPersonalConnections(t *testing.T) {
 	stored, err := service.store.GetUserConnection(context.Background(), "ws-1", "user-1")
 	if err != nil || stored != nil || len(secrets.values) != 0 {
 		t.Fatalf("personal state after App disconnect = %+v, secrets=%#v, err %v", stored, secrets.values, err)
+	}
+}
+
+type providerConnectionRevokerFunc func(context.Context, string) error
+
+func (f providerConnectionRevokerFunc) RevokeWorkspaceConnection(ctx context.Context, workspaceID string) error {
+	return f(ctx, workspaceID)
+}
+
+func TestDeleteWorkspaceAppConnectionRevokesProviderAccessBeforeMutation(t *testing.T) {
+	service, _ := newWorkspaceConnectionService(t, "octocat")
+	ctx := context.Background()
+	if err := service.store.UpsertWorkspaceConnection(ctx, activeAppWorkspace("ws-1", 42)); err != nil {
+		t.Fatal(err)
+	}
+	revokeErr := errors.New("provider token revocation unconfirmed")
+	calls := 0
+	service.SetProviderAccessConnectionRevoker(providerConnectionRevokerFunc(func(_ context.Context, workspaceID string) error {
+		calls++
+		if workspaceID != "ws-1" {
+			t.Fatalf("revoked workspace = %q", workspaceID)
+		}
+		return revokeErr
+	}))
+	if err := service.DeleteWorkspaceConnection(ctx, "ws-1"); !errors.Is(err, revokeErr) {
+		t.Fatalf("disconnect error = %v", err)
+	}
+	connection, err := service.store.GetWorkspaceConnection(ctx, "ws-1")
+	if err != nil || connection == nil || connection.Source != ConnectionSourceGitHubAppInstallation || calls != 1 {
+		t.Fatalf("connection after denied disconnect = %+v, calls = %d, err = %v", connection, calls, err)
+	}
+}
+
+func TestAppWebhookConnectionTransitionWaitsForProviderRevocation(t *testing.T) {
+	service, _ := newWorkspaceConnectionService(t, "octocat")
+	ctx := context.Background()
+	connection := activeAppWorkspace("ws-1", 42)
+	if err := service.store.UpsertWorkspaceConnection(ctx, connection); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := service.store.GetWorkspaceConnection(ctx, "ws-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := *expected
+	next.Status = ConnectionStatusRevoked
+	next.CredentialGeneration++
+	revokeErr := errors.New("exact token revocation failed")
+	service.SetProviderAccessConnectionRevoker(providerConnectionRevokerFunc(func(context.Context, string) error {
+		return revokeErr
+	}))
+	updated, err := (&serviceAppConnectionStore{service: service}).TransitionWorkspaceInstallationConnection(ctx, expected, &next)
+	if updated || !errors.Is(err, revokeErr) {
+		t.Fatalf("webhook transition = %v, %v", updated, err)
+	}
+	current, err := service.store.GetWorkspaceConnection(ctx, "ws-1")
+	if err != nil || current == nil || current.Status != ConnectionStatusActive ||
+		current.CredentialGeneration != expected.CredentialGeneration {
+		t.Fatalf("connection after denied webhook transition = %+v, err = %v", current, err)
+	}
+}
+
+func TestStaleAppWebhookDoesNotRevokeCurrentProviderGrant(t *testing.T) {
+	service, _ := newWorkspaceConnectionService(t, "octocat")
+	ctx := context.Background()
+	if err := service.store.UpsertWorkspaceConnection(ctx, activeAppWorkspace("ws-1", 42)); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := service.store.GetWorkspaceConnection(ctx, "ws-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := *expected
+	current.CredentialGeneration++
+	if err := service.store.UpsertWorkspaceConnection(ctx, &current); err != nil {
+		t.Fatal(err)
+	}
+	next := *expected
+	next.Status = ConnectionStatusRevoked
+	next.CredentialGeneration++
+	called := false
+	service.SetProviderAccessConnectionRevoker(providerConnectionRevokerFunc(func(context.Context, string) error {
+		called = true
+		return nil
+	}))
+	updated, err := (&serviceAppConnectionStore{service: service}).TransitionWorkspaceInstallationConnection(ctx, expected, &next)
+	if err != nil || updated || called {
+		t.Fatalf("stale webhook transition = %v, err = %v, revoker called = %v", updated, err, called)
 	}
 }
 

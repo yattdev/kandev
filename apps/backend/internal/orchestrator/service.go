@@ -733,8 +733,9 @@ type Service struct {
 	// the callback is active.
 	sessionQueuePurgeNotifierRegistered bool
 
-	sessionAttachmentCleaner    SessionAttachmentCleaner
-	sessionAttachmentTransferer SessionAttachmentTransferer
+	sessionAttachmentCleaner     SessionAttachmentCleaner
+	sessionAttachmentTransferer  SessionAttachmentTransferer
+	providerAccessSessionRevoker taskservice.ProviderAccessSessionRevoker
 	// subagentContexts optionally persists a relational record of subagent
 	// (Task tool) invocations recognized on the tool-call frame paths. Nil is
 	// safe: both call sites guard on it. See SetSubagentContextRecorder.
@@ -2008,6 +2009,12 @@ func (s *Service) SetSessionAttachmentTransferer(transfer SessionAttachmentTrans
 	s.sessionAttachmentTransferer = transfer
 }
 
+// SetProviderAccessSessionRevoker makes terminal session transitions revoke
+// already-exported exact provider tokens before the transition returns.
+func (s *Service) SetProviderAccessSessionRevoker(revoker taskservice.ProviderAccessSessionRevoker) {
+	s.providerAccessSessionRevoker = revoker
+}
+
 // SetOnPrimarySessionSet sets a callback on the executor for when the first session
 // of a task is marked primary. Used to publish a task.updated event so the frontend
 // receives the primary_session_id.
@@ -3185,6 +3192,7 @@ func (s *Service) Start(ctx context.Context) error {
 	// new launches, which would let a genuinely in-flight claim race this
 	// snapshot of "starting" routes.
 	s.reconcileOrphanedDynamicStartingRoutes(ctx)
+	s.reconcileProviderAccessTerminalClaimsOnStartup(ctx)
 	s.reconcileExecutorSessionsOnStartup(ctx)
 	// Executor reconciliation abandons turns left open by a pre-crash active
 	// session. Run the CI attempt sweep again after that transition so a
@@ -3450,6 +3458,7 @@ func (s *Service) reconcileSessionsOnStartup(ctx context.Context) {
 		s.logger.Error("failed to reconcile unpublished prompt turns on startup", zap.Error(err))
 		return
 	}
+	s.reconcileProviderAccessTerminalClaimsOnStartup(ctx)
 	s.reconcileExecutorSessionsOnStartup(ctx)
 }
 

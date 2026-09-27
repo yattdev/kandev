@@ -123,6 +123,7 @@ type WorkspaceGroupOwnerSessionResolver interface {
 type Service struct {
 	mu                          sync.Mutex
 	connectionMutationLocks     [64]sync.Mutex
+	providerAccessRevoker       ProviderAccessConnectionRevoker
 	client                      Client
 	authMethod                  string
 	secrets                     SecretProvider

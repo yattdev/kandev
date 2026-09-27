@@ -155,12 +155,13 @@ type agentConversationDispatcher interface {
 // occurrence-key idempotency and busy-session coalescing.
 // Delete removes all conversations for the given (pluginID, workspaceID, key).
 type AgentConversationService struct {
-	tasks   agentConversationTaskRepo
-	sess    agentConversationSessionRepo
-	profile agentConversationProfileRepo
-	state   agentConversationStateRepo
-	eventer agentConversationEventBus
-	deleter agentConversationTaskDeleter
+	tasks                        agentConversationTaskRepo
+	sess                         agentConversationSessionRepo
+	profile                      agentConversationProfileRepo
+	state                        agentConversationStateRepo
+	eventer                      agentConversationEventBus
+	deleter                      agentConversationTaskDeleter
+	providerAccessSessionRevoker ProviderAccessSessionRevoker
 
 	// dispatcher delivers Dispatch's text to the real agent runtime. It is
 	// wired late (SetDispatcher), after the orchestrator exists — mirroring
@@ -217,6 +218,14 @@ func (s *AgentConversationService) SetTaskDeleter(d agentConversationTaskDeleter
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleter = d
+}
+
+// SetProviderAccessSessionRevoker fences a managed session's exported token
+// before its backing task can be deleted.
+func (s *AgentConversationService) SetProviderAccessSessionRevoker(revoker ProviderAccessSessionRevoker) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.providerAccessSessionRevoker = revoker
 }
 
 func (s *AgentConversationService) getDispatcher() agentConversationDispatcher {
@@ -808,6 +817,20 @@ func (s *AgentConversationService) DeleteAllForPlugin(ctx context.Context, plugi
 }
 
 func (s *AgentConversationService) deleteManagedConversationTask(ctx context.Context, deleter agentConversationTaskDeleter, taskID string) error {
+	s.mu.RLock()
+	revoker := s.providerAccessSessionRevoker
+	s.mu.RUnlock()
+	if revoker != nil {
+		primary, err := s.sess.GetPrimarySessionByTaskID(ctx, taskID)
+		if err != nil && !errors.Is(err, taskrepo.ErrNoPrimarySession) {
+			return fmt.Errorf("load managed session before provider revocation: %w", err)
+		}
+		if primary != nil {
+			if err := revoker.RevokeSession(ctx, primary.ID); err != nil {
+				return fmt.Errorf("revoke managed session provider access: %w", err)
+			}
+		}
+	}
 	if deleter != nil {
 		return deleter.DeleteTask(ctx, taskID)
 	}
@@ -837,6 +860,52 @@ func (s *AgentConversationService) findManagedConversation(ctx context.Context, 
 		return nil, err
 	}
 	return found, nil
+}
+
+// VerifyManagedSession reads the current backing task and its primary session
+// for an exact plugin conversation. A selector from a plugin cannot establish
+// ownership or session liveness on its own.
+func (s *AgentConversationService) VerifyManagedSession(
+	ctx context.Context, pluginID, workspaceID, conversationKey, taskID, sessionID string,
+) (bool, error) {
+	if !completeManagedSessionSelectors(pluginID, workspaceID, conversationKey, taskID, sessionID) {
+		return false, nil
+	}
+	task, err := s.findManagedConversation(ctx, pluginID, workspaceID, conversationKey)
+	if err != nil || task == nil {
+		return false, err
+	}
+	if !matchingManagedTask(task, taskID, pluginID) {
+		return false, nil
+	}
+	primary, err := s.sess.GetPrimarySessionByTaskID(ctx, task.ID)
+	if err != nil || primary == nil {
+		return false, err
+	}
+	if primary.ID != sessionID || primary.TaskID != task.ID || !primary.IsPrimary {
+		return false, nil
+	}
+	return liveManagedSession(primary.State), nil
+}
+
+func completeManagedSessionSelectors(pluginID, workspaceID, conversationKey, taskID, sessionID string) bool {
+	return pluginID != "" && workspaceID != "" && conversationKey != "" && taskID != "" && sessionID != ""
+}
+
+func matchingManagedTask(task *models.Task, taskID, pluginID string) bool {
+	return task.ID == taskID && task.IsEphemeral && task.ArchivedAt == nil &&
+		task.Metadata[metaKeyManagedByPlugin] == pluginID
+}
+
+func liveManagedSession(state models.TaskSessionState) bool {
+	switch state {
+	case models.TaskSessionStateCreated, models.TaskSessionStateStarting,
+		models.TaskSessionStateRunning, models.TaskSessionStateWaitingForInput,
+		models.TaskSessionStateIdle:
+		return true
+	default:
+		return false
+	}
 }
 
 // listManagedConversations returns all managed conversations matching the

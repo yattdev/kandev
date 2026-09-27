@@ -1,0 +1,443 @@
+// Package provideraccess persists narrow provider credential grants and leases.
+package provideraccess
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/db/dialect"
+)
+
+const grantColumns = `id, scope_key, plugin_installation_id, plugin_id, workspace_id,
+ conversation_key, target_task_id, repository_id, provider, purpose, generation,
+ created_by_user_id, expires_at, revoked_at, created_at, updated_at`
+
+// GrantScope identifies one provider-access authority boundary.
+type GrantScope struct {
+	PluginInstallationID string
+	PluginID             string
+	WorkspaceID          string
+	ConversationKey      string
+	TargetTaskID         string
+	RepositoryID         string
+	Provider             string
+	Purpose              string
+}
+
+// Grant is an administrator-created, expiring provider-access approval.
+type Grant struct {
+	GrantScope
+	ID              string
+	Generation      int64
+	CreatedByUserID string
+	ExpiresAt       time.Time
+	RevokedAt       *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// Scope returns the grant's exact scope.
+func (g Grant) Scope() GrantScope { return g.GrantScope }
+
+type grantRow struct {
+	ID                   string        `db:"id"`
+	ScopeKey             string        `db:"scope_key"`
+	PluginInstallationID string        `db:"plugin_installation_id"`
+	PluginID             string        `db:"plugin_id"`
+	WorkspaceID          string        `db:"workspace_id"`
+	ConversationKey      string        `db:"conversation_key"`
+	TargetTaskID         string        `db:"target_task_id"`
+	RepositoryID         string        `db:"repository_id"`
+	Provider             string        `db:"provider"`
+	Purpose              string        `db:"purpose"`
+	Generation           int64         `db:"generation"`
+	CreatedByUserID      string        `db:"created_by_user_id"`
+	ExpiresAt            int64         `db:"expires_at"`
+	RevokedAt            sql.NullInt64 `db:"revoked_at"`
+	CreatedAt            int64         `db:"created_at"`
+	UpdatedAt            int64         `db:"updated_at"`
+}
+
+func (r grantRow) grant() *Grant {
+	g := &Grant{GrantScope: GrantScope{
+		PluginInstallationID: r.PluginInstallationID, PluginID: r.PluginID,
+		WorkspaceID: r.WorkspaceID, ConversationKey: r.ConversationKey,
+		TargetTaskID: r.TargetTaskID, RepositoryID: r.RepositoryID,
+		Provider: r.Provider, Purpose: r.Purpose,
+	}, ID: r.ID, Generation: r.Generation, CreatedByUserID: r.CreatedByUserID,
+		ExpiresAt: time.Unix(r.ExpiresAt, 0).UTC(),
+		CreatedAt: time.Unix(r.CreatedAt, 0).UTC(), UpdatedAt: time.Unix(r.UpdatedAt, 0).UTC()}
+	if r.RevokedAt.Valid {
+		revoked := time.Unix(r.RevokedAt.Int64, 0).UTC()
+		g.RevokedAt = &revoked
+	}
+	return g
+}
+
+// Store persists provider-access grants.
+type Store struct{ db *sqlx.DB }
+
+// NewStore creates replayable grant storage on SQLite or PostgreSQL.
+func NewStore(db *sqlx.DB) (*Store, error) {
+	if db == nil {
+		return nil, errors.New("provider access database is required")
+	}
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS provider_access_workspace_fences (
+   workspace_id TEXT PRIMARY KEY, fenced_at BIGINT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS provider_access_grants (
+   id TEXT PRIMARY KEY, scope_key TEXT NOT NULL,
+   plugin_installation_id TEXT NOT NULL, plugin_id TEXT NOT NULL,
+   workspace_id TEXT NOT NULL, conversation_key TEXT NOT NULL,
+   target_task_id TEXT NOT NULL, repository_id TEXT NOT NULL,
+   provider TEXT NOT NULL, purpose TEXT NOT NULL, generation BIGINT NOT NULL,
+   created_by_user_id TEXT NOT NULL, expires_at BIGINT NOT NULL,
+   revoked_at BIGINT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
+   UNIQUE(scope_key, generation))`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS provider_access_grants_active
+   ON provider_access_grants(scope_key) WHERE revoked_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS provider_access_grants_workspace
+   ON provider_access_grants(workspace_id, updated_at)`,
+		`CREATE TABLE IF NOT EXISTS provider_access_leases (
+   id TEXT PRIMARY KEY, grant_id TEXT NOT NULL, grant_generation BIGINT NOT NULL,
+   scope_key TEXT NOT NULL, managed_task_id TEXT NOT NULL, session_id TEXT NOT NULL,
+   target_digest TEXT NOT NULL, approval_revision BIGINT NOT NULL,
+   connection_generation TEXT NOT NULL, idempotency_hash TEXT NOT NULL,
+   expires_at BIGINT NOT NULL, revoked_at BIGINT, created_at BIGINT NOT NULL,
+   UNIQUE(grant_id, idempotency_hash),
+   FOREIGN KEY(grant_id) REFERENCES provider_access_grants(id))`,
+		`CREATE INDEX IF NOT EXISTS provider_access_leases_grant
+   ON provider_access_leases(grant_id, expires_at)`,
+		`CREATE TABLE IF NOT EXISTS provider_access_targets (
+   lease_id TEXT PRIMARY KEY, target_json TEXT NOT NULL,
+   FOREIGN KEY(lease_id) REFERENCES provider_access_leases(id))`,
+		`CREATE TABLE IF NOT EXISTS provider_access_audit (
+   id TEXT PRIMARY KEY, grant_id TEXT NOT NULL, lease_id TEXT NOT NULL,
+   plugin_installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+   managed_task_id TEXT NOT NULL, session_id TEXT NOT NULL,
+   target_digest TEXT NOT NULL, grant_generation BIGINT NOT NULL,
+   approval_revision BIGINT NOT NULL, connection_generation TEXT NOT NULL,
+   provider TEXT NOT NULL, purpose TEXT NOT NULL, outcome TEXT NOT NULL,
+   at BIGINT NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS provider_access_audit_workspace
+   ON provider_access_audit(workspace_id, at)`,
+		`CREATE TABLE IF NOT EXISTS provider_access_audit_correlations (
+   audit_id TEXT PRIMARY KEY, request_id_hash TEXT NOT NULL,
+   FOREIGN KEY(audit_id) REFERENCES provider_access_audit(id))`,
+		`CREATE TABLE IF NOT EXISTS provider_access_exposures (
+   lease_id TEXT PRIMARY KEY, grant_id TEXT NOT NULL,
+   provider TEXT NOT NULL, provider_principal_id TEXT NOT NULL,
+   repository_id TEXT NOT NULL, permission_profile TEXT NOT NULL,
+   provider_expires_at BIGINT NOT NULL, exported_at BIGINT NOT NULL,
+   revocation_attempted_at BIGINT, revoked_at_provider BIGINT,
+   FOREIGN KEY(lease_id) REFERENCES provider_access_leases(id))`,
+		`CREATE INDEX IF NOT EXISTS provider_access_exposures_expiry
+   ON provider_access_exposures(provider_expires_at)`,
+		`CREATE TABLE IF NOT EXISTS provider_access_redemptions (
+   lease_id TEXT PRIMARY KEY, grant_id TEXT NOT NULL,
+   mint_started_at BIGINT NOT NULL, possible_provider_expiry BIGINT NOT NULL,
+   FOREIGN KEY(lease_id) REFERENCES provider_access_leases(id))`,
+	}
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			return nil, fmt.Errorf("initialize provider access grants: %w", err)
+		}
+	}
+	return &Store{db: db}, nil
+}
+
+// ReplaceGrant revokes one active exact-scope grant and inserts its successor atomically.
+func (s *Store) ReplaceGrant(ctx context.Context, grant *Grant) error {
+	if err := validateGrant(grant); err != nil {
+		return err
+	}
+	key, err := scopeKey(grant.Scope())
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := checkWorkspaceFence(ctx, tx, s.db.DriverName(), grant.WorkspaceID); err != nil {
+		return err
+	}
+	if dialect.IsPostgres(s.db.DriverName()) {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "provider-access-grant:"+key); err != nil {
+			return err
+		}
+	}
+	now := time.Now().UTC()
+	previous, err := activeGrantForReplacement(ctx, tx, s.db.DriverName(), key, now)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, tx.Rebind(`UPDATE provider_access_grants
+  SET revoked_at = ?, updated_at = ? WHERE scope_key = ? AND revoked_at IS NULL`), now.Unix(), now.Unix(), key); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, tx.Rebind(`UPDATE provider_access_leases SET revoked_at = ?
+  WHERE scope_key = ? AND revoked_at IS NULL`), now.Unix(), key); err != nil {
+		return err
+	}
+	if err := tx.GetContext(ctx, &grant.Generation, tx.Rebind(`SELECT COALESCE(MAX(generation), 0) + 1
+  FROM provider_access_grants WHERE scope_key = ?`), key); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, tx.Rebind(`INSERT INTO provider_access_grants (`+grantColumns+`)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		grant.ID, key, grant.PluginInstallationID, grant.PluginID,
+		grant.WorkspaceID, grant.ConversationKey, grant.TargetTaskID,
+		grant.RepositoryID, grant.Provider, grant.Purpose, grant.Generation,
+		grant.CreatedByUserID, grant.ExpiresAt.Unix(), nil, now.Unix(), now.Unix())
+	if err != nil {
+		return err
+	}
+	if err := insertReplacementAudits(ctx, tx, previous, grant, now); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	grant.CreatedAt, grant.UpdatedAt = now, now
+	return nil
+}
+
+func activeGrantForReplacement(ctx context.Context, tx *sqlx.Tx,
+	driverName, key string, at time.Time) (*Grant, error) {
+	var previous grantRow
+	previousQuery := `SELECT ` + grantColumns + `
+  FROM provider_access_grants WHERE scope_key = ? AND revoked_at IS NULL`
+	if dialect.IsPostgres(driverName) {
+		previousQuery += ` FOR UPDATE`
+	}
+	err := tx.GetContext(ctx, &previous, tx.Rebind(previousQuery), key)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	residual, err := hasUnexpiredScopeAuthority(ctx, tx, key, at)
+	if err != nil {
+		return nil, err
+	}
+	if residual {
+		return nil, ErrGrantUnavailable
+	}
+	if previous.ID == "" {
+		return nil, nil
+	}
+	return previous.grant(), nil
+}
+
+func insertReplacementAudits(ctx context.Context, tx *sqlx.Tx,
+	previous, grant *Grant, at time.Time) error {
+	if previous != nil {
+		if err := insertAudit(ctx, tx, grantAudit(previous, AuditGrantRevoked, at)); err != nil {
+			return err
+		}
+	}
+	return insertAudit(ctx, tx, grantAudit(grant, AuditGrantCreated, at))
+}
+
+// This check runs under the active grant row lock, so a concurrent final
+// exposure admission either commits first and is observed or sees revocation.
+func hasUnexpiredScopeAuthority(ctx context.Context, tx *sqlx.Tx,
+	key string, at time.Time) (bool, error) {
+	var exposed int
+	err := tx.GetContext(ctx, &exposed, tx.Rebind(`SELECT COUNT(*)
+  FROM provider_access_exposures e JOIN provider_access_grants g ON g.id = e.grant_id
+  WHERE g.scope_key = ? AND e.provider_expires_at > ? AND e.revoked_at_provider IS NULL`),
+		key, at.Unix())
+	if err != nil || exposed > 0 {
+		return exposed > 0, err
+	}
+	var ambiguous int
+	err = tx.GetContext(ctx, &ambiguous, tx.Rebind(`SELECT COUNT(*)
+  FROM provider_access_redemptions r JOIN provider_access_grants g ON g.id = r.grant_id
+  LEFT JOIN provider_access_exposures e ON e.lease_id = r.lease_id
+  WHERE g.scope_key = ? AND r.possible_provider_expiry > ? AND e.lease_id IS NULL`),
+		key, at.Unix())
+	return ambiguous > 0, err
+}
+
+func grantAudit(grant *Grant, outcome AuditOutcome, at time.Time) AuditEvent {
+	return AuditEvent{ID: uuid.NewString(), GrantID: grant.ID,
+		PluginInstallationID: grant.PluginInstallationID, WorkspaceID: grant.WorkspaceID,
+		GrantGeneration: grant.Generation, Provider: grant.Provider, Purpose: grant.Purpose,
+		Outcome: outcome, At: at}
+}
+
+func checkWorkspaceFence(ctx context.Context, tx *sqlx.Tx, driverName, workspaceID string) error {
+	if err := lockWorkspace(ctx, tx, driverName, workspaceID); err != nil {
+		return err
+	}
+	if !dialect.IsPostgres(driverName) {
+		// Acquire SQLite's writer slot before reading the workspace fence.
+		if _, err := tx.ExecContext(ctx, tx.Rebind(`UPDATE provider_access_workspace_fences
+  SET fenced_at = fenced_at WHERE workspace_id = ?`), workspaceID); err != nil {
+			return err
+		}
+	}
+	var fencedAt int64
+	err := tx.GetContext(ctx, &fencedAt, tx.Rebind(`SELECT fenced_at
+  FROM provider_access_workspace_fences WHERE workspace_id = ?`), workspaceID)
+	if err == nil {
+		return ErrGrantUnavailable
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	return err
+}
+
+func lockWorkspace(ctx context.Context, tx *sqlx.Tx, driverName, workspaceID string) error {
+	if !dialect.IsPostgres(driverName) {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"provider-access-workspace:"+workspaceID)
+	return err
+}
+
+func validateGrant(grant *Grant) error {
+	if grant == nil || grant.ID == "" || grant.CreatedByUserID == "" ||
+		!grant.ExpiresAt.After(time.Now()) || grant.RevokedAt != nil {
+		return errors.New("complete active provider access grant is required")
+	}
+	_, err := scopeKey(grant.Scope())
+	return err
+}
+
+func scopeKey(scope GrantScope) (string, error) {
+	values := []string{scope.PluginInstallationID, scope.PluginID, scope.WorkspaceID,
+		scope.ConversationKey, scope.TargetTaskID, scope.RepositoryID, scope.Provider, scope.Purpose}
+	for _, value := range values {
+		if value == "" || value != strings.TrimSpace(value) {
+			return "", errors.New("complete provider access scope is required")
+		}
+	}
+	canonical, err := json.Marshal(values)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(canonical)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+// GetGrant returns a grant by immutable identity.
+func (s *Store) GetGrant(ctx context.Context, id string) (*Grant, error) {
+	var row grantRow
+	err := s.db.GetContext(ctx, &row, s.db.Rebind(`SELECT `+grantColumns+` FROM provider_access_grants WHERE id = ?`), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return row.grant(), nil
+}
+
+// ListWorkspaceGrants returns current and revoked grants in one workspace.
+func (s *Store) ListWorkspaceGrants(ctx context.Context, workspaceID string) ([]Grant, error) {
+	if workspaceID == "" {
+		return nil, errors.New("workspace is required")
+	}
+	var rows []grantRow
+	err := s.db.SelectContext(ctx, &rows, s.db.Rebind(`SELECT `+grantColumns+`
+  FROM provider_access_grants WHERE workspace_id = ?
+  ORDER BY created_at DESC, generation DESC, id DESC`), workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	grants := make([]Grant, 0, len(rows))
+	for _, row := range rows {
+		grants = append(grants, *row.grant())
+	}
+	return grants, nil
+}
+
+// ListPluginGrants finds every retained grant for one installed plugin so its
+// shutdown path can fence all outstanding lease generations.
+func (s *Store) ListPluginGrants(ctx context.Context, pluginID string) ([]Grant, error) {
+	if pluginID == "" {
+		return nil, ErrGrantUnavailable
+	}
+	var rows []grantRow
+	err := s.db.SelectContext(ctx, &rows, s.db.Rebind(`SELECT `+grantColumns+`
+  FROM provider_access_grants WHERE plugin_id = ? ORDER BY id`), pluginID)
+	if err != nil {
+		return nil, err
+	}
+	grants := make([]Grant, 0, len(rows))
+	for _, row := range rows {
+		grants = append(grants, *row.grant())
+	}
+	return grants, nil
+}
+
+// GetActiveGrant returns the one nonexpired active exact-scope grant, if any.
+func (s *Store) GetActiveGrant(ctx context.Context, scope GrantScope) (*Grant, error) {
+	key, err := scopeKey(scope)
+	if err != nil {
+		return nil, err
+	}
+	var row grantRow
+	err = s.db.GetContext(ctx, &row, s.db.Rebind(`SELECT `+grantColumns+`
+  FROM provider_access_grants WHERE scope_key = ? AND revoked_at IS NULL AND expires_at > ?`), key, time.Now().Unix())
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return row.grant(), nil
+}
+
+// RevokeGrant fences the exact workspace's grant from later admissions.
+func (s *Store) RevokeGrant(ctx context.Context, workspaceID, id string, at time.Time) error {
+	if workspaceID == "" || id == "" || at.IsZero() {
+		return errors.New("workspace, grant, and revocation time are required")
+	}
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var row grantRow
+	if err := tx.GetContext(ctx, &row, tx.Rebind(`SELECT `+grantColumns+`
+  FROM provider_access_grants WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`),
+		id, workspaceID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, tx.Rebind(`UPDATE provider_access_grants
+  SET revoked_at = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`),
+		at.Unix(), at.Unix(), id, workspaceID)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return sql.ErrNoRows
+	}
+	if _, err := tx.ExecContext(ctx, tx.Rebind(`UPDATE provider_access_leases SET revoked_at = ?
+  WHERE grant_id = ? AND revoked_at IS NULL`), at.Unix(), id); err != nil {
+		return err
+	}
+	if err := insertAudit(ctx, tx, grantAudit(row.grant(), AuditGrantRevoked, at)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

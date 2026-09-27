@@ -58,10 +58,17 @@ const (
 
 // InstallationToken is a short-lived token minted for one App installation.
 type InstallationToken struct {
-	Token       string
-	ExpiresAt   time.Time
-	Permissions InstallationPermissions
-	Principal   TokenPrincipal
+	Token        string
+	ExpiresAt    time.Time
+	Permissions  InstallationPermissions
+	Repositories []InstallationTokenRepository
+	Principal    TokenPrincipal
+}
+
+// InstallationTokenRepository is GitHub's returned access scope for a token.
+type InstallationTokenRepository struct {
+	ID       int64  `json:"id"`
+	FullName string `json:"full_name"`
 }
 
 // AppInstallation is verified installation metadata returned by GitHub.
@@ -247,9 +254,10 @@ func (c *AppClient) MintInstallationToken(
 		Repositories []string                `json:"repositories,omitempty"`
 	}{Permissions: permissions, Repositories: repositories}
 	var response struct {
-		Token       string            `json:"token"`
-		ExpiresAt   time.Time         `json:"expires_at"`
-		Permissions map[string]string `json:"permissions"`
+		Token        string                        `json:"token"`
+		ExpiresAt    time.Time                     `json:"expires_at"`
+		Permissions  map[string]string             `json:"permissions"`
+		Repositories []InstallationTokenRepository `json:"repositories"`
 	}
 	if err := c.appRequest(
 		ctx,
@@ -264,15 +272,53 @@ func (c *AppClient) MintInstallationToken(
 		return InstallationToken{}, errors.New("GitHub returned an empty installation token")
 	}
 	return InstallationToken{
-		Token:       response.Token,
-		ExpiresAt:   response.ExpiresAt,
-		Permissions: permissionLevels(response.Permissions),
+		Token:        response.Token,
+		ExpiresAt:    response.ExpiresAt,
+		Permissions:  permissionLevels(response.Permissions),
+		Repositories: response.Repositories,
 		Principal: TokenPrincipal{
 			Kind:           TokenCredentialInstallation,
 			PrincipalID:    fmt.Sprintf("installation:%d", installationID),
 			InstallationID: installationID,
 		},
 	}, nil
+}
+
+// RevokeInstallationToken invalidates this exact installation token.
+// Provider response bodies and transport errors are deliberately not surfaced:
+// either can echo bearer material into logs higher in the call stack.
+func (c *AppClient) RevokeInstallationToken(ctx context.Context, token string) error {
+	return revokeInstallationToken(ctx, token, c.baseURL, c.httpClient)
+}
+
+// RevokeInstallationToken invalidates an exact bearer without retaining the
+// App private key. It is used for transient lease teardown after an App key
+// rotation removes the original in-process registration runtime.
+func RevokeInstallationToken(ctx context.Context, token string) error {
+	return revokeInstallationToken(ctx, token, githubAPIBase, &http.Client{Timeout: 30 * time.Second})
+}
+
+func revokeInstallationToken(ctx context.Context, token, baseURL string, client *http.Client) error {
+	if token == "" {
+		return errors.New("installation token is required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		strings.TrimRight(baseURL, "/")+"/installation/token", nil)
+	if err != nil {
+		return errors.New("build installation token revocation request")
+	}
+	req.Header.Set("Accept", githubAccept)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
+	resp, err := client.Do(req)
+	if err != nil {
+		return errors.New("installation token revocation request failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("installation token revocation unconfirmed: status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func (c *AppClient) appRequest(ctx context.Context, method, path string, body, out any) error {
