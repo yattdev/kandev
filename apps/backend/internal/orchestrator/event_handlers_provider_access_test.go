@@ -10,6 +10,7 @@ import (
 
 	"github.com/kandev/kandev/internal/orchestrator/watcher"
 	"github.com/kandev/kandev/internal/task/models"
+	sqliterepo "github.com/kandev/kandev/internal/task/repository/sqlite"
 )
 
 func TestAgentStoppedRetriesProviderRevocationBeforeTerminalSessionCommit(t *testing.T) {
@@ -111,4 +112,170 @@ func TestRetainedWorkflowDestinationRetriesProviderRevocationBeforeFailure(t *te
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateFailed, stored.State)
 	require.Equal(t, []string{"s1", "s1"}, revoker.calls)
+}
+
+func TestStaleBootstrapFailureDoesNotRevokeSuccessorProviderToken(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	session, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	session.State = models.TaskSessionStateStarting
+	require.NoError(t, repo.UpdateTaskSession(ctx, session))
+	seedExecutorRunning(t, repo, "s1", "t1", "exec-old")
+	seedExecutorRunning(t, repo, "s1", "t1", "exec-new")
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+
+	changed, state, err := svc.transitionBootstrapFailure(ctx, "t1", "s1", "exec-old",
+		models.TaskSessionStateStarting, "", "", models.LastAgentError{
+			Message: "stale failure", OccurredAt: time.Now().UTC(),
+			AgentExecutionID: "exec-old", ExecutionID: "exec-old", StampValue: "stale-failure",
+		})
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, models.TaskSessionStateStarting, state)
+	require.Empty(t, revoker.calls)
+	current, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateStarting, current.State)
+	running, err := repo.GetExecutorRunningBySessionID(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, "exec-new", running.AgentExecutionID)
+}
+
+func TestStaleBootstrapAttemptDoesNotRevokeCurrentProviderToken(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "s1", models.TaskSessionStateStarting, ""))
+	require.NoError(t, repo.SetSessionMetadataKey(ctx, "s1", models.SessionMetaKeyAgentStartAttemptID, "attempt-new"))
+	seedExecutorRunning(t, repo, "s1", "t1", "exec-1")
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+
+	changed, state, err := svc.transitionBootstrapFailure(ctx, "t1", "s1", "exec-1",
+		models.TaskSessionStateStarting, "", "attempt-old", models.LastAgentError{
+			Message: "stale start", OccurredAt: time.Now().UTC(), AgentExecutionID: "exec-1",
+			ExecutionID: "exec-1", StampValue: "stale-attempt",
+		})
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, models.TaskSessionStateStarting, state)
+	require.Empty(t, revoker.calls)
+}
+
+func TestStalePreloadedTerminalStateDoesNotRevokeProviderToken(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	stale, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "s1", models.TaskSessionStateStarting, ""))
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	svc.messageQueue = nil
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+
+	_, changed := svc.updateTaskSessionStateWithHook(ctx, "t1", "s1", models.TaskSessionStateCancelled, "", false, nil, stale)
+	require.False(t, changed)
+	require.Empty(t, revoker.calls)
+	current, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateStarting, current.State)
+}
+
+func TestStoppedExecutionCannotRevokeRotatedExecutionAtSameState(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	seedExecutorRunning(t, repo, "s1", "t1", "exec-new")
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	svc.messageQueue = nil
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+	staleCtx := context.WithValue(ctx, terminalProviderExecutionKey{}, "exec-old")
+
+	_, changed := svc.updateTaskSessionStateWithHook(staleCtx, "t1", "s1", models.TaskSessionStateCancelled, "", false, nil)
+	require.False(t, changed)
+	require.Empty(t, revoker.calls)
+	current, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateRunning, current.State)
+}
+
+type staleTerminalReadRepo struct {
+	*sqliterepo.Repository
+	staleRead bool
+}
+
+func (r *staleTerminalReadRepo) GetTaskSession(ctx context.Context, sessionID string) (*models.TaskSession, error) {
+	session, err := r.Repository.GetTaskSession(ctx, sessionID)
+	if err == nil && !r.staleRead {
+		r.staleRead = true
+		if updateErr := r.UpdateTaskSessionState(ctx, sessionID, models.TaskSessionStateStarting, ""); updateErr != nil {
+			return nil, updateErr
+		}
+	}
+	return session, err
+}
+
+func TestStrictTerminalStateChangedAfterReadDoesNotRevokeProviderToken(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	svc.repo = &staleTerminalReadRepo{Repository: repo}
+	revoker := &providerSessionRevokeRecorder{}
+	svc.SetProviderAccessSessionRevoker(revoker)
+
+	changed, _, err := svc.transitionTaskSessionState(ctx, "t1", "s1", nil,
+		models.TaskSessionStateCancelled, "", nil)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Empty(t, revoker.calls)
+	current, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateStarting, current.State)
+}
+
+type rotationAttemptRevoker struct {
+	repo *sqliterepo.Repository
+	err  error
+}
+
+func (r *rotationAttemptRevoker) RevokeSession(ctx context.Context, _ string) error {
+	running, err := r.repo.GetExecutorRunningBySessionID(ctx, "s1")
+	if err != nil {
+		return err
+	}
+	running.AgentExecutionID = "exec-new"
+	r.err = r.repo.UpsertExecutorRunning(ctx, running)
+	return nil
+}
+
+func TestBootstrapTerminalClaimFencesSuccessorUntilCommit(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedSession(t, repo, "t1", "s1", "step1")
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "s1", models.TaskSessionStateStarting, ""))
+	seedExecutorRunning(t, repo, "s1", "t1", "exec-old")
+	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
+	svc.messageCreator = newServiceBackedMessageCreator(repo)
+	revoker := &rotationAttemptRevoker{repo: repo}
+	svc.SetProviderAccessSessionRevoker(revoker)
+
+	changed, _, err := svc.transitionBootstrapFailure(ctx, "t1", "s1", "exec-old",
+		models.TaskSessionStateStarting, "", "", models.LastAgentError{
+			Message: "start failed", OccurredAt: time.Now().UTC(), AgentExecutionID: "exec-old",
+			ExecutionID: "exec-old", StampValue: "failure",
+		})
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.ErrorIs(t, revoker.err, sqliterepo.ErrTerminalProviderClaimPending)
+	running, err := repo.GetExecutorRunningBySessionID(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, "exec-old", running.AgentExecutionID)
 }

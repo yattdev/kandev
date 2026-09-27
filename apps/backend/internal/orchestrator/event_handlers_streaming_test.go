@@ -602,6 +602,7 @@ func TestTransitionTaskSessionStatePublishesMetadataWrittenByHook(t *testing.T) 
 	eb := &recordingEventBus{}
 	svc := createTestService(repo, newMockStepGetter(), newMockTaskRepo())
 	svc.eventBus = eb
+	svc.SetProviderAccessSessionRevoker(&providerSessionRevokeRecorder{})
 	errorValue := models.LastAgentError{
 		Message:    "The selected base branch is not available.",
 		Code:       "base_branch_missing",

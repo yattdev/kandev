@@ -115,6 +115,14 @@ redacted, expiry-bounded residual receipt. A restarted Host reports
 cannot revoke rather than claiming teardown succeeded. Audit correlation
 stores only hashed request IDs and non-secret identities.
 
+Terminal session callbacks now reserve the current state and bootstrap
+execution/start-attempt/error stamp before invoking provider revocation.
+The repository blocks executor-row rotation and full metadata replacement
+while the reservation is held; failed revocation releases it so the same
+event can retry. A stale callback cannot revoke a successor's token before
+its final state CAS rejects. An interrupted reservation remains a durable,
+fail-closed fence until reconciled.
+
 At source commit `a08961f0a04798effe598d254a3863e17b4c1ac2`, the
 provider-access and PostgreSQL 16 store-conformance race suites, focused
 task/service teardown race tests, docs validation, spec lint, and changed-package
@@ -122,5 +130,7 @@ Go lint passed. The later published `324ad996c164ac8e2083f9a09e734cb844735f44`
 was the first independent Host Review target, not that test head. The
 first broad orchestrator race run intermittently panicked in an unchanged
 queued-message nil-Executor path; one structured full orchestrator race rerun
-passed. Review fixup, distinct QA, exact-head CI/security, and the separately
+passed. Later independent review at `3562d5435cbc1bfb25af1c087ad41667737eb1fc`
+found a stale pre-CAS revocation path. The ownership-reservation follow-up
+is under verification. Fresh Review, distinct QA, exact-head CI/security, and the separately
 owned plugin adapter are still required before live token export.

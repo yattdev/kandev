@@ -93,7 +93,13 @@ unchanged queued-message path; one structured full orchestrator race rerun
 passed. The subsequent `324ad996c164ac8e2083f9a09e734cb844735f44` was
 the first independent Host Review target, not the earlier test head. That
 review found a terminal agent-event revocation retry gap and stale head labels;
-both are being corrected before a new Review. No live token was minted or
+both were corrected before the subsequent review. Review of published fork
+head `3562d5435cbc1bfb25af1c087ad41667737eb1fc` found a remaining
+pre-CAS ownership gap: a stale bootstrap failure could revoke a successor's
+token before its final CAS rejected the event. The follow-up reserves the
+current state, execution, start attempt, and error stamp before revocation,
+fences successor writes, and requires that same reservation on terminal
+commit. Its successor head still needs independent Review. No live token was minted or
 exported. Production plugin credential RPC is disconnected; distinct QA,
 exact-head fork CI, plugin adapter integration and beta validation remain
 before enablement or upstream delivery. The older action-specific proxy
