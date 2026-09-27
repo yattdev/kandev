@@ -1,7 +1,7 @@
 ---
 id: "02-host-lease"
 title: "Expose exact Host lease and GitHub credential adapter"
-status: pending
+status: in_progress
 wave: 2
 depends_on:
   - 01-grant-ledger
@@ -94,38 +94,31 @@ issued token valid until GitHub expiry if revocation was not confirmed.
 
 ## Results
 
-The versioned optional Host RPC/SDK transport has been added with exact typed
-request and receipt fields. The plugin Host checks its declared capability
-and remains unwired in production, so credential redemption is disabled.
-Target persistence,
-fresh PR/fork/head/run readback, and a connection-bound authority component
-are present. An uncomposed backend adapter matches every issue selector to the
-administrator grant, binds a runtime to the connected plugin, checks lease
-ownership before redemption or release, and permits release after grant
-revocation. Production composition, lifecycle revocation hooks, audit
-correlation, and exact-head Review/QA/CI remain pending.
+The versioned optional Host RPC/SDK transport has exact typed request and
+receipt fields, H6 capability checks, and an exact connected-plugin runtime
+binding. The composed Host resolves the administrator grant, managed session,
+current H6 approval, target task/repository, canonical PR/fork/head/run, and
+current GitHub App connection at issuance and redemption. An uncached token is
+minted for one verified repository with minimum permissions; token principal,
+repository, and permissions are checked before a bearer can be returned.
+GitLab PAT redemption fails closed. Production wires lifecycle fencing only;
+the credential-bearing plugin RPC remains disconnected.
 
-The administrator route now accepts an injectable grant manager. The uncomposed
-runtime-backed manager revokes an exported exact token before replacing a grant
-and on explicit revocation; failed provider revocation fences the old grant,
-retains the residual exposure receipt, and prevents replacement. Production
-still injects the plain ledger because credential export remains disabled.
-The same uncomposed manager fences workspace admission and revokes all tokens
-it still holds during workspace cleanup; task deletion must inject this manager
-when redemption is enabled.
-Plugin disable, uninstall, error transitions and Host shutdown now call a
-configured provider-access service's teardown methods. A failed plugin token
-revocation keeps that plugin's runtime blocked and the grant fenced until a
-retry confirms provider revocation; the live service remains unconfigured.
-A session teardown component now fences all matching durable leases and revokes
-any exported exact token held by the Host. The real managed-session lifecycle
-must call it before credential delivery can be composed.
-The token adapter also compares the returned credential kind and canonical
-installation principal ID to the verified installation; a mismatched token is
-revoked before export.
-Audited redemption now hashes the bounded RPC request ID and commits that
-correlation with the exposure receipt in one transaction before returning the
-bearer. Any failed audit admission revokes the minted token. Issuance,
-including an idempotent replay, also records a hashed request correlation
-before its non-secret receipt returns. Administrator and lifecycle audit
-correlation still require completion before production composition.
+The Host persists one-shot mint intent and pre-export exposure/audit receipts,
+serializes final exposure with grant and lease revocation, and revokes a token
+that loses the final admission race. Grant replacement, explicit revocation,
+workspace deletion, managed-session termination/deletion, plugin stop/error/
+uninstall, and GitHub connection removal fence future access and attempt
+exact-token revocation. A failed revocation or ambiguous mint retains a
+redacted, expiry-bounded residual receipt. A restarted Host reports
+`ErrRevocationUnconfirmed` for unexpired exported or ambiguous authority it
+cannot revoke rather than claiming teardown succeeded. Audit correlation
+stores only hashed request IDs and non-secret identities.
+
+At fork head `a08961f0a04798effe598d254a3863e17b4c1ac2`, the provider-access
+and PostgreSQL 16 store-conformance race suites, focused task/service teardown
+race tests, docs validation, spec lint, and changed-package Go lint pass. The
+first broad orchestrator race run intermittently panicked in an unchanged
+queued-message nil-Executor path; one structured full orchestrator race rerun
+passed. Independent Review, distinct QA, exact-head CI/security, and the
+separately owned plugin adapter are still required before live token export.

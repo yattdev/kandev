@@ -82,14 +82,20 @@ residual exported-bearer behavior, and the generic-egress comparison.
 
 ## Verification results
 
-Pending replacement implementation. The current-main merge at local
-`1a9388dbb12aeb028877329b80e8d12b6627fa31` passed focused GitHub/MCP
-tests and public-doc validation; it is not replacement acceptance evidence.
-The local non-secret grant/lease/audit/exposure stores pass race-enabled
-package tests. A simulated failed provider revocation remains an
-expiry-bounded residual after lease expiry and store reopen; no test mints or
-exports a bearer. Host admission, token transport, plugin adapter and
-end-to-end replacement remain unimplemented.
+The Host grant, admission, lease, uncached GitHub token fixture, redacted audit,
+revocation, and lifecycle fencing implementation is published on the
+task-owned fork branch at `a08961f0a04798effe598d254a3863e17b4c1ac2`,
+based on `yattdev/kandev:feat-coordinator-plugin` at
+`dfce4dac05809c0fcec156166f5479f14b0cdb76`. The exact-head
+provider-access and PostgreSQL 16 store-conformance race suites, focused
+teardown race tests, docs validator, spec lint, changed-package Go lint, and
+diff check pass. A broad orchestrator race run intermittently panicked in an
+unchanged queued-message path; one structured full orchestrator race rerun
+passed. No live token was minted or exported. Production plugin credential RPC
+is disconnected; independent Host Review, distinct QA, exact-head fork CI,
+plugin adapter integration and beta validation remain before enablement or
+upstream delivery. The older action-specific proxy remains on upstream draft
+PR #3165 and will be retired only through the separately gated route.
 
 ## Risks
 
