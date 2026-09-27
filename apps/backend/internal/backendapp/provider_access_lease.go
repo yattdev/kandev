@@ -120,7 +120,8 @@ func (a *providerLeaseAuthority) verifyCurrent(
 			ApprovalRevision: approval.Revision,
 			ConnectionGeneration: plugins.CanonicalApprovalDigest(connection.AppRegistrationID,
 				fmt.Sprint(*connection.InstallationID), fmt.Sprint(connection.CredentialGeneration)),
-		}, InstallationID: *connection.InstallationID, CanonicalRepository: canonical}, nil
+		}, AppRegistrationID: connection.AppRegistrationID,
+		InstallationID: *connection.InstallationID, CanonicalRepository: canonical}, nil
 }
 
 func (a *providerLeaseAuthority) ready() bool {

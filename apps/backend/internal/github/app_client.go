@@ -288,18 +288,29 @@ func (c *AppClient) MintInstallationToken(
 // Provider response bodies and transport errors are deliberately not surfaced:
 // either can echo bearer material into logs higher in the call stack.
 func (c *AppClient) RevokeInstallationToken(ctx context.Context, token string) error {
+	return revokeInstallationToken(ctx, token, c.baseURL, c.httpClient)
+}
+
+// RevokeInstallationToken invalidates an exact bearer without retaining the
+// App private key. It is used for transient lease teardown after an App key
+// rotation removes the original in-process registration runtime.
+func RevokeInstallationToken(ctx context.Context, token string) error {
+	return revokeInstallationToken(ctx, token, githubAPIBase, &http.Client{Timeout: 30 * time.Second})
+}
+
+func revokeInstallationToken(ctx context.Context, token, baseURL string, client *http.Client) error {
 	if token == "" {
 		return errors.New("installation token is required")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
-		strings.TrimRight(c.baseURL, "/")+"/installation/token", nil)
+		strings.TrimRight(baseURL, "/")+"/installation/token", nil)
 	if err != nil {
 		return errors.New("build installation token revocation request")
 	}
 	req.Header.Set("Accept", githubAccept)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
-	resp, err := c.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return errors.New("installation token revocation request failed")
 	}

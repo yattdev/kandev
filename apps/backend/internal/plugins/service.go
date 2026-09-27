@@ -93,25 +93,26 @@ type Service struct {
 	// directory belongs to an install still waiting for it.
 	extractingPaths map[string]int
 
-	pluginsDir         string
-	store              store.Store
-	approvals          *approvalLedger
-	registry           *Registry
-	state              *state.Store
-	userState          *state.UserStore
-	instances          *instances.Store
-	instanceState      *state.InstanceStore
-	webArtifacts       *webapp.ArtifactStore
-	webRuntime         *webapp.Runtime
-	eventHub           *webapp.EventHub
-	eventSubscription  bus.Subscription
-	userStateCleanup   userStateCleanupStore
-	agentConvs         AgentConversationService
-	providerAccessSvc  ProviderAccessService
-	eventBus           bus.EventBus
-	conversationTokens *conversationTokenManager
-	conversationEpoch  string
-	log                *logger.Logger
+	pluginsDir              string
+	store                   store.Store
+	approvals               *approvalLedger
+	registry                *Registry
+	state                   *state.Store
+	userState               *state.UserStore
+	instances               *instances.Store
+	instanceState           *state.InstanceStore
+	webArtifacts            *webapp.ArtifactStore
+	webRuntime              *webapp.Runtime
+	eventHub                *webapp.EventHub
+	eventSubscription       bus.Subscription
+	userStateCleanup        userStateCleanupStore
+	agentConvs              AgentConversationService
+	providerAccessSvc       ProviderAccessService
+	providerAccessLifecycle ProviderAccessLifecycle
+	eventBus                bus.EventBus
+	conversationTokens      *conversationTokenManager
+	conversationEpoch       string
+	log                     *logger.Logger
 
 	deliverer                Deliverer
 	agentToolCatalogListener AgentToolCatalogListener
@@ -610,6 +611,14 @@ func (s *Service) SetProviderAccess(service ProviderAccessService) {
 	s.providerAccessSvc = service
 }
 
+// SetProviderAccessLifecycle installs teardown only. It does not expose the
+// provider-access/v1 Host transport to any plugin connection.
+func (s *Service) SetProviderAccessLifecycle(lifecycle ProviderAccessLifecycle) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.providerAccessLifecycle = lifecycle
+}
+
 func (s *Service) providerAccessDeps() ProviderAccessService {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -617,11 +626,20 @@ func (s *Service) providerAccessDeps() ProviderAccessService {
 }
 
 func (s *Service) stopProviderAccessPlugin(ctx context.Context, pluginID string) error {
-	service := s.providerAccessDeps()
+	service := s.providerAccessLifecycleDeps()
 	if service == nil {
 		return nil
 	}
 	return service.StopPlugin(ctx, pluginID)
+}
+
+func (s *Service) providerAccessLifecycleDeps() ProviderAccessLifecycle {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.providerAccessLifecycle != nil {
+		return s.providerAccessLifecycle
+	}
+	return s.providerAccessSvc
 }
 
 // writeDependencies returns the currently-wired task messenger and task
@@ -723,7 +741,7 @@ func (s *Service) Shutdown() {
 	if s.runtime != nil {
 		s.runtime.StopAll()
 	}
-	if service := s.providerAccessDeps(); service != nil {
+	if service := s.providerAccessLifecycleDeps(); service != nil {
 		if err := service.Stop(context.Background()); err != nil && s.log != nil {
 			s.log.Warn("plugins: provider access shutdown failed", zap.Error(err))
 		}

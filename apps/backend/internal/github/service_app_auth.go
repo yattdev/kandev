@@ -101,6 +101,18 @@ func (s *Service) currentAppRegistrationRuntime(registrationID string) *githubAp
 	return s.appRegistrationRuntimes[registrationID]
 }
 
+// ProviderAccessAppClient returns the currently configured App client for an
+// exact registration. Provider-access callers must also recheck the workspace
+// connection generation and installation before and after minting.
+func (s *Service) ProviderAccessAppClient(registrationID string) (*AppClient, error) {
+	runtime := s.currentAppRegistrationRuntime(registrationID)
+	if runtime == nil || runtime.registrationID != registrationID ||
+		runtime.source != DeploymentAppSourceManaged || runtime.appClient == nil {
+		return nil, ErrGitHubNotConfigured
+	}
+	return runtime.appClient, nil
+}
+
 // InitializeAppRegistrationRuntimes independently loads every catalog entry.
 // Invalid entries are reported together after all valid entries are active.
 func (s *Service) InitializeAppRegistrationRuntimes(ctx context.Context) error {

@@ -14,6 +14,9 @@ func TestBootWiresProviderAccessFenceBeforeWorkspaceDeletion(t *testing.T) {
 	if services.ProviderAccess == nil {
 		t.Fatal("provider access store is unavailable after boot")
 	}
+	if services.ProviderAccessHost == nil {
+		t.Fatal("provider access lifecycle is unavailable after boot")
+	}
 	workspaceID := seedOwnedWorkspace(t, services.Task, "provider-access-owner")
 	grant := provideraccess.Grant{
 		ID: "provider-access-boot-grant", CreatedByUserID: "provider-access-owner",

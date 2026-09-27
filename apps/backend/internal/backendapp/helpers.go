@@ -1319,8 +1319,8 @@ func registerTaskRoutes(p routeParams, planService *taskservice.PlanService, han
 		p.log.Warn("prompt attachment routes disabled: attachment service is unavailable")
 	}
 	taskhandlers.RegisterWorkspaceRoutes(p.router, p.gateway.Dispatcher, p.taskSvc, p.log)
-	if p.services.ProviderAccess != nil && p.services.Plugins != nil && p.services.GitHub != nil {
-		provideraccess.RegisterAdminRoutes(p.router, p.services.ProviderAccess, &providerGrantAuthority{
+	if p.services.ProviderAccessHost != nil {
+		provideraccess.RegisterAdminRoutes(p.router, p.services.ProviderAccessHost, &providerGrantAuthority{
 			tasks: p.taskSvc, plugins: p.services.Plugins, connections: p.services.GitHub,
 		})
 	}

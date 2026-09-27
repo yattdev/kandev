@@ -117,6 +117,7 @@ func provideServices(ctx context.Context, cfg *config.Config, log *logger.Logger
 	pluginsSvc := integrations.pluginsSvc
 
 	services := assembleServices(managedRuntimeSelections, core, providers, integrations)
+	configureProviderAccessHost(services)
 	mentionProviders := builtinMentionProviders(services, repos.Task)
 	reserveBuiltinMentionIdentities(pluginsSvc, mentionProviders)
 	mentionComponents, err := newMentionComponents(

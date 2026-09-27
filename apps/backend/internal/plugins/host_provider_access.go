@@ -18,6 +18,13 @@ type ProviderAccessService interface {
 	Stop(context.Context) error
 }
 
+// ProviderAccessLifecycle is wired before credential export is enabled so
+// plugin shutdown can fence existing leases without exposing the Host RPC.
+type ProviderAccessLifecycle interface {
+	StopPlugin(context.Context, string) error
+	Stop(context.Context) error
+}
+
 type pluginProviderAccessManager struct{ host *pluginHost }
 
 func (h *pluginHost) ProviderAccess() pluginsdk.ProviderAccessManager {

@@ -64,6 +64,26 @@ func TestPluginServiceStopsProviderAccessOnLifecycleTransitions(t *testing.T) {
 	}
 }
 
+func TestPluginServiceLifecycleOnlyKeepsCredentialTransportUnavailable(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	installTestPlugin(t, svc, "kandev-plugin-slack")
+	provider := &stubProviderAccessService{}
+	svc.SetProviderAccessLifecycle(provider)
+	if service := svc.providerAccessDeps(); service != nil {
+		t.Fatal("lifecycle-only registration exposed credential transport")
+	}
+	if err := svc.Disable("kandev-plugin-slack"); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.stops) != 1 || provider.stops[0] != "kandev-plugin-slack" {
+		t.Fatalf("lifecycle-only stops = %v", provider.stops)
+	}
+	svc.Shutdown()
+	if !provider.closed {
+		t.Fatal("lifecycle-only shutdown did not close provider runtime")
+	}
+}
+
 func TestPluginServiceRetriesFailedProviderStopOnDisabledPlugin(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	installTestPlugin(t, svc, "kandev-plugin-slack")

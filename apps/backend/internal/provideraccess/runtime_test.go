@@ -38,7 +38,7 @@ type fakeRerunTokens struct {
 	repository  string
 }
 
-func (f *fakeRerunTokens) Mint(_ context.Context, _ int64, _ string) (github.InstallationToken, error) {
+func (f *fakeRerunTokens) Mint(_ context.Context, _ string, _ int64, _ string) (github.InstallationToken, error) {
 	f.mu.Lock()
 	f.mintCount++
 	onMint := f.onMint
@@ -82,7 +82,7 @@ func TestRuntimeAcceptsCanonicalRepositoryResolvedFromInternalID(t *testing.T) {
 	}
 	authority := &fakeLeaseAuthority{verified: VerifiedLease{
 		LeaseID: lease.ID, GrantID: grant.ID, Expected: testMintClaim(grant, lease).Expected,
-		InstallationID: 42, CanonicalRepository: "owner/repo"}}
+		AppRegistrationID: "app-registration-1", InstallationID: 42, CanonicalRepository: "owner/repo"}}
 	tokens := &fakeRerunTokens{repository: "owner/repo"}
 	runtime, err := NewRuntime(store, authority, tokens)
 	if err != nil {
@@ -177,8 +177,8 @@ func newRuntimeTestFixture(t *testing.T) (*Runtime, *Store, *fakeLeaseAuthority,
 	}
 	authority := &fakeLeaseAuthority{verified: VerifiedLease{
 		LeaseID: lease.ID, GrantID: grant.ID,
-		Expected:       testMintClaim(grant, lease).Expected,
-		InstallationID: 42, CanonicalRepository: "owner/repo"}}
+		Expected:          testMintClaim(grant, lease).Expected,
+		AppRegistrationID: "app-registration-1", InstallationID: 42, CanonicalRepository: "owner/repo"}}
 	tokens := &fakeRerunTokens{}
 	runtime, err := NewRuntime(store, authority, tokens)
 	if err != nil {

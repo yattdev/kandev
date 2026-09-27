@@ -96,12 +96,15 @@ type Services struct {
 	Workflow       *workflowservice.Service
 	GitHub         *github.Service
 	ProviderAccess *provideraccess.Store
-	GitLab         *gitlab.Service
-	GitLabCleanup  func() error
-	AzureDevOps    *azuredevops.Service
-	Jira           *jira.Service
-	Linear         *linear.Service
-	Sentry         *sentry.Service
+	// ProviderAccessHost is lifecycle-composed while the plugin credential RPC
+	// remains unconnected in shipped builds.
+	ProviderAccessHost *providerHostAccess
+	GitLab             *gitlab.Service
+	GitLabCleanup      func() error
+	AzureDevOps        *azuredevops.Service
+	Jira               *jira.Service
+	Linear             *linear.Service
+	Sentry             *sentry.Service
 	// WorkflowSync keeps workspace workflows in sync with definition files
 	// in a configured GitHub repository. Nil when GitHub is unavailable.
 	WorkflowSync *workflowsync.Service

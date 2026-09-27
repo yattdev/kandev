@@ -14,11 +14,13 @@ import (
 type hostTestTokens struct {
 	mints, revokes int
 	revokeErr      error
+	registrationID string
 }
 
-func (f *hostTestTokens) Mint(_ context.Context, installationID int64,
+func (f *hostTestTokens) Mint(_ context.Context, registrationID string, installationID int64,
 	repository string) (github.InstallationToken, error) {
 	f.mints++
+	f.registrationID = registrationID
 	return github.InstallationToken{Token: "fixture-bearer", ExpiresAt: time.Now().Add(30 * time.Minute),
 		Principal: github.TokenPrincipal{Kind: github.TokenCredentialInstallation,
 			PrincipalID: "installation:42", InstallationID: installationID},
@@ -100,8 +102,9 @@ func TestProviderHostAccessBindsPluginAndExactGrantBeforeOneShotRedemption(t *te
 		t.Fatalf("foreign redemption error = %v", err)
 	}
 	credential, err := host.Redeem(ctx, grant.PluginID, "request-2", lease.LeaseID)
-	if err != nil || credential.Bearer() != "fixture-bearer" || tokens.mints != 1 {
-		t.Fatalf("redemption err = %v, mints = %d", err, tokens.mints)
+	if err != nil || credential.Bearer() != "fixture-bearer" || tokens.mints != 1 ||
+		tokens.registrationID != "app-registration-1" {
+		t.Fatalf("redemption err = %v, mints = %d, App registration = %q", err, tokens.mints, tokens.registrationID)
 	}
 	if _, err := host.Redeem(ctx, grant.PluginID, "request-3", lease.LeaseID); !errors.Is(err, provideraccess.ErrLeaseAlreadyRedeemed) {
 		t.Fatalf("replay error = %v", err)

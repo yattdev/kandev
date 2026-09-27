@@ -16,6 +16,7 @@ type VerifiedLease struct {
 	LeaseID             string
 	GrantID             string
 	Expected            FinalLeaseIdentity
+	AppRegistrationID   string
 	InstallationID      int64
 	CanonicalRepository string
 }
@@ -27,7 +28,7 @@ type LeaseAuthority interface {
 }
 
 type RerunTokenSource interface {
-	Mint(context.Context, int64, string) (github.InstallationToken, error)
+	Mint(context.Context, string, int64, string) (github.InstallationToken, error)
 	Revoke(context.Context, string) error
 }
 
@@ -100,7 +101,7 @@ func (r *Runtime) redeem(ctx context.Context, leaseID, requestHash string) (gith
 	}); err != nil {
 		return github.InstallationToken{}, err
 	}
-	token, err := r.tokens.Mint(ctx, first.InstallationID, first.CanonicalRepository)
+	token, err := r.tokens.Mint(ctx, first.AppRegistrationID, first.InstallationID, first.CanonicalRepository)
 	if err != nil {
 		return github.InstallationToken{}, err
 	}
@@ -206,7 +207,7 @@ func (r *Runtime) Stop(ctx context.Context) error {
 
 func validVerifiedLease(lease VerifiedLease, requestedID string) bool {
 	return lease.LeaseID == requestedID && lease.GrantID != "" &&
-		lease.InstallationID > 0 && lease.CanonicalRepository != "" &&
+		lease.AppRegistrationID != "" && lease.InstallationID > 0 && lease.CanonicalRepository != "" &&
 		lease.Expected.Scope.RepositoryID != "" && validCanonicalGitHubRepository(lease.CanonicalRepository) &&
 		lease.Expected.Scope.Provider == "github" &&
 		lease.Expected.Scope.Purpose == "actions_write"

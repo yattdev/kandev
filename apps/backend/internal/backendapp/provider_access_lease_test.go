@@ -91,7 +91,8 @@ func TestProviderLeaseAuthorityIssuesAndRechecksCurrentExactTarget(t *testing.T)
 		t.Fatalf("idempotent lease replay = %+v, err = %v", replay, err)
 	}
 	verified, err := authority.VerifyLease(ctx, lease.ID)
-	if err != nil || verified.LeaseID != lease.ID || verified.CanonicalRepository != "owner/repo" {
+	if err != nil || verified.LeaseID != lease.ID || verified.CanonicalRepository != "owner/repo" ||
+		verified.AppRegistrationID != "app-registration-1" {
 		t.Fatalf("verified = %+v, err = %v", verified, err)
 	}
 	checks := []struct {
@@ -105,6 +106,8 @@ func TestProviderLeaseAuthorityIssuesAndRechecksCurrentExactTarget(t *testing.T)
 		{"H6 approval", func() { plugins.allowed = false }, func() { plugins.allowed = true }},
 		{"approval revision", func() { plugins.approval.Revision++ }, func() { plugins.approval.Revision-- }},
 		{"App generation", func() { connection.connection.CredentialGeneration++ }, func() { connection.connection.CredentialGeneration-- }},
+		{"App registration", func() { connection.connection.AppRegistrationID = "foreign-registration" },
+			func() { connection.connection.AppRegistrationID = "app-registration-1" }},
 		{"App installation", func() { *connection.connection.InstallationID++ }, func() { *connection.connection.InstallationID-- }},
 	}
 	for _, check := range checks {
