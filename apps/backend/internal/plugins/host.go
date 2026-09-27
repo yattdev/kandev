@@ -108,6 +108,7 @@ type pluginHost struct {
 	// and read through agentConversationsDeps (live, not snapshotted at
 	// hostForPlugin time, for the same late-wiring reason as writeDeps).
 	agentConversations func() AgentConversationService
+	providerAccess     func() ProviderAccessService
 
 	// log receives the dependency-derivation-failure diagnostic emitted by
 	// attachDependencies (see host_data_dependencies.go). nil on a bare test

@@ -55,9 +55,10 @@ names and typed DTOs: `IssueProviderAccessLeaseExact`,
 Their wire requests use `api_version: provider-access/v1`, a request ID, and
 typed exact-target fields. Issuance also carries an idempotency key and
 expected workspace/task/repository scope. The Host resolves these selectors
-from current records. The optional SDK extension is unavailable by default;
-the live service must not compose credential redemption until authority and
-teardown hooks are complete.
+from current records. The SDK extension answers `Unimplemented` when the Host
+does not implement it; the plugin Host answers `Unavailable` while its service
+is unwired. The live service must not compose credential redemption until
+authority and teardown hooks are complete.
 The plugin manifest declares `api_write: [provider_access]`; current H6
 approval must contain `host.v2.write:provider_access` at the supplied
 capability revision. The Host derives installation identity from the plugin

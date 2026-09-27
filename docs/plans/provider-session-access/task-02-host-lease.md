@@ -95,8 +95,9 @@ issued token valid until GitHub expiry if revocation was not confirmed.
 ## Results
 
 The versioned optional Host RPC/SDK transport has been added with exact typed
-request and receipt fields. The default Host manager answers Unimplemented,
-and production credential redemption remains disabled. Target persistence,
+request and receipt fields. The plugin Host checks its declared capability
+and remains unwired in production, so credential redemption is disabled.
+Target persistence,
 fresh PR/fork/head/run readback, and a connection-bound authority component
 are present. Runtime composition, lifecycle revocation hooks, audit
 correlation, and exact-head Review/QA/CI remain pending.

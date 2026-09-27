@@ -107,6 +107,7 @@ type Service struct {
 	eventSubscription  bus.Subscription
 	userStateCleanup   userStateCleanupStore
 	agentConvs         AgentConversationService
+	providerAccessSvc  ProviderAccessService
 	eventBus           bus.EventBus
 	conversationTokens *conversationTokenManager
 	conversationEpoch  string
@@ -601,6 +602,20 @@ func (s *Service) agentConversationDeps() AgentConversationService {
 	return s.agentConvs
 }
 
+// SetProviderAccess connects the versioned Host transport after the complete
+// backend authority, credential runtime, and teardown hooks are ready.
+func (s *Service) SetProviderAccess(service ProviderAccessService) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.providerAccessSvc = service
+}
+
+func (s *Service) providerAccessDeps() ProviderAccessService {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.providerAccessSvc
+}
+
 // writeDependencies returns the currently-wired task messenger and task
 // starter. Read live (not snapshotted at hostForPlugin time) so a plugin
 // spawned before SetWriteDeps still resolves them once it is called. Guarded by
@@ -817,6 +832,7 @@ func (s *Service) hostForPlugin(pluginID string) pluginsdk.Host {
 		writeDeps:           s.writeDependencies,
 		interactionDeps:     s.interactionResponderDep,
 		agentConversations:  s.agentConversationDeps,
+		providerAccess:      s.providerAccessDeps,
 		log:                 s.log,
 	}
 }
