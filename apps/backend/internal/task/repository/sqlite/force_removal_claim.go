@@ -113,15 +113,79 @@ func (r *Repository) AppendForceRemovalReceipt(ctx context.Context, operationID 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := lockForceRemovalClaimTx(ctx, r.db, tx, operationID); err != nil {
+		return err
+	}
 	var ordinal int
 	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT COALESCE(MAX(ordinal) + 1, 0) FROM task_force_removal_receipts WHERE operation_id = ?`), operationID).Scan(&ordinal); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_force_removal_receipts (operation_id, ordinal, predicate, status, reason_code, resource_id, observed_generation, evidence_digest, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`), operationID, ordinal, receipt.Predicate, receipt.Status, receipt.ReasonCode, receipt.ResourceID, receipt.ObservedGeneration, receipt.EvidenceDigest, time.Now().UTC())
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
+		INSERT INTO task_force_removal_receipts (
+			operation_id, ordinal, predicate, status, reason_code, resource_id,
+			observed_generation, evidence_digest, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(operation_id, predicate) DO NOTHING
+	`), operationID, ordinal, receipt.Predicate, receipt.Status, receipt.ReasonCode, receipt.ResourceID, receipt.ObservedGeneration, receipt.EvidenceDigest, time.Now().UTC())
 	if err != nil {
 		return err
 	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if inserted == 0 {
+		stored, err := loadForceRemovalReceiptTx(ctx, r.db, tx, operationID, receipt.Predicate)
+		if err != nil {
+			return err
+		}
+		if !sameForceRemovalReceipt(stored, receipt) {
+			return ErrForceRemovalClaimConflict
+		}
+	}
 	return tx.Commit()
+}
+
+func lockForceRemovalClaimTx(ctx context.Context, db *sqlx.DB, tx *sqlx.Tx, operationID string) error {
+	result, err := tx.ExecContext(ctx, db.Rebind(`
+		UPDATE task_force_removal_claims SET updated_at = updated_at
+		WHERE operation_id = ?
+	`), operationID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return ErrForceRemovalClaimStale
+	}
+	return nil
+}
+
+func loadForceRemovalReceiptTx(ctx context.Context, db *sqlx.DB, tx *sqlx.Tx, operationID string, predicate models.ExactRetirementPredicate) (models.ExactRetirementPredicateReceipt, error) {
+	var receipt models.ExactRetirementPredicateReceipt
+	err := tx.QueryRowContext(ctx, db.Rebind(`
+		SELECT predicate, status, reason_code, resource_id, observed_generation, evidence_digest
+		FROM task_force_removal_receipts WHERE operation_id = ? AND predicate = ?
+	`), operationID, predicate).Scan(
+		&receipt.Predicate, &receipt.Status, &receipt.ReasonCode, &receipt.ResourceID,
+		&receipt.ObservedGeneration, &receipt.EvidenceDigest,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.ExactRetirementPredicateReceipt{}, ErrForceRemovalClaimStale
+	}
+	return receipt, err
+}
+
+func sameForceRemovalReceipt(stored, incoming models.ExactRetirementPredicateReceipt) bool {
+	return stored.Predicate == incoming.Predicate &&
+		stored.Status == incoming.Status &&
+		stored.ReasonCode == incoming.ReasonCode &&
+		stored.ResourceID == incoming.ResourceID &&
+		stored.ObservedGeneration == incoming.ObservedGeneration &&
+		stored.EvidenceDigest == incoming.EvidenceDigest
 }
 
 func (r *Repository) ListForceRemovalReceipts(ctx context.Context, operationID string) ([]models.ExactRetirementPredicateReceipt, error) {
@@ -160,4 +224,27 @@ func ensureForceRemovalTaskAvailableTx(ctx context.Context, db *sqlx.DB, tx *sql
 		return ErrForceRemovalTaskHeld
 	}
 	return nil
+}
+
+func ensureForceRemovalTaskAvailableStdTx(ctx context.Context, db *sqlx.DB, tx *sql.Tx, taskID string) error {
+	var held bool
+	if err := tx.QueryRowContext(ctx, db.Rebind(`SELECT EXISTS (SELECT 1 FROM task_force_removal_claims WHERE task_id = ?)`), taskID).Scan(&held); err != nil {
+		return err
+	}
+	if held {
+		return ErrForceRemovalTaskHeld
+	}
+	return nil
+}
+
+func ensureForceRemovalMessageAvailableTx(ctx context.Context, db *sqlx.DB, tx *sqlx.Tx, sessionID string) error {
+	var taskID string
+	err := tx.QueryRowContext(ctx, db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), sessionID).Scan(&taskID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return ensureForceRemovalTaskAvailableTx(ctx, db, tx, taskID)
 }

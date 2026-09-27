@@ -1245,6 +1245,9 @@ func (r *Repository) updateTaskTx(
 	if err != nil {
 		return "", 0, err
 	}
+	if err := ensureForceRemovalTaskAvailableStdTx(ctx, r.db, tx, task.ID); err != nil {
+		return "", 0, err
+	}
 	metadata, err = r.preserveLiveHandoffProvenance(ctx, tx, task.ID, metadata)
 	if err != nil {
 		return "", 0, err

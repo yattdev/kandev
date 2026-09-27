@@ -234,7 +234,9 @@ func (r *Repository) initForceRemovalClaimSchema() error {
 			created_at TIMESTAMP NOT NULL,
 			PRIMARY KEY (operation_id, ordinal),
 			FOREIGN KEY (operation_id) REFERENCES task_force_removal_claims(operation_id)
-		)`)
+		);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_task_force_removal_receipts_operation_predicate
+			ON task_force_removal_receipts(operation_id, predicate)`)
 	return err
 }
 

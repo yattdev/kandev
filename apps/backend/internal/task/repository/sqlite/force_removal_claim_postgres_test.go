@@ -30,4 +30,9 @@ func TestPostgresForceRemovalClaimRejectsStaleAndReplaysExactRequest(t *testing.
 	require.True(t, replay)
 	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "operation", RequestDigest: "changed", PreviewDigest: "preview"})
 	require.ErrorIs(t, err, ErrForceRemovalClaimConflict)
+	receipt := models.ExactRetirementPredicateReceipt{Predicate: models.ExactRetirementIdentityPredicate, Status: models.ExactRetirementReceiptPass, ReasonCode: "EXACT_TASK_CLAIMED", ResourceID: task.ID, ObservedGeneration: "generation", EvidenceDigest: "digest"}
+	require.NoError(t, repo.AppendForceRemovalReceipt(ctx, claim.OperationID, receipt))
+	require.NoError(t, repo.AppendForceRemovalReceipt(ctx, claim.OperationID, receipt))
+	receipt.EvidenceDigest = "changed"
+	require.ErrorIs(t, repo.AppendForceRemovalReceipt(ctx, claim.OperationID, receipt), ErrForceRemovalClaimConflict)
 }

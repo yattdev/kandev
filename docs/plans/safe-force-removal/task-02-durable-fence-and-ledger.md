@@ -75,6 +75,25 @@ existing PostgreSQL-gated parity test with a task-owned DSN. There is still no
 force-removal route, card hide, runtime stop, cleanup invocation, or physical
 mutation.
 
+The receipt ledger now locks its private claim before allocating an ordinal,
+and one receipt per closed predicate is replay-safe: an exact retry preserves
+the existing evidence while a changed retry conflicts. The append test starts
+two distinct predicate writers concurrently and verifies all evidence remains.
+The common message insert resolves task ownership from its session and rejects
+a claimed task, while the full-row task writer used by workflow moves rejects
+the claim after taking its existing source lock. Tests verify neither writer
+persists its attempted mutation.
+
+Writer inventory still open: task state/priority and other direct task
+mutators; task-environment create/update; worktree materialization; queue
+enqueue/dequeue and pending-move writers; dispatch and deferred-launch writers;
+cleanup workers and retries; and PR-watch writers. Existing session creation
+covers launch/resume and workspace-binding creation. PostgreSQL has an
+isolated-schema harness in `internal/testutil.OpenIsolatedPostgres`, supplied
+only through `KANDEV_TEST_POSTGRES_DSN`; this task-owned environment has no
+such DSN or task-owned PostgreSQL service, so local PostgreSQL execution
+remains unavailable and CI is the currently known isolated execution path.
+
 ## Verification
 
 ```bash
