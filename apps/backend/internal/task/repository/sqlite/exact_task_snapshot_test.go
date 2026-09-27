@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
@@ -107,5 +109,38 @@ func TestExactTaskSnapshotRejectsReadsAtExpiry(t *testing.T) {
 	repo.clockNow = func() time.Time { return base.Add(time.Minute) }
 	if _, err := repo.PageExactTaskSnapshot(context.Background(), snapshot.Token, 0, 1); !errors.Is(err, repoerrors.ErrExactTaskSnapshotUnavailable) {
 		t.Fatalf("PageExactTaskSnapshot at expiry error = %v, want ErrExactTaskSnapshotUnavailable", err)
+	}
+}
+
+func TestExactTaskSnapshotSurvivesRepositoryRestart(t *testing.T) {
+	repo, sqlxDB, dbPath := newInitialTaskBriefRepoAtPath(t)
+	ctx := context.Background()
+	const workspaceID = "exact-snapshot-restart-workspace"
+	seedWorkspace(t, repo, workspaceID)
+	if err := repo.CreateTask(ctx, &models.Task{ID: "exact-snapshot-restart-task", WorkspaceID: workspaceID, Title: "restart"}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	snapshot, err := repo.OpenExactTaskSnapshot(ctx, models.ExactTaskSnapshotRequest{WorkspaceID: workspaceID})
+	if err != nil {
+		t.Fatalf("OpenExactTaskSnapshot: %v", err)
+	}
+	if err := sqlxDB.Close(); err != nil {
+		t.Fatalf("close first repository: %v", err)
+	}
+	conn, err := db.OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatalf("reopen sqlite: %v", err)
+	}
+	reopenedDB := sqlx.NewDb(conn, "sqlite3")
+	t.Cleanup(func() { _ = reopenedDB.Close() })
+	reopened, err := NewWithDB(reopenedDB, reopenedDB, nil)
+	if err != nil {
+		t.Fatalf("reopen repository: %v", err)
+	}
+	if _, err := reopened.PageExactTaskSnapshot(ctx, snapshot.Token, 0, 1); err != nil {
+		t.Fatalf("PageExactTaskSnapshot after restart: %v", err)
+	}
+	if _, err := reopened.GetExactTaskSnapshotTask(ctx, snapshot.Token, "exact-snapshot-restart-task"); err != nil {
+		t.Fatalf("GetExactTaskSnapshotTask after restart: %v", err)
 	}
 }

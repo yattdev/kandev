@@ -50,3 +50,27 @@ func TestPluginHost_ListWorkflowsExactBindsAuthorityAndCursor(t *testing.T) {
 		t.Fatalf("unknown workflow error = %v", err)
 	}
 }
+
+func TestPluginHost_ListWorkflowStepsExactRejectsExposedFieldDrift(t *testing.T) {
+	d := newTestDataHost(manifest.Capabilities{})
+	d.workflows.workflows = map[string][]*taskmodels.Workflow{"workspace-1": {{ID: "workflow-1", WorkspaceID: "workspace-1"}}}
+	d.steps.steps = map[string][]*wfmodels.WorkflowStep{"workflow-1": {
+		{ID: "step-1", WorkflowID: "workflow-1", Name: "First", Position: 1, Color: "blue"},
+		{ID: "step-2", WorkflowID: "workflow-1", Name: "Second", Position: 2},
+	}}
+	d.host.installationID = "installation-1"
+	d.host.exactSnapshots = newExactSnapshotStore([]byte("01234567890123456789012345678901"))
+	d.host.exactAuthorize = func(_ string, _ uint64, _ string, _ string) ApprovalDecision { return ApprovalDecision{Allowed: true} }
+	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
+
+	query := pluginsdk.ExactWorkflowStepsQuery{WorkspaceID: "workspace-1", WorkflowID: "workflow-1", CapabilityRevision: 1, Page: pluginsdk.ExactPage{Limit: 1}}
+	_, page, err := d.host.ListWorkflowStepsExact(context.Background(), query)
+	if err != nil || !page.HasMore {
+		t.Fatalf("first exact workflow step page = %#v, %v", page, err)
+	}
+	d.steps.steps["workflow-1"][1].Color = "green"
+	query.Page.Cursor, query.Page.SnapshotVersion = page.NextCursor, page.SnapshotVersion
+	if _, _, err := d.host.ListWorkflowStepsExact(context.Background(), query); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("step color drift error = %v, want InvalidArgument", err)
+	}
+}

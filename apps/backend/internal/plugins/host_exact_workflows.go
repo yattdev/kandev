@@ -61,15 +61,31 @@ func (h *pluginHost) ListWorkflowStepsExact(ctx context.Context, query pluginsdk
 		return nil, nil, err
 	}
 	items := make([]pluginsdk.WorkflowStep, len(rows))
-	parts := make([]string, 0, len(rows)*5)
+	parts := make([]string, 0, len(rows)*10)
 	for i, row := range rows {
 		if row == nil || row.WorkflowID != query.WorkflowID {
 			return nil, nil, status.Error(codes.FailedPrecondition, "exact workflow step projection is incomplete")
 		}
 		items[i] = workflowStepModelToDTO(row)
-		parts = append(parts, row.ID, row.Name, fmt.Sprint(row.Position), string(row.StageType))
+		parts = appendExactWorkflowStepDigestParts(parts, items[i])
 	}
 	return h.pageExactWorkflowSteps(query.WorkspaceID, query.CapabilityRevision, "workflow-steps:"+query.WorkflowID, CanonicalApprovalDigest(parts...), query.Page, items)
+}
+
+func appendExactWorkflowStepDigestParts(parts []string, step pluginsdk.WorkflowStep) []string {
+	parts = append(parts,
+		step.ID,
+		step.WorkflowID,
+		step.Name,
+		fmt.Sprint(step.Position),
+		step.StageType,
+		step.Color,
+		fmt.Sprint(step.IsStartStep),
+		fmt.Sprint(step.WIPLimit),
+		step.AgentProfileID,
+		fmt.Sprint(len(step.OnEnterActionTypes)),
+	)
+	return append(parts, step.OnEnterActionTypes...)
 }
 
 func (h *pluginHost) exactPageBinding(workspaceID string, revision uint64, filter, version string) exactSnapshotBinding {
