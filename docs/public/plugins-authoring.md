@@ -840,6 +840,13 @@ apps/backend/pkg/pluginsdk/host.go and data_types.go. api_write task/message
 methods are implemented in the current branch; do not repeat older docs that
 call them reserved.
 
+The SDK also declares an experimental `provider-access/v1` extension for an
+approved Coordinator plugin to request an exact GitHub credential lease. The
+live Host does not wire this extension yet: its calls return
+`Unavailable`, including when a manifest declares `api_write: provider_access`.
+It cannot be used to call GitHub or GitLab through Kandev. Do not depend on it
+until the Host and plugin integration are separately enabled and documented.
+
 Host calls are request-scoped rather than registrations: pass the handler
 context, handle cancellation, and close any files or external clients created
 by the plugin. There is no Host cleanup callback. Typical calls are
