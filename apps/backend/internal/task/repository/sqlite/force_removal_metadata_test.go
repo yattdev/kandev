@@ -1,0 +1,45 @@
+package sqlite
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/kandev/kandev/internal/task/models"
+)
+
+func TestClaimForceRemovalBlocksConditionalTaskMetadataWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-conditional-metadata-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-conditional-metadata-task", "force-conditional-metadata-stale", "force-conditional-metadata-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-conditional-metadata-ws", Title: taskID}))
+	}
+	heldTask, err := repo.GetTask(ctx, "force-conditional-metadata-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: heldTask.ID, WorkspaceID: heldTask.WorkspaceID, TaskGeneration: heldTask.UpdatedAt, AdmissionGeneration: "admission", OperationID: "conditional-metadata-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	written, err := repo.SetTaskMetadataKeyIfNoActiveSession(ctx, heldTask.ID, "force_marker", true)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	held, err := repo.GetTask(ctx, heldTask.ID)
+	require.NoError(t, err)
+	require.NotContains(t, held.Metadata, "force_marker")
+
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "force-conditional-metadata-stale-session", TaskID: "force-conditional-metadata-stale", State: models.TaskSessionStateStarting}))
+	written, err = repo.SetTaskMetadataKeyIfNoActiveSession(ctx, "force-conditional-metadata-stale", "force_marker", true)
+	require.NoError(t, err)
+	require.False(t, written)
+	stale, err := repo.GetTask(ctx, "force-conditional-metadata-stale")
+	require.NoError(t, err)
+	require.NotContains(t, stale.Metadata, "force_marker")
+
+	written, err = repo.SetTaskMetadataKeyIfNoActiveSession(ctx, "force-conditional-metadata-foreign", "force_marker", true)
+	require.NoError(t, err)
+	require.True(t, written)
+	foreign, err := repo.GetTask(ctx, "force-conditional-metadata-foreign")
+	require.NoError(t, err)
+	require.Equal(t, true, foreign.Metadata["force_marker"])
+}

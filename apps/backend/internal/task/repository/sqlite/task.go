@@ -2315,6 +2315,23 @@ func (r *Repository) SetTaskMetadataKeyIfNoActiveSession(
 	if err != nil {
 		return false, err
 	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return false, err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return false, err
+		}
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return false, err
+	}
 	var query string
 	if dialect.IsPostgres(r.db.DriverName()) {
 		query = `UPDATE tasks
@@ -2337,13 +2354,19 @@ func (r *Repository) SetTaskMetadataKeyIfNoActiveSession(
 	if !dialect.IsPostgres(r.db.DriverName()) {
 		path = jsonPath(key)
 	}
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(query), path, string(payload), time.Now().UTC(),
+	result, err := tx.ExecContext(ctx, r.db.Rebind(query), path, string(payload), time.Now().UTC(),
 		taskID, taskID, models.TaskSessionStateStarting, models.TaskSessionStateRunning)
 	if err != nil {
 		return false, err
 	}
 	rows, err := result.RowsAffected()
-	return rows > 0, err
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return rows > 0, nil
 }
 
 // SetTaskMetadataKeyIfNotArchived writes one metadata key atomically with the
