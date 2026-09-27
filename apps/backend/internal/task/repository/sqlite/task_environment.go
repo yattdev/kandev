@@ -196,6 +196,9 @@ func (r *Repository) UpdateTaskEnvironment(ctx context.Context, env *models.Task
 	if err := recoveryclaim.EnsureAvailableTx(ctx, r.db, tx, env.ID); err != nil {
 		return err
 	}
+	if err := r.ensureForceRemovalEnvironmentAvailableTx(ctx, tx, env.ID); err != nil {
+		return err
+	}
 	if env.Status == models.TaskEnvironmentStatusReady {
 		if err := r.validateReadyTaskEnvironment(ctx, tx, env.ID); err != nil {
 			return err
@@ -305,6 +308,17 @@ func (r *Repository) taskEnvironmentStateTx(ctx context.Context, tx *sqlx.Tx, en
 		return "", "", fmt.Errorf("%w: %s", ErrTaskEnvironmentNotFound, environmentID)
 	}
 	return taskID, models.TaskEnvironmentStatus(status), err
+}
+
+func (r *Repository) ensureForceRemovalEnvironmentAvailableTx(ctx context.Context, tx *sqlx.Tx, environmentID string) error {
+	taskID, _, err := r.taskEnvironmentStateTx(ctx, tx, environmentID)
+	if err != nil {
+		return err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	return ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID)
 }
 
 // FinalizeTaskEnvironmentMaterialization writes the complete canonical
@@ -868,11 +882,17 @@ func (r *Repository) DeleteTaskEnvironment(ctx context.Context, id string) error
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var existingID string
-	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT id FROM task_environments WHERE id = ?`), id).Scan(&existingID); err != nil {
+	var existingID, taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT id, task_id FROM task_environments WHERE id = ?`), id).Scan(&existingID, &taskID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: %s", ErrTaskEnvironmentNotFound, id)
 		}
+		return err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
 		return err
 	}
 	if err := recoveryclaim.EnsureAvailableTx(ctx, r.db, tx, id); err != nil {
@@ -899,6 +919,12 @@ func (r *Repository) DeleteTaskEnvironmentsByTask(ctx context.Context, taskID st
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
 	if err := recoveryclaim.EnsureTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
 		return err
 	}

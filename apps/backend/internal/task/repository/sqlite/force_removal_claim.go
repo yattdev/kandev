@@ -9,6 +9,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
+	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/task/models"
 )
 
@@ -30,8 +31,12 @@ func (r *Repository) ClaimForceRemoval(ctx context.Context, claim *models.ForceR
 		return nil, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	query := `SELECT updated_at FROM tasks WHERE id = ? AND workspace_id = ?`
+	if dialect.IsPostgres(r.db.DriverName()) {
+		query += forUpdateClause
+	}
 	var generation time.Time
-	err = tx.QueryRowContext(ctx, r.db.Rebind(`SELECT updated_at FROM tasks WHERE id = ? AND workspace_id = ?`), claim.TaskID, claim.WorkspaceID).Scan(&generation)
+	err = tx.QueryRowContext(ctx, r.db.Rebind(query), claim.TaskID, claim.WorkspaceID).Scan(&generation)
 	if err != nil || !generation.Equal(claim.TaskGeneration) {
 		return nil, false, ErrForceRemovalClaimStale
 	}

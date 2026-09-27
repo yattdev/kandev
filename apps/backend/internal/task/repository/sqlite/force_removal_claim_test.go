@@ -199,3 +199,42 @@ func TestClaimForceRemovalBlocksMoveWriterWithoutPersistingIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Original", stored.Title)
 }
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.2
+func TestClaimForceRemovalBlocksEnvironmentAndCleanupWorkerAdmissions(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-environment-ws", Name: "Force"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "force-environment-task", WorkspaceID: "force-environment-ws", Title: "Force"}))
+	require.NoError(t, repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{ID: "force-environment", TaskID: "force-environment-task", Status: models.TaskEnvironmentStatusCreating}))
+	require.NoError(t, repo.CreateTaskResourceCleanupJob(ctx, &models.TaskResourceCleanupJob{ID: "force-cleanup-pending", TaskID: "force-environment-task", OperationID: "force-cleanup-pending-operation", Trigger: models.TaskResourceCleanupTriggerDelete, ResourceSnapshot: `{}`}))
+	require.NoError(t, repo.CreateTaskResourceCleanupJob(ctx, &models.TaskResourceCleanupJob{ID: "force-cleanup-prepared", TaskID: "force-environment-task", OperationID: "force-cleanup-prepared-operation", Trigger: models.TaskResourceCleanupTriggerDelete, State: models.TaskResourceCleanupStatePrepared, ResourceSnapshot: `{}`}))
+	task, err := repo.GetTask(ctx, "force-environment-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "environment-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	updated := &models.TaskEnvironment{ID: "force-environment", TaskID: task.ID, Status: models.TaskEnvironmentStatusFailed}
+	require.ErrorIs(t, repo.UpdateTaskEnvironment(ctx, updated), ErrForceRemovalTaskHeld)
+	require.ErrorIs(t, repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{ID: "force-environment-new", TaskID: task.ID, Status: models.TaskEnvironmentStatusCreating}), ErrForceRemovalTaskHeld)
+	require.ErrorIs(t, repo.DeleteTaskEnvironment(ctx, "force-environment"), ErrForceRemovalTaskHeld)
+	environment, err := repo.GetTaskEnvironment(ctx, "force-environment")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskEnvironmentStatusCreating, environment.Status)
+	_, err = repo.GetTaskEnvironment(ctx, "force-environment-new")
+	require.ErrorIs(t, err, ErrTaskEnvironmentNotFound)
+
+	running, err := repo.MarkTaskResourceCleanupJobRunning(ctx, "force-cleanup-pending")
+	require.ErrorIs(t, err, ErrForceRemovalCleanupHeld)
+	require.False(t, running)
+	started, err := repo.StartPreparedTaskResourceCleanupJob(ctx, "force-cleanup-prepared")
+	require.ErrorIs(t, err, ErrForceRemovalCleanupHeld)
+	require.False(t, started)
+	pending, err := repo.GetTaskResourceCleanupJob(ctx, "force-cleanup-pending")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskResourceCleanupStatePending, pending.State)
+	prepared, err := repo.GetTaskResourceCleanupJob(ctx, "force-cleanup-prepared")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskResourceCleanupStatePrepared, prepared.State)
+}

@@ -94,6 +94,24 @@ only through `KANDEV_TEST_POSTGRES_DSN`; this task-owned environment has no
 such DSN or task-owned PostgreSQL service, so local PostgreSQL execution
 remains unavailable and CI is the currently known isolated execution path.
 
+Environment creation and workspace binding already use the task cleanup barrier
+and therefore the claim fence. Environment update/delete paths now resolve and
+lock the owning task before mutation. Cleanup worker activation for pending or
+prepared jobs locks the owning task and refuses claimed tasks while preserving
+the job state. The claim itself locks the task row on PostgreSQL, sharing that
+serialization point with these writer gates. Focused tests prove that claimed
+tasks keep their original environment and pending/prepared cleanup jobs with
+no new environment or worker activation.
+
+The remaining W02 writer inventory is queue enqueue/dequeue and pending-move
+writers; dispatch and deferred-launch writers; PR-watch writers; direct task
+state/priority and other narrow task mutators; environment-repository row
+writers and materialization-finalization paths; plus cleanup retry/reset paths.
+PostgreSQL execution remains blocked by the absent task-owned
+`KANDEV_TEST_POSTGRES_DSN`; no supported local provisioning recipe or isolated
+service is present in this checkout, and the CI postgres-boot service remains
+the verified harness path.
+
 ## Verification
 
 ```bash

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/recoveryclaim"
@@ -234,8 +235,17 @@ func (r *Repository) ListDueTaskResourceCleanupJobs(ctx context.Context, now tim
 }
 
 func (r *Repository) MarkTaskResourceCleanupJobRunning(ctx context.Context, id string) (bool, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	found, err := r.ensureForceRemovalCleanupWorkerAvailableTx(ctx, tx, id)
+	if err != nil || !found {
+		return false, err
+	}
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, attempts = attempts + 1, next_attempt_at = NULL, updated_at = ?
 		WHERE id = ? AND state IN (?, ?)
@@ -245,12 +255,24 @@ func (r *Repository) MarkTaskResourceCleanupJobRunning(ctx context.Context, id s
 		return false, err
 	}
 	count, _ := result.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
 	return count == 1, nil
 }
 
 func (r *Repository) StartPreparedTaskResourceCleanupJob(ctx context.Context, id string) (bool, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	found, err := r.ensureForceRemovalCleanupWorkerAvailableTx(ctx, tx, id)
+	if err != nil || !found {
+		return false, err
+	}
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, next_attempt_at = NULL, updated_at = ?
 		WHERE id = ? AND state = ?
@@ -259,7 +281,28 @@ func (r *Repository) StartPreparedTaskResourceCleanupJob(ctx context.Context, id
 		return false, err
 	}
 	count, _ := result.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
 	return count == 1, nil
+}
+
+func (r *Repository) ensureForceRemovalCleanupWorkerAvailableTx(ctx context.Context, tx *sqlx.Tx, jobID string) (bool, error) {
+	var taskID string
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_resource_cleanup_jobs WHERE id = ?`), jobID).Scan(&taskID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return false, err
+	}
+	if err := ensureForceRemovalCleanupAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (r *Repository) CompleteTaskResourceCleanupJob(
