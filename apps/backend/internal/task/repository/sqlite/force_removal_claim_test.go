@@ -238,6 +238,28 @@ func TestClaimForceRemovalBlocksStateWriterWithoutPersistingIt(t *testing.T) {
 	require.NoError(t, repo.UpdateTaskState(ctx, "force-state-foreign", v1.TaskStateInProgress))
 }
 
+func TestClaimForceRemovalBlocksCleanupCompletionWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-complete-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-complete-task", "force-complete-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-complete-ws", Title: taskID}))
+	}
+	claimedJob := &models.TaskResourceCleanupJob{ID: "force-complete-job", OperationID: "force-complete-job-op", TaskID: "force-complete-task", Trigger: models.TaskResourceCleanupTriggerArchive}
+	foreignJob := &models.TaskResourceCleanupJob{ID: "force-complete-foreign-job", OperationID: "force-complete-foreign-op", TaskID: "force-complete-foreign", Trigger: models.TaskResourceCleanupTriggerArchive}
+	require.NoError(t, repo.CreateTaskResourceCleanupJob(ctx, claimedJob))
+	require.NoError(t, repo.CreateTaskResourceCleanupJob(ctx, foreignJob))
+	task, err := repo.GetTask(ctx, claimedJob.TaskID)
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "complete-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+	require.ErrorIs(t, repo.CompleteTaskResourceCleanupJob(ctx, claimedJob.ID, models.TaskResourceCleanupStateCancelled, "blocked", nil), ErrForceRemovalCleanupHeld)
+	stored, err := repo.GetTaskResourceCleanupJob(ctx, claimedJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, models.TaskResourceCleanupStatePending, stored.State)
+	require.NoError(t, repo.CompleteTaskResourceCleanupJob(ctx, foreignJob.ID, models.TaskResourceCleanupStateCancelled, "allowed", nil))
+}
+
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.2
 func TestClaimForceRemovalBlocksEnvironmentAndCleanupWorkerAdmissions(t *testing.T) {

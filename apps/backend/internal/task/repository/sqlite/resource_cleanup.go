@@ -312,6 +312,14 @@ func (r *Repository) CompleteTaskResourceCleanupJob(
 	lastError string,
 	nextAttemptAt *time.Time,
 ) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := r.ensureForceRemovalCleanupWorkerAvailableTx(ctx, tx, id); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	var completedAt *time.Time
 	if state == models.TaskResourceCleanupStateSucceeded ||
@@ -319,12 +327,15 @@ func (r *Repository) CompleteTaskResourceCleanupJob(
 		state == models.TaskResourceCleanupStateCancelled {
 		completedAt = &now
 	}
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, last_error = ?, next_attempt_at = ?, completed_at = ?, updated_at = ?
 		WHERE id = ?
 	`), state, lastError, nextAttemptAt, completedAt, now, id)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // RestoreCancelledTaskResourceCleanupJobIfUnchanged re-prepares only the
