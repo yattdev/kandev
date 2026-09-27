@@ -292,6 +292,7 @@ func TestSessionTransferCommitRejectsExpiredLease(t *testing.T) {
 	require.NoError(t, repo.UpsertSessionTransferCompensation(ctx, compensation))
 	tx, err := repo.beginAuthorizedSessionTransferTx(
 		ctx, compensation.FromSessionID, compensation.ToSessionID, compensation.OperationID,
+		nil, nil,
 	)
 	require.NoError(t, err)
 	_, err = tx.Exec(`

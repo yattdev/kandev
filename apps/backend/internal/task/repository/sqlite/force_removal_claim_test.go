@@ -374,3 +374,136 @@ func TestClaimForceRemovalPreservesSessionTransferAttachments(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "force-transfer-foreign-destination", foreign.SessionID)
 }
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+func TestClaimForceRemovalRejectsSessionTransferRecoveryWithoutMutatingQueueState(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-transfer-queue-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-transfer-queue-task", "force-transfer-queue-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-transfer-queue-ws", Title: taskID}))
+	}
+	for _, session := range []*models.TaskSession{
+		{ID: "force-transfer-queue-source", TaskID: "force-transfer-queue-task"},
+		{ID: "force-transfer-queue-destination", TaskID: "force-transfer-queue-task"},
+		{ID: "force-transfer-queue-foreign-source", TaskID: "force-transfer-queue-foreign"},
+		{ID: "force-transfer-queue-foreign-destination", TaskID: "force-transfer-queue-foreign"},
+	} {
+		require.NoError(t, repo.CreateTaskSession(ctx, session))
+	}
+
+	queueRepo, err := messagequeue.NewSQLiteRepository(repo.db, repo.db)
+	require.NoError(t, err)
+	for _, entry := range []*messagequeue.QueuedMessage{
+		{ID: "force-transfer-queue-source-entry", SessionID: "force-transfer-queue-source", TaskID: "force-transfer-queue-task", Content: "source", QueuedBy: messagequeue.QueuedByUser},
+		{ID: "force-transfer-queue-destination-entry", SessionID: "force-transfer-queue-destination", TaskID: "force-transfer-queue-task", Content: "destination", QueuedBy: messagequeue.QueuedByUser},
+		{ID: "force-transfer-queue-foreign-entry", SessionID: "force-transfer-queue-foreign-source", TaskID: "force-transfer-queue-foreign", Content: "foreign", QueuedBy: messagequeue.QueuedByUser},
+	} {
+		require.NoError(t, queueRepo.Insert(ctx, entry, messagequeue.DefaultMaxPerSession))
+	}
+	for _, pending := range []struct {
+		sessionID string
+		move      *messagequeue.PendingMove
+	}{
+		{"force-transfer-queue-source", &messagequeue.PendingMove{MoveID: "force-transfer-queue-source-move", TaskID: "force-transfer-queue-task", WorkflowID: "workflow", WorkflowStepID: "source"}},
+		{"force-transfer-queue-destination", &messagequeue.PendingMove{MoveID: "force-transfer-queue-destination-move", TaskID: "force-transfer-queue-task", WorkflowID: "workflow", WorkflowStepID: "destination"}},
+	} {
+		require.NoError(t, queueRepo.SetPendingMove(ctx, pending.sessionID, pending.move))
+	}
+
+	task, err := repo.GetTask(ctx, "force-transfer-queue-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "transfer-queue-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	err = queueRepo.TransferSession(ctx, "force-transfer-queue-source", "force-transfer-queue-destination")
+	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
+	for _, want := range []struct {
+		sessionID string
+		entryID   string
+		moveID    string
+	}{
+		{"force-transfer-queue-source", "force-transfer-queue-source-entry", "force-transfer-queue-source-move"},
+		{"force-transfer-queue-destination", "force-transfer-queue-destination-entry", "force-transfer-queue-destination-move"},
+	} {
+		entries, listErr := queueRepo.ListBySession(ctx, want.sessionID)
+		require.NoError(t, listErr)
+		require.Len(t, entries, 1)
+		require.Equal(t, want.entryID, entries[0].ID)
+		pending, pendingErr := queueRepo.GetPendingMove(ctx, want.sessionID)
+		require.NoError(t, pendingErr)
+		require.NotNil(t, pending)
+		require.Equal(t, want.moveID, pending.MoveID)
+	}
+
+	require.NoError(t, queueRepo.TransferSession(ctx, "force-transfer-queue-foreign-source", "force-transfer-queue-foreign-destination"))
+	foreignEntries, err := queueRepo.ListBySession(ctx, "force-transfer-queue-foreign-destination")
+	require.NoError(t, err)
+	require.Len(t, foreignEntries, 1)
+	require.Equal(t, "force-transfer-queue-foreign-entry", foreignEntries[0].ID)
+}
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+func TestClaimForceRemovalRejectsDeferredMoveApplicationWithoutConsumingReplay(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-deferred-apply-ws", Name: "Force"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "force-deferred-apply-task", WorkspaceID: "force-deferred-apply-ws", Title: "Force"}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "force-deferred-apply-session", TaskID: "force-deferred-apply-task", QueueIncarnationID: "force-deferred-incarnation"}))
+	queueRepo, err := messagequeue.NewSQLiteRepository(repo.db, repo.db)
+	require.NoError(t, err)
+	move := &messagequeue.PendingMove{MoveID: "force-deferred-apply-move", SessionIncarnationID: "force-deferred-incarnation", TaskID: "force-deferred-apply-task", WorkflowID: "workflow", WorkflowStepID: "step", QueuedAt: time.Now().UTC()}
+	require.NoError(t, queueRepo.SetPendingMove(ctx, "force-deferred-apply-session", move))
+
+	task, err := repo.GetTask(ctx, "force-deferred-apply-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "deferred-apply-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	staleReplay := *move
+	staleReplay.SessionIncarnationID = "stale-incarnation"
+	applied, err := repo.MarkDeferredMoveAppliedForSession(ctx, task.ID, move.MoveID, messagequeue.PendingMoveRecord{SessionID: "force-deferred-apply-session", Move: staleReplay})
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, applied)
+	pending, err := queueRepo.GetPendingMove(ctx, "force-deferred-apply-session")
+	require.NoError(t, err)
+	require.NotNil(t, pending)
+	require.Equal(t, move.MoveID, pending.MoveID)
+	stored, err := repo.GetTask(ctx, task.ID)
+	require.NoError(t, err)
+	_, replayRecorded := stored.Metadata[models.MetaKeyAppliedDeferredMoves]
+	require.False(t, replayRecorded)
+}
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+func TestClaimForceRemovalRejectsDeferredWorkflowAdmissionBeforeStaleReplayValidation(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-deferred-admission-ws", Name: "Force"}))
+	require.NoError(t, repo.CreateWorkflow(ctx, &models.Workflow{ID: "force-deferred-admission-workflow", WorkspaceID: "force-deferred-admission-ws", Name: "Workflow"}))
+	seedCASWorkflowStep(t, repo, "force-deferred-admission-workflow", "force-deferred-admission-source", 0)
+	seedCASWorkflowStep(t, repo, "force-deferred-admission-workflow", "force-deferred-admission-target", 1)
+	task := &models.Task{ID: "force-deferred-admission-task", WorkspaceID: "force-deferred-admission-ws", WorkflowID: "force-deferred-admission-workflow", WorkflowStepID: "force-deferred-admission-source", Title: "Force", WIPAdmitted: true}
+	require.NoError(t, repo.CreateTask(ctx, task))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "force-deferred-admission-session", TaskID: task.ID, QueueIncarnationID: "force-deferred-admission-incarnation"}))
+	queueRepo, err := messagequeue.NewSQLiteRepository(repo.db, repo.db)
+	require.NoError(t, err)
+	move := messagequeue.PendingMove{MoveID: "force-deferred-admission-move", SessionIncarnationID: "force-deferred-admission-incarnation", TaskID: task.ID, WorkflowID: task.WorkflowID, WorkflowStepID: "force-deferred-admission-target", QueuedAt: time.Now().UTC()}
+	require.NoError(t, queueRepo.SetPendingMove(ctx, "force-deferred-admission-session", &move))
+
+	stored, err := repo.GetTask(ctx, task.ID)
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: stored.UpdatedAt, AdmissionGeneration: "admission", OperationID: "deferred-admission-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+	staleReplay := move
+	staleReplay.SessionIncarnationID = "stale-incarnation"
+
+	admitted, applied, err := repo.UpdateTaskWithWorkflowStepAdmissionForDeferredMove(ctx, task, "force-deferred-admission-source", "force-deferred-admission-target", 0, messagequeue.PendingMoveRecord{SessionID: "force-deferred-admission-session", Move: staleReplay})
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, admitted)
+	require.False(t, applied)
+	pending, err := queueRepo.GetPendingMove(ctx, "force-deferred-admission-session")
+	require.NoError(t, err)
+	require.NotNil(t, pending)
+	require.Equal(t, move.MoveID, pending.MoveID)
+}

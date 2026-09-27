@@ -1460,13 +1460,19 @@ func (r *Repository) MarkDeferredMoveAppliedForSession(
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.validateDeferredMoveGuardTx(ctx, tx, record); err != nil {
-		return false, err
-	}
 	if _, _, found, err := r.readTaskStepInTx(ctx, tx, taskID); err != nil {
 		return false, err
 	} else if !found {
 		return false, sql.ErrNoRows
+	}
+	if err := ensureForceRemovalTaskAvailableStdTx(ctx, r.db, tx, taskID); err != nil {
+		return false, err
+	}
+	if record.Move.TaskID != taskID {
+		return false, messagequeue.ErrSessionIdentityMismatch
+	}
+	if err := r.validateDeferredMoveGuardTx(ctx, tx, record); err != nil {
+		return false, err
 	}
 	task, err := r.scanSingleTask(tx.QueryRowContext(ctx, r.db.Rebind(
 		`SELECT `+taskSelectColumns("t")+` FROM tasks t WHERE t.id = ?`), taskID))
@@ -1769,6 +1775,17 @@ func (r *Repository) updateTaskWithWorkflowStepAdmissionAttempt(
 		return false, false, err
 	}
 	if deferredMove != nil {
+		if _, _, found, err := r.readTaskStepInTx(ctx, tx, task.ID); err != nil {
+			return false, false, err
+		} else if !found {
+			return false, false, sql.ErrNoRows
+		}
+		if err := ensureForceRemovalTaskAvailableStdTx(ctx, r.db, tx, task.ID); err != nil {
+			return false, false, err
+		}
+		if deferredMove.Move.TaskID != task.ID {
+			return false, false, messagequeue.ErrSessionIdentityMismatch
+		}
 		if err := r.validateDeferredMoveGuardTx(ctx, tx, *deferredMove); err != nil {
 			return false, false, err
 		}

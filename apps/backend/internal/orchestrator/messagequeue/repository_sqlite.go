@@ -5650,10 +5650,15 @@ func (r *sqliteRepository) transferSessionOwned(
 func (r *sqliteRepository) beginAuthorizedSessionTransferTx(
 	ctx context.Context,
 	oldSessionID, newSessionID, operationID string,
+	source, destination *QueueSessionIdentity,
 ) (*sqlx.Tx, error) {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin transfer tx: %w", err)
+	}
+	if err := r.guardTransferTasksTx(ctx, tx, source, destination, oldSessionID, newSessionID); err != nil {
+		_ = tx.Rollback()
+		return nil, err
 	}
 	if _, _, err := r.lockSessionTransferPairTx(ctx, tx, oldSessionID, newSessionID); err != nil {
 		_ = tx.Rollback()
@@ -5682,14 +5687,57 @@ func (r *sqliteRepository) guardTransferTasksTx(
 	ctx context.Context,
 	tx *sqlx.Tx,
 	source, destination *QueueSessionIdentity,
+	oldSessionID, newSessionID string,
 ) error {
-	if source == nil || destination == nil {
-		return nil
+	taskIDs, err := r.transferTaskIDsTx(ctx, tx, source, destination, oldSessionID, newSessionID)
+	if err != nil {
+		return err
 	}
-	if source.TaskID != destination.TaskID {
-		return ErrSessionIdentityMismatch
+	ordered := make([]string, 0, len(taskIDs))
+	for taskID := range taskIDs {
+		ordered = append(ordered, taskID)
 	}
-	return r.guardActiveTaskTx(ctx, tx, source.TaskID)
+	sort.Strings(ordered)
+	for _, taskID := range ordered {
+		if err := r.guardActiveTaskTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+		if err := r.guardForceRemovalTaskTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *sqliteRepository) transferTaskIDsTx(ctx context.Context, tx *sqlx.Tx, source, destination *QueueSessionIdentity, oldSessionID, newSessionID string) (map[string]struct{}, error) {
+	taskIDs := make(map[string]struct{}, 2)
+	if source != nil || destination != nil {
+		if source == nil || destination == nil || source.TaskID != destination.TaskID {
+			return nil, ErrSessionIdentityMismatch
+		}
+		taskIDs[source.TaskID] = struct{}{}
+		return taskIDs, nil
+	}
+	if r.tasksTablePresent && r.taskSessionsTablePresent {
+		rows, err := tx.QueryxContext(ctx, r.db.Rebind(`
+			SELECT task_id FROM task_sessions WHERE id IN (?, ?)
+		`), oldSessionID, newSessionID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve transfer task owners: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var taskID string
+			if err := rows.Scan(&taskID); err != nil {
+				return nil, fmt.Errorf("scan transfer task owner: %w", err)
+			}
+			taskIDs[taskID] = struct{}{}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("iterate transfer task owners: %w", err)
+		}
+	}
+	return taskIDs, nil
 }
 
 func (r *sqliteRepository) lockAndValidateTransferSessionsTx(
@@ -5855,7 +5903,7 @@ func (r *sqliteRepository) transferSession(
 		return fmt.Errorf("begin transfer tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.guardTransferTasksTx(ctx, tx, source, destination); err != nil {
+	if err := r.guardTransferTasksTx(ctx, tx, source, destination, oldSessionID, newSessionID); err != nil {
 		return err
 	}
 	if err := r.lockAndValidateTransferSessionsTx(ctx, tx, source, destination, first, second); err != nil {
@@ -5955,7 +6003,7 @@ func (r *sqliteRepository) transferSessionOwnedTx(
 	}
 
 	tx, err := r.beginAuthorizedSessionTransferTx(
-		ctx, oldSessionID, newSessionID, operationID,
+		ctx, oldSessionID, newSessionID, operationID, source, destination,
 	)
 	if err != nil {
 		return err
