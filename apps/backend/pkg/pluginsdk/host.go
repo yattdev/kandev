@@ -398,6 +398,29 @@ func (h *grpcHostClient) ListWorkspacesExact(ctx context.Context, query ExactWor
 	return workspacesFromProto(response.GetWorkspaces()), &ExactPageInfo{NextCursor: page.GetNextCursor(), HasMore: page.GetHasMore(), SnapshotVersion: page.GetSnapshotVersion()}, nil
 }
 
+func (h *grpcHostClient) ListWorkflowsExact(ctx context.Context, query ExactWorkflowQuery) ([]Workflow, *ExactPageInfo, error) {
+	response, err := h.client.ListWorkflowsExact(ctx, &pluginv1.ListWorkflowsExactRequest{WorkspaceId: query.WorkspaceID, CapabilityRevision: query.CapabilityRevision, Page: exactPageToProto(query.Page)})
+	if err != nil {
+		return nil, nil, err
+	}
+	return workflowsFromProto(response.GetWorkflows()), exactPageInfoFromProto(response.GetPageInfo()), nil
+}
+
+func (h *grpcHostClient) ListWorkflowStepsExact(ctx context.Context, query ExactWorkflowStepsQuery) ([]WorkflowStep, *ExactPageInfo, error) {
+	response, err := h.client.ListWorkflowStepsExact(ctx, &pluginv1.ListWorkflowStepsExactRequest{WorkspaceId: query.WorkspaceID, WorkflowId: query.WorkflowID, CapabilityRevision: query.CapabilityRevision, Page: exactPageToProto(query.Page)})
+	if err != nil {
+		return nil, nil, err
+	}
+	return workflowStepsFromProto(response.GetSteps()), exactPageInfoFromProto(response.GetPageInfo()), nil
+}
+
+func exactPageToProto(page ExactPage) *pluginv1.ExactPage {
+	return &pluginv1.ExactPage{Limit: page.Limit, Cursor: page.Cursor, SnapshotVersion: page.SnapshotVersion}
+}
+func exactPageInfoFromProto(page *pluginv1.ExactPageInfo) *ExactPageInfo {
+	return &ExactPageInfo{NextCursor: page.GetNextCursor(), HasMore: page.GetHasMore(), SnapshotVersion: page.GetSnapshotVersion()}
+}
+
 func (h *grpcHostClient) RevealSecret(ctx context.Context, ref string) (string, error) {
 	resp, err := h.client.RevealSecret(ctx, &pluginv1.RevealSecretRequest{Ref: ref})
 	if err != nil {
@@ -812,6 +835,37 @@ func (s *grpcHostServer) ListWorkspacesExact(ctx context.Context, request *plugi
 		return nil, err
 	}
 	return &pluginv1.ListWorkspacesExactResponse{Workspaces: workspacesToProto(items), PageInfo: &pluginv1.ExactPageInfo{NextCursor: info.NextCursor, HasMore: info.HasMore, SnapshotVersion: info.SnapshotVersion}}, nil
+}
+
+func (s *grpcHostServer) ListWorkflowsExact(ctx context.Context, request *pluginv1.ListWorkflowsExactRequest) (*pluginv1.ListWorkflowsExactResponse, error) {
+	exact, ok := s.impl.(ExactWorkflowHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_workflows")
+	}
+	items, info, err := exact.ListWorkflowsExact(ctx, ExactWorkflowQuery{WorkspaceID: request.GetWorkspaceId(), CapabilityRevision: request.GetCapabilityRevision(), Page: exactPageFromProto(request.GetPage())})
+	if err != nil {
+		return nil, err
+	}
+	return &pluginv1.ListWorkflowsExactResponse{Workflows: workflowsToProto(items), PageInfo: exactPageInfoToProto(info)}, nil
+}
+
+func (s *grpcHostServer) ListWorkflowStepsExact(ctx context.Context, request *pluginv1.ListWorkflowStepsExactRequest) (*pluginv1.ListWorkflowStepsExactResponse, error) {
+	exact, ok := s.impl.(ExactWorkflowHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_workflow_steps")
+	}
+	items, info, err := exact.ListWorkflowStepsExact(ctx, ExactWorkflowStepsQuery{WorkspaceID: request.GetWorkspaceId(), WorkflowID: request.GetWorkflowId(), CapabilityRevision: request.GetCapabilityRevision(), Page: exactPageFromProto(request.GetPage())})
+	if err != nil {
+		return nil, err
+	}
+	return &pluginv1.ListWorkflowStepsExactResponse{Steps: workflowStepsToProto(items), PageInfo: exactPageInfoToProto(info)}, nil
+}
+
+func exactPageFromProto(page *pluginv1.ExactPage) ExactPage {
+	return ExactPage{Limit: page.GetLimit(), Cursor: page.GetCursor(), SnapshotVersion: page.GetSnapshotVersion()}
+}
+func exactPageInfoToProto(page *ExactPageInfo) *pluginv1.ExactPageInfo {
+	return &pluginv1.ExactPageInfo{NextCursor: page.NextCursor, HasMore: page.HasMore, SnapshotVersion: page.SnapshotVersion}
 }
 
 func (s *grpcHostServer) RevealSecret(ctx context.Context, req *pluginv1.RevealSecretRequest) (*pluginv1.RevealSecretResponse, error) {

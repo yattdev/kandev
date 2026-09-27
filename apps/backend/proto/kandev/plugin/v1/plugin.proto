@@ -84,6 +84,8 @@ service Host {
   // read or command independently authorizes its own capability.
   rpc GetCapabilityContext(GetCapabilityContextRequest) returns (GetCapabilityContextResponse);
   rpc ListWorkspacesExact(ListWorkspacesExactRequest) returns (ListWorkspacesExactResponse);
+  rpc ListWorkflowsExact(ListWorkflowsExactRequest) returns (ListWorkflowsExactResponse);
+  rpc ListWorkflowStepsExact(ListWorkflowStepsExactRequest) returns (ListWorkflowStepsExactResponse);
 
   // Reads — capability api_read:<resource>
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
@@ -1151,5 +1153,24 @@ message ListWorkspacesExactRequest {
 }
 message ListWorkspacesExactResponse {
   repeated Workspace workspaces = 1;
+  ExactPageInfo page_info = 2;
+}
+message ListWorkflowsExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListWorkflowsExactResponse {
+  repeated Workflow workflows = 1;
+  ExactPageInfo page_info = 2;
+}
+message ListWorkflowStepsExactRequest {
+  string workspace_id = 1;
+  string workflow_id = 2;
+  uint64 capability_revision = 3;
+  ExactPage page = 4;
+}
+message ListWorkflowStepsExactResponse {
+  repeated WorkflowStep steps = 1;
   ExactPageInfo page_info = 2;
 }

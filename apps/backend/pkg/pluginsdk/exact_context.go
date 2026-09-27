@@ -50,6 +50,13 @@ type ExactWorkspaceHost interface {
 	ListWorkspacesExact(context.Context, ExactWorkspaceQuery) ([]Workspace, *ExactPageInfo, error)
 }
 
+// ExactWorkflowHost exposes snapshot-bound workflow reads independently from
+// the capability-context and workspace extensions.
+type ExactWorkflowHost interface {
+	ListWorkflowsExact(context.Context, ExactWorkflowQuery) ([]Workflow, *ExactPageInfo, error)
+	ListWorkflowStepsExact(context.Context, ExactWorkflowStepsQuery) ([]WorkflowStep, *ExactPageInfo, error)
+}
+
 type ExactWorkspaceQuery struct {
 	WorkspaceID        string
 	CapabilityRevision uint64
@@ -65,6 +72,19 @@ type ExactPageInfo struct {
 	SnapshotVersion string
 }
 
+type ExactWorkflowQuery struct {
+	WorkspaceID        string
+	CapabilityRevision uint64
+	Page               ExactPage
+}
+
+type ExactWorkflowStepsQuery struct {
+	WorkspaceID        string
+	WorkflowID         string
+	CapabilityRevision uint64
+	Page               ExactPage
+}
+
 // Exact returns the optional exact Host extension when the connected Host
 // supports it.
 func Exact(host Host) (ExactHost, bool) {
@@ -75,6 +95,11 @@ func Exact(host Host) (ExactHost, bool) {
 // ExactWorkspaces returns the optional exact workspace-read extension.
 func ExactWorkspaces(host Host) (ExactWorkspaceHost, bool) {
 	exact, ok := host.(ExactWorkspaceHost)
+	return exact, ok
+}
+
+func ExactWorkflows(host Host) (ExactWorkflowHost, bool) {
+	exact, ok := host.(ExactWorkflowHost)
 	return exact, ok
 }
 

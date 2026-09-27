@@ -503,6 +503,8 @@ const (
 	Host_GetConfig_FullMethodName                     = "/kandev.plugin.v1.Host/GetConfig"
 	Host_GetCapabilityContext_FullMethodName          = "/kandev.plugin.v1.Host/GetCapabilityContext"
 	Host_ListWorkspacesExact_FullMethodName           = "/kandev.plugin.v1.Host/ListWorkspacesExact"
+	Host_ListWorkflowsExact_FullMethodName            = "/kandev.plugin.v1.Host/ListWorkflowsExact"
+	Host_ListWorkflowStepsExact_FullMethodName        = "/kandev.plugin.v1.Host/ListWorkflowStepsExact"
 	Host_ListTasks_FullMethodName                     = "/kandev.plugin.v1.Host/ListTasks"
 	Host_GetTask_FullMethodName                       = "/kandev.plugin.v1.Host/GetTask"
 	Host_ListTaskStepTransitions_FullMethodName       = "/kandev.plugin.v1.Host/ListTaskStepTransitions"
@@ -587,6 +589,8 @@ type HostClient interface {
 	// read or command independently authorizes its own capability.
 	GetCapabilityContext(ctx context.Context, in *GetCapabilityContextRequest, opts ...grpc.CallOption) (*GetCapabilityContextResponse, error)
 	ListWorkspacesExact(ctx context.Context, in *ListWorkspacesExactRequest, opts ...grpc.CallOption) (*ListWorkspacesExactResponse, error)
+	ListWorkflowsExact(ctx context.Context, in *ListWorkflowsExactRequest, opts ...grpc.CallOption) (*ListWorkflowsExactResponse, error)
+	ListWorkflowStepsExact(ctx context.Context, in *ListWorkflowStepsExactRequest, opts ...grpc.CallOption) (*ListWorkflowStepsExactResponse, error)
 	// Reads — capability api_read:<resource>
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
@@ -793,6 +797,26 @@ func (c *hostClient) ListWorkspacesExact(ctx context.Context, in *ListWorkspaces
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListWorkspacesExactResponse)
 	err := c.cc.Invoke(ctx, Host_ListWorkspacesExact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hostClient) ListWorkflowsExact(ctx context.Context, in *ListWorkflowsExactRequest, opts ...grpc.CallOption) (*ListWorkflowsExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWorkflowsExactResponse)
+	err := c.cc.Invoke(ctx, Host_ListWorkflowsExact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hostClient) ListWorkflowStepsExact(ctx context.Context, in *ListWorkflowStepsExactRequest, opts ...grpc.CallOption) (*ListWorkflowStepsExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWorkflowStepsExactResponse)
+	err := c.cc.Invoke(ctx, Host_ListWorkflowStepsExact_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1142,6 +1166,8 @@ type HostServer interface {
 	// read or command independently authorizes its own capability.
 	GetCapabilityContext(context.Context, *GetCapabilityContextRequest) (*GetCapabilityContextResponse, error)
 	ListWorkspacesExact(context.Context, *ListWorkspacesExactRequest) (*ListWorkspacesExactResponse, error)
+	ListWorkflowsExact(context.Context, *ListWorkflowsExactRequest) (*ListWorkflowsExactResponse, error)
+	ListWorkflowStepsExact(context.Context, *ListWorkflowStepsExactRequest) (*ListWorkflowStepsExactResponse, error)
 	// Reads — capability api_read:<resource>
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
@@ -1269,6 +1295,12 @@ func (UnimplementedHostServer) GetCapabilityContext(context.Context, *GetCapabil
 }
 func (UnimplementedHostServer) ListWorkspacesExact(context.Context, *ListWorkspacesExactRequest) (*ListWorkspacesExactResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListWorkspacesExact not implemented")
+}
+func (UnimplementedHostServer) ListWorkflowsExact(context.Context, *ListWorkflowsExactRequest) (*ListWorkflowsExactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListWorkflowsExact not implemented")
+}
+func (UnimplementedHostServer) ListWorkflowStepsExact(context.Context, *ListWorkflowStepsExactRequest) (*ListWorkflowStepsExactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListWorkflowStepsExact not implemented")
 }
 func (UnimplementedHostServer) ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListTasks not implemented")
@@ -1590,6 +1622,42 @@ func _Host_ListWorkspacesExact_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(HostServer).ListWorkspacesExact(ctx, req.(*ListWorkspacesExactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Host_ListWorkflowsExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWorkflowsExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).ListWorkflowsExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_ListWorkflowsExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).ListWorkflowsExact(ctx, req.(*ListWorkflowsExactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Host_ListWorkflowStepsExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWorkflowStepsExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).ListWorkflowStepsExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_ListWorkflowStepsExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).ListWorkflowStepsExact(ctx, req.(*ListWorkflowStepsExactRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2170,6 +2238,14 @@ var Host_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListWorkspacesExact",
 			Handler:    _Host_ListWorkspacesExact_Handler,
+		},
+		{
+			MethodName: "ListWorkflowsExact",
+			Handler:    _Host_ListWorkflowsExact_Handler,
+		},
+		{
+			MethodName: "ListWorkflowStepsExact",
+			Handler:    _Host_ListWorkflowStepsExact_Handler,
 		},
 		{
 			MethodName: "ListTasks",
