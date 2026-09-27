@@ -49,6 +49,11 @@ move, environment, worktree, queue, dispatch, cleanup, and PR-watch writers.
 No route, card hide, runtime stop, or physical mutation is permitted before
 those guards and their negative tests exist.
 
+The PostgreSQL parity test covers exact replay and changed-request conflict
+through the isolated-schema harness. It is skipped locally until
+`KANDEV_TEST_POSTGRES_DSN` is supplied, so executed PostgreSQL evidence remains
+an outstanding delivery gate.
+
 ## Verification
 
 ```bash
