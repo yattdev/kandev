@@ -72,3 +72,26 @@ func TestClaimForceRemovalBlocksArchiveGuardedTaskMetadataWithoutPersistingIt(t 
 	require.NoError(t, err)
 	require.True(t, written)
 }
+
+func TestClaimForceRemovalBlocksAbsentTaskMetadataWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-absent-metadata-ws", Name: "Force"}))
+	for _, id := range []string{"held", "stale", "foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: id, WorkspaceID: "force-absent-metadata-ws", Title: id}))
+	}
+	held, err := repo.GetTask(ctx, "held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "a", OperationID: "absent-metadata", RequestDigest: "r", PreviewDigest: "p"})
+	require.NoError(t, err)
+	written, err := repo.SetTaskMetadataKeyIfAbsent(ctx, "held", "marker", true)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	require.NoError(t, repo.SetTaskMetadataKey(ctx, "stale", "marker", true))
+	written, err = repo.SetTaskMetadataKeyIfAbsent(ctx, "stale", "marker", false)
+	require.NoError(t, err)
+	require.False(t, written)
+	written, err = repo.SetTaskMetadataKeyIfAbsent(ctx, "foreign", "marker", true)
+	require.NoError(t, err)
+	require.True(t, written)
+}
