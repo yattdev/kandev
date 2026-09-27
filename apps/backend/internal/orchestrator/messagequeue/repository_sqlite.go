@@ -274,6 +274,29 @@ func (r *sqliteRepository) guardSessionTaskForceRemovalTx(ctx context.Context, t
 	return r.guardForceRemovalTaskTx(ctx, tx, taskID)
 }
 
+func (r *sqliteRepository) guardForceRemovalSourcesTx(ctx context.Context, tx *sqlx.Tx, sources []QueuedMessage) error {
+	taskIDs := make(map[string]struct{}, len(sources))
+	for _, source := range sources {
+		if source.TaskID != "" {
+			taskIDs[source.TaskID] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(taskIDs))
+	for taskID := range taskIDs {
+		ordered = append(ordered, taskID)
+	}
+	sort.Strings(ordered)
+	for _, taskID := range ordered {
+		if err := r.guardActiveTaskTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+		if err := r.guardForceRemovalTaskTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateWorkflowEntryTx checks the launch-time entry after the task row has
 // been locked by guardActiveTaskTx. Workflow moves take the same task-row lock
 // before writing their transition ledger row, so this check and queue insert
@@ -3316,6 +3339,9 @@ func (r *sqliteRepository) AcknowledgeReserved(ctx context.Context, msg *QueuedM
 		return fmt.Errorf("begin acknowledge tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, msg.SessionID, nil); err != nil {
+		return err
+	}
 	if err := r.lockSessionTx(ctx, tx, msg.SessionID); err != nil {
 		return err
 	}
@@ -3419,6 +3445,9 @@ func (r *sqliteRepository) AcknowledgeByIDForSession(
 		return fmt.Errorf("begin identity-bound acknowledge tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, identity.SessionID, &identity); err != nil {
+		return err
+	}
 	if err := r.lockSessionTx(ctx, tx, identity.SessionID); err != nil {
 		return err
 	}
@@ -3482,6 +3511,9 @@ func (r *sqliteRepository) MarkDeliveryAttemptedForSession(
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := r.guardActiveTaskTx(ctx, tx, identity.TaskID); err != nil {
+		return err
+	}
+	if err := r.guardForceRemovalTaskTx(ctx, tx, identity.TaskID); err != nil {
 		return err
 	}
 	if err := r.lockSessionTx(ctx, tx, identity.SessionID); err != nil {
@@ -3580,6 +3612,9 @@ func (r *sqliteRepository) ReleaseDeliveryReservationForSession(
 		return fmt.Errorf("begin release delivery reservation tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, identity.SessionID, &identity); err != nil {
+		return err
+	}
 	if err := r.lockSessionTx(ctx, tx, identity.SessionID); err != nil {
 		return err
 	}
@@ -3647,6 +3682,9 @@ func (r *sqliteRepository) DiscardLifecycleReservation(
 		return fmt.Errorf("begin discard lifecycle reservation tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, identity.SessionID, &identity); err != nil {
+		return err
+	}
 	if err := r.lockSessionTx(ctx, tx, identity.SessionID); err != nil {
 		return err
 	}
@@ -3839,7 +3877,7 @@ func (r *sqliteRepository) claimSendNow(ctx context.Context, identity *QueueSess
 		return nil, fmt.Errorf("begin send-now claim tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.guardOptionalActiveTaskTx(ctx, tx, identity); err != nil {
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, sessionID, identity); err != nil {
 		return nil, err
 	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
@@ -4041,6 +4079,11 @@ func (r *sqliteRepository) beginSendNowClaimTx(
 	if err != nil {
 		unlock()
 		return nil, "", nil, fmt.Errorf("begin send-now %s tx: %w", action, err)
+	}
+	if err := r.guardForceRemovalSourcesTx(ctx, tx, claim.Sources); err != nil {
+		_ = tx.Rollback()
+		unlock()
+		return nil, "", nil, err
 	}
 	if err := r.lockSessionTx(ctx, tx, sessionID); err != nil {
 		// Roll back the started transaction: callers register

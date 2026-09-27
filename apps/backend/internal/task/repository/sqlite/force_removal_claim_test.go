@@ -270,6 +270,8 @@ func TestClaimForceRemovalPreservesQueueAndPendingMoveRows(t *testing.T) {
 
 	err = queueRepo.InsertForSession(ctx, identity, &messagequeue.QueuedMessage{ID: "force-queue-new", SessionID: identity.SessionID, TaskID: identity.TaskID, Content: "blocked", QueuedBy: messagequeue.QueuedByUser}, messagequeue.DefaultMaxPerSession)
 	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
+	_, err = queueRepo.ClaimSendNowForSession(ctx, identity, []messagequeue.QueuedMessage{*entry})
+	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
 	_, _, err = queueRepo.AppendOrInsertTailForSession(ctx, identity, "blocked append", "", messagequeue.QueuedByUser, false, nil, nil, messagequeue.DefaultMaxPerSession)
 	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
 	_, err = queueRepo.TakeByIDForSession(ctx, identity, entry.ID)
@@ -293,4 +295,7 @@ func TestClaimForceRemovalPreservesQueueAndPendingMoveRows(t *testing.T) {
 	foreignEntries, err := queueRepo.ListBySession(ctx, foreignIdentity.SessionID)
 	require.NoError(t, err)
 	require.Len(t, foreignEntries, 1)
+	foreignDispatch, err := queueRepo.ClaimSendNowForSession(ctx, foreignIdentity, foreignEntries)
+	require.NoError(t, err)
+	require.NotNil(t, foreignDispatch)
 }

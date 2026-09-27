@@ -123,6 +123,18 @@ negative coverage remains in the same repository suite. Dispatch recovery,
 send-now lifecycle acknowledgement, transfer, PR-watch, cleanup retry/reset,
 and remaining narrow task/environment writers are still separate W02 seams.
 
+Send-now dispatch and lifecycle recovery now take the same task-row fence before
+the session lock. Dispatch claim creation, source restoration/acknowledgement,
+lifecycle acknowledgement/release/discard, and delivery-attempt marking refuse
+a claimed task without changing retained queue state. The source-set guard locks
+task IDs in stable order for a durable send-now recovery claim before it touches
+the session, preserving the task-before-session ordering used by claim and queue
+admission. The focused retained-state test proves a claimed task cannot create
+a send-now dispatch claim while an unrelated task can. Remaining W02 seams
+include transfer recovery, deferred workflow/launch writers outside the queue
+repository, PR-watch, narrow task/environment writers, cleanup retry/reset,
+and executed PostgreSQL parity.
+
 ## Verification
 
 ```bash
