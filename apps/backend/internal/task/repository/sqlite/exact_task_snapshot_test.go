@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
@@ -92,5 +93,19 @@ func TestExactTaskSnapshotRejectsGetAfterEveryWorkspaceMutation(t *testing.T) {
 				t.Fatalf("GetExactTaskSnapshotTask after %s error = %v, want ErrExactTaskSnapshotUnavailable", testCase.name, err)
 			}
 		})
+	}
+}
+
+func TestExactTaskSnapshotRejectsReadsAtExpiry(t *testing.T) {
+	repo := newRepoForArchiveTests(t, "exact-snapshot-expiry")
+	base := time.Date(2026, time.September, 27, 0, 0, 0, 0, time.UTC)
+	repo.clockNow = func() time.Time { return base }
+	snapshot, err := repo.OpenExactTaskSnapshot(context.Background(), models.ExactTaskSnapshotRequest{WorkspaceID: archiveWorkspaceID, TTL: time.Minute})
+	if err != nil {
+		t.Fatalf("OpenExactTaskSnapshot: %v", err)
+	}
+	repo.clockNow = func() time.Time { return base.Add(time.Minute) }
+	if _, err := repo.PageExactTaskSnapshot(context.Background(), snapshot.Token, 0, 1); !errors.Is(err, repoerrors.ErrExactTaskSnapshotUnavailable) {
+		t.Fatalf("PageExactTaskSnapshot at expiry error = %v, want ErrExactTaskSnapshotUnavailable", err)
 	}
 }

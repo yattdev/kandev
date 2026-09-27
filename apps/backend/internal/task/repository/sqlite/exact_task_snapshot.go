@@ -185,7 +185,7 @@ func (r *Repository) requireExactTaskSnapshotTx(ctx context.Context, tx *sqlx.Tx
 	var revision int64
 	var expiresAt time.Time
 	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT workspace_id, workspace_revision, expires_at FROM exact_task_snapshots WHERE token = ?`), token).Scan(&workspaceID, &revision, &expiresAt)
-	if errors.Is(err, sql.ErrNoRows) || expiresAt.Before(r.nowUTC()) {
+	if errors.Is(err, sql.ErrNoRows) || !expiresAt.After(r.nowUTC()) {
 		return repoerrors.ErrExactTaskSnapshotUnavailable
 	}
 	if err != nil {
