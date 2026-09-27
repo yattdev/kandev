@@ -299,3 +299,78 @@ func TestClaimForceRemovalPreservesQueueAndPendingMoveRows(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, foreignDispatch)
 }
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+func TestClaimForceRemovalPreservesDeferredLaunchRecord(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-deferred-ws", Name: "Force"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{
+		ID:          "force-deferred-task",
+		WorkspaceID: "force-deferred-ws",
+		Title:       "Force",
+		Metadata: map[string]interface{}{models.MetaKeyDeferredLaunch: map[string]interface{}{
+			models.DeferredLaunchStartWhenUnblockedKey: true,
+			models.DeferredLaunchUserIDKey:             "operator",
+		}},
+	}))
+	task, err := repo.GetTask(ctx, "force-deferred-task")
+	require.NoError(t, err)
+	_, prior, err := repo.GetTaskDeferredLaunch(ctx, task.ID)
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "deferred-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	stored, lost, err := repo.SetTaskDeferredLaunchIfUnchanged(ctx, task.ID, prior, map[string]interface{}{models.CeilingDeferredKey: true})
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, stored)
+	require.False(t, lost)
+	_, claimed, err := repo.TakeTaskDeferredLaunchWIPKeys(ctx, task.ID)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, claimed)
+	require.ErrorIs(t, repo.RestoreTaskDeferredLaunchWIPKeys(ctx, task.ID, map[string]interface{}{models.DeferredLaunchUserIDKey: "replacement"}), ErrForceRemovalTaskHeld)
+
+	record, _, err := repo.GetTaskDeferredLaunch(ctx, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, true, record[models.DeferredLaunchStartWhenUnblockedKey])
+	require.Equal(t, "operator", record[models.DeferredLaunchUserIDKey])
+}
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+func TestClaimForceRemovalPreservesSessionTransferAttachments(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-transfer-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-transfer-task", "force-transfer-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-transfer-ws", Title: taskID}))
+	}
+	for _, session := range []*models.TaskSession{
+		{ID: "force-transfer-source", TaskID: "force-transfer-task"},
+		{ID: "force-transfer-destination", TaskID: "force-transfer-task"},
+		{ID: "force-transfer-foreign-source", TaskID: "force-transfer-foreign"},
+		{ID: "force-transfer-foreign-destination", TaskID: "force-transfer-foreign"},
+	} {
+		require.NoError(t, repo.CreateTaskSession(ctx, session))
+	}
+	now := time.Now().UTC()
+	for _, attachment := range []*models.TaskMessageAttachment{
+		{ID: "force-transfer-attachment", OwnerID: "operator", WorkspaceID: "force-transfer-ws", TaskID: "force-transfer-task", SessionID: "force-transfer-source", Name: "retained", MimeType: "text/plain", Kind: "resource", DeliveryMode: "path", SizeBytes: 1, StorageKey: "force-transfer-attachment", State: models.AttachmentStateClaimed, ExpiresAt: now.Add(time.Hour), CreatedAt: now},
+		{ID: "force-transfer-foreign-attachment", OwnerID: "operator", WorkspaceID: "force-transfer-ws", TaskID: "force-transfer-foreign", SessionID: "force-transfer-foreign-source", Name: "allowed", MimeType: "text/plain", Kind: "resource", DeliveryMode: "path", SizeBytes: 1, StorageKey: "force-transfer-foreign-attachment", State: models.AttachmentStateClaimed, ExpiresAt: now.Add(time.Hour), CreatedAt: now},
+	} {
+		require.NoError(t, repo.CreateMessageAttachment(ctx, attachment))
+	}
+	task, err := repo.GetTask(ctx, "force-transfer-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "transfer-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	err = repo.TransferMessageAttachments(ctx, task.ID, "force-transfer-source", "force-transfer-destination", []string{"force-transfer-attachment"})
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	retained, err := repo.GetMessageAttachment(ctx, "force-transfer-attachment")
+	require.NoError(t, err)
+	require.Equal(t, "force-transfer-source", retained.SessionID)
+	require.NoError(t, repo.TransferMessageAttachments(ctx, "force-transfer-foreign", "force-transfer-foreign-source", "force-transfer-foreign-destination", []string{"force-transfer-foreign-attachment"}))
+	foreign, err := repo.GetMessageAttachment(ctx, "force-transfer-foreign-attachment")
+	require.NoError(t, err)
+	require.Equal(t, "force-transfer-foreign-destination", foreign.SessionID)
+}

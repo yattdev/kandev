@@ -1256,6 +1256,9 @@ func (r *Repository) TransferMessageAttachments(
 		return fmt.Errorf("begin transfer session attachments: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.taskCleanupBarrierLocked(ctx, tx, taskID); err != nil {
+		return err
+	}
 	if queueLockPresent {
 		if err := messagequeue.LockSessionPairInTransaction(
 			ctx, tx, r.db, oldSessionID, newSessionID,

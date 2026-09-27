@@ -135,6 +135,15 @@ include transfer recovery, deferred workflow/launch writers outside the queue
 repository, PR-watch, narrow task/environment writers, cleanup retry/reset,
 and executed PostgreSQL parity.
 
+Deferred-launch CAS and WIP claim/restore writers now check the exact-task
+fence while holding their task metadata row. Session attachment transfer now
+takes the task cleanup barrier before its source/destination session locks.
+Focused retained-state tests prove a claimed task keeps its deferred-launch
+record and attachment source session unchanged, while an unrelated attachment
+transfer proceeds. Remaining W02 seams are workflow move application and other
+deferred launch writers outside these repository boundaries, PR-watch, narrow
+task/environment writers, cleanup retry/reset, and executed PostgreSQL parity.
+
 ## Verification
 
 ```bash

@@ -102,6 +102,9 @@ func (r *Repository) SetTaskDeferredLaunchIfUnchanged(
 	if err != nil {
 		return false, false, err
 	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return false, false, err
+	}
 	_, found, err := decodeDeferredLaunch(metadata)
 	if err != nil {
 		return false, false, err
@@ -193,6 +196,9 @@ func (r *Repository) TakeTaskDeferredLaunchWIPKeys(
 	if err != nil {
 		return nil, false, err
 	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return nil, false, err
+	}
 	record, prior, err := decodeDeferredLaunch(metadata)
 	if err != nil {
 		return nil, false, err
@@ -250,6 +256,9 @@ func (r *Repository) RestoreTaskDeferredLaunchWIPKeys(
 
 	metadata, err := r.lockMetadataRow(ctx, tx, "tasks", "task", taskID)
 	if err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
 		return err
 	}
 	record, _, err := decodeDeferredLaunch(metadata)
