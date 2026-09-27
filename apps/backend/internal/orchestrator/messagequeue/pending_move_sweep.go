@@ -78,6 +78,9 @@ func (r *sqliteRepository) DeletePendingMoveIfMatch(
 		return false, fmt.Errorf("begin delete pending move tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.guardSessionTaskForceRemovalTx(ctx, tx, expected.SessionID, nil); err != nil {
+		return false, err
+	}
 	// Same per-session lock every other pending-move mutation takes. Without
 	// it the sweep could delete a row that a concurrent TransferSession just
 	// re-keyed, or race TakePendingMove across backend instances.

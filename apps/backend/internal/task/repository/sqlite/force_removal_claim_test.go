@@ -301,6 +301,60 @@ func TestClaimForceRemovalPreservesQueueAndPendingMoveRows(t *testing.T) {
 }
 
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
+func TestClaimForceRemovalRejectsPendingMoveSweepWithoutDeletingRetainedRows(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-sweep-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-sweep-task", "force-sweep-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-sweep-ws", Title: taskID}))
+	}
+	for _, session := range []*models.TaskSession{{ID: "force-sweep-session", TaskID: "force-sweep-task"}, {ID: "force-sweep-foreign-session", TaskID: "force-sweep-foreign"}} {
+		require.NoError(t, repo.CreateTaskSession(ctx, session))
+	}
+	queueRepo, err := messagequeue.NewSQLiteRepository(repo.db, repo.db)
+	require.NoError(t, err)
+	for _, entry := range []*messagequeue.QueuedMessage{
+		{ID: "force-sweep-handoff", SessionID: "force-sweep-session", TaskID: "force-sweep-task", Content: "retained", QueuedBy: messagequeue.QueuedByMoveTask},
+		{ID: "force-sweep-foreign-handoff", SessionID: "force-sweep-foreign-session", TaskID: "force-sweep-foreign", Content: "foreign", QueuedBy: messagequeue.QueuedByMoveTask},
+	} {
+		require.NoError(t, queueRepo.Insert(ctx, entry, messagequeue.DefaultMaxPerSession))
+	}
+	require.NoError(t, queueRepo.SetPendingMove(ctx, "force-sweep-session", &messagequeue.PendingMove{MoveID: "force-sweep-move", TaskID: "force-sweep-task", WorkflowID: "workflow", WorkflowStepID: "step", QueuedAt: time.Now().UTC()}))
+	require.NoError(t, queueRepo.SetPendingMove(ctx, "force-sweep-foreign-session", &messagequeue.PendingMove{MoveID: "force-sweep-foreign-move", TaskID: "force-sweep-foreign", WorkflowID: "workflow", WorkflowStepID: "step", QueuedAt: time.Now().UTC()}))
+	records, err := queueRepo.ListPendingMoves(ctx)
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+
+	task, err := repo.GetTask(ctx, "force-sweep-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "sweep-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	var claimed, foreign messagequeue.PendingMoveRecord
+	for _, record := range records {
+		if record.SessionID == "force-sweep-session" {
+			claimed = record
+		} else {
+			foreign = record
+		}
+	}
+	removed, err := queueRepo.DeletePendingMoveIfMatch(ctx, claimed, "force-sweep-handoff")
+	require.ErrorIs(t, err, models.ErrForceRemovalTaskHeld)
+	require.False(t, removed)
+	pending, err := queueRepo.GetPendingMove(ctx, claimed.SessionID)
+	require.NoError(t, err)
+	require.NotNil(t, pending)
+	entries, err := queueRepo.ListBySession(ctx, claimed.SessionID)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "force-sweep-handoff", entries[0].ID)
+
+	removed, err = queueRepo.DeletePendingMoveIfMatch(ctx, foreign, "force-sweep-foreign-handoff")
+	require.NoError(t, err)
+	require.True(t, removed)
+}
+
+// @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
 func TestClaimForceRemovalPreservesDeferredLaunchRecord(t *testing.T) {
 	ctx := context.Background()
 	repo := newRepoForHealTests(t)
