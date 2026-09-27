@@ -201,6 +201,24 @@ func TestClaimForceRemovalBlocksMoveWriterWithoutPersistingIt(t *testing.T) {
 	require.Equal(t, "Original", stored.Title)
 }
 
+func TestClaimForceRemovalBlocksPriorityWriterWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-priority-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-priority-task", "force-priority-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-priority-ws", Title: taskID, Priority: "low"}))
+	}
+	task, err := repo.GetTask(ctx, "force-priority-task")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "priority-operation", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+	require.ErrorIs(t, repo.UpdateTaskPriority(ctx, task.ID, "high"), ErrForceRemovalTaskHeld)
+	stored, err := repo.GetTask(ctx, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, "low", stored.Priority)
+	require.NoError(t, repo.UpdateTaskPriority(ctx, "force-priority-foreign", "high"))
+}
+
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.2
 func TestClaimForceRemovalBlocksEnvironmentAndCleanupWorkerAdmissions(t *testing.T) {
