@@ -126,5 +126,6 @@ revoked before export.
 Audited redemption now hashes the bounded RPC request ID and commits that
 correlation with the exposure receipt in one transaction before returning the
 bearer. Any failed audit admission revokes the minted token. Issuance,
-administrator and lifecycle audit correlation still require completion before
-production composition.
+including an idempotent replay, also records a hashed request correlation
+before its non-secret receipt returns. Administrator and lifecycle audit
+correlation still require completion before production composition.

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kandev/kandev/internal/provideraccess"
 	"github.com/kandev/kandev/pkg/pluginsdk"
 )
@@ -51,6 +52,10 @@ func (s *providerHostAccess) runtime(pluginID string) (*provideraccess.Runtime, 
 
 func (s *providerHostAccess) Issue(ctx context.Context, pluginID string,
 	spec pluginsdk.ProviderAccessLeaseSpec) (pluginsdk.ProviderAccessLease, error) {
+	requestHash, err := provideraccess.HashRequestID(spec.RequestID)
+	if err != nil {
+		return pluginsdk.ProviderAccessLease{}, err
+	}
 	if _, err := s.runtime(pluginID); err != nil {
 		return pluginsdk.ProviderAccessLease{}, err
 	}
@@ -73,10 +78,28 @@ func (s *providerHostAccess) Issue(ctx context.Context, pluginID string,
 	if err != nil {
 		return pluginsdk.ProviderAccessLease{}, provideraccess.ErrGrantUnavailable
 	}
+	if err := s.store.RecordAudit(ctx, issueAudit(grant, lease, requestHash)); err != nil {
+		return pluginsdk.ProviderAccessLease{}, err
+	}
 	return pluginsdk.ProviderAccessLease{LeaseID: lease.ID, ExpiresAt: lease.ExpiresAt,
 		TargetDigest: lease.TargetDigest, GrantGeneration: lease.GrantGeneration,
 		ApprovalRevision: lease.ApprovalRevision, ConnectionGeneration: lease.ConnectionGeneration,
 		CanonicalRepository: verified.CanonicalRepository, Target: spec.Target}, nil
+}
+
+func issueAudit(grant *provideraccess.Grant, lease *provideraccess.Lease,
+	requestHash string) provideraccess.AuditEvent {
+	outcome := provideraccess.AuditLeaseIssued
+	if lease.Replayed {
+		outcome = provideraccess.AuditLeaseReplayed
+	}
+	return provideraccess.AuditEvent{ID: uuid.NewString(), GrantID: grant.ID, LeaseID: lease.ID,
+		PluginInstallationID: grant.PluginInstallationID, WorkspaceID: grant.WorkspaceID,
+		ManagedTaskID: lease.ManagedTaskID, SessionID: lease.SessionID,
+		TargetDigest: lease.TargetDigest, GrantGeneration: lease.GrantGeneration,
+		ApprovalRevision: lease.ApprovalRevision, ConnectionGeneration: lease.ConnectionGeneration,
+		Provider: grant.Provider, Purpose: grant.Purpose, Outcome: outcome,
+		RequestIDHash: requestHash, At: time.Now().UTC()}
 }
 
 func requestMatchesGrant(pluginID string, spec pluginsdk.ProviderAccessLeaseSpec,

@@ -80,6 +80,22 @@ func TestProviderHostAccessBindsPluginAndExactGrantBeforeOneShotRedemption(t *te
 	if err != nil || lease.LeaseID == "" || lease.CanonicalRepository != target.BaseRepository {
 		t.Fatalf("exact lease = %+v, err = %v", lease, err)
 	}
+	replay, err := host.Issue(ctx, grant.PluginID, spec)
+	if err != nil || replay.LeaseID != lease.LeaseID {
+		t.Fatalf("lease replay = %+v, err = %v", replay, err)
+	}
+	audits, err := authority.store.ListLeaseAudits(ctx, lease.LeaseID)
+	if err != nil || len(audits) != 2 || audits[0].RequestIDHash == "" ||
+		audits[0].RequestIDHash == spec.RequestID {
+		t.Fatalf("issue audit receipts = %+v, err = %v", audits, err)
+	}
+	outcomes := map[provideraccess.AuditOutcome]bool{}
+	for _, audit := range audits {
+		outcomes[audit.Outcome] = true
+	}
+	if !outcomes[provideraccess.AuditLeaseIssued] || !outcomes[provideraccess.AuditLeaseReplayed] {
+		t.Fatalf("issue/replay outcomes = %v", outcomes)
+	}
 	if _, err := host.Redeem(ctx, "foreign-plugin", "request-2", lease.LeaseID); !errors.Is(err, provideraccess.ErrGrantUnavailable) {
 		t.Fatalf("foreign redemption error = %v", err)
 	}

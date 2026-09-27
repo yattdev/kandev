@@ -2,7 +2,9 @@ package provideraccess
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"math"
 	"strings"
@@ -10,6 +12,15 @@ import (
 
 	"github.com/jmoiron/sqlx"
 )
+
+// HashRequestID turns a bounded RPC identifier into non-secret correlation.
+func HashRequestID(requestID string) (string, error) {
+	if requestID == "" || len(requestID) > 128 || requestID != strings.TrimSpace(requestID) {
+		return "", ErrGrantUnavailable
+	}
+	digest := sha256.Sum256([]byte(requestID))
+	return hex.EncodeToString(digest[:]), nil
+}
 
 // AuditOutcome is a closed vocabulary; provider response text never enters the ledger.
 type AuditOutcome string
@@ -148,4 +159,28 @@ func (s *Store) GetAudit(ctx context.Context, id string) (*AuditEvent, error) {
 		RequestIDHash: row.RequestIDHash.String,
 		At:            time.Unix(row.At, 0).UTC(),
 	}, nil
+}
+
+// ListLeaseAudits returns non-secret events in creation order for one lease.
+func (s *Store) ListLeaseAudits(ctx context.Context, leaseID string) ([]AuditEvent, error) {
+	if leaseID == "" {
+		return nil, ErrGrantUnavailable
+	}
+	var ids []string
+	err := s.db.SelectContext(ctx, &ids, s.db.Rebind(`SELECT id FROM provider_access_audit
+  WHERE lease_id = ? ORDER BY at, id`), leaseID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]AuditEvent, 0, len(ids))
+	for _, id := range ids {
+		event, err := s.GetAudit(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if event != nil {
+			result = append(result, *event)
+		}
+	}
+	return result, nil
 }

@@ -86,5 +86,7 @@ func replayExistingLease(
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return existing.lease(claim.Scope), nil
+	lease := existing.lease(claim.Scope)
+	lease.Replayed = true
+	return lease, nil
 }

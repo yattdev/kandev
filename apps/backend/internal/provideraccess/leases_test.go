@@ -27,13 +27,13 @@ func TestStoreIssueLeaseReplaysExactIdentityAndRejectsChangedScope(t *testing.T)
 	}
 	claim := testLeaseClaim(grant)
 	first, err := store.IssueLease(ctx, claim)
-	if err != nil || first == nil || first.ID != claim.ID {
+	if err != nil || first == nil || first.ID != claim.ID || first.Replayed {
 		t.Fatalf("first lease = %+v, err = %v", first, err)
 	}
 	claim.ID = "ignored-on-replay"
 	claim.ExpiresAt = claim.ExpiresAt.Add(15 * time.Second)
 	replay, err := store.IssueLease(ctx, claim)
-	if err != nil || replay == nil || replay.ID != first.ID {
+	if err != nil || replay == nil || replay.ID != first.ID || !replay.Replayed {
 		t.Fatalf("replay = %+v, err = %v, want original lease", replay, err)
 	}
 	claim.TargetDigest = "different-pr-head"

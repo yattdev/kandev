@@ -44,6 +44,7 @@ type LeaseClaim struct {
 // Lease is an opaque, non-secret admission receipt, not a provider credential.
 type Lease struct {
 	ID                   string
+	Replayed             bool
 	GrantID              string
 	GrantGeneration      int64
 	Scope                GrantScope

@@ -2,8 +2,6 @@ package provideraccess
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
@@ -70,13 +68,14 @@ func (r *Runtime) Redeem(ctx context.Context, leaseID string) (github.Installati
 // RedeemWithAudit persists a hashed RPC request correlation atomically with
 // exposure admission. The raw request ID never enters the ledger or logs.
 func (r *Runtime) RedeemWithAudit(ctx context.Context, leaseID, requestID string) (github.InstallationToken, error) {
-	if requestID == "" || len(requestID) > 128 {
+	requestHash, err := HashRequestID(requestID)
+	if err != nil {
 		return github.InstallationToken{}, ErrGrantUnavailable
 	}
-	return r.redeem(ctx, leaseID, requestID)
+	return r.redeem(ctx, leaseID, requestHash)
 }
 
-func (r *Runtime) redeem(ctx context.Context, leaseID, requestID string) (github.InstallationToken, error) {
+func (r *Runtime) redeem(ctx context.Context, leaseID, requestHash string) (github.InstallationToken, error) {
 	r.mu.Lock()
 	stopped := r.stopped
 	r.mu.Unlock()
@@ -130,11 +129,11 @@ func (r *Runtime) redeem(ctx context.Context, leaseID, requestID string) (github
 	}
 	revoke := func(revokeCtx context.Context) error { return r.tokens.Revoke(revokeCtx, token.Token) }
 	var exposureErr error
-	if requestID == "" {
+	if requestHash == "" {
 		exposureErr = r.store.RecordExposureOrRevoke(ctx, receipt, revoke)
 	} else {
 		exposureErr = r.store.RecordExposureWithAuditOrRevoke(ctx, receipt,
-			redemptionAudit(first, leaseID, requestID), revoke)
+			redemptionAudit(first, leaseID, requestHash), revoke)
 	}
 	if exposureErr != nil {
 		return github.InstallationToken{}, exposureErr
@@ -146,8 +145,7 @@ func (r *Runtime) redeem(ctx context.Context, leaseID, requestID string) (github
 	return token, nil
 }
 
-func redemptionAudit(verified VerifiedLease, leaseID, requestID string) AuditEvent {
-	hash := sha256.Sum256([]byte(requestID))
+func redemptionAudit(verified VerifiedLease, leaseID, requestHash string) AuditEvent {
 	expected := verified.Expected
 	return AuditEvent{ID: uuid.NewString(), GrantID: verified.GrantID, LeaseID: leaseID,
 		PluginInstallationID: expected.Scope.PluginInstallationID,
@@ -156,7 +154,7 @@ func redemptionAudit(verified VerifiedLease, leaseID, requestID string) AuditEve
 		GrantGeneration: expected.GrantGeneration, ApprovalRevision: expected.ApprovalRevision,
 		ConnectionGeneration: expected.ConnectionGeneration, Provider: expected.Scope.Provider,
 		Purpose: expected.Scope.Purpose, Outcome: AuditTokenIssued,
-		RequestIDHash: hex.EncodeToString(hash[:]), At: time.Now().UTC()}
+		RequestIDHash: requestHash, At: time.Now().UTC()}
 }
 
 // RevokeSession fences durable leases and revokes any exact token already
