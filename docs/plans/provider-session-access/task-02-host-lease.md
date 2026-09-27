@@ -110,3 +110,6 @@ runtime-backed manager revokes an exported exact token before replacing a grant
 and on explicit revocation; failed provider revocation fences the old grant,
 retains the residual exposure receipt, and prevents replacement. Production
 still injects the plain ledger because credential export remains disabled.
+The same uncomposed manager fences workspace admission and revokes all tokens
+it still holds during workspace cleanup; task deletion must inject this manager
+when redemption is enabled.

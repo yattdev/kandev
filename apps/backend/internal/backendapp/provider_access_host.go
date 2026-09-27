@@ -201,3 +201,20 @@ func (s *providerHostAccess) ReplaceGrant(ctx context.Context, grant *providerac
 	}
 	return s.store.ReplaceGrant(ctx, grant)
 }
+
+// CleanupWorkspaceProviderAccess fences durable admission before attempting
+// every in-memory exact-token revocation held by this Host.
+func (s *providerHostAccess) CleanupWorkspaceProviderAccess(ctx context.Context, workspaceID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.runtimes) == 0 {
+		_, err := s.store.FenceWorkspace(ctx, workspaceID)
+		return err
+	}
+	var result error
+	for _, runtime := range s.runtimes {
+		_, err := runtime.FenceWorkspace(ctx, workspaceID)
+		result = errors.Join(result, err)
+	}
+	return result
+}

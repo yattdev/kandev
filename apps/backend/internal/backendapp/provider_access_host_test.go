@@ -171,3 +171,37 @@ func TestProviderHostAccessReplacementRetainsFailedRevocationResidual(t *testing
 		t.Fatalf("failed revocation state = %s, err = %v", state, err)
 	}
 }
+
+func TestProviderHostAccessWorkspaceCleanupFencesAndRevokes(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	tokens := &hostTestTokens{}
+	host := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: tokens}
+	lease, err := host.Issue(ctx, grant.PluginID, hostTestSpec(target, *grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.CleanupWorkspaceProviderAccess(ctx, grant.WorkspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.revokes != 1 {
+		t.Fatalf("workspace cleanup revocations = %d", tokens.revokes)
+	}
+	state, err := authority.store.ExposureStateAt(ctx, lease.LeaseID, time.Now().UTC())
+	if err != nil || state != provideraccess.ExposureRevokedAtProvider {
+		t.Fatalf("workspace cleanup state = %s, err = %v", state, err)
+	}
+	successor := *grant
+	successor.ID = "grant-successor"
+	if err := host.ReplaceGrant(ctx, &successor); !errors.Is(err, provideraccess.ErrGrantUnavailable) {
+		t.Fatalf("fenced workspace replacement error = %v", err)
+	}
+}
