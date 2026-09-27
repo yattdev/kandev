@@ -120,3 +120,6 @@ retry confirms provider revocation; the live service remains unconfigured.
 A session teardown component now fences all matching durable leases and revokes
 any exported exact token held by the Host. The real managed-session lifecycle
 must call it before credential delivery can be composed.
+The token adapter also compares the returned credential kind and canonical
+installation principal ID to the verified installation; a mismatched token is
+revoked before export.

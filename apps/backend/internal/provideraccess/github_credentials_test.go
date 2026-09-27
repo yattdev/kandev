@@ -43,7 +43,8 @@ func TestGitHubRerunCredentialsMintsExactUncachedScope(t *testing.T) {
 			"actions": github.PermissionWrite, "pull_requests": github.PermissionRead,
 			"metadata": github.PermissionRead},
 		Repositories: []github.InstallationTokenRepository{{FullName: "owner/base"}},
-		Principal:    github.TokenPrincipal{InstallationID: 42},
+		Principal: github.TokenPrincipal{Kind: github.TokenCredentialInstallation,
+			PrincipalID: "installation:42", InstallationID: 42},
 	}}
 	adapter := GitHubRerunCredentials{Client: client}
 	if _, err := adapter.Mint(context.Background(), 42, "owner/base"); err != nil {
@@ -63,7 +64,8 @@ func TestGitHubRerunCredentialsRevokesOverbroadResponse(t *testing.T) {
 			"actions": github.PermissionWrite, "pull_requests": github.PermissionRead,
 			"metadata": github.PermissionRead, "contents": github.PermissionWrite},
 		Repositories: []github.InstallationTokenRepository{{FullName: "owner/base"}},
-		Principal:    github.TokenPrincipal{InstallationID: 42},
+		Principal: github.TokenPrincipal{Kind: github.TokenCredentialInstallation,
+			PrincipalID: "installation:42", InstallationID: 42},
 	}}
 	adapter := GitHubRerunCredentials{Client: client}
 	if _, err := adapter.Mint(context.Background(), 42, "owner/base"); !errors.Is(err, ErrProviderTokenScope) ||
@@ -75,6 +77,28 @@ func TestGitHubRerunCredentialsRevokesOverbroadResponse(t *testing.T) {
 		t.Fatalf("failed revoke = %v", err)
 	} else if containsSecret(err.Error()) {
 		t.Fatalf("revoke error leaked secret: %v", err)
+	}
+}
+
+func TestGitHubRerunCredentialsRevokesWrongPrincipal(t *testing.T) {
+	client := &fakeGitHubTokenClient{token: github.InstallationToken{
+		Token: "secret", ExpiresAt: time.Now().Add(30 * time.Minute),
+		Permissions: github.InstallationPermissions{"actions": github.PermissionWrite,
+			"pull_requests": github.PermissionRead, "metadata": github.PermissionRead},
+		Repositories: []github.InstallationTokenRepository{{FullName: "owner/base"}},
+		Principal: github.TokenPrincipal{Kind: github.TokenCredentialInstallation,
+			PrincipalID: "installation:42", InstallationID: 42},
+	}}
+	adapter := GitHubRerunCredentials{Client: client}
+	client.token.Principal.Kind = github.TokenCredentialPAT
+	if _, err := adapter.Mint(context.Background(), 42, "owner/base"); !errors.Is(err, ErrProviderTokenScope) || client.revoked != "secret" {
+		t.Fatalf("wrong credential kind: err = %v, revoked = %q", err, client.revoked)
+	}
+	client.revoked = ""
+	client.token.Principal.Kind = github.TokenCredentialInstallation
+	client.token.Principal.PrincipalID = "installation:99"
+	if _, err := adapter.Mint(context.Background(), 42, "owner/base"); !errors.Is(err, ErrProviderTokenScope) || client.revoked != "secret" {
+		t.Fatalf("wrong principal ID: err = %v, revoked = %q", err, client.revoked)
 	}
 }
 

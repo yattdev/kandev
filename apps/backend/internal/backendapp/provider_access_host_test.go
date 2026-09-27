@@ -20,7 +20,8 @@ func (f *hostTestTokens) Mint(_ context.Context, installationID int64,
 	repository string) (github.InstallationToken, error) {
 	f.mints++
 	return github.InstallationToken{Token: "fixture-bearer", ExpiresAt: time.Now().Add(30 * time.Minute),
-		Principal:    github.TokenPrincipal{PrincipalID: "installation:42", InstallationID: installationID},
+		Principal: github.TokenPrincipal{Kind: github.TokenCredentialInstallation,
+			PrincipalID: "installation:42", InstallationID: installationID},
 		Repositories: []github.InstallationTokenRepository{{FullName: repository}},
 		Permissions: github.InstallationPermissions{"actions": github.PermissionWrite,
 			"pull_requests": github.PermissionRead, "metadata": github.PermissionRead}}, nil

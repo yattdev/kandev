@@ -3,6 +3,7 @@ package provideraccess
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -61,7 +62,9 @@ func validRerunToken(
 	token github.InstallationToken, installationID int64, repository string,
 	permissions github.InstallationPermissions,
 ) bool {
-	if token.Token == "" || token.Principal.InstallationID != installationID ||
+	if token.Token == "" || token.Principal.Kind != github.TokenCredentialInstallation ||
+		token.Principal.InstallationID != installationID ||
+		token.Principal.PrincipalID != fmt.Sprintf("installation:%d", installationID) ||
 		len(token.Repositories) != 1 || token.Repositories[0].FullName != repository ||
 		len(token.Permissions) != len(permissions) {
 		return false

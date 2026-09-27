@@ -48,7 +48,8 @@ func (f *fakeRerunTokens) Mint(_ context.Context, _ int64, _ string) (github.Ins
 	}
 	token := github.InstallationToken{Token: "fake-secret",
 		ExpiresAt: time.Now().Add(45 * time.Minute),
-		Principal: github.TokenPrincipal{PrincipalID: "installation:42", InstallationID: 42},
+		Principal: github.TokenPrincipal{Kind: github.TokenCredentialInstallation,
+			PrincipalID: "installation:42", InstallationID: 42},
 		Permissions: github.InstallationPermissions{
 			"actions": github.PermissionWrite, "pull_requests": github.PermissionRead,
 			"metadata": github.PermissionRead,
