@@ -222,6 +222,7 @@ const controlServerRecordSchemaDDL = `
 		diagnostic_log_path TEXT NOT NULL,
 		created_at TIMESTAMP NOT NULL,
 		updated_at TIMESTAMP NOT NULL
+		, resource_version INTEGER NOT NULL DEFAULT 1
 	);
 `
 

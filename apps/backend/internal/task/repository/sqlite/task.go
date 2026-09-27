@@ -83,6 +83,7 @@ var taskScanColumns = []taskScanColumn{
 	}},
 	{name: "created_at"},
 	{name: "updated_at"},
+	{name: "resource_version"},
 	{name: "assignee_agent_profile_id", selectExpr: func(alias string) string {
 		return runnerProjection(alias) + ` AS assignee_agent_profile_id`
 	}},
@@ -4063,7 +4064,7 @@ func (r *Repository) scanTasks(rows *sql.Rows) ([]*models.Task, error) {
 			&task.Title, &task.Description, &task.State, &task.Priority, &task.Position,
 			&task.WIPAdmitted, &task.QueuedForStepID, &queuedAt,
 			&metadata, &task.IsEphemeral, &task.ParentID, &task.Autopilot, &archivedAt, &task.ArchivedByCascadeID,
-			&task.CreatedAt, &task.UpdatedAt,
+			&task.CreatedAt, &task.UpdatedAt, &task.ResourceVersion,
 			&task.AssigneeAgentProfileID, &task.AssigneeUserID, &task.Origin, &task.ProjectID,
 			&task.Labels, &identifier, &externalID, &externalIDSettledAt, &task.IsFromOffice,
 		)
