@@ -120,3 +120,22 @@ func TestClaimForceRemovalBlocksPresentTaskMetadataWithoutPersistingIt(t *testin
 	require.NoError(t, err)
 	require.True(t, written)
 }
+
+func TestClaimForceRemovalBlocksAbsentLiveTaskMetadataWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-absent-live-ws", Name: "Force"}))
+	for _, id := range []string{"held-live", "foreign-live"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: id, WorkspaceID: "force-absent-live-ws", Title: id}))
+	}
+	held, err := repo.GetTask(ctx, "held-live")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "a", OperationID: "absent-live", RequestDigest: "r", PreviewDigest: "p"})
+	require.NoError(t, err)
+	written, err := repo.SetTaskMetadataKeyIfAbsentNotArchived(ctx, held.ID, "marker", true)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	written, err = repo.SetTaskMetadataKeyIfAbsentNotArchived(ctx, "foreign-live", "marker", true)
+	require.NoError(t, err)
+	require.True(t, written)
+}
