@@ -1192,6 +1192,10 @@ func (s *Service) updateTaskSessionStateWithHook(
 	if !changed {
 		return session, false
 	}
+	if err := s.revokeProviderAccessForTerminal(ctx, sessionID, nextState); err != nil {
+		s.logger.Error("failed to revoke provider access after terminal session transition",
+			zap.String("session_id", sessionID), zap.Error(err))
+	}
 	if onChanged != nil {
 		onChanged()
 	}
@@ -1363,6 +1367,9 @@ func (s *Service) transitionTaskSessionState(
 		return false, session.State, nil
 	}
 	if isTerminalSessionState(session.State) || session.State == nextState {
+		if err := s.revokeProviderAccessForTerminal(ctx, sessionID, session.State); err != nil {
+			return false, session.State, err
+		}
 		return false, session.State, nil
 	}
 
@@ -1376,6 +1383,7 @@ func (s *Service) transitionTaskSessionState(
 	if !changed {
 		return false, refreshed.State, nil
 	}
+	revocationErr := s.revokeProviderAccessForTerminal(ctx, sessionID, nextState)
 	if onChanged != nil {
 		onChanged()
 		// The hook may persist state-specific metadata after the state CAS. Read
@@ -1394,7 +1402,7 @@ func (s *Service) transitionTaskSessionState(
 		authoritativeUpdatedAt,
 		refreshed,
 	)
-	return true, nextState, nil
+	return true, nextState, revocationErr
 }
 
 // transitionBootstrapFailure commits the typed error and FAILED state through
@@ -1459,6 +1467,7 @@ func (s *Service) transitionBootstrapFailure(
 	if err != nil || !changed {
 		return changed, expectedState, err
 	}
+	revocationErr := s.revokeProviderAccessForTerminal(ctx, sessionID, models.TaskSessionStateFailed)
 	refreshed, err := s.repo.GetTaskSession(ctx, sessionID)
 	if err != nil {
 		return true, models.TaskSessionStateFailed, fmt.Errorf("get session after bootstrap failure commit: %w", err)
@@ -1479,9 +1488,18 @@ func (s *Service) transitionBootstrapFailure(
 		refreshed,
 	)
 	if messageErr != nil {
-		return true, models.TaskSessionStateFailed, fmt.Errorf("persist bootstrap failure history: %w", messageErr)
+		messageErr = fmt.Errorf("persist bootstrap failure history: %w", messageErr)
 	}
-	return true, models.TaskSessionStateFailed, nil
+	return true, models.TaskSessionStateFailed, errors.Join(messageErr, revocationErr)
+}
+
+func (s *Service) revokeProviderAccessForTerminal(
+	ctx context.Context, sessionID string, state models.TaskSessionState,
+) error {
+	if !isTerminalSessionState(state) || s.providerAccessSessionRevoker == nil {
+		return nil
+	}
+	return s.providerAccessSessionRevoker.RevokeSession(ctx, sessionID)
 }
 
 // persistBootstrapFailureMessage records the accepted bootstrap failure as a

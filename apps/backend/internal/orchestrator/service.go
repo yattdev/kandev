@@ -733,8 +733,9 @@ type Service struct {
 	// the callback is active.
 	sessionQueuePurgeNotifierRegistered bool
 
-	sessionAttachmentCleaner    SessionAttachmentCleaner
-	sessionAttachmentTransferer SessionAttachmentTransferer
+	sessionAttachmentCleaner     SessionAttachmentCleaner
+	sessionAttachmentTransferer  SessionAttachmentTransferer
+	providerAccessSessionRevoker taskservice.ProviderAccessSessionRevoker
 	// subagentContexts optionally persists a relational record of subagent
 	// (Task tool) invocations recognized on the tool-call frame paths. Nil is
 	// safe: both call sites guard on it. See SetSubagentContextRecorder.
@@ -2006,6 +2007,12 @@ func (s *Service) SetSessionAttachmentCleaner(cleaner SessionAttachmentCleaner) 
 // when queued work moves between task sessions.
 func (s *Service) SetSessionAttachmentTransferer(transfer SessionAttachmentTransferer) {
 	s.sessionAttachmentTransferer = transfer
+}
+
+// SetProviderAccessSessionRevoker makes terminal session transitions revoke
+// already-exported exact provider tokens before the transition returns.
+func (s *Service) SetProviderAccessSessionRevoker(revoker taskservice.ProviderAccessSessionRevoker) {
+	s.providerAccessSessionRevoker = revoker
 }
 
 // SetOnPrimarySessionSet sets a callback on the executor for when the first session
