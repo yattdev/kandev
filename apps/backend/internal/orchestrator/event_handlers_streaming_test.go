@@ -540,16 +540,23 @@ func TestTerminalSessionTransitionReportsProviderRevocationFailureAndRetries(t *
 	svc.SetProviderAccessSessionRevoker(revoker)
 	changed, finalState, err := svc.transitionTaskSessionState(ctx, "t1", "s1", nil,
 		models.TaskSessionStateCancelled, "coordinator stop", nil)
-	require.True(t, changed)
-	require.Equal(t, models.TaskSessionStateCancelled, finalState)
+	require.False(t, changed)
+	require.Equal(t, models.TaskSessionStateRunning, finalState)
 	require.ErrorIs(t, err, revokeErr)
 	require.Equal(t, []string{"s1"}, revoker.calls)
-	require.Len(t, eb.events, 1)
-	changed, _, err = svc.transitionTaskSessionState(ctx, "t1", "s1", nil,
+	require.Empty(t, eb.events)
+	stored, err := repo.GetTaskSession(ctx, "s1")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateRunning, stored.State)
+
+	revoker.err = nil
+	changed, finalState, err = svc.transitionTaskSessionState(ctx, "t1", "s1", nil,
 		models.TaskSessionStateCancelled, "coordinator stop", nil)
-	require.False(t, changed)
-	require.ErrorIs(t, err, revokeErr)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, models.TaskSessionStateCancelled, finalState)
 	require.Equal(t, []string{"s1", "s1"}, revoker.calls)
+	require.Len(t, eb.events, 1)
 }
 
 func TestLegacyTerminalSessionTransitionRevokesProviderAccess(t *testing.T) {

@@ -1375,6 +1375,9 @@ func (s *Service) transitionTaskSessionState(
 	}
 
 	oldState := session.State
+	if err := s.revokeProviderAccessForTerminal(ctx, sessionID, nextState); err != nil {
+		return false, oldState, err
+	}
 	changed, refreshed, authoritativeUpdatedAt, err := s.persistStrictTaskSessionState(
 		ctx, sessionID, session, nextState, errorMessage,
 	)
@@ -1384,7 +1387,6 @@ func (s *Service) transitionTaskSessionState(
 	if !changed {
 		return false, refreshed.State, nil
 	}
-	revocationErr := s.revokeProviderAccessForTerminal(ctx, sessionID, nextState)
 	if onChanged != nil {
 		onChanged()
 		// The hook may persist state-specific metadata after the state CAS. Read
@@ -1403,7 +1405,7 @@ func (s *Service) transitionTaskSessionState(
 		authoritativeUpdatedAt,
 		refreshed,
 	)
-	return true, nextState, revocationErr
+	return true, nextState, nil
 }
 
 // transitionBootstrapFailure commits the typed error and FAILED state through
@@ -1441,6 +1443,9 @@ func (s *Service) transitionBootstrapFailure(
 		}
 	}
 
+	if err := s.revokeProviderAccessForTerminal(ctx, sessionID, models.TaskSessionStateFailed); err != nil {
+		return false, expectedState, err
+	}
 	var changed bool
 	var updatedAt time.Time
 	var err error
@@ -1468,7 +1473,6 @@ func (s *Service) transitionBootstrapFailure(
 	if err != nil || !changed {
 		return changed, expectedState, err
 	}
-	revocationErr := s.revokeProviderAccessForTerminal(ctx, sessionID, models.TaskSessionStateFailed)
 	refreshed, err := s.repo.GetTaskSession(ctx, sessionID)
 	if err != nil {
 		return true, models.TaskSessionStateFailed, fmt.Errorf("get session after bootstrap failure commit: %w", err)
@@ -1491,7 +1495,7 @@ func (s *Service) transitionBootstrapFailure(
 	if messageErr != nil {
 		messageErr = fmt.Errorf("persist bootstrap failure history: %w", messageErr)
 	}
-	return true, models.TaskSessionStateFailed, errors.Join(messageErr, revocationErr)
+	return true, models.TaskSessionStateFailed, messageErr
 }
 
 func (s *Service) revokeProviderAccessForTerminal(

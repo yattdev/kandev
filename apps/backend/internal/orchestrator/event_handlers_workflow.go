@@ -3739,7 +3739,7 @@ func (s *Service) prepareWorkflowReplacementSession(
 				zap.String("task_id", taskID),
 				zap.String("session_id", sessionID),
 				zap.Error(deleteErr))
-			if terminalErr := s.repo.UpdateTaskSessionState(ctx, sessionID, models.TaskSessionStateFailed, resolutionErr.Error()); terminalErr != nil {
+			if terminalErr := s.terminalizeWorkflowDestination(ctx, sessionID, resolutionErr.Error()); terminalErr != nil {
 				s.logger.Warn("failed to terminalize workflow replacement after delete failure",
 					zap.String("task_id", taskID),
 					zap.String("session_id", sessionID),
@@ -3812,9 +3812,7 @@ func (s *Service) rollbackNewWorkflowProfileSwitch(
 	if s.agentManager != nil {
 		if err := s.agentManager.CleanupStaleExecutionBySessionID(ctx, destination.ID); err != nil {
 			cleanupErr := fmt.Errorf("clean up failed workflow destination runtime: %w", err)
-			if terminalErr := s.repo.UpdateTaskSessionState(
-				ctx, destination.ID, models.TaskSessionStateFailed, cleanupErr.Error(),
-			); terminalErr != nil {
+			if terminalErr := s.terminalizeWorkflowDestination(ctx, destination.ID, cleanupErr.Error()); terminalErr != nil {
 				cleanupErr = errors.Join(cleanupErr, fmt.Errorf("terminalize failed workflow destination: %w", terminalErr))
 			} else {
 				s.releaseCeilingReservation(destination.ID)
@@ -3824,9 +3822,7 @@ func (s *Service) rollbackNewWorkflowProfileSwitch(
 	}
 	if err := s.deleteSessionAndCleanAttachments(ctx, destination); err != nil {
 		deleteErr := fmt.Errorf("delete failed workflow destination: %w", err)
-		if terminalErr := s.repo.UpdateTaskSessionState(
-			ctx, destination.ID, models.TaskSessionStateFailed, deleteErr.Error(),
-		); terminalErr != nil {
+		if terminalErr := s.terminalizeWorkflowDestination(ctx, destination.ID, deleteErr.Error()); terminalErr != nil {
 			deleteErr = errors.Join(deleteErr, fmt.Errorf("terminalize failed workflow destination: %w", terminalErr))
 		} else {
 			s.releaseCeilingReservation(destination.ID)
@@ -3873,9 +3869,7 @@ func (s *Service) retainFailedWorkflowDestination(
 	destination *models.TaskSession,
 	cause error,
 ) error {
-	if err := s.repo.UpdateTaskSessionState(
-		ctx, destination.ID, models.TaskSessionStateFailed, cause.Error(),
-	); err != nil {
+	if err := s.terminalizeWorkflowDestination(ctx, destination.ID, cause.Error()); err != nil {
 		return fmt.Errorf("terminalize retained workflow destination: %w", err)
 	}
 	s.releaseCeilingReservation(destination.ID)
@@ -3884,6 +3878,13 @@ func (s *Service) retainFailedWorkflowDestination(
 		zap.String("session_id", destination.ID),
 		zap.Error(cause))
 	return nil
+}
+
+func (s *Service) terminalizeWorkflowDestination(ctx context.Context, sessionID, reason string) error {
+	if err := s.revokeProviderAccessForTerminal(ctx, sessionID, models.TaskSessionStateFailed); err != nil {
+		return err
+	}
+	return s.repo.UpdateTaskSessionState(ctx, sessionID, models.TaskSessionStateFailed, reason)
 }
 
 func (s *Service) finishWorkflowProfileSwitchSource(
