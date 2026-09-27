@@ -112,6 +112,27 @@ func TestExactTaskSnapshotRejectsReadsAtExpiry(t *testing.T) {
 	}
 }
 
+func TestOpenExactTaskSnapshotCleansExpiredSnapshots(t *testing.T) {
+	repo := newRepoForArchiveTests(t, "exact-snapshot-cleanup")
+	base := time.Date(2026, time.September, 27, 0, 0, 0, 0, time.UTC)
+	repo.clockNow = func() time.Time { return base }
+	expired, err := repo.OpenExactTaskSnapshot(context.Background(), models.ExactTaskSnapshotRequest{WorkspaceID: archiveWorkspaceID, TTL: time.Minute})
+	if err != nil {
+		t.Fatalf("OpenExactTaskSnapshot(expired): %v", err)
+	}
+	repo.clockNow = func() time.Time { return base.Add(time.Minute) }
+	if _, err := repo.OpenExactTaskSnapshot(context.Background(), models.ExactTaskSnapshotRequest{WorkspaceID: archiveWorkspaceID}); err != nil {
+		t.Fatalf("OpenExactTaskSnapshot(cleanup owner): %v", err)
+	}
+	var count int
+	if err := repo.db.QueryRowContext(context.Background(), repo.db.Rebind(`SELECT COUNT(*) FROM exact_task_snapshots WHERE token = ?`), expired.Token).Scan(&count); err != nil {
+		t.Fatalf("count expired snapshot: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expired snapshot rows = %d, want 0", count)
+	}
+}
+
 func TestExactTaskSnapshotSurvivesRepositoryRestart(t *testing.T) {
 	repo, sqlxDB, dbPath := newInitialTaskBriefRepoAtPath(t)
 	ctx := context.Background()

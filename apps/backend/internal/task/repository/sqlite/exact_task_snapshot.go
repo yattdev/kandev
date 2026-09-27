@@ -81,6 +81,12 @@ func (r *Repository) OpenExactTaskSnapshot(ctx context.Context, request models.E
 	if ttl < 0 || ttl > exactTaskSnapshotMaxTTL {
 		return nil, fmt.Errorf("exact task snapshot TTL is invalid")
 	}
+	// Opening is the lifecycle owner for bounded expiry cleanup. Exact reads
+	// create snapshots; doing this before each new one keeps idle installations
+	// from accumulating expired materialized rows without a background worker.
+	if _, err := r.CleanupExpiredExactTaskSnapshots(ctx, exactTaskSnapshotCleanupMax); err != nil {
+		return nil, fmt.Errorf("cleanup expired exact task snapshots: %w", err)
+	}
 	expiresAt := r.nowUTC().Add(ttl)
 	token := uuid.NewString()
 	tx, err := r.db.BeginTxx(ctx, nil)
