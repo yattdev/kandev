@@ -2850,13 +2850,40 @@ func (r *Repository) UpdateSessionContextWindow(
 	if err != nil {
 		return 0, err
 	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), sessionID).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("agent session not found: %s", sessionID)
+		}
+		return 0, err
+	}
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return 0, err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return 0, err
+		}
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return 0, err
+	}
 	now := time.Now().UTC()
 	var count int64
-	row := r.db.QueryRowxContext(ctx, r.db.Rebind(updateSessionContextWindowQuery(r.db.DriverName())), string(windowJSON), used, now, sessionID)
+	row := tx.QueryRowxContext(ctx, r.db.Rebind(updateSessionContextWindowQuery(r.db.DriverName())), string(windowJSON), used, now, sessionID)
 	if err := row.Scan(&count); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, fmt.Errorf("agent session not found: %s", sessionID)
 		}
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return count, nil

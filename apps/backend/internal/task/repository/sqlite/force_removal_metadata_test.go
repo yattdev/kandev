@@ -195,3 +195,29 @@ func TestClaimForceRemovalBlocksStateGuardedSessionMetadataWithoutPersistingIt(t
 	require.NoError(t, err)
 	require.True(t, written)
 }
+
+func TestClaimForceRemovalBlocksSessionContextWindowWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-context-window-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-context-window-held", "force-context-window-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-context-window-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID}))
+	}
+	held, err := repo.GetTask(ctx, "force-context-window-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "a", OperationID: "context-window", RequestDigest: "r", PreviewDigest: "p"})
+	require.NoError(t, err)
+
+	count, err := repo.UpdateSessionContextWindow(ctx, "force-context-window-held-session", map[string]interface{}{"size": int64(200000), "used": int64(120000)})
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.Zero(t, count)
+	heldSession, err := repo.GetTaskSession(ctx, "force-context-window-held-session")
+	require.NoError(t, err)
+	require.NotContains(t, heldSession.Metadata, models.SessionMetaKeyContextWindow)
+	require.NotContains(t, heldSession.Metadata, models.SessionMetaKeyContextCompactionCount)
+
+	count, err = repo.UpdateSessionContextWindow(ctx, "force-context-window-foreign-session", map[string]interface{}{"size": int64(200000), "used": int64(120000)})
+	require.NoError(t, err)
+	require.Zero(t, count)
+}
