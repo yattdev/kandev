@@ -60,7 +60,24 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 // inventory query so concurrent session/worktree creation is rejected while
 // the snapshot is being assembled.
 func (r *Repository) UpdateTaskResourceCleanupSnapshot(ctx context.Context, operationID, snapshot string) error {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var jobID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT id FROM task_resource_cleanup_jobs WHERE operation_id = ?
+	`), operationID).Scan(&jobID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("task resource cleanup job %s not found or not prepared", operationID)
+		}
+		return err
+	}
+	if _, err := r.ensureForceRemovalCleanupWorkerAvailableTx(ctx, tx, jobID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET resource_snapshot = ?, updated_at = ?
 		WHERE operation_id = ? AND state = ?
@@ -72,7 +89,7 @@ func (r *Repository) UpdateTaskResourceCleanupSnapshot(ctx context.Context, oper
 	if rows == 0 {
 		return fmt.Errorf("task resource cleanup job %s not found or not prepared", operationID)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // UpdateClaimedTaskResourceCleanupSnapshot persists outcomes produced by one
