@@ -176,6 +176,21 @@ func (r *Runtime) RevokeSession(ctx context.Context, sessionID string) error {
 	return result
 }
 
+// RevokeWorkspaceTokens retries every exact token still held for a workspace
+// after its grants have been fenced. It does not permanently delete workspace
+// grant state, so a new connection can receive a new grant after confirmation.
+func (r *Runtime) RevokeWorkspaceTokens(ctx context.Context, workspaceID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var result error
+	for leaseID, token := range r.active {
+		if token.workspaceID == workspaceID {
+			result = errors.Join(result, r.revokeActive(ctx, leaseID, token))
+		}
+	}
+	return result
+}
+
 // Stop closes redemption and attempts to revoke every exact token still held
 // in memory. Failed provider revocation remains visible in the durable ledger.
 func (r *Runtime) Stop(ctx context.Context) error {

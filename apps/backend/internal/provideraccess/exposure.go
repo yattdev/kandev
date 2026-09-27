@@ -296,3 +296,27 @@ func (s *Store) ExposureStateAt(ctx context.Context, leaseID string, at time.Tim
 	}
 	return ExposureActive, nil
 }
+
+// HasUnexpiredWorkspaceAuthority reports bearer exposure and ambiguous mint
+// attempts that remain possible after a Host restart. Neither lease expiry nor
+// grant revocation invalidates an already exported provider token.
+func (s *Store) HasUnexpiredWorkspaceAuthority(ctx context.Context, workspaceID string, at time.Time) (bool, error) {
+	if workspaceID == "" || at.IsZero() {
+		return false, ErrGrantUnavailable
+	}
+	var exposed int
+	err := s.db.GetContext(ctx, &exposed, s.db.Rebind(`SELECT COUNT(*)
+  FROM provider_access_exposures e JOIN provider_access_grants g ON g.id = e.grant_id
+  WHERE g.workspace_id = ? AND e.provider_expires_at > ? AND e.revoked_at_provider IS NULL`),
+		workspaceID, at.Unix())
+	if err != nil || exposed > 0 {
+		return exposed > 0, err
+	}
+	var unknown int
+	err = s.db.GetContext(ctx, &unknown, s.db.Rebind(`SELECT COUNT(*)
+  FROM provider_access_redemptions r JOIN provider_access_grants g ON g.id = r.grant_id
+  LEFT JOIN provider_access_exposures e ON e.lease_id = r.lease_id
+  WHERE g.workspace_id = ? AND r.possible_provider_expiry > ? AND e.lease_id IS NULL`),
+		workspaceID, at.Unix())
+	return unknown > 0, err
+}

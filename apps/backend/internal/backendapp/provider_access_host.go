@@ -14,15 +14,16 @@ import (
 // providerHostAccess owns one credential runtime per connected plugin identity.
 // Production must install it only after all lifecycle fences are connected.
 type providerHostAccess struct {
-	store    *provideraccess.Store
-	grants   *providerGrantAuthority
-	managed  leaseManagedReader
-	provider leaseProviderReader
-	tokens   provideraccess.RerunTokenSource
-	mu       sync.Mutex
-	runtimes map[string]*provideraccess.Runtime
-	blocked  map[string]bool
-	stopped  bool
+	store             *provideraccess.Store
+	grants            *providerGrantAuthority
+	managed           leaseManagedReader
+	provider          leaseProviderReader
+	tokens            provideraccess.RerunTokenSource
+	mu                sync.Mutex
+	runtimes          map[string]*provideraccess.Runtime
+	blocked           map[string]bool
+	blockedWorkspaces map[string]bool
+	stopped           bool
 }
 
 func (s *providerHostAccess) authority(pluginID string) *providerLeaseAuthority {
@@ -61,7 +62,7 @@ func (s *providerHostAccess) Issue(ctx context.Context, pluginID string,
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.stopped {
+	if s.stopped || s.blockedWorkspaces[spec.WorkspaceID] {
 		return pluginsdk.ProviderAccessLease{}, provideraccess.ErrGrantUnavailable
 	}
 	grant, err := s.store.GetGrant(ctx, spec.GrantID)
@@ -211,7 +212,7 @@ func (s *providerHostAccess) ReplaceGrant(ctx context.Context, grant *providerac
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.stopped {
+	if s.stopped || s.blockedWorkspaces[grant.WorkspaceID] {
 		return provideraccess.ErrGrantUnavailable
 	}
 	active, err := s.store.GetActiveGrant(ctx, grant.Scope())
@@ -224,6 +225,43 @@ func (s *providerHostAccess) ReplaceGrant(ctx context.Context, grant *providerac
 		}
 	}
 	return s.store.ReplaceGrant(ctx, grant)
+}
+
+// RevokeWorkspaceConnection fences every grant before revoking the exact
+// exported tokens. A failed provider revocation blocks replacement until a
+// retry succeeds; the connection mutation must also abort on that error.
+func (s *providerHostAccess) RevokeWorkspaceConnection(ctx context.Context, workspaceID string) error {
+	if workspaceID == "" {
+		return provideraccess.ErrGrantUnavailable
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.blockedWorkspaces == nil {
+		s.blockedWorkspaces = make(map[string]bool)
+	}
+	s.blockedWorkspaces[workspaceID] = true
+	grants, err := s.store.ListWorkspaceGrants(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	var result error
+	for _, grant := range grants {
+		if grant.RevokedAt == nil {
+			result = errors.Join(result, s.store.RevokeGrant(ctx, workspaceID, grant.ID, time.Now().UTC()))
+		}
+	}
+	for _, runtime := range s.runtimes {
+		result = errors.Join(result, runtime.RevokeWorkspaceTokens(ctx, workspaceID))
+	}
+	residual, err := s.store.HasUnexpiredWorkspaceAuthority(ctx, workspaceID, time.Now().UTC())
+	result = errors.Join(result, err)
+	if residual {
+		result = errors.Join(result, provideraccess.ErrRevocationUnconfirmed)
+	}
+	if result == nil {
+		delete(s.blockedWorkspaces, workspaceID)
+	}
+	return result
 }
 
 // CleanupWorkspaceProviderAccess fences durable admission before attempting

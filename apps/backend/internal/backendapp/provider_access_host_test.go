@@ -315,3 +315,62 @@ func TestProviderHostAccessSessionTeardownFencesExportedToken(t *testing.T) {
 		t.Fatalf("session teardown active lease = %+v, err = %v", active, err)
 	}
 }
+
+func TestProviderHostAccessConnectionChangeRevokesHeldTokenAndGrant(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	tokens := &hostTestTokens{}
+	host := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: tokens}
+	lease, err := host.Issue(ctx, grant.PluginID, hostTestSpec(target, *grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.RevokeWorkspaceConnection(ctx, grant.WorkspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if tokens.revokes != 1 {
+		t.Fatalf("connection change revocations = %d", tokens.revokes)
+	}
+	active, err := authority.store.GetActiveGrant(ctx, grant.Scope())
+	if err != nil || active != nil {
+		t.Fatalf("active grant after connection change = %+v, err = %v", active, err)
+	}
+}
+
+func TestProviderHostAccessConnectionChangeAfterRestartKeepsResidualBlocked(t *testing.T) {
+	authority, target, _, _, _, _ := newLeaseAuthorityFixture(t)
+	ctx := context.Background()
+	grant, err := authority.store.GetGrant(ctx, "grant-1")
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %+v, err = %v", grant, err)
+	}
+	first := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: &hostTestTokens{}}
+	lease, err := first.Issue(ctx, grant.PluginID, hostTestSpec(target, *grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Redeem(ctx, grant.PluginID, "redeem-1", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	// The new Host has no token bytes; it must not infer provider revocation
+	// from the now-revoked grant or from its empty runtime map.
+	restarted := &providerHostAccess{store: authority.store, grants: authority.grants,
+		managed: authority.managed, provider: authority.provider, tokens: &hostTestTokens{}}
+	if err := restarted.RevokeWorkspaceConnection(ctx, grant.WorkspaceID); !errors.Is(err, provideraccess.ErrRevocationUnconfirmed) {
+		t.Fatalf("restart connection revocation error = %v", err)
+	}
+	replacement := *grant
+	replacement.ID = "replacement-grant"
+	if err := restarted.ReplaceGrant(ctx, &replacement); !errors.Is(err, provideraccess.ErrGrantUnavailable) {
+		t.Fatalf("replacement after residual exposure error = %v", err)
+	}
+}

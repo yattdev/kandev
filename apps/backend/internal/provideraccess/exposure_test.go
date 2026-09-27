@@ -34,6 +34,39 @@ func claimTestMint(t *testing.T, store *Store, grant Grant, lease *Lease) {
 	}
 }
 
+func TestUnexpiredWorkspaceAuthorityIncludesUnknownMintAndUnrevokedBearer(t *testing.T) {
+	store := newGrantTestStore(t)
+	ctx := context.Background()
+	grant := testGrant("grant-residual")
+	if err := store.ReplaceGrant(ctx, &grant); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.IssueLease(ctx, testLeaseClaim(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if residual, err := store.HasUnexpiredWorkspaceAuthority(ctx, grant.WorkspaceID, time.Now()); err != nil || residual {
+		t.Fatalf("unused lease residual = %v, err = %v", residual, err)
+	}
+	claimTestMint(t, store, grant, lease)
+	if residual, err := store.HasUnexpiredWorkspaceAuthority(ctx, grant.WorkspaceID, time.Now()); err != nil || !residual {
+		t.Fatalf("unknown mint residual = %v, err = %v", residual, err)
+	}
+	if err := store.RecordExposureOrRevoke(ctx, testExposureReceipt(grant, lease),
+		func(context.Context) error { t.Fatal("unexpected token revoke"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if residual, err := store.HasUnexpiredWorkspaceAuthority(ctx, grant.WorkspaceID, time.Now()); err != nil || !residual {
+		t.Fatalf("exported bearer residual = %v, err = %v", residual, err)
+	}
+	if err := store.RecordRevocationResult(ctx, lease.ID, time.Now().UTC(), true); err != nil {
+		t.Fatal(err)
+	}
+	if residual, err := store.HasUnexpiredWorkspaceAuthority(ctx, grant.WorkspaceID, time.Now()); err != nil || residual {
+		t.Fatalf("confirmed revoke residual = %v, err = %v", residual, err)
+	}
+}
+
 func TestExposureAndAuditCommitTogetherBeforeBearerExport(t *testing.T) {
 	store := newGrantTestStore(t)
 	ctx := context.Background()
