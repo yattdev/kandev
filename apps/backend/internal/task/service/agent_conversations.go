@@ -155,12 +155,15 @@ type agentConversationDispatcher interface {
 // occurrence-key idempotency and busy-session coalescing.
 // Delete removes all conversations for the given (pluginID, workspaceID, key).
 type AgentConversationService struct {
-	tasks   agentConversationTaskRepo
-	sess    agentConversationSessionRepo
-	profile agentConversationProfileRepo
-	state   agentConversationStateRepo
-	eventer agentConversationEventBus
-	deleter agentConversationTaskDeleter
+	tasks                        agentConversationTaskRepo
+	sess                         agentConversationSessionRepo
+	profile                      agentConversationProfileRepo
+	state                        agentConversationStateRepo
+	eventer                      agentConversationEventBus
+	deleter                      agentConversationTaskDeleter
+	providerAccessSessionRevoker interface {
+		RevokeSession(context.Context, string) error
+	}
 
 	// dispatcher delivers Dispatch's text to the real agent runtime. It is
 	// wired late (SetDispatcher), after the orchestrator exists — mirroring
@@ -217,6 +220,16 @@ func (s *AgentConversationService) SetTaskDeleter(d agentConversationTaskDeleter
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleter = d
+}
+
+// SetProviderAccessSessionRevoker fences a managed session's exported token
+// before its backing task can be deleted.
+func (s *AgentConversationService) SetProviderAccessSessionRevoker(revoker interface {
+	RevokeSession(context.Context, string) error
+}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.providerAccessSessionRevoker = revoker
 }
 
 func (s *AgentConversationService) getDispatcher() agentConversationDispatcher {
@@ -808,6 +821,20 @@ func (s *AgentConversationService) DeleteAllForPlugin(ctx context.Context, plugi
 }
 
 func (s *AgentConversationService) deleteManagedConversationTask(ctx context.Context, deleter agentConversationTaskDeleter, taskID string) error {
+	s.mu.RLock()
+	revoker := s.providerAccessSessionRevoker
+	s.mu.RUnlock()
+	if revoker != nil {
+		primary, err := s.sess.GetPrimarySessionByTaskID(ctx, taskID)
+		if err != nil && !errors.Is(err, taskrepo.ErrNoPrimarySession) {
+			return fmt.Errorf("load managed session before provider revocation: %w", err)
+		}
+		if primary != nil {
+			if err := revoker.RevokeSession(ctx, primary.ID); err != nil {
+				return fmt.Errorf("revoke managed session provider access: %w", err)
+			}
+		}
+	}
 	if deleter != nil {
 		return deleter.DeleteTask(ctx, taskID)
 	}
