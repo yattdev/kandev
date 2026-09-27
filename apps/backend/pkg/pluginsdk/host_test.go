@@ -41,6 +41,11 @@ type recordingHost struct {
 	exactPageInfo       *ExactPageInfo
 	exactWorkspaceErr   error
 	exactWorkspaceQuery ExactWorkspaceQuery
+	exactTasks          []ExactTask
+	exactTask           *ExactTask
+	exactTaskPage       *ExactPageInfo
+	exactTaskQuery      ExactTaskQuery
+	exactTaskGetQuery   ExactTaskGetQuery
 }
 
 func (h *recordingHost) PluginOwnedTaskTrees() PluginOwnedTaskTreeManager {
@@ -119,6 +124,16 @@ func (h *recordingHost) GetCapabilityContext(context.Context) (*CapabilityContex
 func (h *recordingHost) ListWorkspacesExact(_ context.Context, query ExactWorkspaceQuery) ([]Workspace, *ExactPageInfo, error) {
 	h.exactWorkspaceQuery = query
 	return h.exactWorkspaces, h.exactPageInfo, h.exactWorkspaceErr
+}
+
+func (h *recordingHost) ListTasksExact(_ context.Context, query ExactTaskQuery) ([]ExactTask, *ExactPageInfo, error) {
+	h.exactTaskQuery = query
+	return h.exactTasks, h.exactTaskPage, nil
+}
+
+func (h *recordingHost) GetTaskExact(_ context.Context, query ExactTaskGetQuery) (*ExactTask, error) {
+	h.exactTaskGetQuery = query
+	return h.exactTask, nil
 }
 
 // dialHostOverBufconn wires a grpcHostServer (wrapping impl) to a
@@ -250,6 +265,26 @@ func TestHost_ListWorkspacesExact(t *testing.T) {
 	require.Equal(t, impl.exactWorkspaces, workspaces)
 	require.Equal(t, impl.exactPageInfo, page)
 	require.Equal(t, query, impl.exactWorkspaceQuery)
+}
+
+func TestHost_ExactTasksOverWire(t *testing.T) {
+	impl := &recordingHost{exactTasks: []ExactTask{{ID: "task-1", WorkspaceID: "workspace-1", ResourceVersion: 3}}, exactTask: &ExactTask{ID: "task-1", WorkspaceID: "workspace-1", ResourceVersion: 3}, exactTaskPage: &ExactPageInfo{SnapshotVersion: "snapshot-1"}}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := ExactTasks(host)
+	require.True(t, ok)
+
+	listQuery := ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: ExactPage{Limit: 1}}
+	items, page, err := exact.ListTasksExact(context.Background(), listQuery)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactTasks, items)
+	require.Equal(t, impl.exactTaskPage, page)
+	require.Equal(t, listQuery, impl.exactTaskQuery)
+
+	getQuery := ExactTaskGetQuery{WorkspaceID: "workspace-1", TaskID: "task-1", CapabilityRevision: 2, SnapshotVersion: "snapshot-1"}
+	task, err := exact.GetTaskExact(context.Background(), getQuery)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactTask, task)
+	require.Equal(t, getQuery, impl.exactTaskGetQuery)
 }
 
 func TestHost_RevealSecret(t *testing.T) {

@@ -59,19 +59,27 @@ func (s *exactSnapshotStore) create(binding exactSnapshotBinding, offset int) (s
 }
 
 func (s *exactSnapshotStore) offset(cursor string, want exactSnapshotBinding) (int, error) {
+	got, err := s.parse(cursor)
+	if err != nil || got.exactSnapshotBinding != want {
+		return 0, errExactSnapshotCursor
+	}
+	return got.Offset, nil
+}
+
+func (s *exactSnapshotStore) parse(cursor string) (exactSnapshotCursor, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil || len(raw) <= sha256.Size {
-		return 0, errExactSnapshotCursor
+		return exactSnapshotCursor{}, errExactSnapshotCursor
 	}
 	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
 	mac := hmac.New(sha256.New, s.secret)
 	_, _ = mac.Write(payload)
 	if !hmac.Equal(signature, mac.Sum(nil)) {
-		return 0, errExactSnapshotCursor
+		return exactSnapshotCursor{}, errExactSnapshotCursor
 	}
 	var got exactSnapshotCursor
-	if json.Unmarshal(payload, &got) != nil || got.Offset < 0 || got.exactSnapshotBinding != want || got.ExpiresAtUnixNano <= time.Now().UnixNano() {
-		return 0, errExactSnapshotCursor
+	if json.Unmarshal(payload, &got) != nil || got.Offset < 0 || got.ExpiresAtUnixNano <= time.Now().UnixNano() {
+		return exactSnapshotCursor{}, errExactSnapshotCursor
 	}
-	return got.Offset, nil
+	return got, nil
 }

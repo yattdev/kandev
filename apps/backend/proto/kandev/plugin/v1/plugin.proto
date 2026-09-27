@@ -86,6 +86,8 @@ service Host {
   rpc ListWorkspacesExact(ListWorkspacesExactRequest) returns (ListWorkspacesExactResponse);
   rpc ListWorkflowsExact(ListWorkflowsExactRequest) returns (ListWorkflowsExactResponse);
   rpc ListWorkflowStepsExact(ListWorkflowStepsExactRequest) returns (ListWorkflowStepsExactResponse);
+  rpc ListTasksExact(ListTasksExactRequest) returns (ListTasksExactResponse);
+  rpc GetTaskExact(GetTaskExactRequest) returns (GetTaskExactResponse);
 
   // Reads — capability api_read:<resource>
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
@@ -1174,3 +1176,32 @@ message ListWorkflowStepsExactResponse {
   repeated WorkflowStep steps = 1;
   ExactPageInfo page_info = 2;
 }
+message ExactTask {
+  string id = 1;
+  string workspace_id = 2;
+  string workflow_id = 3;
+  string workflow_step_id = 4;
+  string title = 5;
+  string description = 6;
+  string state = 7;
+  string priority = 8;
+  int32 position = 9;
+  bool archived = 10;
+  int64 resource_version = 11;
+}
+message ListTasksExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListTasksExactResponse {
+  repeated ExactTask tasks = 1;
+  ExactPageInfo page_info = 2;
+}
+message GetTaskExactRequest {
+  string workspace_id = 1;
+  string task_id = 2;
+  uint64 capability_revision = 3;
+  string snapshot_version = 4;
+}
+message GetTaskExactResponse { ExactTask task = 1; }

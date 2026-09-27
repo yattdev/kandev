@@ -33,6 +33,7 @@ type fakeTaskDataSource struct {
 	workspaces       []*taskmodels.Workspace
 	tasksByWorkspace map[string][]*taskmodels.Task
 	tasksByID        map[string]*taskmodels.Task
+	exactSnapshots   map[string][]taskmodels.ExactTaskSnapshotTask
 	repositories     map[string][]*taskmodels.Repository
 	sessionsByTask   map[string][]*taskmodels.TaskSession
 	executorRunning  map[string]*taskmodels.ExecutorRunning
@@ -68,6 +69,31 @@ type fakeTaskDataSource struct {
 	// BuildDependencyViews/Bounded call, so tests can prove attachment
 	// derives over the right (e.g. post-filter) slice.
 	dependencyViewsTasks []string
+}
+
+func (f *fakeTaskDataSource) OpenExactTaskSnapshot(_ context.Context, request taskmodels.ExactTaskSnapshotRequest) (*taskmodels.ExactTaskSnapshot, error) {
+	return &taskmodels.ExactTaskSnapshot{Token: "snapshot-" + request.WorkspaceID, WorkspaceID: request.WorkspaceID}, nil
+}
+
+func (f *fakeTaskDataSource) PageExactTaskSnapshot(_ context.Context, token string, offset, limit int) ([]taskmodels.ExactTaskSnapshotTask, error) {
+	rows := f.exactSnapshots[token]
+	if offset >= len(rows) {
+		return []taskmodels.ExactTaskSnapshotTask{}, nil
+	}
+	end := offset + limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	return rows[offset:end], nil
+}
+
+func (f *fakeTaskDataSource) GetExactTaskSnapshotTask(_ context.Context, token, taskID string) (*taskmodels.ExactTaskSnapshotTask, error) {
+	for _, row := range f.exactSnapshots[token] {
+		if row.ID == taskID {
+			return &row, nil
+		}
+	}
+	return nil, repoerrors.ErrTaskNotFound
 }
 
 func (f *fakeTaskDataSource) ListTaskStepTransitions(_ context.Context, taskID string, _ int, _ string) ([]taskmodels.StepTransition, string, error) {

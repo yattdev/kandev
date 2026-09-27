@@ -1960,6 +1960,32 @@ func (s *Service) GetTasksByIDs(ctx context.Context, ids []string) ([]*models.Ta
 	return s.tasks.GetTasksByIDs(ctx, ids)
 }
 
+// OpenExactTaskSnapshot exposes the repository's bounded task projection to
+// Host adapters without granting legacy task-reader authority.
+func (s *Service) OpenExactTaskSnapshot(ctx context.Context, request models.ExactTaskSnapshotRequest) (*models.ExactTaskSnapshot, error) {
+	reader, ok := s.tasks.(taskrepo.ExactTaskSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactTaskSnapshotUnavailable
+	}
+	return reader.OpenExactTaskSnapshot(ctx, request)
+}
+
+func (s *Service) PageExactTaskSnapshot(ctx context.Context, token string, offset, limit int) ([]models.ExactTaskSnapshotTask, error) {
+	reader, ok := s.tasks.(taskrepo.ExactTaskSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactTaskSnapshotUnavailable
+	}
+	return reader.PageExactTaskSnapshot(ctx, token, offset, limit)
+}
+
+func (s *Service) GetExactTaskSnapshotTask(ctx context.Context, token, taskID string) (*models.ExactTaskSnapshotTask, error) {
+	reader, ok := s.tasks.(taskrepo.ExactTaskSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactTaskSnapshotUnavailable
+	}
+	return reader.GetExactTaskSnapshotTask(ctx, token, taskID)
+}
+
 // GetWorkflowStep resolves one workflow step by ID for a caller that has
 // already authorized the owning task/workspace, mirroring GetTasksByIDs.
 // The Inbox History read uses this to test whether a task's current step

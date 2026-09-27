@@ -19,6 +19,7 @@ package pluginsdk
 
 import (
 	"context"
+	"fmt"
 
 	pluginv1 "github.com/kandev/kandev/proto/kandev/plugin/v1"
 	"google.golang.org/grpc"
@@ -414,11 +415,52 @@ func (h *grpcHostClient) ListWorkflowStepsExact(ctx context.Context, query Exact
 	return workflowStepsFromProto(response.GetSteps()), exactPageInfoFromProto(response.GetPageInfo()), nil
 }
 
+func (h *grpcHostClient) ListTasksExact(ctx context.Context, query ExactTaskQuery) ([]ExactTask, *ExactPageInfo, error) {
+	response, err := h.client.ListTasksExact(ctx, &pluginv1.ListTasksExactRequest{WorkspaceId: query.WorkspaceID, CapabilityRevision: query.CapabilityRevision, Page: exactPageToProto(query.Page)})
+	if err != nil {
+		return nil, nil, err
+	}
+	return exactTasksFromProto(response.GetTasks()), exactPageInfoFromProto(response.GetPageInfo()), nil
+}
+
+func (h *grpcHostClient) GetTaskExact(ctx context.Context, query ExactTaskGetQuery) (*ExactTask, error) {
+	response, err := h.client.GetTaskExact(ctx, &pluginv1.GetTaskExactRequest{WorkspaceId: query.WorkspaceID, TaskId: query.TaskID, CapabilityRevision: query.CapabilityRevision, SnapshotVersion: query.SnapshotVersion})
+	if err != nil {
+		return nil, err
+	}
+	return exactTaskFromProto(response.GetTask()), nil
+}
+
 func exactPageToProto(page ExactPage) *pluginv1.ExactPage {
 	return &pluginv1.ExactPage{Limit: page.Limit, Cursor: page.Cursor, SnapshotVersion: page.SnapshotVersion}
 }
 func exactPageInfoFromProto(page *pluginv1.ExactPageInfo) *ExactPageInfo {
 	return &ExactPageInfo{NextCursor: page.GetNextCursor(), HasMore: page.GetHasMore(), SnapshotVersion: page.GetSnapshotVersion()}
+}
+
+func exactTaskFromProto(task *pluginv1.ExactTask) *ExactTask {
+	if task == nil {
+		return nil
+	}
+	return &ExactTask{ID: task.GetId(), WorkspaceID: task.GetWorkspaceId(), WorkflowID: task.GetWorkflowId(), WorkflowStepID: task.GetWorkflowStepId(), Title: task.GetTitle(), Description: task.GetDescription(), State: task.GetState(), Priority: task.GetPriority(), Position: task.GetPosition(), Archived: task.GetArchived(), ResourceVersion: task.GetResourceVersion()}
+}
+
+func exactTasksFromProto(tasks []*pluginv1.ExactTask) []ExactTask {
+	result := make([]ExactTask, 0, len(tasks))
+	for _, task := range tasks {
+		if converted := exactTaskFromProto(task); converted != nil {
+			result = append(result, *converted)
+		}
+	}
+	return result
+}
+
+func exactTasksToProto(tasks []ExactTask) []*pluginv1.ExactTask {
+	result := make([]*pluginv1.ExactTask, 0, len(tasks))
+	for _, task := range tasks {
+		result = append(result, &pluginv1.ExactTask{Id: task.ID, WorkspaceId: task.WorkspaceID, WorkflowId: task.WorkflowID, WorkflowStepId: task.WorkflowStepID, Title: task.Title, Description: task.Description, State: task.State, Priority: task.Priority, Position: task.Position, Archived: task.Archived, ResourceVersion: task.ResourceVersion})
+	}
+	return result
 }
 
 func (h *grpcHostClient) RevealSecret(ctx context.Context, ref string) (string, error) {
@@ -859,6 +901,33 @@ func (s *grpcHostServer) ListWorkflowStepsExact(ctx context.Context, request *pl
 		return nil, err
 	}
 	return &pluginv1.ListWorkflowStepsExactResponse{Steps: workflowStepsToProto(items), PageInfo: exactPageInfoToProto(info)}, nil
+}
+
+func (s *grpcHostServer) ListTasksExact(ctx context.Context, request *pluginv1.ListTasksExactRequest) (*pluginv1.ListTasksExactResponse, error) {
+	exact, ok := s.impl.(ExactTaskHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_tasks")
+	}
+	items, info, err := exact.ListTasksExact(ctx, ExactTaskQuery{WorkspaceID: request.GetWorkspaceId(), CapabilityRevision: request.GetCapabilityRevision(), Page: exactPageFromProto(request.GetPage())})
+	if err != nil {
+		return nil, err
+	}
+	return &pluginv1.ListTasksExactResponse{Tasks: exactTasksToProto(items), PageInfo: exactPageInfoToProto(info)}, nil
+}
+
+func (s *grpcHostServer) GetTaskExact(ctx context.Context, request *pluginv1.GetTaskExactRequest) (*pluginv1.GetTaskExactResponse, error) {
+	exact, ok := s.impl.(ExactTaskHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_tasks")
+	}
+	task, err := exact.GetTaskExact(ctx, ExactTaskGetQuery{WorkspaceID: request.GetWorkspaceId(), TaskID: request.GetTaskId(), CapabilityRevision: request.GetCapabilityRevision(), SnapshotVersion: request.GetSnapshotVersion()})
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, fmt.Errorf("pluginsdk: exact task response is missing")
+	}
+	return &pluginv1.GetTaskExactResponse{Task: exactTasksToProto([]ExactTask{*task})[0]}, nil
 }
 
 func exactPageFromProto(page *pluginv1.ExactPage) ExactPage {

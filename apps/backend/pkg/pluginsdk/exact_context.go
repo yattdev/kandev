@@ -57,6 +57,32 @@ type ExactWorkflowHost interface {
 	ListWorkflowStepsExact(context.Context, ExactWorkflowStepsQuery) ([]WorkflowStep, *ExactPageInfo, error)
 }
 
+// ExactTaskHost exposes the narrow, snapshot-bound task projection. It does
+// not widen the legacy Tasks reader or its api_read authority.
+type ExactTaskHost interface {
+	ListTasksExact(context.Context, ExactTaskQuery) ([]ExactTask, *ExactPageInfo, error)
+	GetTaskExact(context.Context, ExactTaskGetQuery) (*ExactTask, error)
+}
+
+type ExactTask struct {
+	ID, WorkspaceID, WorkflowID, WorkflowStepID string
+	Title, Description, State, Priority         string
+	Position                                    int32
+	Archived                                    bool
+	ResourceVersion                             int64
+}
+
+type ExactTaskQuery struct {
+	WorkspaceID        string
+	CapabilityRevision uint64
+	Page               ExactPage
+}
+
+type ExactTaskGetQuery struct {
+	WorkspaceID, TaskID, SnapshotVersion string
+	CapabilityRevision                   uint64
+}
+
 type ExactWorkspaceQuery struct {
 	WorkspaceID        string
 	CapabilityRevision uint64
@@ -100,6 +126,11 @@ func ExactWorkspaces(host Host) (ExactWorkspaceHost, bool) {
 
 func ExactWorkflows(host Host) (ExactWorkflowHost, bool) {
 	exact, ok := host.(ExactWorkflowHost)
+	return exact, ok
+}
+
+func ExactTasks(host Host) (ExactTaskHost, bool) {
+	exact, ok := host.(ExactTaskHost)
 	return exact, ok
 }
 
