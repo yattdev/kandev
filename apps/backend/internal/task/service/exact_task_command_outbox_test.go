@@ -34,6 +34,43 @@ func TestPublishExactTaskCommandUpdatePublishesOnceAfterCommittedOutbox(t *testi
 	}
 }
 
+func TestPublishExactTaskCommandUpdateRetriesAfterEventBusFailure(t *testing.T) {
+	ctx := context.Background()
+	svc, eventBus, repo := createTestService(t)
+	createTaskWithoutRepositories(t, ctx, repo)
+	task, err := repo.GetTask(ctx, "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.DB().ExecContext(ctx, `INSERT INTO exact_task_command_outbox(audit_id, task_id, workspace_id, resource_version) VALUES (?, ?, ?, ?)`, "audit-retry", task.ID, task.WorkspaceID, task.ResourceVersion); err != nil {
+		t.Fatal(err)
+	}
+	svc.eventBus = &taskPublicationBarrierBus{MockEventBus: eventBus, failNext: true}
+	if err = svc.PublishExactTaskCommandUpdate(ctx, "audit-retry"); err == nil {
+		t.Fatal("event bus failure acknowledged the outbox row")
+	}
+	var publishedAt any
+	if err = repo.DB().QueryRowContext(ctx, `SELECT published_at FROM exact_task_command_outbox WHERE audit_id = ?`, "audit-retry").Scan(&publishedAt); err != nil {
+		t.Fatal(err)
+	}
+	if publishedAt != nil {
+		t.Fatal("failed publication acknowledged the outbox row")
+	}
+	svc.eventBus = eventBus
+	if err = svc.PublishExactTaskCommandUpdate(ctx, "audit-retry"); err != nil {
+		t.Fatalf("retry publication: %v", err)
+	}
+	if got := len(eventBus.GetPublishedEvents()); got != 1 {
+		t.Fatalf("published events after retry = %d, want 1", got)
+	}
+	if err = svc.PublishExactTaskCommandUpdate(ctx, "audit-retry"); err != nil {
+		t.Fatalf("replay publication: %v", err)
+	}
+	if got := len(eventBus.GetPublishedEvents()); got != 1 {
+		t.Fatalf("published events after replay = %d, want 1", got)
+	}
+}
+
 func TestPublishExactTaskCommandUpdateHasNoEventWithoutCommittedOutbox(t *testing.T) {
 	ctx := context.Background()
 	svc, eventBus, repo := createTestService(t)

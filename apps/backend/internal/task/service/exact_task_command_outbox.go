@@ -37,7 +37,9 @@ func (s *Service) PublishExactTaskCommandUpdate(ctx context.Context, auditID str
 	if err != nil || task == nil || task.WorkspaceID != record.WorkspaceID || task.ResourceVersion != record.ResourceVersion {
 		return sqliterepo.ErrExactTaskCommandUnavailable
 	}
-	s.publishTaskEventNow(ctx, "task.updated", task, nil, nil, nil, nil)
+	if err = s.publishTaskEventNow(ctx, "task.updated", task, nil, nil, nil, nil); err != nil {
+		return err
+	}
 	if err = outbox.AcknowledgeExactTaskCommandOutbox(ctx, auditID); err != nil {
 		release = false
 		return err

@@ -456,7 +456,7 @@ func snapshotTaskForPublication(task *models.Task) *models.Task {
 	return &snapshot
 }
 
-func (s *Service) publishTaskEventNow(ctx context.Context, eventType string, task *models.Task, oldState *v1.TaskState, extra map[string]interface{}, oldWorkflowIDs []string, activity *taskActivitySnapshot) {
+func (s *Service) publishTaskEventNow(ctx context.Context, eventType string, task *models.Task, oldState *v1.TaskState, extra map[string]interface{}, oldWorkflowIDs []string, activity *taskActivitySnapshot) error {
 	data := map[string]interface{}{
 		"task_id":            task.ID,
 		"step_transition_id": task.WorkflowStepTransitionID,
@@ -516,7 +516,29 @@ func (s *Service) publishTaskEventNow(ctx context.Context, eventType string, tas
 
 	activity = s.addTaskSessionEventFieldsWithActivity(ctx, task.ID, data, activity)
 	s.addTaskParkedEventField(data, task.ID)
+	s.addTaskEventOptionalFields(ctx, eventType, task, oldState, extra, oldWorkflowIDs, data)
 
+	event := bus.NewEvent(eventType, "task-service", data)
+	err := s.eventBus.Publish(ctx, eventType, event)
+	if err != nil {
+		s.logger.Error("failed to publish task event",
+			zap.String("event_type", eventType),
+			zap.String("task_id", task.ID),
+			zap.Error(err))
+	} else if activity.known {
+		s.recordTaskActivitySnapshot(task.ID, activity)
+	}
+	if eventType == events.TaskDeleted {
+		s.forgetTaskActivity(task.ID)
+	}
+	if err != nil {
+		return err
+	}
+	s.logTaskLifecycleEventPublished(eventType, task, data)
+	return nil
+}
+
+func (s *Service) addTaskEventOptionalFields(ctx context.Context, eventType string, task *models.Task, oldState *v1.TaskState, extra map[string]interface{}, oldWorkflowIDs []string, data map[string]interface{}) {
 	if task.ParentID != "" {
 		data["parent_id"] = task.ParentID
 	}
@@ -562,24 +584,6 @@ func (s *Service) publishTaskEventNow(ctx context.Context, eventType string, tas
 		// the activity projection that supplies Started and Completed.
 		s.taskStateActivity.LogTaskStateChange(ctx, task, *oldState)
 	}
-
-	event := bus.NewEvent(eventType, "task-service", data)
-	err := s.eventBus.Publish(ctx, eventType, event)
-	if err != nil {
-		s.logger.Error("failed to publish task event",
-			zap.String("event_type", eventType),
-			zap.String("task_id", task.ID),
-			zap.Error(err))
-	} else if activity.known {
-		s.recordTaskActivitySnapshot(task.ID, activity)
-	}
-	if eventType == events.TaskDeleted {
-		s.forgetTaskActivity(task.ID)
-	}
-	if err != nil {
-		return
-	}
-	s.logTaskLifecycleEventPublished(eventType, task, data)
 }
 
 func (s *Service) addTaskWorkspaceFoldersToEvent(ctx context.Context, task *models.Task, data map[string]interface{}) {
