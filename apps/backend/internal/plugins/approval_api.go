@@ -37,6 +37,23 @@ func (s *Service) AuthorizeCapability(
 	return s.authorizePluginCapability(installationID, workspaceID, capabilityID, requestedRevision, requestDigest, methodDigest)
 }
 
+// AuthorizeAndRecordExactCapability is the internal command-admission seam
+// for an unexposed exact Host writer. It re-evaluates the current H6 approval
+// before recording its durable receipt, so a caller cannot turn a read-only
+// or stale decision into command authority.
+func (s *Service) AuthorizeAndRecordExactCapability(
+	installationID, workspaceID, capabilityID string, requestedRevision uint64, requestDigest, methodDigest string,
+) (ApprovalDecision, error) {
+	decision := s.authorizePluginCapability(installationID, workspaceID, capabilityID, requestedRevision, requestDigest, methodDigest)
+	if !decision.Allowed {
+		return decision, ErrApprovalRevisionConflict
+	}
+	if err := s.recordExactReadReceipt(decision.Receipt); err != nil {
+		return ApprovalDecision{}, err
+	}
+	return decision, nil
+}
+
 // GrantCapabilityApproval records a workspace-scoped approval. revision is
 // the exact next revision, and auditID is the stable idempotency identity.
 func (s *Service) GrantCapabilityApproval(installationID, workspaceID string, revision uint64, manifestDigest string, capabilityIDs []string, actor, reason, auditID string) (CapabilityApprovalDTO, error) {

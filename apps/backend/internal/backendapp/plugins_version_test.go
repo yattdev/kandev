@@ -74,7 +74,7 @@ func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = services.Plugins.GrantCapabilityApproval(rec.InstallationID, "exact-ws", 1, plugins.ManifestCapabilityDigest(rec.Manifest), []string{"host.v2.read:tasks"}, "human", "grant", "audit"); err != nil {
+	if _, err = services.Plugins.GrantCapabilityApproval(rec.InstallationID, "exact-ws", 1, plugins.ManifestCapabilityDigest(rec.Manifest), []string{"host.v2.read:tasks", "host.v2.write:tasks"}, "human", "grant", "audit"); err != nil {
 		t.Fatal(err)
 	}
 	h, ok := rt.host.(pluginsdk.ExactTaskHost)
@@ -93,7 +93,11 @@ func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grant := tasksqlite.ExactTaskCommandGrant{ID: "exact-grant", InstallationID: rec.InstallationID, WorkspaceID: "exact-ws", TaskID: task.ID, CapabilityID: "host.v2.read:tasks", ReceiptAuditID: page.AuditID, ApprovalRevision: 1, ActionDigest: "marker", IdempotencyKey: "marker-key", ExpiresAt: time.Now().Add(time.Minute)}
+	writeDecision, err := services.Plugins.AuthorizeAndRecordExactCapability(rec.InstallationID, "exact-ws", "host.v2.write:tasks", 1, "exact-marker", "exact-command")
+	if err != nil || !writeDecision.Allowed {
+		t.Fatalf("exact write authorization = %+v, %v", writeDecision, err)
+	}
+	grant := tasksqlite.ExactTaskCommandGrant{ID: "exact-grant", InstallationID: rec.InstallationID, WorkspaceID: "exact-ws", TaskID: task.ID, CapabilityID: "host.v2.write:tasks", ReceiptAuditID: writeDecision.Receipt.AuditID, ApprovalRevision: 1, ActionDigest: "marker", IdempotencyKey: "marker-key", ExpiresAt: time.Now().Add(time.Minute)}
 	if err = repos.Task.IssueExactTaskCommandGrant(ctx, grant); err != nil {
 		t.Fatal(err)
 	}
@@ -128,11 +132,59 @@ func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
 	}
 }
 
+func TestProvideServicesReadOnlyApprovalCannotMintExactCommandGrant(t *testing.T) {
+	ctx := context.Background()
+	services, _, repos := provideTestServices(t, "exact-read-only")
+	if err := repos.Task.CreateWorkspace(ctx, &taskmodels.Workspace{ID: "read-only-ws", Name: "Read only"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repos.Task.CreateTask(ctx, &taskmodels.Task{ID: "read-only-task", WorkspaceID: "read-only-ws", Title: "Task", Description: "before"}); err != nil {
+		t.Fatal(err)
+	}
+	services.Plugins.SetRuntime(&exactHostRuntime{})
+	record, err := services.Plugins.Install(ctx, exactHostPackage(t, "exact-read-only"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = services.Plugins.GrantCapabilityApproval(record.InstallationID, "read-only-ws", 1, plugins.ManifestCapabilityDigest(record.Manifest), []string{"host.v2.read:tasks"}, "human", "grant", "audit"); err != nil {
+		t.Fatal(err)
+	}
+	decision, err := services.Plugins.AuthorizeAndRecordExactCapability(record.InstallationID, "read-only-ws", "host.v2.write:tasks", 1, "exact-marker", "exact-command")
+	if err == nil || decision.Allowed {
+		t.Fatalf("read-only write authorization = %+v, %v", decision, err)
+	}
+	task, err := repos.Task.GetTask(ctx, "read-only-task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := tasksqlite.ExactTaskCommandGrant{ID: "read-only-grant", InstallationID: record.InstallationID, WorkspaceID: "read-only-ws", TaskID: task.ID, CapabilityID: "host.v2.read:tasks", ReceiptAuditID: "read-only-receipt", ApprovalRevision: 1, ActionDigest: "marker", IdempotencyKey: "read-only-key", ExpiresAt: time.Now().Add(time.Minute)}
+	if err = repos.Task.IssueExactTaskCommandGrant(ctx, grant); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("IssueExactTaskCommandGrant with read capability = %v", err)
+	}
+	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, tasksqlite.ExactTaskDescriptionCommand{GrantID: grant.ID, InstallationID: grant.InstallationID, WorkspaceID: grant.WorkspaceID, TaskID: grant.TaskID, CapabilityID: grant.CapabilityID, ReceiptAuditID: grant.ReceiptAuditID, ApprovalRevision: grant.ApprovalRevision, ActionDigest: grant.ActionDigest, IdempotencyKey: grant.IdempotencyKey, Marker: "[marker]", ExpectedResourceVersion: task.ResourceVersion, ExpectedFence: 0}); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("ApplyExactTaskDescriptionCommand with read capability = %v", err)
+	}
+	stored, err := repos.Task.GetTask(ctx, task.ID)
+	if err != nil || stored.Description != "before" || stored.ResourceVersion != task.ResourceVersion {
+		t.Fatalf("read-only command changed task: %+v, %v", stored, err)
+	}
+	var grants, audits int
+	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_grants`).Scan(&grants); err != nil {
+		t.Fatal(err)
+	}
+	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_audits`).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if grants != 0 || audits != 0 {
+		t.Fatalf("read-only command journal effects: grants=%d audits=%d", grants, audits)
+	}
+}
+
 func exactHostPackage(t *testing.T, id string) *bytes.Buffer {
 	t.Helper()
 	var b bytes.Buffer
 	p := goruntime.GOOS + "-" + goruntime.GOARCH
-	manifest := fmt.Sprintf("id: %s\napi_version: 1\nversion: 1.0.0\nmin_kandev_version: 0.1.0\ndisplay_name: Exact\ncapabilities:\n  host_v2_read: [tasks]\nruntime:\n  type: binary\n  executables:\n    %s: server/plugin\n", id, p)
+	manifest := fmt.Sprintf("id: %s\napi_version: 1\nversion: 1.0.0\nmin_kandev_version: 0.1.0\ndisplay_name: Exact\ncapabilities:\n  host_v2_read: [tasks]\n  host_v2_write: [tasks]\nruntime:\n  type: binary\n  executables:\n    %s: server/plugin\n", id, p)
 	if err := pkgtartest.WritePackage(&b, map[string][]byte{"manifest.yaml": []byte(manifest), "server/plugin": []byte("#!/bin/sh\n")}); err != nil {
 		t.Fatal(err)
 	}

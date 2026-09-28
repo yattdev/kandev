@@ -15,6 +15,8 @@ import (
 // command whose approval, grant, task version, or workspace fence changed.
 var ErrExactTaskCommandUnavailable = errors.New("exact task command unavailable")
 
+const exactTaskDescriptionCommandCapability = "host.v2.write:tasks"
+
 func (r *Repository) ExactTaskCommandAvailable() bool {
 	return r != nil && r.db != nil && !dialect.IsPostgres(r.db.DriverName())
 }
@@ -212,7 +214,7 @@ func (r *Repository) RevokeExactTaskCommandWorkspace(ctx context.Context, instal
 }
 
 func (r *Repository) IssueExactTaskCommandGrant(ctx context.Context, grant ExactTaskCommandGrant) error {
-	if !validExactCommandGrant(grant) || !grant.ExpiresAt.After(r.nowUTC()) {
+	if !validExactCommandGrant(grant) || grant.CapabilityID != exactTaskDescriptionCommandCapability || !grant.ExpiresAt.After(r.nowUTC()) {
 		return ErrExactTaskCommandUnavailable
 	}
 	tx, err := r.db.BeginTxx(ctx, nil)
@@ -338,5 +340,5 @@ func validExactCommandGrant(g ExactTaskCommandGrant) bool {
 	return g.ID != "" && g.TaskID != "" && g.ActionDigest != "" && g.IdempotencyKey != "" && validExactCommandApproval(ExactTaskCommandApproval{InstallationID: g.InstallationID, WorkspaceID: g.WorkspaceID, CapabilityID: g.CapabilityID, ReceiptAuditID: g.ReceiptAuditID, Revision: g.ApprovalRevision})
 }
 func validExactCommand(c ExactTaskDescriptionCommand) bool {
-	return c.GrantID != "" && c.TaskID != "" && c.Marker != "" && c.ActionDigest != "" && c.IdempotencyKey != "" && c.ExpectedResourceVersion > 0 && c.ExpectedFence >= 0 && validExactCommandApproval(ExactTaskCommandApproval{InstallationID: c.InstallationID, WorkspaceID: c.WorkspaceID, CapabilityID: c.CapabilityID, ReceiptAuditID: c.ReceiptAuditID, Revision: c.ApprovalRevision})
+	return c.GrantID != "" && c.TaskID != "" && c.Marker != "" && c.ActionDigest != "" && c.IdempotencyKey != "" && c.ExpectedResourceVersion > 0 && c.ExpectedFence >= 0 && c.CapabilityID == exactTaskDescriptionCommandCapability && validExactCommandApproval(ExactTaskCommandApproval{InstallationID: c.InstallationID, WorkspaceID: c.WorkspaceID, CapabilityID: c.CapabilityID, ReceiptAuditID: c.ReceiptAuditID, Revision: c.ApprovalRevision})
 }

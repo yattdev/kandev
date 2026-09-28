@@ -66,11 +66,11 @@ func TestRegisteredHostExactReceiptEnablesOnlyTheComposedSQLiteCommandPath(t *te
 		t.Fatalf("GetTask: %v", err)
 	}
 	fence := exactCommandWorkspaceFence(t, database, "workspace-1")
-	var receiptAuditID string
-	if err := database.Get(&receiptAuditID, `SELECT audit_id FROM exact_task_command_receipts WHERE installation_id = ? AND workspace_id = ? AND capability_id = ? AND approval_revision = ?`, record.InstallationID, "workspace-1", "host.v2.read:tasks", 1); err != nil {
-		t.Fatalf("read Host receipt from exact authority: %v", err)
+	writeDecision, err := svc.AuthorizeAndRecordExactCapability(record.InstallationID, "workspace-1", "host.v2.write:tasks", 1, "exact-marker", "exact-command")
+	if err != nil || !writeDecision.Allowed {
+		t.Fatalf("AuthorizeAndRecordExactCapability: %+v, %v", writeDecision, err)
 	}
-	grant := tasksqlite.ExactTaskCommandGrant{ID: "grant-1", InstallationID: record.InstallationID, WorkspaceID: "workspace-1", TaskID: task.ID, CapabilityID: "host.v2.read:tasks", ReceiptAuditID: receiptAuditID, ApprovalRevision: 1, ActionDigest: "marker-v1", IdempotencyKey: "command-1", ExpiresAt: time.Now().UTC().Add(time.Minute)}
+	grant := tasksqlite.ExactTaskCommandGrant{ID: "grant-1", InstallationID: record.InstallationID, WorkspaceID: "workspace-1", TaskID: task.ID, CapabilityID: "host.v2.write:tasks", ReceiptAuditID: writeDecision.Receipt.AuditID, ApprovalRevision: 1, ActionDigest: "marker-v1", IdempotencyKey: "command-1", ExpiresAt: time.Now().UTC().Add(time.Minute)}
 	if err := repo.IssueExactTaskCommandGrant(ctx, grant); err != nil {
 		t.Fatalf("IssueExactTaskCommandGrant: %v", err)
 	}
@@ -170,22 +170,22 @@ func testInstallationLifecycleDisablesOutstandingExactCommandGrant(t *testing.T,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 1, ManifestCapabilityDigest(record.Manifest), []string{"host.v2.read:tasks"}, "human", "test grant", "grant-audit"); err != nil {
+	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 1, ManifestCapabilityDigest(record.Manifest), []string{"host.v2.read:tasks", "host.v2.write:tasks"}, "human", "test grant", "grant-audit"); err != nil {
 		t.Fatal(err)
 	}
 	host := svc.hostForPlugin(record.ID).(*pluginHost)
 	if _, _, err := host.ListTasksExact(ctx, pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 1}); err != nil {
 		t.Fatal(err)
 	}
-	var receiptID string
-	if err := database.Get(&receiptID, `SELECT audit_id FROM exact_task_command_receipts WHERE installation_id = ?`, record.InstallationID); err != nil {
-		t.Fatal(err)
+	writeDecision, err := svc.AuthorizeAndRecordExactCapability(record.InstallationID, "workspace-1", "host.v2.write:tasks", 1, "exact-marker", "exact-command")
+	if err != nil || !writeDecision.Allowed {
+		t.Fatalf("AuthorizeAndRecordExactCapability: %+v, %v", writeDecision, err)
 	}
 	task, err := repo.GetTask(ctx, "task-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	grant := tasksqlite.ExactTaskCommandGrant{ID: "grant-1", InstallationID: record.InstallationID, WorkspaceID: "workspace-1", TaskID: task.ID, CapabilityID: "host.v2.read:tasks", ReceiptAuditID: receiptID, ApprovalRevision: 1, ActionDigest: "marker-v1", IdempotencyKey: "command-1", ExpiresAt: time.Now().UTC().Add(time.Minute)}
+	grant := tasksqlite.ExactTaskCommandGrant{ID: "grant-1", InstallationID: record.InstallationID, WorkspaceID: "workspace-1", TaskID: task.ID, CapabilityID: "host.v2.write:tasks", ReceiptAuditID: writeDecision.Receipt.AuditID, ApprovalRevision: 1, ActionDigest: "marker-v1", IdempotencyKey: "command-1", ExpiresAt: time.Now().UTC().Add(time.Minute)}
 	if err := repo.IssueExactTaskCommandGrant(ctx, grant); err != nil {
 		t.Fatal(err)
 	}
