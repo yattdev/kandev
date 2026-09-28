@@ -12,6 +12,7 @@ func TestExactTaskGrantBindsScopeExpiresAndSurvivesRestart(t *testing.T) {
 	ledger := newApprovalLedger(t.TempDir())
 	now := time.Date(2026, 9, 28, 4, 0, 0, 0, time.UTC)
 	req := ExactTaskGrantRequest{InstallationID: "installation-1", WorkspaceID: "workspace-1", TaskID: "task-1", CapabilityID: "host.v2.write:tasks", ApprovalAuditID: "receipt-1", ApprovalRevision: 2, ActionDigest: "action-1", IdempotencyKey: "key-1"}
+	require.NoError(t, ledger.recordReadReceipt(ApprovalReceipt{InstallationID: req.InstallationID, WorkspaceID: req.WorkspaceID, CapabilityID: req.CapabilityID, Revision: req.ApprovalRevision, AuditID: req.ApprovalAuditID, Result: approvalReceiptAllowed, ObservedAt: now}))
 	grant, err := ledger.issueExactTaskGrant(req, now)
 	require.NoError(t, err)
 	_, err = newApprovalLedger(ledger.dir).requireExactTaskGrant(grant.ID, req, now.Add(time.Minute))

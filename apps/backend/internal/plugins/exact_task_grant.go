@@ -39,6 +39,9 @@ func (l *approvalLedger) issueExactTaskGrant(request ExactTaskGrantRequest, now 
 	if err != nil {
 		return ExactTaskGrant{}, err
 	}
+	if !hasExactTaskGrantReceipt(file.ReadReceipts, request) {
+		return ExactTaskGrant{}, ErrExactTaskGrantUnavailable
+	}
 	for _, grant := range file.ExactTaskGrants {
 		if grant.InstallationID == request.InstallationID && grant.WorkspaceID == request.WorkspaceID && grant.IdempotencyKey == request.IdempotencyKey {
 			if grant.TaskID == request.TaskID && grant.ActionDigest == request.ActionDigest && grant.ApprovalAuditID == request.ApprovalAuditID && grant.ApprovalRevision == request.ApprovalRevision {
@@ -50,6 +53,15 @@ func (l *approvalLedger) issueExactTaskGrant(request ExactTaskGrantRequest, now 
 	grant := ExactTaskGrant{ID: uuid.NewString(), InstallationID: request.InstallationID, WorkspaceID: request.WorkspaceID, TaskID: request.TaskID, CapabilityID: request.CapabilityID, ApprovalAuditID: request.ApprovalAuditID, ApprovalRevision: request.ApprovalRevision, ActionDigest: request.ActionDigest, IdempotencyKey: request.IdempotencyKey, IssuedAt: now.UTC(), ExpiresAt: now.UTC().Add(exactTaskGrantTTL)}
 	file.ExactTaskGrants[grant.ID] = grant
 	return grant, l.save(file)
+}
+
+func hasExactTaskGrantReceipt(receipts []ApprovalReceipt, request ExactTaskGrantRequest) bool {
+	for _, receipt := range receipts {
+		if receipt.Result == approvalReceiptAllowed && receipt.AuditID == request.ApprovalAuditID && receipt.InstallationID == request.InstallationID && receipt.WorkspaceID == request.WorkspaceID && receipt.CapabilityID == request.CapabilityID && receipt.Revision == request.ApprovalRevision {
+			return true
+		}
+	}
+	return false
 }
 
 func (l *approvalLedger) requireExactTaskGrant(id string, request ExactTaskGrantRequest, now time.Time) (ExactTaskGrant, error) {
