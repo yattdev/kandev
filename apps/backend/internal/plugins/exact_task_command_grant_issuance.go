@@ -48,6 +48,14 @@ func (h *pluginHost) executeExactTaskCommand(ctx context.Context, request exactT
 	return receipt, nil
 }
 
+func (h *pluginHost) UpdateTaskExact(ctx context.Context, request pluginsdk.ExactTaskUpdateRequest) (*pluginsdk.ExactTaskUpdateReceipt, error) {
+	receipt, err := h.executeExactTaskCommand(ctx, exactTaskCommandGrantRequest{WorkspaceID: request.WorkspaceID, TaskID: request.TaskID, CapabilityRevision: request.CapabilityRevision, DecisionEvidenceSnapshotVersion: request.DecisionEvidenceSnapshotVersion, PendingTransition: request.PendingTransition, Marker: request.Marker, IdempotencyKey: request.IdempotencyKey}, request.ExpectedResourceVersion)
+	if err != nil {
+		return nil, ErrExactTaskGrantUnavailable
+	}
+	return &pluginsdk.ExactTaskUpdateReceipt{AuditID: receipt.AuditID, ResourceVersion: receipt.ResourceVersion}, nil
+}
+
 func (h *pluginHost) exactTaskCommandGrant(ctx context.Context, request exactTaskCommandGrantRequest) (tasksqlite.ExactTaskCommandGrant, exactSnapshotBinding, messagequeue.ExactPendingTransition, ExactTaskCommandGrantIssuer, error) {
 	if h == nil || h.installationID == "" || !validExactTaskCommandGrantRequest(request) {
 		return tasksqlite.ExactTaskCommandGrant{}, exactSnapshotBinding{}, messagequeue.ExactPendingTransition{}, nil, ErrExactTaskGrantUnavailable

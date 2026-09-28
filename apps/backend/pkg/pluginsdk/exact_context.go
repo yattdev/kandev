@@ -64,6 +64,22 @@ type ExactTaskHost interface {
 	GetTaskExact(context.Context, ExactTaskGetQuery) (*ExactTask, error)
 }
 
+type ExactTaskCommandHost interface {
+	UpdateTaskExact(context.Context, ExactTaskUpdateRequest) (*ExactTaskUpdateReceipt, error)
+}
+
+type ExactTaskUpdateRequest struct {
+	WorkspaceID, TaskID, DecisionEvidenceSnapshotVersion string
+	CapabilityRevision                                   uint64
+	PendingTransition                                    ExactPendingTaskTransition
+	Marker, IdempotencyKey                               string
+	ExpectedResourceVersion                              int64
+}
+type ExactTaskUpdateReceipt struct {
+	AuditID         string
+	ResourceVersion int64
+}
+
 // ExactSessionHost exposes the public-safe, snapshot-bound lifecycle
 // projection for all sessions in one approved workspace.
 type ExactSessionHost interface {
@@ -153,6 +169,10 @@ func ExactWorkflows(host Host) (ExactWorkflowHost, bool) {
 
 func ExactTasks(host Host) (ExactTaskHost, bool) {
 	exact, ok := host.(ExactTaskHost)
+	return exact, ok
+}
+func ExactTaskCommands(host Host) (ExactTaskCommandHost, bool) {
+	exact, ok := host.(ExactTaskCommandHost)
 	return exact, ok
 }
 

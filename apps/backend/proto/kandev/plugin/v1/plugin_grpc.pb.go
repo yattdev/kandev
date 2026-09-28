@@ -509,6 +509,7 @@ const (
 	Host_GetTaskExact_FullMethodName                  = "/kandev.plugin.v1.Host/GetTaskExact"
 	Host_ListSessionsExact_FullMethodName             = "/kandev.plugin.v1.Host/ListSessionsExact"
 	Host_ListTaskDecisionEvidenceExact_FullMethodName = "/kandev.plugin.v1.Host/ListTaskDecisionEvidenceExact"
+	Host_UpdateTaskExact_FullMethodName               = "/kandev.plugin.v1.Host/UpdateTaskExact"
 	Host_ListTasks_FullMethodName                     = "/kandev.plugin.v1.Host/ListTasks"
 	Host_GetTask_FullMethodName                       = "/kandev.plugin.v1.Host/GetTask"
 	Host_ListTaskStepTransitions_FullMethodName       = "/kandev.plugin.v1.Host/ListTaskStepTransitions"
@@ -599,6 +600,7 @@ type HostClient interface {
 	GetTaskExact(ctx context.Context, in *GetTaskExactRequest, opts ...grpc.CallOption) (*GetTaskExactResponse, error)
 	ListSessionsExact(ctx context.Context, in *ListSessionsExactRequest, opts ...grpc.CallOption) (*ListSessionsExactResponse, error)
 	ListTaskDecisionEvidenceExact(ctx context.Context, in *ListTaskDecisionEvidenceExactRequest, opts ...grpc.CallOption) (*ListTaskDecisionEvidenceExactResponse, error)
+	UpdateTaskExact(ctx context.Context, in *UpdateTaskExactRequest, opts ...grpc.CallOption) (*UpdateTaskExactResponse, error)
 	// Reads — capability api_read:<resource>
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
@@ -865,6 +867,16 @@ func (c *hostClient) ListTaskDecisionEvidenceExact(ctx context.Context, in *List
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListTaskDecisionEvidenceExactResponse)
 	err := c.cc.Invoke(ctx, Host_ListTaskDecisionEvidenceExact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hostClient) UpdateTaskExact(ctx context.Context, in *UpdateTaskExactRequest, opts ...grpc.CallOption) (*UpdateTaskExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateTaskExactResponse)
+	err := c.cc.Invoke(ctx, Host_UpdateTaskExact_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1220,6 +1232,7 @@ type HostServer interface {
 	GetTaskExact(context.Context, *GetTaskExactRequest) (*GetTaskExactResponse, error)
 	ListSessionsExact(context.Context, *ListSessionsExactRequest) (*ListSessionsExactResponse, error)
 	ListTaskDecisionEvidenceExact(context.Context, *ListTaskDecisionEvidenceExactRequest) (*ListTaskDecisionEvidenceExactResponse, error)
+	UpdateTaskExact(context.Context, *UpdateTaskExactRequest) (*UpdateTaskExactResponse, error)
 	// Reads — capability api_read:<resource>
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
@@ -1365,6 +1378,9 @@ func (UnimplementedHostServer) ListSessionsExact(context.Context, *ListSessionsE
 }
 func (UnimplementedHostServer) ListTaskDecisionEvidenceExact(context.Context, *ListTaskDecisionEvidenceExactRequest) (*ListTaskDecisionEvidenceExactResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListTaskDecisionEvidenceExact not implemented")
+}
+func (UnimplementedHostServer) UpdateTaskExact(context.Context, *UpdateTaskExactRequest) (*UpdateTaskExactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateTaskExact not implemented")
 }
 func (UnimplementedHostServer) ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListTasks not implemented")
@@ -1794,6 +1810,24 @@ func _Host_ListTaskDecisionEvidenceExact_Handler(srv interface{}, ctx context.Co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(HostServer).ListTaskDecisionEvidenceExact(ctx, req.(*ListTaskDecisionEvidenceExactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Host_UpdateTaskExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateTaskExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).UpdateTaskExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_UpdateTaskExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).UpdateTaskExact(ctx, req.(*UpdateTaskExactRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2398,6 +2432,10 @@ var Host_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListTaskDecisionEvidenceExact",
 			Handler:    _Host_ListTaskDecisionEvidenceExact_Handler,
+		},
+		{
+			MethodName: "UpdateTaskExact",
+			Handler:    _Host_UpdateTaskExact_Handler,
 		},
 		{
 			MethodName: "ListTasks",

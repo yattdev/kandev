@@ -447,6 +447,14 @@ func (h *grpcHostClient) GetTaskExact(ctx context.Context, query ExactTaskGetQue
 	return exactTaskFromProto(response.GetTask()), nil
 }
 
+func (h *grpcHostClient) UpdateTaskExact(ctx context.Context, request ExactTaskUpdateRequest) (*ExactTaskUpdateReceipt, error) {
+	response, err := h.client.UpdateTaskExact(ctx, &pluginv1.UpdateTaskExactRequest{WorkspaceId: request.WorkspaceID, TaskId: request.TaskID, CapabilityRevision: request.CapabilityRevision, DecisionEvidenceSnapshotVersion: request.DecisionEvidenceSnapshotVersion, PendingTransition: &pluginv1.ExactPendingTaskTransition{SessionId: request.PendingTransition.SessionID, TaskId: request.PendingTransition.TaskID, WorkspaceId: request.PendingTransition.WorkspaceID, SessionIncarnationId: request.PendingTransition.SessionIncarnationID, WorkflowId: request.PendingTransition.WorkflowID, WorkflowStepId: request.PendingTransition.WorkflowStepID, StepPosition: request.PendingTransition.StepPosition, ResourceVersion: request.PendingTransition.ResourceVersion, TaskResourceVersion: request.PendingTransition.TaskResourceVersion, SessionResourceVersion: request.PendingTransition.SessionResourceVersion, QueueGeneration: request.PendingTransition.QueueGeneration, QueuedAt: request.PendingTransition.QueuedAt}, Marker: request.Marker, IdempotencyKey: request.IdempotencyKey, ExpectedResourceVersion: request.ExpectedResourceVersion})
+	if err != nil {
+		return nil, err
+	}
+	return &ExactTaskUpdateReceipt{AuditID: response.GetAuditId(), ResourceVersion: response.GetResourceVersion()}, nil
+}
+
 func exactPageToProto(page ExactPage) *pluginv1.ExactPage {
 	return &pluginv1.ExactPage{Limit: page.Limit, Cursor: page.Cursor, SnapshotVersion: page.SnapshotVersion}
 }
@@ -1012,6 +1020,22 @@ func (s *grpcHostServer) GetTaskExact(ctx context.Context, request *pluginv1.Get
 		return nil, fmt.Errorf("pluginsdk: exact task response is missing")
 	}
 	return &pluginv1.GetTaskExactResponse{Task: exactTasksToProto([]ExactTask{*task})[0]}, nil
+}
+
+func (s *grpcHostServer) UpdateTaskExact(ctx context.Context, request *pluginv1.UpdateTaskExactRequest) (*pluginv1.UpdateTaskExactResponse, error) {
+	exact, ok := s.impl.(ExactTaskCommandHost)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "exact task command is unavailable")
+	}
+	pending := request.GetPendingTransition()
+	if pending == nil {
+		return nil, status.Error(codes.InvalidArgument, "exact pending transition is required")
+	}
+	receipt, err := exact.UpdateTaskExact(ctx, ExactTaskUpdateRequest{WorkspaceID: request.GetWorkspaceId(), TaskID: request.GetTaskId(), CapabilityRevision: request.GetCapabilityRevision(), DecisionEvidenceSnapshotVersion: request.GetDecisionEvidenceSnapshotVersion(), PendingTransition: ExactPendingTaskTransition{SessionID: pending.GetSessionId(), TaskID: pending.GetTaskId(), WorkspaceID: pending.GetWorkspaceId(), SessionIncarnationID: pending.GetSessionIncarnationId(), WorkflowID: pending.GetWorkflowId(), WorkflowStepID: pending.GetWorkflowStepId(), StepPosition: pending.GetStepPosition(), ResourceVersion: pending.GetResourceVersion(), TaskResourceVersion: pending.GetTaskResourceVersion(), SessionResourceVersion: pending.GetSessionResourceVersion(), QueueGeneration: pending.GetQueueGeneration(), QueuedAt: pending.GetQueuedAt()}, Marker: request.GetMarker(), IdempotencyKey: request.GetIdempotencyKey(), ExpectedResourceVersion: request.GetExpectedResourceVersion()})
+	if err != nil {
+		return nil, err
+	}
+	return &pluginv1.UpdateTaskExactResponse{AuditId: receipt.AuditID, ResourceVersion: receipt.ResourceVersion}, nil
 }
 
 func exactPageFromProto(page *pluginv1.ExactPage) ExactPage {

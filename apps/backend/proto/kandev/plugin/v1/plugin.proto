@@ -90,6 +90,7 @@ service Host {
   rpc GetTaskExact(GetTaskExactRequest) returns (GetTaskExactResponse);
   rpc ListSessionsExact(ListSessionsExactRequest) returns (ListSessionsExactResponse);
   rpc ListTaskDecisionEvidenceExact(ListTaskDecisionEvidenceExactRequest) returns (ListTaskDecisionEvidenceExactResponse);
+  rpc UpdateTaskExact(UpdateTaskExactRequest) returns (UpdateTaskExactResponse);
 
   // Reads — capability api_read:<resource>
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
@@ -1261,4 +1262,21 @@ message ListTaskDecisionEvidenceExactResponse {
   repeated ExactTaskRelation relations = 1;
   repeated ExactPendingTaskTransition pending_transitions = 2;
   ExactPageInfo page_info = 3;
+}
+// UpdateTaskExact is the bounded exact marker command. The Host derives the
+// grant and workspace fence; the request carries only observed evidence and
+// the task version the plugin read.
+message UpdateTaskExactRequest {
+  string workspace_id = 1;
+  string task_id = 2;
+  uint64 capability_revision = 3;
+  string decision_evidence_snapshot_version = 4;
+  ExactPendingTaskTransition pending_transition = 5;
+  string marker = 6;
+  string idempotency_key = 7;
+  int64 expected_resource_version = 8;
+}
+message UpdateTaskExactResponse {
+  string audit_id = 1;
+  int64 resource_version = 2;
 }
