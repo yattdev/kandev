@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -267,4 +268,40 @@ func TestClaimForceRemovalBlocksBulkActiveSessionCancellation(t *testing.T) {
 	foreign, err := repo.CancelActiveTaskSessionsByTaskID(ctx, "force-bulk-foreign", "foreign")
 	require.NoError(t, err)
 	require.Len(t, foreign, 1)
+}
+
+func TestClaimForceRemovalBlocksStaleRunningSessionCancellation(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-stale-cancel-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-stale-cancel-held", "force-stale-cancel-foreign", "force-stale-cancel-terminal"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-stale-cancel-ws", Title: taskID}))
+		state := models.TaskSessionStateRunning
+		if taskID == "force-stale-cancel-terminal" {
+			state = models.TaskSessionStateCompleted
+		}
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID, State: state}))
+	}
+
+	held, err := repo.GetTask(ctx, "force-stale-cancel-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "stale-cancel", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	staleBefore := time.Now().UTC().Add(time.Minute)
+	cancelled, err := repo.CancelRunningTaskSessionByID(ctx, "force-stale-cancel-held-session", "held", staleBefore)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.Nil(t, cancelled)
+	heldSession, err := repo.GetTaskSession(ctx, "force-stale-cancel-held-session")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateRunning, heldSession.State)
+
+	cancelled, err = repo.CancelRunningTaskSessionByID(ctx, "force-stale-cancel-foreign-session", "foreign", staleBefore)
+	require.NoError(t, err)
+	require.NotNil(t, cancelled)
+	require.Equal(t, models.TaskSessionStateCancelled, cancelled.State)
+
+	cancelled, err = repo.CancelRunningTaskSessionByID(ctx, "force-stale-cancel-terminal-session", "terminal", staleBefore)
+	require.NoError(t, err)
+	require.Nil(t, cancelled)
 }

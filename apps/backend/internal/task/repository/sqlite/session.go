@@ -2410,7 +2410,25 @@ func (r *Repository) CancelRunningTaskSessionByID(ctx context.Context, sessionID
 	now := time.Now().UTC()
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	rows, err := r.db.QueryContext(writeCtx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(writeCtx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(writeCtx, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), sessionID).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if err := r.lockTaskRowInTx(writeCtx, tx, taskID); err != nil {
+		return nil, err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(writeCtx, r.db, tx, taskID); err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(writeCtx, r.db.Rebind(`
 		UPDATE task_sessions
 		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
 		WHERE id = ?
@@ -2427,14 +2445,20 @@ func (r *Repository) CancelRunningTaskSessionByID(ctx context.Context, sessionID
 	if !rows.Next() {
 		return nil, rows.Err()
 	}
-	// The scanner backfills TaskID from the parameter because RETURNING
-	// does not carry it; sessionID is not the task ID, so set it from the
-	// candidate row the sweep already read instead.
 	session, err := scanCancelledTaskSessionRow(rows, "")
 	if err != nil {
 		return nil, err
 	}
-	return session, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // RecoverTaskSessionByCandidate returns one execution-less session to
