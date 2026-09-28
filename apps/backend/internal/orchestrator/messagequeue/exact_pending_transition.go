@@ -49,21 +49,42 @@ func (r *sqliteRepository) initExactPendingTransitionSchema() error {
 }
 
 func (r *sqliteRepository) OpenExactPendingTransitionSnapshot(ctx context.Context, req ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error) {
-	if !r.exactPendingTransitionsEnabled {
+	if !r.exactPendingTransitionsEnabled || r.db.DriverName() == postgresDriverName {
+		return nil, ErrExactPendingTransitionUnavailable
+	}
+	if _, err := r.CleanupExpiredExactPendingTransitionSnapshots(ctx, exactPendingCleanupMax); err != nil {
+		return nil, err
+	}
+	tx, err := r.BeginExactPendingTransitionSnapshotTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	snapshot, err := r.OpenExactPendingTransitionSnapshotInTx(ctx, tx, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
+func (r *sqliteRepository) BeginExactPendingTransitionSnapshotTx(ctx context.Context) (*sqlx.Tx, error) {
+	if !r.exactPendingTransitionsEnabled || r.db.DriverName() == postgresDriverName {
+		return nil, ErrExactPendingTransitionUnavailable
+	}
+	return r.db.BeginTxx(ctx, nil)
+}
+
+func (r *sqliteRepository) OpenExactPendingTransitionSnapshotInTx(ctx context.Context, tx *sqlx.Tx, req ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error) {
+	if !r.exactPendingTransitionsEnabled || tx == nil || r.db.DriverName() == postgresDriverName {
 		return nil, ErrExactPendingTransitionUnavailable
 	}
 	ttl, err := exactPendingSnapshotTTL(req)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := r.CleanupExpiredExactPendingTransitionSnapshots(ctx, exactPendingCleanupMax); err != nil {
-		return nil, err
-	}
-	tx, err := r.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_pending_fences VALUES(?,0) ON CONFLICT(workspace_id) DO NOTHING`), req.WorkspaceID); err != nil {
 		return nil, err
 	}
@@ -87,9 +108,6 @@ func (r *sqliteRepository) OpenExactPendingTransitionSnapshot(ctx context.Contex
 		if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_pending_snapshot_rows VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), token, i, x.SessionID, x.TaskID, x.WorkspaceID, x.SessionIncarnationID, x.WorkflowID, x.WorkflowStepID, x.Position, x.QueuedAt, x.ResourceVersion, x.TaskResourceVersion, x.SessionResourceVersion, x.QueueGeneration); err != nil {
 			return nil, err
 		}
-	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
 	}
 	return &ExactPendingTransitionSnapshot{Token: token, WorkspaceID: req.WorkspaceID, ExpiresAt: expiry}, nil
 }

@@ -17,6 +17,7 @@ import (
 type exactQueue interface {
 	mq.Repository
 	mq.ExactPendingTransitionReader
+	mq.ExactPendingTransitionTransactionReader
 }
 
 func TestExactPendingTransitionUnavailableWithoutTaskBoundary(t *testing.T) {
@@ -65,6 +66,29 @@ func TestExactPendingTransitionSnapshotLifecycle(t *testing.T) {
 	}
 	if n, err := q.CleanupExpiredExactPendingTransitionSnapshots(ctx, 10); err != nil || n != 1 {
 		t.Fatalf("cleanup=%d,%v", n, err)
+	}
+}
+
+func TestExactPendingTransitionSnapshotInTxRollbackLeavesNoSnapshot(t *testing.T) {
+	q, task := newExactPendingQueue(t)
+	ctx := context.Background()
+	seedExactPendingTask(t, task, "ws", "task", "session")
+	if err := q.SetPendingMove(ctx, "session", &mq.PendingMove{TaskID: "task"}); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := q.BeginExactPendingTransitionSnapshotTx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := q.OpenExactPendingTransitionSnapshotInTx(ctx, tx, mq.ExactPendingTransitionSnapshotRequest{WorkspaceID: "ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.PageExactPendingTransitionSnapshot(ctx, snapshot.Token, 0, 1); !errors.Is(err, mq.ErrExactPendingTransitionUnavailable) {
+		t.Fatalf("rolled back=%v", err)
 	}
 }
 

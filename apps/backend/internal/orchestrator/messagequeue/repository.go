@@ -1,6 +1,10 @@
 package messagequeue
 
-import "context"
+import (
+	"context"
+
+	"github.com/jmoiron/sqlx"
+)
 
 // RepositorySnapshot is one identity-validated queue/state read. A policy-only
 // failure preserves independently readable queue entries and Auto-run state.
@@ -318,6 +322,14 @@ type ExactPendingTransitionReader interface {
 	PageExactPendingTransitionSnapshot(context.Context, string, int, int) ([]ExactPendingTransition, error)
 	GetExactPendingTransition(context.Context, string, string) (*ExactPendingTransition, error)
 	CleanupExpiredExactPendingTransitionSnapshots(context.Context, int) (int, error)
+}
+
+// ExactPendingTransitionTransactionReader is the SQLite-only seam for a
+// future shared-authority compositor. The transaction must be issued by the
+// same reader's BeginExactPendingTransitionSnapshotTx method.
+type ExactPendingTransitionTransactionReader interface {
+	BeginExactPendingTransitionSnapshotTx(context.Context) (*sqlx.Tx, error)
+	OpenExactPendingTransitionSnapshotInTx(context.Context, *sqlx.Tx, ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error)
 }
 
 // applyMetadataUpdates merges metadata key updates into current; a nil value removes the key.
