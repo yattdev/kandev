@@ -73,6 +73,7 @@ type approvalLedgerFile struct {
 	Idempotency       map[string]CapabilityApproval       `json:"idempotency,omitempty"`
 	IdempotencyInputs map[string]approvalIdempotencyInput `json:"idempotency_inputs,omitempty"`
 	ReadReceipts      []ApprovalReceipt                   `json:"read_receipts,omitempty"`
+	ExactTaskGrants   map[string]ExactTaskGrant           `json:"exact_task_grants,omitempty"`
 }
 
 // recordReadReceipt durably records an allowed exact-read authorization. A
@@ -132,6 +133,7 @@ func (l *approvalLedger) load() (*approvalLedgerFile, error) {
 				Tombstones:        map[string]time.Time{},
 				Idempotency:       map[string]CapabilityApproval{},
 				IdempotencyInputs: map[string]approvalIdempotencyInput{},
+				ExactTaskGrants:   map[string]ExactTaskGrant{},
 			}, nil
 		}
 		return nil, err
@@ -151,6 +153,9 @@ func (l *approvalLedger) load() (*approvalLedgerFile, error) {
 	}
 	if file.IdempotencyInputs == nil {
 		file.IdempotencyInputs = map[string]approvalIdempotencyInput{}
+	}
+	if file.ExactTaskGrants == nil {
+		file.ExactTaskGrants = map[string]ExactTaskGrant{}
 	}
 	return &file, nil
 }
