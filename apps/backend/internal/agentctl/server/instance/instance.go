@@ -5,10 +5,12 @@ package instance
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/kandev/kandev/internal/agentctl/server/process"
 	"github.com/kandev/kandev/internal/common/acpprovider"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/task/models"
@@ -27,6 +29,20 @@ type processManager interface {
 	// session/load completes.
 	GetSessionID() string
 }
+
+type executionFenceProcessManager interface {
+	CloseAdmission()
+	WaitForAdmission(context.Context) error
+	ListProcesses(sessionID string) []process.ProcessInfo
+	Status() process.Status
+}
+
+// ErrExecutionIdentityMismatch means a control request named a different
+// execution incarnation than the instance currently owns.
+var ErrExecutionIdentityMismatch = errors.New("execution identity mismatch")
+
+// ErrInstanceNotFound identifies an absent agentctl instance.
+var ErrInstanceNotFound = errors.New("instance not found")
 
 // Instance represents a single agent instance running as a subprocess.
 // Each instance has its own process manager, HTTP server, and configuration.
@@ -63,6 +79,12 @@ type Instance struct {
 
 	// TaskID is the task ID this instance was created for, if any.
 	TaskID string
+
+	// ExecutionID and AgentctlGeneration bind this instance to one lifecycle
+	// execution incarnation. They are intentionally distinct from the instance
+	// ID because a runtime can reuse an agentctl instance across attempts.
+	ExecutionID        string
+	AgentctlGeneration uint64
 
 	// manager is the process manager handling the agent subprocess (unexported)
 	manager processManager
@@ -177,6 +199,11 @@ type CreateRequest struct {
 	// SessionID is the task session ID for MCP tool calls (used by ask_user_question).
 	SessionID string `json:"session_id,omitempty"`
 
+	// ExecutionID and AgentctlGeneration identify the lifecycle incarnation
+	// authorized to control this instance.
+	ExecutionID        string `json:"execution_id,omitempty"`
+	AgentctlGeneration uint64 `json:"agentctl_generation,omitempty"`
+
 	// TaskID is the task ID for MCP plan tool calls (server-side injection).
 	TaskID string `json:"task_id,omitempty"`
 
@@ -272,6 +299,9 @@ type InstanceInfo struct {
 	// TaskID is the task ID this instance was created for, if any.
 	TaskID string `json:"task_id,omitempty"`
 
+	ExecutionID        string `json:"execution_id,omitempty"`
+	AgentctlGeneration uint64 `json:"agentctl_generation,omitempty"`
+
 	// WorkspaceSourceRoots is the live, current source-root allowlist this
 	// instance is enforcing right now -- a rescan or rebind can change it
 	// after creation, so this always reflects that, not a creation-time
@@ -321,6 +351,8 @@ func (i *Instance) Info() *InstanceInfo {
 		CreatedAt:            i.CreatedAt,
 		SessionID:            i.SessionID,
 		TaskID:               i.TaskID,
+		ExecutionID:          i.ExecutionID,
+		AgentctlGeneration:   i.AgentctlGeneration,
 		WorkspaceSourceRoots: sourceRoots,
 		ProviderSessionID:    providerSessionID,
 	}

@@ -275,18 +275,20 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 
 	// Create instance up-front so the activity middleware can reference it.
 	inst := &Instance{
-		ID:            id,
-		Port:          port,
-		lease:         lease,
-		Status:        "running",
-		WorkspacePath: req.WorkspacePath,
-		AgentCommand:  agentCmd,
-		Env:           req.Env,
-		CreatedAt:     time.Now(),
-		SessionID:     req.SessionID,
-		TaskID:        req.TaskID,
-		manager:       procMgr,
-		listenerDone:  make(chan struct{}),
+		ID:                 id,
+		Port:               port,
+		lease:              lease,
+		Status:             "running",
+		WorkspacePath:      req.WorkspacePath,
+		AgentCommand:       agentCmd,
+		Env:                req.Env,
+		CreatedAt:          time.Now(),
+		SessionID:          req.SessionID,
+		TaskID:             req.TaskID,
+		ExecutionID:        req.ExecutionID,
+		AgentctlGeneration: req.AgentctlGeneration,
+		manager:            procMgr,
+		listenerDone:       make(chan struct{}),
 	}
 	inst.MarkActivity()
 
@@ -314,6 +316,65 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 	return &CreateResponse{
 		ID:   id,
 		Port: port,
+	}, nil
+}
+
+// ExecutionFenceRequest names the exact lifecycle incarnation whose command
+// admission is being closed.
+type ExecutionFenceRequest struct {
+	ExecutionID        string
+	AgentctlGeneration uint64
+}
+
+// ExecutionFenceReceipt records what agentctl itself observed after closing
+// admission. A caller must treat any false field as incomplete proof.
+type ExecutionFenceReceipt struct {
+	ExecutionID             string    `json:"execution_id"`
+	AgentctlGeneration      uint64    `json:"agentctl_generation"`
+	AdmissionClosedAt       time.Time `json:"admission_closed_at"`
+	ManagedProcessCount     int       `json:"managed_process_count"`
+	AgentProcessTerminal    bool      `json:"agent_process_terminal"`
+	ManagedProcessesDrained bool      `json:"managed_processes_drained"`
+}
+
+// CloseExecutionAdmission closes command admission for one exact instance
+// incarnation and observes the work agentctl still owns. It never terminates a
+// process: stop promotion needs an independently verified drain, not a forceful
+// cleanup side effect.
+func (m *Manager) CloseExecutionAdmission(ctx context.Context, instanceID string, req ExecutionFenceRequest) (*ExecutionFenceReceipt, error) {
+	m.mu.RLock()
+	inst, ok := m.instances[instanceID]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrInstanceNotFound, instanceID)
+	}
+
+	inst.stopMu.Lock()
+	defer inst.stopMu.Unlock()
+	if req.ExecutionID == "" || req.AgentctlGeneration == 0 ||
+		inst.ExecutionID != req.ExecutionID || inst.AgentctlGeneration != req.AgentctlGeneration {
+		return nil, ErrExecutionIdentityMismatch
+	}
+	procMgr, ok := inst.manager.(executionFenceProcessManager)
+	if !ok {
+		return nil, fmt.Errorf("instance %s has no process manager", instanceID)
+	}
+
+	cutoff := time.Now().UTC()
+	procMgr.CloseAdmission()
+	if err := procMgr.WaitForAdmission(ctx); err != nil {
+		return nil, fmt.Errorf("wait for command admission to drain: %w", err)
+	}
+	managedProcessCount := len(procMgr.ListProcesses(""))
+	agentStatus := procMgr.Status()
+	agentProcessTerminal := agentStatus == process.StatusStopped || agentStatus == process.StatusError
+	return &ExecutionFenceReceipt{
+		ExecutionID:             inst.ExecutionID,
+		AgentctlGeneration:      inst.AgentctlGeneration,
+		AdmissionClosedAt:       cutoff,
+		ManagedProcessCount:     managedProcessCount,
+		AgentProcessTerminal:    agentProcessTerminal,
+		ManagedProcessesDrained: managedProcessCount == 0 && agentProcessTerminal,
 	}, nil
 }
 

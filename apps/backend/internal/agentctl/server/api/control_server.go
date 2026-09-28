@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -137,6 +138,7 @@ func (m *ControlServer) setupRoutes() {
 	api.GET("/instances", m.handleListInstances)
 	api.GET("/instances/:id", m.handleGetInstance)
 	api.DELETE("/instances/:id", m.handleDeleteInstance)
+	api.POST("/instances/:id/execution-fence", m.handleExecutionFence)
 	api.GET("/instances/:id/turn-outcome", m.handleGetTurnOutcome)
 	api.POST("/instances/:id/turn-outcome/ack", m.handleAckTurnOutcome)
 	api.GET("/debug/subprocess-admission", m.handleSubprocessAdmission)
@@ -270,4 +272,33 @@ func (m *ControlServer) handleDeleteInstance(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "instance stopped successfully",
 	})
+}
+
+func (m *ControlServer) handleExecutionFence(c *gin.Context) {
+	var req struct {
+		ExecutionID        string `json:"execution_id" binding:"required"`
+		AgentctlGeneration uint64 `json:"agentctl_generation" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "execution_id and agentctl_generation are required"})
+		return
+	}
+
+	receipt, err := m.instMgr.CloseExecutionAdmission(c.Request.Context(), c.Param("id"), instance.ExecutionFenceRequest{
+		ExecutionID: req.ExecutionID, AgentctlGeneration: req.AgentctlGeneration,
+	})
+	if err != nil {
+		if errors.Is(err, instance.ErrExecutionIdentityMismatch) {
+			c.JSON(http.StatusConflict, gin.H{"error": "execution identity mismatch"})
+			return
+		}
+		if errors.Is(err, instance.ErrInstanceNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+			return
+		}
+		m.logger.Warn("execution fence incomplete", zap.String("instance_id", c.Param("id")), zap.Error(err))
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "execution fence incomplete"})
+		return
+	}
+	c.JSON(http.StatusOK, receipt)
 }
