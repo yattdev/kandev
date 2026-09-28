@@ -554,6 +554,7 @@ type CoordinatorStopOperationRepository interface {
 	CaptureCoordinatorStopOperation(ctx context.Context, operation models.CoordinatorStopOperation) (*models.CoordinatorStopOperation, bool, error)
 	GetCoordinatorStopOperation(ctx context.Context, operationID string) (*models.CoordinatorStopOperation, error)
 	MarkCoordinatorStopOperationIncomplete(ctx context.Context, operationID, executionID string, agentctlGeneration uint64, reasonCode string) (*models.CoordinatorStopOperation, bool, error)
+	ConsumeCoordinatorStopFenceReceipt(ctx context.Context, operationID string, receipt models.CoordinatorStopFenceReceipt) (*models.CoordinatorStopOperation, error)
 }
 
 // SessionRepository handles task session lifecycle and workflow-session relationships.
