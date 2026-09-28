@@ -36,3 +36,45 @@ func TestPostgresForceRemovalClaimRejectsStaleAndReplaysExactRequest(t *testing.
 	receipt.EvidenceDigest = "changed"
 	require.ErrorIs(t, repo.AppendForceRemovalReceipt(ctx, claim.OperationID, receipt), ErrForceRemovalClaimConflict)
 }
+
+func TestPostgresClaimForceRemovalBlocksAbsentSessionMetadataKey(t *testing.T) {
+	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
+	repo, err := NewWithDB(db, db, nil)
+	require.NoError(t, err)
+	ctx := context.Background()
+	seedPostgresTaskSession(t, repo, "held-absent-session-pg", "held-absent-session-pg-session")
+	seedPostgresTaskSession(t, repo, "foreign-absent-session-pg", "foreign-absent-session-pg-session")
+
+	heldTask, err := repo.GetTask(ctx, "held-absent-session-pg")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
+		TaskID:              heldTask.ID,
+		WorkspaceID:         heldTask.WorkspaceID,
+		TaskGeneration:      heldTask.UpdatedAt,
+		AdmissionGeneration: "admission",
+		OperationID:         "absent-session-metadata-pg",
+		RequestDigest:       "request",
+		PreviewDigest:       "preview",
+	})
+	require.NoError(t, err)
+
+	written, err := repo.SetSessionMetadataKeyIfAbsent(
+		ctx, "held-absent-session-pg-session", "marker", "held",
+	)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	heldSession, err := repo.GetTaskSession(ctx, "held-absent-session-pg-session")
+	require.NoError(t, err)
+	require.NotContains(t, heldSession.Metadata, "marker")
+
+	written, err = repo.SetSessionMetadataKeyIfAbsent(
+		ctx, "foreign-absent-session-pg-session", "marker", "foreign",
+	)
+	require.NoError(t, err)
+	require.True(t, written)
+	written, err = repo.SetSessionMetadataKeyIfAbsent(
+		ctx, "foreign-absent-session-pg-session", "marker", "replacement",
+	)
+	require.NoError(t, err)
+	require.False(t, written)
+}
