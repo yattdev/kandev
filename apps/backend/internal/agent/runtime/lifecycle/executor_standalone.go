@@ -310,6 +310,7 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 		SessionID:            req.SessionID,
 		RuntimeName:          r.Name(),
 		Client:               client,
+		ControlClient:        r.ctl,
 		StandaloneInstanceID: resp.ID,
 		StandalonePort:       resp.Port,
 		WorkspacePath:        req.WorkspacePath,

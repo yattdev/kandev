@@ -106,6 +106,7 @@ type Instance struct {
 	// arrives. Maintained by the activity middleware.
 	inflightRequests atomic.Int32
 	stopMu           sync.Mutex
+	identityMu       sync.RWMutex
 	statusMu         sync.RWMutex
 	portReleased     bool
 
@@ -338,6 +339,10 @@ func (i *Instance) Info() *InstanceInfo {
 		sourceRoots = i.manager.WorkspaceSourceRoots()
 		providerSessionID = i.manager.GetSessionID()
 	}
+	i.identityMu.RLock()
+	executionID := i.ExecutionID
+	agentctlGeneration := i.AgentctlGeneration
+	i.identityMu.RUnlock()
 
 	return &InstanceInfo{
 		ID:                   i.ID,
@@ -351,8 +356,8 @@ func (i *Instance) Info() *InstanceInfo {
 		CreatedAt:            i.CreatedAt,
 		SessionID:            i.SessionID,
 		TaskID:               i.TaskID,
-		ExecutionID:          i.ExecutionID,
-		AgentctlGeneration:   i.AgentctlGeneration,
+		ExecutionID:          executionID,
+		AgentctlGeneration:   agentctlGeneration,
 		WorkspaceSourceRoots: sourceRoots,
 		ProviderSessionID:    providerSessionID,
 	}

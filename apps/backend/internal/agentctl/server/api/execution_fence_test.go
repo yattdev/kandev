@@ -68,3 +68,47 @@ func TestExecutionFenceClosesOnlyMatchingIncarnation(t *testing.T) {
 		t.Fatalf("idempotent CloseExecutionAdmission: %v", err)
 	}
 }
+
+func TestExecutionGenerationUpdateUsesExactIdentityCAS(t *testing.T) {
+	log := logger.Default()
+	mgr := instance.NewManager(&config.Config{
+		Ports:    config.PortConfig{Base: 0, Max: 0},
+		Defaults: config.InstanceDefaults{Protocol: agent.ProtocolACP},
+	}, log)
+	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	mgr.SetServerFactory(func(*config.InstanceConfig, *process.Manager, *logger.Logger) http.Handler {
+		return http.NotFoundHandler()
+	})
+	created, err := mgr.CreateInstance(t.Context(), &instance.CreateRequest{
+		ID: "instance-generation", WorkspacePath: t.TempDir(), ExecutionID: "execution-generation", AgentctlGeneration: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.StopInstance(context.Background(), created.ID) })
+
+	server := httptest.NewServer(NewControlServer(&config.Config{}, mgr, log).Router())
+	t.Cleanup(server.Close)
+	host, port := parseHostPort(t, server.URL)
+	client := agentctl.NewControlClient(host, port, log)
+
+	updated, err := client.UpdateExecutionGeneration(t.Context(), created.ID, agentctl.ExecutionGenerationUpdate{
+		ExecutionID: "execution-generation", ExpectedAgentctlGeneration: 1, AgentctlGeneration: 2,
+	})
+	if err != nil {
+		t.Fatalf("UpdateExecutionGeneration: %v", err)
+	}
+	if updated.ExecutionID != "execution-generation" || updated.AgentctlGeneration != 2 {
+		t.Fatalf("updated identity = (%q, %d), want (execution-generation, 2)", updated.ExecutionID, updated.AgentctlGeneration)
+	}
+	if _, err := client.UpdateExecutionGeneration(t.Context(), created.ID, agentctl.ExecutionGenerationUpdate{
+		ExecutionID: "execution-generation", ExpectedAgentctlGeneration: 1, AgentctlGeneration: 2,
+	}); err == nil || !strings.Contains(err.Error(), "identity mismatch") {
+		t.Fatalf("stale update error = %v, want identity mismatch", err)
+	}
+	if _, err := client.UpdateExecutionGeneration(t.Context(), created.ID, agentctl.ExecutionGenerationUpdate{
+		ExecutionID: "reused-execution", ExpectedAgentctlGeneration: 2, AgentctlGeneration: 3,
+	}); err == nil || !strings.Contains(err.Error(), "identity mismatch") {
+		t.Fatalf("reused execution error = %v, want identity mismatch", err)
+	}
+}

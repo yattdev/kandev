@@ -4,6 +4,7 @@ package lifecycle
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -152,6 +153,7 @@ type AgentExecution struct {
 
 	// agentctl client for this execution
 	agentctl                  *agentctl.Client
+	agentctlControl           AgentctlGenerationController
 	agentctlOverride          atomic.Pointer[agentctl.Client]
 	agentctlLifecycleMu       sync.RWMutex
 	remoteInstanceLifecycleMu sync.Mutex
@@ -808,6 +810,28 @@ func (ae *AgentExecution) AcquireAgentCtlClient() (*agentctl.Client, func()) {
 		return nil, func() {}
 	}
 	return client, ae.agentctlLifecycleMu.RUnlock
+}
+
+// advanceAgentctlGeneration updates the control-plane incarnation before a
+// replacement startup can admit commands. Runtimes without a retained control
+// client remain unverified and consequently cannot supply exact stop proof.
+func (ae *AgentExecution) advanceAgentctlGeneration(ctx context.Context, generation uint64) error {
+	if ae == nil || generation <= initialAgentctlGeneration {
+		return nil
+	}
+	ae.agentctlLifecycleMu.RLock()
+	control := ae.agentctlControl
+	ae.agentctlLifecycleMu.RUnlock()
+	if control == nil {
+		return nil
+	}
+	_, err := control.UpdateExecutionGeneration(ctx, ae.ID, agentctl.ExecutionGenerationUpdate{
+		ExecutionID: ae.ID, ExpectedAgentctlGeneration: generation - 1, AgentctlGeneration: generation,
+	})
+	if err != nil {
+		return fmt.Errorf("advance agentctl generation %d: %w", generation, err)
+	}
+	return nil
 }
 
 // replaceAgentctlClient atomically publishes a replacement connection while

@@ -43,6 +43,12 @@ func remoteContributionsFromMetadata(metadata map[string]interface{}) (map[strin
 	return validateRemoteContributions(decoded)
 }
 
+// AgentctlGenerationController advances the exact lifecycle incarnation held
+// by an agentctl control server.
+type AgentctlGenerationController interface {
+	UpdateExecutionGeneration(context.Context, string, agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error)
+}
+
 func validateRemoteContributions(values map[string]models.RemoteContribution) (map[string]models.RemoteContribution, error) {
 	if len(values) == 0 {
 		return nil, nil
@@ -685,6 +691,9 @@ type ExecutorInstance struct {
 
 	// Agentctl client for communicating with this instance
 	Client *agentctl.Client
+	// ControlClient owns generation compare-and-swap for this exact agentctl
+	// instance. It is available only for runtimes that keep a control path.
+	ControlClient AgentctlGenerationController
 
 	// Runtime-specific identifiers (only one set is populated)
 	ContainerID          string // Docker
@@ -794,6 +803,7 @@ func (ri *ExecutorInstance) ToAgentExecution(req *ExecutorCreateRequest) *AgentE
 		StartedAt:            time.Now(),
 		metadata:             metadata,
 		agentctl:             ri.Client,
+		agentctlControl:      ri.ControlClient,
 		standaloneInstanceID: ri.StandaloneInstanceID,
 		standalonePort:       ri.StandalonePort,
 		historyEnabled:       historyEnabled,

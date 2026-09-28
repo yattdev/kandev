@@ -336,6 +336,7 @@ func (r *DockerExecutor) buildCreatedInstance(req *ExecutorCreateRequest, result
 		SessionID:      req.SessionID,
 		RuntimeName:    r.Name(),
 		Client:         result.Client,
+		ControlClient:  result.ControlClient,
 		ContainerID:    result.ContainerID,
 		ContainerIP:    containerIP,
 		WorkspacePath:  dockerWorkspacePath,
@@ -385,6 +386,7 @@ func (r *DockerExecutor) reconnectToContainer(ctx context.Context, dockerClient 
 		SessionID:     req.SessionID,
 		RuntimeName:   r.Name(),
 		Client:        client,
+		ControlClient: conn.controlClient,
 		ContainerID:   info.ID,
 		ContainerIP:   containerIP,
 		WorkspacePath: dockerWorkspacePath,
@@ -442,6 +444,7 @@ type reconnectAgentctlConn struct {
 	instancePort   int
 	authToken      string
 	reusingProcess bool
+	controlClient  *agentctl.ControlClient
 }
 
 type reconnectControlClient interface {
@@ -487,6 +490,7 @@ func (r *DockerExecutor) bringupAgentctl(ctx context.Context, dockerClient *dock
 		instancePort:   resolvedInstancePort,
 		authToken:      authToken,
 		reusingProcess: reusingProcess,
+		controlClient:  ctl,
 	}, nil
 }
 

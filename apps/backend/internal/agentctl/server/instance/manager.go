@@ -326,6 +326,41 @@ type ExecutionFenceRequest struct {
 	AgentctlGeneration uint64
 }
 
+// ExecutionGenerationUpdate is a compare-and-swap request for the lifecycle
+// startup generation attached to an existing agentctl instance.
+type ExecutionGenerationUpdate struct {
+	ExecutionID                string
+	ExpectedAgentctlGeneration uint64
+	AgentctlGeneration         uint64
+}
+
+// UpdateExecutionGeneration advances one exact instance to its immediately
+// next lifecycle generation. The old generation remains the CAS precondition,
+// so a reused execution ID cannot update a replacement instance.
+func (m *Manager) UpdateExecutionGeneration(ctx context.Context, instanceID string, update ExecutionGenerationUpdate) (*InstanceInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	m.mu.RLock()
+	inst, ok := m.instances[instanceID]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrInstanceNotFound, instanceID)
+	}
+	inst.stopMu.Lock()
+	defer inst.stopMu.Unlock()
+	inst.identityMu.Lock()
+	if update.ExecutionID == "" || update.ExpectedAgentctlGeneration == 0 ||
+		update.AgentctlGeneration != update.ExpectedAgentctlGeneration+1 ||
+		inst.ExecutionID != update.ExecutionID || inst.AgentctlGeneration != update.ExpectedAgentctlGeneration {
+		inst.identityMu.Unlock()
+		return nil, ErrExecutionIdentityMismatch
+	}
+	inst.AgentctlGeneration = update.AgentctlGeneration
+	inst.identityMu.Unlock()
+	return inst.Info(), nil
+}
+
 // ExecutionFenceReceipt records what agentctl itself observed after closing
 // admission. A caller must treat any false field as incomplete proof.
 type ExecutionFenceReceipt struct {
@@ -351,6 +386,8 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, instanceID string
 
 	inst.stopMu.Lock()
 	defer inst.stopMu.Unlock()
+	inst.identityMu.RLock()
+	defer inst.identityMu.RUnlock()
 	if req.ExecutionID == "" || req.AgentctlGeneration == 0 ||
 		inst.ExecutionID != req.ExecutionID || inst.AgentctlGeneration != req.AgentctlGeneration {
 		return nil, ErrExecutionIdentityMismatch

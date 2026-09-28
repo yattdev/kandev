@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/kandev/kandev/internal/agentctl/server/config"
@@ -56,5 +57,60 @@ func TestCloseExecutionAdmissionKeepsLiveManagedProcessIncomplete(t *testing.T) 
 		SessionID: "session-fence-live", Command: "true",
 	}); !errors.Is(err, process.ErrManagerStopping) {
 		t.Fatalf("StartProcess after fence error = %v, want ErrManagerStopping", err)
+	}
+}
+
+func TestUpdateExecutionGenerationAllowsOnlyOneConcurrentCAS(t *testing.T) {
+	mgr := NewManager(&config.Config{
+		Ports:    config.PortConfig{Base: 0, Max: 0},
+		Defaults: config.InstanceDefaults{Protocol: agent.ProtocolACP},
+	}, logger.Default())
+	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	mgr.SetServerFactory(func(*config.InstanceConfig, *process.Manager, *logger.Logger) http.Handler {
+		return http.NotFoundHandler()
+	})
+	created, err := mgr.CreateInstance(t.Context(), &CreateRequest{
+		ID: "instance-generation-race", WorkspacePath: t.TempDir(), ExecutionID: "execution-generation-race", AgentctlGeneration: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.StopInstance(context.Background(), created.ID) })
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := mgr.UpdateExecutionGeneration(t.Context(), created.ID, ExecutionGenerationUpdate{
+				ExecutionID: "execution-generation-race", ExpectedAgentctlGeneration: 1, AgentctlGeneration: 2,
+			})
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	var successes, mismatches int
+	for err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrExecutionIdentityMismatch):
+			mismatches++
+		default:
+			t.Fatalf("UpdateExecutionGeneration error = %v", err)
+		}
+	}
+	if successes != 1 || mismatches != 1 {
+		t.Fatalf("CAS results = %d success, %d mismatch; want one of each", successes, mismatches)
+	}
+	info, ok := mgr.GetInstance(created.ID)
+	if !ok || info.Info().AgentctlGeneration != 2 {
+		t.Fatalf("generation after race = %+v, want 2", info)
 	}
 }

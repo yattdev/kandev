@@ -357,6 +357,52 @@ type ExecutionFenceRequest struct {
 	AgentctlGeneration uint64 `json:"agentctl_generation"`
 }
 
+// ExecutionGenerationUpdate names one compare-and-swap transition of an
+// agentctl instance's lifecycle startup generation.
+type ExecutionGenerationUpdate struct {
+	ExecutionID                string `json:"execution_id"`
+	ExpectedAgentctlGeneration uint64 `json:"expected_agentctl_generation"`
+	AgentctlGeneration         uint64 `json:"agentctl_generation"`
+}
+
+// UpdateExecutionGeneration records the next lifecycle startup generation for
+// an exact execution. Agentctl rejects a stale execution or generation rather
+// than letting a replacement inherit command authority.
+func (c *ControlClient) UpdateExecutionGeneration(
+	ctx context.Context, instanceID string, update ExecutionGenerationUpdate,
+) (*InstanceInfo, error) {
+	body, err := json.Marshal(update)
+	if err != nil {
+		return nil, fmt.Errorf("marshal execution generation update: %w", err)
+	}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.baseURL+"/api/v1/instances/"+instanceID+"/execution-generation", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("update execution generation: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil && errResp.Error != "" {
+			return nil, fmt.Errorf("update execution generation: %s (status %d)", errResp.Error, resp.StatusCode)
+		}
+		return nil, fmt.Errorf("update execution generation: status %d", resp.StatusCode)
+	}
+	var info InstanceInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, fmt.Errorf("decode execution generation update: %w", err)
+	}
+	return &info, nil
+}
+
 // ExecutionFenceReceipt is agentctl's bounded observation after command
 // admission closes. A false ManagedProcessesDrained value is incomplete proof,
 // never a stopped result.
