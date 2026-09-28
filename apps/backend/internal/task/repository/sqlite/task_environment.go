@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -757,10 +758,8 @@ func (r *Repository) transferTaskEnvironmentOwnership(
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if expectedTaskID != "" {
-		if err := r.lockTaskRowInTx(ctx, tx, expectedTaskID); err != nil {
-			return err
-		}
+	if err := r.lockForceRemovalTransferTasks(ctx, tx, expectedTaskID, taskID); err != nil {
+		return err
 	}
 	query := taskEnvironmentOwnershipQuery
 	if dialect.IsPostgres(r.db.DriverName()) {
@@ -777,6 +776,14 @@ func (r *Repository) transferTaskEnvironmentOwnership(
 	if currentTaskID != expectedTaskID || currentGeneration != expectedGeneration {
 		return fmt.Errorf("%w: environment %s is owned by %s at generation %d",
 			ErrTaskEnvironmentOwnershipChanged, envID, currentTaskID, currentGeneration)
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, currentTaskID); err != nil {
+		return err
+	}
+	if taskID != currentTaskID {
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+			return err
+		}
 	}
 	if err := recoveryclaim.EnsureAvailableTx(ctx, r.db, tx, envID); err != nil {
 		return err
@@ -802,6 +809,25 @@ func (r *Repository) transferTaskEnvironmentOwnership(
 		return fmt.Errorf("%w: %s", ErrTaskEnvironmentNotFound, envID)
 	}
 	return tx.Commit()
+}
+
+// lockForceRemovalTransferTasks uses a stable task lock order so opposing
+// environment transfers cannot deadlock while both task claims are fenced.
+func (r *Repository) lockForceRemovalTransferTasks(ctx context.Context, tx *sqlx.Tx, sourceTaskID, destinationTaskID string) error {
+	taskIDs := []string{sourceTaskID}
+	if destinationTaskID != "" && destinationTaskID != sourceTaskID {
+		taskIDs = append(taskIDs, destinationTaskID)
+	}
+	sort.Strings(taskIDs)
+	for _, taskID := range taskIDs {
+		if taskID == "" {
+			continue
+		}
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ClaimTaskEnvironmentReset reserves destructive environment reset behind the
