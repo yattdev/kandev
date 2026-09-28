@@ -152,6 +152,9 @@ func TestPluginHostMintsExactTaskGrantFromConnectionBoundEvidence(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err = repo.RestoreExactTaskTriggersAfterOfficeMigration(); err != nil {
+		t.Fatal(err)
+	}
 	queueRepository, err := messagequeue.NewSQLiteRepository(database, database)
 	if err != nil {
 		t.Fatal(err)
