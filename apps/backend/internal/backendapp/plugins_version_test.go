@@ -17,6 +17,7 @@ import (
 	"github.com/kandev/kandev/internal/common/config"
 	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/events/bus"
+	officesqlite "github.com/kandev/kandev/internal/office/repository/sqlite"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/persistence/requiredstores"
 	"github.com/kandev/kandev/internal/plugins"
@@ -262,7 +263,8 @@ func TestProvideServicesReadOnlyApprovalCannotMintExactCommandGrant(t *testing.T
 	if err := repos.Task.CreateTask(ctx, &taskmodels.Task{ID: "read-only-task", WorkspaceID: "read-only-ws", Title: "Task", Description: "before"}); err != nil {
 		t.Fatal(err)
 	}
-	services.Plugins.SetRuntime(&exactHostRuntime{})
+	runtime := &exactHostRuntime{}
+	services.Plugins.SetRuntime(runtime)
 	record, err := services.Plugins.Install(ctx, exactHostPackage(t, "exact-read-only"))
 	if err != nil {
 		t.Fatal(err)
@@ -332,8 +334,17 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	t.Cleanup(func() { _ = cleanup() })
 	lifecycleMgr := lifecycle.NewManager(nil, nil, nil, nil, nil, nil, lifecycle.ExecutorFallbackDeny, t.TempDir(), newTestLogger())
 	sqliteDB := sqlx.NewDb(repos.Task.DB(), "sqlite3")
+	taskRepo, err := tasksqlite.NewWithDB(sqliteDB, sqliteDB, nil)
+	if err != nil {
+		t.Fatalf("task repository: %v", err)
+	}
+	repos.Task = taskRepo
 	pool := db.NewPool(sqliteDB, sqliteDB)
-	if _, _, err = provideOrchestrator(ctx, cfg, newTestLogger(), pool, bus.NewMemoryEventBus(newTestLogger()), repos.Task, nil, services.Plugins, services.Task, services.User, lifecycleMgr, agentRegistry, services.Workflow, nil, nil, nil, nil, nil, nil, sessioncapacity.ReadEnvironment()); err != nil {
+	officeRepo, err := officesqlite.NewWithDB(sqliteDB, sqliteDB, nil)
+	if err != nil {
+		t.Fatalf("office repository: %v", err)
+	}
+	if _, _, err = provideOrchestrator(ctx, cfg, newTestLogger(), pool, bus.NewMemoryEventBus(newTestLogger()), repos.Task, officeRepo, services.Plugins, services.Task, services.User, lifecycleMgr, agentRegistry, services.Workflow, nil, nil, nil, nil, nil, nil, sessioncapacity.ReadEnvironment()); err != nil {
 		t.Fatalf("provideOrchestrator: %v", err)
 	}
 
@@ -371,12 +382,13 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 		}
 		pendingTokens[workspaceID], pendingRows[workspaceID] = snapshot.Token, rows[0]
 	}
-	services.Plugins.SetRuntime(&exactHostRuntime{})
+	runtime := &exactHostRuntime{}
+	services.Plugins.SetRuntime(runtime)
 	record, err := services.Plugins.Install(ctx, exactHostPackage(t, "exact-command-orchestrator"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = services.Plugins.GrantCapabilityApproval(record.InstallationID, "exact-ws-a", 1, plugins.ManifestCapabilityDigest(record.Manifest), []string{"host.v2.write:tasks"}, "human", "grant", "grant-audit"); err != nil {
+	if _, err = services.Plugins.GrantCapabilityApproval(record.InstallationID, "exact-ws-a", 1, plugins.ManifestCapabilityDigest(record.Manifest), []string{"host.v2.read:tasks", "host.v2.write:tasks"}, "human", "grant", "grant-audit"); err != nil {
 		t.Fatal(err)
 	}
 	task, err := repos.Task.GetTask(ctx, "exact-ws-a-task")
@@ -447,6 +459,30 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	}
 	if consumed != 0 || audits != 0 {
 		t.Fatalf("denied command effects: consumed=%d audits=%d", consumed, audits)
+	}
+	evidenceHost, ok := runtime.host.(pluginsdk.ExactTaskDecisionEvidenceHost)
+	if !ok {
+		t.Fatal("runtime did not receive exact decision evidence Host")
+	}
+	commandHost, ok := runtime.host.(pluginsdk.ExactTaskCommandHost)
+	if !ok {
+		t.Fatal("runtime did not receive exact command Host")
+	}
+	evidence, page, err := evidenceHost.ListTaskDecisionEvidenceExact(ctx, pluginsdk.ExactTaskDecisionEvidenceQuery{WorkspaceID: "exact-ws-a", CapabilityRevision: 1})
+	if err != nil || len(evidence.PendingTransitions) != 1 || page.SnapshotVersion == "" {
+		t.Fatalf("Host decision evidence = %+v %+v %v", evidence, page, err)
+	}
+	receipt, err := commandHost.UpdateTaskExact(ctx, pluginsdk.ExactTaskUpdateRequest{WorkspaceID: "exact-ws-a", TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[public-marker]", IdempotencyKey: "public-command", ExpectedResourceVersion: task.ResourceVersion})
+	if err != nil || receipt.AuditID == "" || receipt.ResourceVersion != task.ResourceVersion+1 {
+		t.Fatalf("public exact command = %+v, %v", receipt, err)
+	}
+	stored, err = repos.Task.GetTask(ctx, task.ID)
+	if err != nil || stored.Description != "[public-marker]" || stored.ResourceVersion != receipt.ResourceVersion {
+		t.Fatalf("public marker readback = %+v, %v", stored, err)
+	}
+	other, err := repos.Task.GetTask(ctx, "exact-ws-b-task")
+	if err != nil || other.Description != "" {
+		t.Fatalf("workspace B changed = %+v, %v", other, err)
 	}
 }
 
