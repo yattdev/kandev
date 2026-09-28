@@ -5247,6 +5247,9 @@ func (r *Repository) setSessionPrimary(
 			return false, err
 		}
 	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return false, err
+	}
 
 	// Once the task lock is held, lock and validate the target row before
 	// promoting it. This serializes the nonterminal check with a concurrent
