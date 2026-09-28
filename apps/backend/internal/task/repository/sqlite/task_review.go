@@ -570,14 +570,45 @@ func (r *Repository) DeleteTaskReviewByTask(ctx context.Context, taskID string) 
 // workspace. The worker-scoped E2E reset needs this: task-scoped entities must
 // be cleared before the tasks themselves are deleted.
 func (r *Repository) DeleteTaskReviewByWorkspace(ctx context.Context, workspaceID string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin workspace task review cleanup: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryxContext(ctx, tx.Rebind(`SELECT id FROM tasks WHERE workspace_id = ?`), workspaceID)
+	if err != nil {
+		return fmt.Errorf("list workspace task review owners: %w", err)
+	}
+	var taskIDs []string
+	for rows.Next() {
+		var taskID string
+		if err := rows.Scan(&taskID); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan workspace task review owner: %w", err)
+		}
+		taskIDs = append(taskIDs, taskID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate workspace task review owners: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close workspace task review owners: %w", err)
+	}
+	if err := r.ensureTaskReviewOwnersAvailableTx(ctx, tx, taskIDs); err != nil {
+		return err
+	}
 	statements := []string{
 		`DELETE FROM task_review_findings WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`,
 		`DELETE FROM task_review_runs WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`,
 	}
 	for _, stmt := range statements {
-		if _, err := r.db.ExecContext(ctx, r.db.Rebind(stmt), workspaceID); err != nil {
+		if _, err := tx.ExecContext(ctx, tx.Rebind(stmt), workspaceID); err != nil {
 			return fmt.Errorf("failed to delete workspace task review state: %w", err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit workspace task review cleanup: %w", err)
 	}
 	return nil
 }
