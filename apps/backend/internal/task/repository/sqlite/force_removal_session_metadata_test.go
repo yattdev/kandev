@@ -488,3 +488,42 @@ func TestClaimForceRemovalBlocksStampedSessionMetadataRemoval(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, removed)
 }
+
+func TestClaimForceRemovalBlocksJSONValueSessionMetadataRemoval(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-remove-json-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-remove-json-held", "force-remove-json-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-remove-json-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{
+			ID:       taskID + "-session",
+			TaskID:   taskID,
+			Metadata: map[string]interface{}{"marker": map[string]interface{}{"token": taskID + "-value"}},
+		}))
+	}
+
+	held, err := repo.GetTask(ctx, "force-remove-json-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
+		TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt,
+		AdmissionGeneration: "admission", OperationID: "remove-json", RequestDigest: "request", PreviewDigest: "preview",
+	})
+	require.NoError(t, err)
+
+	removed, err := repo.RemoveSessionMetadataKeyIfJSONValue(ctx, "force-remove-json-held-session", "marker", map[string]interface{}{"token": "force-remove-json-held-value"})
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, removed)
+	heldSession, err := repo.GetTaskSession(ctx, "force-remove-json-held-session")
+	require.NoError(t, err)
+	require.Equal(t, map[string]interface{}{"token": "force-remove-json-held-value"}, heldSession.Metadata["marker"])
+
+	removed, err = repo.RemoveSessionMetadataKeyIfJSONValue(ctx, "force-remove-json-foreign-session", "marker", map[string]interface{}{"token": "stale-value"})
+	require.NoError(t, err)
+	require.False(t, removed)
+	removed, err = repo.RemoveSessionMetadataKeyIfJSONValue(ctx, "force-remove-json-foreign-session", "marker", map[string]interface{}{"token": "force-remove-json-foreign-value"})
+	require.NoError(t, err)
+	require.True(t, removed)
+	foreignSession, err := repo.GetTaskSession(ctx, "force-remove-json-foreign-session")
+	require.NoError(t, err)
+	require.NotContains(t, foreignSession.Metadata, "marker")
+}
