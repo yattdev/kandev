@@ -2302,7 +2302,18 @@ func (r *Repository) CancelActiveTaskSessionsByTaskID(ctx context.Context, taskI
 	// dropped.
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	rows, err := r.db.QueryContext(writeCtx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(writeCtx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(writeCtx, tx, taskID); err != nil {
+		return nil, err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(writeCtx, r.db, tx, taskID); err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(writeCtx, r.db.Rebind(`
 		UPDATE task_sessions
 		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
 		WHERE task_id = ?
@@ -2323,7 +2334,16 @@ func (r *Repository) CancelActiveTaskSessionsByTaskID(ctx context.Context, taskI
 		}
 		sessions = append(sessions, session)
 	}
-	return sessions, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return sessions, nil
 }
 
 // ListStaleRunningSessionsOnUnarchivedTasks returns every STARTING/RUNNING

@@ -246,3 +246,25 @@ func TestClaimForceRemovalBlocksActiveSessionCancellation(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, changed)
 }
+
+func TestClaimForceRemovalBlocksBulkActiveSessionCancellation(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-bulk-cancel-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-bulk-held", "force-bulk-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-bulk-cancel-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID, State: models.TaskSessionStateRunning}))
+	}
+	held, err := repo.GetTask(ctx, "force-bulk-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "bulk-cancel", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+	_, err = repo.CancelActiveTaskSessionsByTaskID(ctx, held.ID, "held")
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	hs, err := repo.GetTaskSession(ctx, "force-bulk-held-session")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateRunning, hs.State)
+	foreign, err := repo.CancelActiveTaskSessionsByTaskID(ctx, "force-bulk-foreign", "foreign")
+	require.NoError(t, err)
+	require.Len(t, foreign, 1)
+}
