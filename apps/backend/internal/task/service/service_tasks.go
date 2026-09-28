@@ -2012,6 +2012,35 @@ func (s *Service) GetExactSessionSnapshotSession(ctx context.Context, token, ses
 	return reader.GetExactSessionSnapshotSession(ctx, token, sessionID)
 }
 
+// OpenExactSessionMessageSnapshot derives the private message-snapshot fence
+// from persisted task/session state. Callers cannot supply a session generation.
+func (s *Service) OpenExactSessionMessageSnapshot(ctx context.Context, installationID, workspaceID, taskID, sessionID string) (*models.ExactSessionMessageSnapshot, error) {
+	reader, ok := s.tasks.(interface {
+		taskrepo.ExactSessionMessageSnapshotReader
+		GetTaskSession(context.Context, string) (*models.TaskSession, error)
+	})
+	if !ok {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	session, err := reader.GetTaskSession(ctx, sessionID)
+	if err != nil || session == nil || session.TaskID != taskID {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	task, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil || task == nil || task.WorkspaceID != workspaceID {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	return reader.OpenExactSessionMessageSnapshot(ctx, models.ExactSessionMessageSnapshotRequest{InstallationID: installationID, WorkspaceID: workspaceID, TaskID: taskID, SessionID: sessionID, QueueIncarnationID: session.QueueIncarnationID, RouteGeneration: session.RouteGeneration, SessionResourceVersion: session.ResourceVersion})
+}
+
+func (s *Service) PageExactSessionMessageSnapshot(ctx context.Context, request models.ExactSessionMessageSnapshotPageRequest) ([]models.ExactSessionMessageSnapshotMessage, error) {
+	reader, ok := s.tasks.(taskrepo.ExactSessionMessageSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	return reader.PageExactSessionMessageSnapshot(ctx, request)
+}
+
 // GetWorkflowStep resolves one workflow step by ID for a caller that has
 // already authorized the owning task/workspace, mirroring GetTasksByIDs.
 // The Inbox History read uses this to test whether a task's current step
