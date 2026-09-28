@@ -128,6 +128,9 @@ func provideOrchestrator(
 	if err != nil {
 		return nil, nil, fmt.Errorf("init message queue repo: %w", err)
 	}
+	if validator, ok := queueRepo.(messagequeue.ExactPendingTransitionAuthorityReader); ok {
+		taskRepo.SetExactTaskCommandPendingValidator(validator)
+	}
 	if pluginsSvc != nil && officeRepo != nil {
 		authority, authorityErr := exactsnapshotauthority.NewSQLite(pool.Writer())
 		pending, pendingOK := queueRepo.(interface {

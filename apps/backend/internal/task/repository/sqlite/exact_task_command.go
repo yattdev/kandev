@@ -11,6 +11,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kandev/kandev/internal/db/dialect"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 )
 
 // ErrExactTaskCommandUnavailable is the fail-closed result for an exact
@@ -61,11 +63,27 @@ type ExactTaskDescriptionCommand struct {
 	ApprovalRevision                             uint64
 	ActionDigest, IdempotencyKey, Marker         string
 	ExpectedResourceVersion, ExpectedFence       int64
+	PendingSnapshotToken                         string
+	PendingTransition                            *messagequeue.ExactPendingTransition
 }
 
 type ExactTaskDescriptionReceipt struct {
 	AuditID         string
 	ResourceVersion int64
+}
+
+type exactTaskCommandTransaction struct {
+	tx               *sqlx.Tx
+	commit, rollback func() error
+	validator        messagequeue.ExactPendingTransitionAuthorityReader
+	authority        *exactsnapshotauthority.Authority
+	authorityTx      *exactsnapshotauthority.Transaction
+}
+
+// SetExactTaskCommandPendingValidator installs the SQLite queue validator
+// used only by the unadvertised exact command path.
+func (r *Repository) SetExactTaskCommandPendingValidator(validator messagequeue.ExactPendingTransitionAuthorityReader) {
+	r.exactTaskCommandPendingValidator = validator
 }
 
 func (r *Repository) initExactTaskCommandSchema() error {
@@ -247,17 +265,21 @@ func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, comma
 	if !validExactCommand(command) {
 		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
 	}
-	tx, err := r.db.BeginTxx(ctx, nil)
+	commandTx, err := r.beginExactTaskCommandTransaction(ctx, command)
 	if err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	if receipt, replayed, replayErr := exactTaskCommandReplay(ctx, r, tx, command); replayed {
+	defer func() { _ = commandTx.rollback() }()
+	if receipt, replayed, replayErr := exactTaskCommandReplay(ctx, r, commandTx.tx, command); replayed {
 		if replayErr != nil {
 			return ExactTaskDescriptionReceipt{}, replayErr
 		}
-		return receipt, tx.Commit()
+		return receipt, commandTx.commit()
 	}
+	if err = commandTx.validatePending(ctx, command); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	tx := commandTx.tx
 	if err = requireExactCommandApproval(ctx, r, tx, command.InstallationID, command.WorkspaceID, command.CapabilityID, command.ApprovalRevision); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
@@ -280,18 +302,55 @@ func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, comma
 	if err = tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT resource_version FROM tasks WHERE id = ?`), command.TaskID).Scan(&version); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
-	if r.exactTaskCommandBeforeAudit != nil {
-		if err = r.exactTaskCommandBeforeAudit(); err != nil {
-			return ExactTaskDescriptionReceipt{}, err
-		}
+	if err = r.afterExactTaskCommandCAS(); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
 	}
 	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_audits(audit_id, installation_id, workspace_id, task_id, action_digest, idempotency_key, resource_version, command_identity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`), command.IdempotencyKey, command.InstallationID, command.WorkspaceID, command.TaskID, command.ActionDigest, command.IdempotencyKey, version, exactTaskCommandIdentity(command), now); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
-	if err = tx.Commit(); err != nil {
+	if err = commandTx.commit(); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
 	return ExactTaskDescriptionReceipt{AuditID: command.IdempotencyKey, ResourceVersion: version}, nil
+}
+
+func (r *Repository) afterExactTaskCommandCAS() error {
+	if r.exactTaskCommandBeforeAudit == nil {
+		return nil
+	}
+	return r.exactTaskCommandBeforeAudit()
+}
+
+func (r *Repository) beginExactTaskCommandTransaction(ctx context.Context, command ExactTaskDescriptionCommand) (*exactTaskCommandTransaction, error) {
+	if r.exactTaskCommandPendingValidator == nil {
+		tx, err := r.db.BeginTxx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &exactTaskCommandTransaction{tx: tx, commit: tx.Commit, rollback: tx.Rollback}, nil
+	}
+	if command.PendingTransition == nil || command.PendingSnapshotToken == "" {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	authority, err := exactsnapshotauthority.NewSQLite(r.db)
+	if err != nil {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	authorityTx, err := r.exactTaskCommandPendingValidator.BeginExactPendingTransitionSnapshotAuthorityTx(ctx, authority)
+	if err != nil {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	return &exactTaskCommandTransaction{tx: authorityTx.SQLX(), commit: authorityTx.Commit, rollback: authorityTx.Rollback, validator: r.exactTaskCommandPendingValidator, authority: authority, authorityTx: authorityTx}, nil
+}
+
+func (t *exactTaskCommandTransaction) validatePending(ctx context.Context, command ExactTaskDescriptionCommand) error {
+	if t.validator == nil {
+		return nil
+	}
+	if command.PendingTransition.WorkspaceID != command.WorkspaceID || command.PendingTransition.TaskID != command.TaskID || t.validator.ValidateExactPendingTransitionInAuthorityTx(ctx, t.authority, t.authorityTx, command.PendingSnapshotToken, *command.PendingTransition) != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
 }
 
 func (r *Repository) consumeExactTaskCommandGrant(ctx context.Context, tx *sqlx.Tx, command ExactTaskDescriptionCommand, now time.Time) error {
@@ -323,8 +382,19 @@ func exactTaskCommandReplay(ctx context.Context, r *Repository, tx *sqlx.Tx, com
 }
 
 func exactTaskCommandIdentity(c ExactTaskDescriptionCommand) string {
-	s := sha256.Sum256([]byte(c.GrantID + "\x00" + c.InstallationID + "\x00" + c.WorkspaceID + "\x00" + c.TaskID + "\x00" + c.CapabilityID + "\x00" + c.ReceiptAuditID + "\x00" + fmt.Sprint(c.ApprovalRevision) + "\x00" + c.ActionDigest + "\x00" + c.IdempotencyKey + "\x00" + c.Marker + "\x00" + fmt.Sprint(c.ExpectedResourceVersion) + "\x00" + fmt.Sprint(c.ExpectedFence)))
+	identity := c.GrantID + "\x00" + c.InstallationID + "\x00" + c.WorkspaceID + "\x00" + c.TaskID + "\x00" + c.CapabilityID + "\x00" + c.ReceiptAuditID + "\x00" + fmt.Sprint(c.ApprovalRevision) + "\x00" + c.ActionDigest + "\x00" + c.IdempotencyKey + "\x00" + c.Marker + "\x00" + fmt.Sprint(c.ExpectedResourceVersion) + "\x00" + fmt.Sprint(c.ExpectedFence)
+	if c.PendingTransition != nil || c.PendingSnapshotToken != "" {
+		identity += "\x00" + c.PendingSnapshotToken + "\x00" + exactPendingTransitionIdentity(c.PendingTransition)
+	}
+	s := sha256.Sum256([]byte(identity))
 	return hex.EncodeToString(s[:])
+}
+
+func exactPendingTransitionIdentity(transition *messagequeue.ExactPendingTransition) string {
+	if transition == nil {
+		return ""
+	}
+	return transition.SessionID + "\x00" + transition.TaskID + "\x00" + transition.WorkspaceID + "\x00" + transition.SessionIncarnationID + "\x00" + transition.WorkflowID + "\x00" + transition.WorkflowStepID + "\x00" + fmt.Sprint(transition.Position) + "\x00" + transition.QueuedAt.UTC().Format(time.RFC3339Nano) + "\x00" + fmt.Sprint(transition.ResourceVersion) + "\x00" + fmt.Sprint(transition.TaskResourceVersion) + "\x00" + fmt.Sprint(transition.SessionResourceVersion) + "\x00" + fmt.Sprint(transition.QueueGeneration)
 }
 
 func requireExactCommandApproval(ctx context.Context, r *Repository, tx *sqlx.Tx, installationID, workspaceID, capabilityID string, revision uint64) error {
