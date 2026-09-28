@@ -2033,11 +2033,23 @@ func (s *Service) OpenExactSessionMessageSnapshot(ctx context.Context, installat
 	return reader.OpenExactSessionMessageSnapshot(ctx, models.ExactSessionMessageSnapshotRequest{InstallationID: installationID, WorkspaceID: workspaceID, TaskID: taskID, SessionID: sessionID, QueueIncarnationID: session.QueueIncarnationID, RouteGeneration: session.RouteGeneration, SessionResourceVersion: session.ResourceVersion})
 }
 
-func (s *Service) PageExactSessionMessageSnapshot(ctx context.Context, request models.ExactSessionMessageSnapshotPageRequest) ([]models.ExactSessionMessageSnapshotMessage, error) {
-	reader, ok := s.tasks.(taskrepo.ExactSessionMessageSnapshotReader)
+func (s *Service) PageExactSessionMessageSnapshot(ctx context.Context, installationID, workspaceID, taskID, sessionID, token string, offset, limit int) ([]models.ExactSessionMessageSnapshotMessage, error) {
+	reader, ok := s.tasks.(interface {
+		taskrepo.ExactSessionMessageSnapshotReader
+		GetTaskSession(context.Context, string) (*models.TaskSession, error)
+	})
 	if !ok {
 		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
 	}
+	session, err := reader.GetTaskSession(ctx, sessionID)
+	if err != nil || session == nil || session.TaskID != taskID {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	task, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil || task == nil || task.WorkspaceID != workspaceID {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	request := models.ExactSessionMessageSnapshotPageRequest{ExactSessionMessageSnapshotRequest: models.ExactSessionMessageSnapshotRequest{InstallationID: installationID, WorkspaceID: workspaceID, TaskID: taskID, SessionID: sessionID, QueueIncarnationID: session.QueueIncarnationID, RouteGeneration: session.RouteGeneration, SessionResourceVersion: session.ResourceVersion}, Token: token, Offset: offset, Limit: limit}
 	return reader.PageExactSessionMessageSnapshot(ctx, request)
 }
 
