@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	agentRuntimeAPI "github.com/kandev/kandev/internal/agent/runtime"
+	agentruntime "github.com/kandev/kandev/internal/agentruntime"
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/events"
 	"github.com/kandev/kandev/internal/events/bus"
@@ -26,14 +28,15 @@ const mcpStopResponseDeadline = time.Second
 
 type mcpStopRecordingAgentManager struct {
 	*SimulatedAgentManagerClient
-	promptCalls  atomic.Int32
-	stopCalls    atomic.Int32
-	stopEntered  chan struct{}
-	allowStop    chan struct{}
-	stopFinished chan struct{}
-	enterOnce    sync.Once
-	finishOnce   sync.Once
-	releaseOnce  sync.Once
+	promptCalls          atomic.Int32
+	stopCalls            atomic.Int32
+	stopEntered          chan struct{}
+	allowStop            chan struct{}
+	stopFinished         chan struct{}
+	enterOnce            sync.Once
+	finishOnce           sync.Once
+	releaseOnce          sync.Once
+	removeExecutorRecord func(context.Context, string) error
 }
 
 func newMCPStopRecordingAgentManager(eventBus bus.EventBus, log *logger.Logger) *mcpStopRecordingAgentManager {
@@ -86,6 +89,36 @@ func (m *mcpStopRecordingAgentManager) StopAgentWithReason(
 	err := m.SimulatedAgentManagerClient.StopAgentWithReason(ctx, executionID, reason, force)
 	m.finishOnce.Do(func() { close(m.stopFinished) })
 	return err
+}
+
+func (m *mcpStopRecordingAgentManager) StopExecutionWithFence(
+	ctx context.Context,
+	executionID string,
+	generation uint64,
+	reason string,
+	consumeReceipt func(*agentRuntimeAPI.ExecutionFenceReceipt) error,
+	consumeTerminalProof func() error,
+) error {
+	if consumeReceipt != nil {
+		if err := consumeReceipt(&agentRuntimeAPI.ExecutionFenceReceipt{
+			ExecutionID: executionID, AgentctlGeneration: generation,
+			AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true,
+		}); err != nil {
+			return err
+		}
+	}
+	if err := m.StopAgentWithReason(ctx, executionID, reason, false); err != nil {
+		return err
+	}
+	if m.removeExecutorRecord != nil {
+		if err := m.removeExecutorRecord(ctx, executionID); err != nil {
+			return err
+		}
+	}
+	if consumeTerminalProof != nil {
+		return consumeTerminalProof()
+	}
+	return nil
 }
 
 func (m *mcpStopRecordingAgentManager) IsAgentRunningForSession(
@@ -258,6 +291,16 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 	messagesBefore, err := ts.TaskRepo.ListMessages(context.Background(), launch.SessionID)
 	require.NoError(t, err)
+	executionID, err := manager.GetExecutionIDForSession(context.Background(), launch.SessionID)
+	require.NoError(t, err)
+	require.NoError(t, ts.TaskRepo.UpsertExecutorRunning(context.Background(), &models.ExecutorRunning{
+		ID: launch.SessionID, SessionID: launch.SessionID, TaskID: child.ID,
+		ExecutorID: "integration", Runtime: agentruntime.RuntimeStandalone,
+		Status: models.ExecutorRunningStatusRunning, AgentExecutionID: executionID, AgentctlGeneration: 1,
+	}))
+	manager.removeExecutorRecord = func(ctx context.Context, _ string) error {
+		return ts.TaskRepo.DeleteExecutorRunningBySessionID(ctx, launch.SessionID)
+	}
 
 	stopRequest, err := ws.NewRequest("mcp-stop-1", ws.ActionMCPStopTask, map[string]interface{}{
 		"task_id": child.ID, "sender_task_id": parentTaskID,
@@ -272,7 +315,20 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 		}
 	}()
 
-	mcpStopAwaitSignal(t, manager.stopEntered, mcpStopResponseDeadline, "asynchronous runtime teardown")
+	select {
+	case <-manager.stopEntered:
+	case outcome := <-dispatchDone:
+		t.Fatalf("stop response arrived before exact runtime teardown: err=%v response=%v", outcome.err, outcome.response)
+	case <-time.After(mcpStopResponseDeadline):
+		t.Fatal("timed out waiting for exact runtime teardown")
+	}
+	select {
+	case <-dispatchDone:
+		t.Fatal("stop response arrived before exact runtime teardown completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+	require.True(t, manager.IsAgentRunningForSession(context.Background(), launch.SessionID))
+	manager.releaseStop()
 	first := mcpStopAwaitDispatch(t, dispatchDone, mcpStopResponseDeadline)
 	require.NoError(t, first.err)
 	require.Less(t, first.elapsed, mcpStopResponseDeadline)
@@ -280,10 +336,12 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 	firstPayload := mcpStopParseResponse(t, first.response)
 	require.Equal(t, child.ID, firstPayload.TaskID)
 	require.Equal(t, orchestrator.CoordinatorTaskStopStatusStopped, firstPayload.Status)
+	require.Len(t, firstPayload.Receipts, 1)
+	require.Equal(t, models.CoordinatorStopOperationStatusStopped, firstPayload.Receipts[0].Status)
 
-	// The response lands while simulated teardown is deliberately blocked,
-	// proving it confirms logical cancellation rather than process exit.
-	require.True(t, manager.IsAgentRunningForSession(context.Background(), launch.SessionID))
+	// A stopped receipt is returned only after the simulated owned process and
+	// executor row have reached their terminal boundary.
+	require.False(t, manager.IsAgentRunningForSession(context.Background(), launch.SessionID))
 	stoppedSession, err := ts.TaskRepo.GetTaskSession(context.Background(), launch.SessionID)
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateCancelled, stoppedSession.State)
@@ -293,7 +351,6 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 	require.Equal(t, promptsBefore, manager.promptCalls.Load(), "stop must not dispatch a replacement prompt")
 	require.Zero(t, orchestratorSvc.GetMessageQueue().GetStatus(context.Background(), launch.SessionID).Count)
 
-	manager.releaseStop()
 	mcpStopAwaitSignal(t, manager.stopFinished, 2*time.Second, "simulated runtime stop")
 	status, exists := manager.runtimeStatus(launch.SessionID)
 	require.True(t, exists)
@@ -316,7 +373,8 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 	require.Equal(t, ws.MessageTypeResponse, repeatResponse.Type)
 	repeatPayload := mcpStopParseResponse(t, repeatResponse)
 	require.Equal(t, child.ID, repeatPayload.TaskID)
-	require.Equal(t, orchestrator.CoordinatorTaskStopStatusNotRunning, repeatPayload.Status)
+	require.Equal(t, orchestrator.CoordinatorTaskStopStatusStopped, repeatPayload.Status)
+	require.Equal(t, firstPayload.Receipts, repeatPayload.Receipts)
 
 	repeatedSession, err := ts.TaskRepo.GetTaskSession(context.Background(), launch.SessionID)
 	require.NoError(t, err)
@@ -333,8 +391,9 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 }
 
 type mcpStopResponsePayload struct {
-	TaskID string                                 `json:"task_id"`
-	Status orchestrator.CoordinatorTaskStopStatus `json:"status"`
+	TaskID   string                                 `json:"task_id"`
+	Status   orchestrator.CoordinatorTaskStopStatus `json:"status"`
+	Receipts []models.CoordinatorStopOperation      `json:"receipts"`
 }
 
 func mcpStopParseResponse(t *testing.T, response *ws.Message) mcpStopResponsePayload {

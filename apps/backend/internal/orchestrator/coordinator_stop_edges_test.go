@@ -12,10 +12,74 @@ import (
 	"github.com/kandev/kandev/internal/agent/runtime/lifecycle"
 	orchestratorexec "github.com/kandev/kandev/internal/orchestrator/executor"
 	"github.com/kandev/kandev/internal/task/models"
+	taskrepo "github.com/kandev/kandev/internal/task/repository"
 	sqliterepo "github.com/kandev/kandev/internal/task/repository/sqlite"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	"github.com/stretchr/testify/require"
 )
+
+type coordinatorStopCaptureRepo struct {
+	repoStore
+	taskrepo.CoordinatorStopOperationRepository
+	getExecutor func(context.Context, string) (*models.ExecutorRunning, error)
+	getTurn     func(context.Context, string) (*models.Turn, error)
+}
+
+func (r *coordinatorStopCaptureRepo) GetExecutorRunningBySessionID(ctx context.Context, sessionID string) (*models.ExecutorRunning, error) {
+	if r.getExecutor != nil {
+		return r.getExecutor(ctx, sessionID)
+	}
+	return r.repoStore.GetExecutorRunningBySessionID(ctx, sessionID)
+}
+
+func (r *coordinatorStopCaptureRepo) GetActiveTurnBySessionID(ctx context.Context, sessionID string) (*models.Turn, error) {
+	if r.getTurn != nil {
+		return r.getTurn(ctx, sessionID)
+	}
+	return r.repoStore.GetActiveTurnBySessionID(ctx, sessionID)
+}
+
+func TestCaptureCoordinatorStopExecutionFailsClosedOnUncapturedExecutorState(t *testing.T) {
+	ctx := context.Background()
+	for _, test := range []struct {
+		name        string
+		getExecutor func(context.Context, string) (*models.ExecutorRunning, error)
+		getTurn     func(context.Context, string) (*models.Turn, error)
+	}{
+		{
+			name: "executor row read error",
+			getExecutor: func(context.Context, string) (*models.ExecutorRunning, error) {
+				return nil, errors.New("executor row read failed")
+			},
+		},
+		{
+			name:    "valid executor without active turn",
+			getTurn: func(context.Context, string) (*models.Turn, error) { return nil, nil },
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := setupTestRepo(t)
+			seedTaskAndSession(t, repo, "task-stop-capture", "session-stop-capture", models.TaskSessionStateRunning)
+			require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
+				ID: "session-stop-capture", SessionID: "session-stop-capture", TaskID: "task-stop-capture",
+				AgentExecutionID: "execution-stop-capture", AgentctlGeneration: 1,
+				Status: models.ExecutorRunningStatusRunning,
+			}))
+			captureRepo := &coordinatorStopCaptureRepo{
+				repoStore: repo, CoordinatorStopOperationRepository: repo,
+				getExecutor: test.getExecutor, getTurn: test.getTurn,
+			}
+			svc := &Service{repo: captureRepo}
+			session, err := repo.GetTaskSession(ctx, "session-stop-capture")
+			require.NoError(t, err)
+
+			_, _, handled, err := svc.captureCoordinatorStopExecution(ctx, session)
+
+			require.True(t, handled, "an ambiguous or incomplete execution identity must not fall through to the launch-only fence")
+			require.Error(t, err)
+		})
+	}
+}
 
 func TestStopTaskForCoordinator_ReviewGuardsPreserveTaskState(t *testing.T) {
 	tests := []struct {

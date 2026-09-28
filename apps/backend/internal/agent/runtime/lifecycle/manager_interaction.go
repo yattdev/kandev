@@ -1159,6 +1159,7 @@ func (m *Manager) StopExecutionWithFence(
 	generation uint64,
 	reason string,
 	consumeReceipt func(*ExecutionFenceReceipt) error,
+	consumeTerminalProof func() error,
 ) error {
 	execution, exists := m.executionStore.Get(executionID)
 	if !exists || execution.ID != executionID {
@@ -1185,7 +1186,15 @@ func (m *Manager) StopExecutionWithFence(
 			return fmt.Errorf("persist execution fence receipt: %w", err)
 		}
 	}
-	return m.stopAgentWithReasonLocked(ctx, executionID, execution, reason, false)
+	if err := m.stopAgentWithReasonLocked(ctx, executionID, execution, reason, false); err != nil {
+		return err
+	}
+	if consumeTerminalProof != nil {
+		if err := consumeTerminalProof(); err != nil {
+			return fmt.Errorf("persist lifecycle terminal proof: %w", err)
+		}
+	}
+	return nil
 }
 
 //nolint:cyclop // The existing stop sequence must keep lifecycle ownership serialized.

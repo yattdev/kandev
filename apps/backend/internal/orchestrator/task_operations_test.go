@@ -441,7 +441,6 @@ func TestStopTaskForCoordinator_StopsAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
 	seedTaskAndSession(t, repo, "task1", "session1", models.TaskSessionStateRunning)
-	seedExecutorRunning(t, repo, "session1", "task1", "execution1")
 	taskRepo := newMockTaskRepo()
 	seedMockTaskState(taskRepo, "task1", v1.TaskStateInProgress)
 	agentManager := &mockAgentManager{repoForExecutionLookup: repo}

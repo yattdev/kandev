@@ -2068,11 +2068,13 @@ type CoordinatorStopOperation struct {
 }
 
 const (
-	CoordinatorStopOperationStatusFencing    = "fencing"
-	CoordinatorStopOperationStatusIncomplete = "incomplete"
-	CoordinatorStopOperationStatusStopped    = "stopped"
-	CoordinatorStopProofScopePending         = "pending_exact_runtime_proof"
-	CoordinatorStopProofScopeAgentctlFence   = "agentctl_admission_closed"
+	CoordinatorStopOperationStatusFencing      = "fencing"
+	CoordinatorStopOperationStatusIncomplete   = "incomplete"
+	CoordinatorStopOperationStatusStopped      = "stopped"
+	CoordinatorStopProofScopePending           = "pending_exact_runtime_proof"
+	CoordinatorStopProofScopeAgentctlFence     = "agentctl_admission_closed"
+	CoordinatorStopProofScopeProcessesDrained  = "agentctl_processes_drained"
+	CoordinatorStopProofScopeLifecycleTerminal = "lifecycle_process_tree_terminal"
 )
 
 // CoordinatorStopFenceReceipt is the bounded proof reported by agentctl after

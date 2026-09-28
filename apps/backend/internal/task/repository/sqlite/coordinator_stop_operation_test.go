@@ -124,9 +124,52 @@ func TestFinalizeCoordinatorStopOperationRequiresCapturedTerminalExecutor(t *tes
 	require.ErrorIs(t, err, models.ErrExecutionRotated, "a live captured executor cannot be promoted")
 	require.NoError(t, repo.DeleteExecutorRunningBySessionID(ctx, op.SessionID))
 
-	finalized, err := repo.FinalizeCoordinatorStopOperation(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration)
+	_, err = repo.FinalizeCoordinatorStopOperation(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration)
+	require.ErrorIs(t, err, models.ErrExecutionRotated, "row absence is not proof that lifecycle stopped the captured process")
+	finalized, err := repo.GetCoordinatorStopOperation(ctx, op.ID)
 	require.NoError(t, err)
-	require.Equal(t, models.CoordinatorStopOperationStatusStopped, finalized.Status)
+	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, finalized.Status)
+	require.NoError(t, repo.RecordCoordinatorStopLifecycleProof(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration))
+	_, err = repo.FinalizeCoordinatorStopOperation(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration)
+	require.ErrorIs(t, err, models.ErrExecutionRotated, "row absence alone cannot certify an exact terminal executor")
+}
+
+func TestCoordinatorStopCannotRecordLifecycleProofWithoutDrainedAgentctlReceipt(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		unreachable   bool
+		processesDone bool
+	}{
+		{name: "agentctl unreachable", unreachable: true},
+		{name: "managed processes not drained"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := newRepoForSessionTests(t)
+			now := time.Now().UTC()
+			const taskID, sessionID, turnID, executionID = "task-stop-proof", "session-stop-proof", "turn-stop-proof", "execution-stop-proof"
+			require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, Title: "proof", CreatedAt: now, UpdatedAt: now}))
+			require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: sessionID, TaskID: taskID, State: models.TaskSessionStateRunning, StartedAt: now, UpdatedAt: now}))
+			require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: turnID, TaskID: taskID, TaskSessionID: sessionID, StartedAt: now, CreatedAt: now, UpdatedAt: now}))
+			require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{ID: sessionID, SessionID: sessionID, TaskID: taskID, ExecutorID: "executor", Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: executionID, AgentctlGeneration: 1, Status: models.ExecutorRunningStatusReady}))
+			running, err := repo.GetExecutorRunningBySessionID(ctx, sessionID)
+			require.NoError(t, err)
+			op, _, err := repo.CaptureCoordinatorStopOperation(ctx, models.CoordinatorStopOperation{ID: "stop-op-proof", TaskID: taskID, SessionID: sessionID, TurnID: turnID, ExecutionID: executionID, AgentctlGeneration: 1, ExecutorStatus: running.Status, ExecutorUpdatedAt: running.UpdatedAt})
+			require.NoError(t, err)
+			if test.unreachable {
+				_, _, err = repo.MarkCoordinatorStopOperationIncomplete(ctx, op.ID, executionID, 1, "agentctl_unreachable")
+				require.NoError(t, err)
+			} else {
+				_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, op.ID, models.CoordinatorStopFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: test.processesDone})
+				require.NoError(t, err)
+			}
+			require.NoError(t, repo.DeleteExecutorRunningBySessionID(ctx, sessionID))
+
+			require.ErrorIs(t, repo.RecordCoordinatorStopLifecycleProof(ctx, op.ID, executionID, 1), models.ErrExecutionRotated)
+			_, err = repo.FinalizeCoordinatorStopOperation(ctx, op.ID, executionID, 1)
+			require.ErrorIs(t, err, models.ErrExecutionRotated)
+		})
+	}
 }
 
 // @covers AC-STOP-FENCE-003

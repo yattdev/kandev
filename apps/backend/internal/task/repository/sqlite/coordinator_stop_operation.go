@@ -162,6 +162,30 @@ func (r *Repository) ListPendingCoordinatorStopOperations(ctx context.Context, t
 	return operations, rows.Err()
 }
 
+// ListCoordinatorStopOperations returns exact receipts so a repeated parent
+// request can report completed stops after the original response was lost.
+func (r *Repository) ListCoordinatorStopOperations(ctx context.Context, taskID string) ([]*models.CoordinatorStopOperation, error) {
+	rows, err := r.ro.QueryxContext(ctx, r.ro.Rebind(`
+		SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, status, reason_code, proof_scope, created_at, updated_at
+		FROM task_stop_operations
+		WHERE task_id = ?
+		ORDER BY created_at ASC, id ASC
+	`), taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var operations []*models.CoordinatorStopOperation
+	for rows.Next() {
+		operation := &models.CoordinatorStopOperation{}
+		if err := rows.Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt); err != nil {
+			return nil, err
+		}
+		operations = append(operations, operation)
+	}
+	return operations, rows.Err()
+}
+
 // FenceCoordinatorStopSession settles the session and leaves a durable launch
 // tombstone when no exact execution incarnation was available to capture.
 func (r *Repository) FenceCoordinatorStopSession(ctx context.Context, taskID, sessionID string) (bool, error) {
@@ -337,10 +361,33 @@ func validateCoordinatorStopReceiptBoundaryTx(ctx context.Context, tx *sqlx.Tx, 
 
 func markCoordinatorStopReceiptIncompleteTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, operationID string, receipt models.CoordinatorStopFenceReceipt) error {
 	reasonCode := "executor_terminal_proof_pending"
+	proofScope := models.CoordinatorStopProofScopeProcessesDrained
 	if !receipt.ManagedProcessesDrained {
 		reasonCode = "managed_processes_not_drained"
+		proofScope = models.CoordinatorStopProofScopeAgentctlFence
 	}
-	result, err := tx.ExecContext(ctx, db.Rebind(`UPDATE task_stop_operations SET admission_cutoff = ?, status = ?, reason_code = ?, proof_scope = ?, updated_at = ? WHERE id = ? AND execution_id = ? AND agentctl_generation = ? AND status IN (?, ?)`), receipt.AdmissionClosedAt, models.CoordinatorStopOperationStatusIncomplete, reasonCode, models.CoordinatorStopProofScopeAgentctlFence, time.Now().UTC(), operationID, receipt.ExecutionID, receipt.AgentctlGeneration, models.CoordinatorStopOperationStatusFencing, models.CoordinatorStopOperationStatusIncomplete)
+	result, err := tx.ExecContext(ctx, db.Rebind(`UPDATE task_stop_operations SET admission_cutoff = ?, status = ?, reason_code = ?, proof_scope = ?, updated_at = ? WHERE id = ? AND execution_id = ? AND agentctl_generation = ? AND status IN (?, ?)`), receipt.AdmissionClosedAt, models.CoordinatorStopOperationStatusIncomplete, reasonCode, proofScope, time.Now().UTC(), operationID, receipt.ExecutionID, receipt.AgentctlGeneration, models.CoordinatorStopOperationStatusFencing, models.CoordinatorStopOperationStatusIncomplete)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return models.ErrExecutionRotated
+	}
+	return nil
+}
+
+// RecordCoordinatorStopLifecycleProof records that lifecycle completed the
+// graceful stop for the same execution after agentctl closed admission and
+// drained its managed process tree.
+func (r *Repository) RecordCoordinatorStopLifecycleProof(ctx context.Context, operationID, executionID string, agentctlGeneration uint64) error {
+	if operationID == "" || executionID == "" || agentctlGeneration == 0 {
+		return errors.New("lifecycle stop proof requires operation, execution, and agentctl generation")
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE task_stop_operations SET proof_scope = ?, reason_code = 'executor_terminal_proof_pending', updated_at = ? WHERE id = ? AND execution_id = ? AND agentctl_generation = ? AND status = ? AND proof_scope = ?`), models.CoordinatorStopProofScopeLifecycleTerminal, time.Now().UTC(), operationID, executionID, agentctlGeneration, models.CoordinatorStopOperationStatusIncomplete, models.CoordinatorStopProofScopeProcessesDrained)
 	if err != nil {
 		return err
 	}
@@ -397,6 +444,9 @@ func (r *Repository) FinalizeCoordinatorStopOperation(ctx context.Context, opera
 }
 
 func validateCoordinatorStopTerminalBoundaryTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, op *models.CoordinatorStopOperation) error {
+	if op.Status != models.CoordinatorStopOperationStatusIncomplete || op.ProofScope != models.CoordinatorStopProofScopeLifecycleTerminal || op.AdmissionCutoff.IsZero() {
+		return models.ErrExecutionRotated
+	}
 	var completed, successorOpen, cancelled bool
 	if err := tx.GetContext(ctx, &completed, db.Rebind(`SELECT EXISTS(SELECT 1 FROM task_session_turns WHERE id = ? AND task_session_id = ? AND task_id = ? AND completed_at IS NOT NULL)`), op.TurnID, op.SessionID, op.TaskID); err != nil || !completed {
 		return models.ErrExecutionRotated
@@ -411,7 +461,7 @@ func validateCoordinatorStopTerminalBoundaryTx(ctx context.Context, tx *sqlx.Tx,
 	var generation uint64
 	err := tx.QueryRowxContext(ctx, db.Rebind(`SELECT agent_execution_id, agentctl_generation, status FROM executors_running WHERE session_id = ?`), op.SessionID).Scan(&currentExecutionID, &generation, &status)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return models.ErrExecutionRotated
 	}
 	if err != nil || currentExecutionID != op.ExecutionID || generation != op.AgentctlGeneration || !terminalCoordinatorStopExecutorStatus(status) {
 		return models.ErrExecutionRotated

@@ -10,7 +10,7 @@ import (
 )
 
 type CoordinatorStopGracefulFenceRuntime interface {
-	StopExecutionWithFence(context.Context, string, uint64, string, func(*runtime.ExecutionFenceReceipt) error) error
+	StopExecutionWithFence(context.Context, string, uint64, string, func(*runtime.ExecutionFenceReceipt) error, func() error) error
 }
 
 // stopWithCoordinatorFence persists the lifecycle-owned receipt while the
@@ -38,6 +38,8 @@ func (s *Service) stopWithCoordinatorFence(ctx context.Context, op *models.Coord
 			AdmissionClosedAt: receipt.AdmissionClosedAt, ManagedProcessesDrained: receipt.ManagedProcessesDrained,
 		})
 		return err
+	}, func() error {
+		return repo.RecordCoordinatorStopLifecycleProof(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration)
 	})
 	if err != nil {
 		if _, _, markErr := repo.MarkCoordinatorStopOperationIncomplete(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration, "exact_fence_or_graceful_stop_failed"); markErr != nil {

@@ -528,6 +528,7 @@ func (m *mockAgentManager) StopExecutionWithFence(
 	generation uint64,
 	reason string,
 	consumeReceipt func(*agentRuntime.ExecutionFenceReceipt) error,
+	consumeTerminalProof func() error,
 ) error {
 	receipt, err := m.CloseExecutionAdmission(ctx, executionID, generation)
 	if err != nil {
@@ -538,7 +539,13 @@ func (m *mockAgentManager) StopExecutionWithFence(
 			return err
 		}
 	}
-	return m.StopAgentWithReason(ctx, executionID, reason, false)
+	if err := m.StopAgentWithReason(ctx, executionID, reason, false); err != nil {
+		return err
+	}
+	if consumeTerminalProof != nil {
+		return consumeTerminalProof()
+	}
+	return nil
 }
 
 func (m *mockAgentManager) PromptAgent(ctx context.Context, executionID string, prompt string, attachments []v1.MessageAttachment, dispatchOnly bool) (*executor.PromptResult, error) {

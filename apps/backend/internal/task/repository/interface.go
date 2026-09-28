@@ -555,6 +555,7 @@ type CoordinatorStopOperationRepository interface {
 	GetCoordinatorStopOperation(ctx context.Context, operationID string) (*models.CoordinatorStopOperation, error)
 	MarkCoordinatorStopOperationIncomplete(ctx context.Context, operationID, executionID string, agentctlGeneration uint64, reasonCode string) (*models.CoordinatorStopOperation, bool, error)
 	ConsumeCoordinatorStopFenceReceipt(ctx context.Context, operationID string, receipt models.CoordinatorStopFenceReceipt) (*models.CoordinatorStopOperation, error)
+	RecordCoordinatorStopLifecycleProof(ctx context.Context, operationID, executionID string, agentctlGeneration uint64) error
 	FinalizeCoordinatorStopOperation(ctx context.Context, operationID, executionID string, agentctlGeneration uint64) (*models.CoordinatorStopOperation, error)
 }
 
@@ -562,6 +563,7 @@ type CoordinatorStopOperationRepository interface {
 // lifecycle work for a task whose session may already be CANCELLED.
 type CoordinatorStopOperationLister interface {
 	ListPendingCoordinatorStopOperations(ctx context.Context, taskID string) ([]*models.CoordinatorStopOperation, error)
+	ListCoordinatorStopOperations(ctx context.Context, taskID string) ([]*models.CoordinatorStopOperation, error)
 }
 
 type CoordinatorStopSessionFencer interface {
