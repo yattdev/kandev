@@ -3712,8 +3712,32 @@ func (r *Repository) UpdateTaskSessionBaseCommit(ctx context.Context, id string,
 // message that no longer exists (deleted) is treated as having no rank, so
 // the guard never wedges: NOT EXISTS is satisfied and the update proceeds.
 func (r *Repository) UpdateTaskSessionLastReadMessageID(ctx context.Context, id, messageID string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), id).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: agent session not found: %s", models.ErrTaskSessionNotFound, id)
+		}
+		return err
+	}
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_sessions
 		   SET last_read_message_id = ?, updated_at = ?
 		 WHERE id = ?
@@ -3735,21 +3759,21 @@ func (r *Repository) UpdateTaskSessionLastReadMessageID(ctx context.Context, id,
 	}
 	rows, _ := result.RowsAffected()
 	if rows > 0 {
-		return nil
+		return tx.Commit()
 	}
 	// No row was updated — either the session doesn't exist, or the guard
 	// above correctly rejected a stale/out-of-order cursor (messageID is not
 	// newer than what's already persisted). Distinguish the two so a stale
 	// update is a silent no-op rather than a spurious not-found error.
 	var exists int
-	err = r.db.QueryRowContext(ctx, r.db.Rebind(`SELECT 1 FROM task_sessions WHERE id = ?`), id).Scan(&exists)
+	err = tx.QueryRowContext(ctx, r.db.Rebind(`SELECT 1 FROM task_sessions WHERE id = ?`), id).Scan(&exists)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: agent session not found: %s", models.ErrTaskSessionNotFound, id)
 		}
 		return err
 	}
-	return nil
+	return tx.Commit()
 }
 
 // ResetTaskSessionBasesForRepository rewrites base_branch and clears

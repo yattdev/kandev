@@ -243,3 +243,28 @@ func TestClaimForceRemovalBlocksSessionContextWindowWithoutPersistingIt(t *testi
 	require.NoError(t, err)
 	require.Zero(t, count)
 }
+
+func TestClaimForceRemovalBlocksSessionReadCursorWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-read-cursor-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-read-cursor-held", "force-read-cursor-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-read-cursor-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID}))
+	}
+	held, err := repo.GetTask(ctx, "force-read-cursor-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "a", OperationID: "read-cursor", RequestDigest: "r", PreviewDigest: "p"})
+	require.NoError(t, err)
+
+	err = repo.UpdateTaskSessionLastReadMessageID(ctx, "force-read-cursor-held-session", "held-message")
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	heldSession, err := repo.GetTaskSession(ctx, "force-read-cursor-held-session")
+	require.NoError(t, err)
+	require.Empty(t, heldSession.LastReadMessageID)
+
+	require.NoError(t, repo.UpdateTaskSessionLastReadMessageID(ctx, "force-read-cursor-foreign-session", "foreign-message"))
+	foreignSession, err := repo.GetTaskSession(ctx, "force-read-cursor-foreign-session")
+	require.NoError(t, err)
+	require.Equal(t, "foreign-message", foreignSession.LastReadMessageID)
+}
