@@ -2162,21 +2162,48 @@ func (r *Repository) UpdateTaskSessionAgentProfileSnapshot(
 
 // UpdateTaskSessionState updates just the state and error message of an agent session
 func (r *Repository) UpdateTaskSessionState(ctx context.Context, id string, status models.TaskSessionState, errorMessage string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), id).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: agent session not found: %s", models.ErrTaskSessionNotFound, id)
+		}
+		return err
+	}
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	completedAt := completedAtForTaskSessionState(status, now)
 
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_sessions SET state = ?, error_message = ?, completed_at = ?, updated_at = ? WHERE id = ?
 	`), string(status), errorMessage, completedAt, now, id)
 	if err != nil {
 		return err
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
 	if rows == 0 {
 		return fmt.Errorf("%w: agent session not found: %s", models.ErrTaskSessionNotFound, id)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // UpdateTaskSessionStateIfCurrent transitions a session only when its state
