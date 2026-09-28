@@ -90,6 +90,7 @@ service Host {
   rpc GetTaskExact(GetTaskExactRequest) returns (GetTaskExactResponse);
   rpc ListSessionsExact(ListSessionsExactRequest) returns (ListSessionsExactResponse);
   rpc GetSessionExact(GetSessionExactRequest) returns (GetSessionExactResponse);
+  rpc ListSessionMessagesExact(ListSessionMessagesExactRequest) returns (ListSessionMessagesExactResponse);
   rpc ListTaskDecisionEvidenceExact(ListTaskDecisionEvidenceExactRequest) returns (ListTaskDecisionEvidenceExactResponse);
   rpc UpdateTaskExact(UpdateTaskExactRequest) returns (UpdateTaskExactResponse);
 
@@ -1239,6 +1240,26 @@ message GetSessionExactRequest {
   string snapshot_version = 4;
 }
 message GetSessionExactResponse { ExactSession session = 1; }
+message ExactSessionMessage {
+  string id = 1;
+  string author_type = 2;
+  string content = 3;
+  string type = 4;
+  bool requests_input = 5;
+  string created_at = 6;
+  string updated_at = 7;
+}
+message ListSessionMessagesExactRequest {
+  string workspace_id = 1;
+  string task_id = 2;
+  string session_id = 3;
+  uint64 capability_revision = 4;
+  ExactPage page = 5;
+}
+message ListSessionMessagesExactResponse {
+  repeated ExactSessionMessage messages = 1;
+  ExactPageInfo page_info = 2;
+}
 message ExactTaskRelation {
   string task_id = 1;
   string blocker_task_id = 2;

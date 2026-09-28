@@ -87,6 +87,10 @@ type ExactSessionHost interface {
 	GetSessionExact(context.Context, ExactSessionGetQuery) (*ExactSession, error)
 }
 
+type ExactSessionMessageHost interface {
+	ListSessionMessagesExact(context.Context, ExactSessionMessageQuery) ([]ExactSessionMessage, *ExactPageInfo, error)
+}
+
 type ExactTask struct {
 	ID, WorkspaceID, WorkflowID, WorkflowStepID string
 	Title, Description, State, Priority         string
@@ -123,6 +127,15 @@ type ExactSession struct {
 	StartedAt, CompletedAt, UpdatedAt           string
 	IsPrimary                                   bool
 	ResourceVersion                             int64
+}
+type ExactSessionMessageQuery struct {
+	WorkspaceID, TaskID, SessionID string
+	CapabilityRevision             uint64
+	Page                           ExactPage
+}
+type ExactSessionMessage struct {
+	ID, AuthorType, Content, Type, CreatedAt, UpdatedAt string
+	RequestsInput                                       bool
 }
 
 type ExactWorkspaceQuery struct {
@@ -183,6 +196,10 @@ func ExactTaskCommands(host Host) (ExactTaskCommandHost, bool) {
 
 func ExactSessions(host Host) (ExactSessionHost, bool) {
 	exact, ok := host.(ExactSessionHost)
+	return exact, ok
+}
+func ExactSessionMessages(host Host) (ExactSessionMessageHost, bool) {
+	exact, ok := host.(ExactSessionMessageHost)
 	return exact, ok
 }
 

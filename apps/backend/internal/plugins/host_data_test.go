@@ -38,6 +38,8 @@ type fakeTaskDataSource struct {
 	exactPageErr     error
 	exactSessions    map[string][]taskmodels.ExactSessionSnapshotSession
 	exactSessionErr  error
+	exactMessages    map[string][]taskmodels.ExactSessionMessageSnapshotMessage
+	exactMessageErr  error
 	repositories     map[string][]*taskmodels.Repository
 	sessionsByTask   map[string][]*taskmodels.TaskSession
 	executorRunning  map[string]*taskmodels.ExecutorRunning
@@ -135,6 +137,27 @@ func (f *fakeTaskDataSource) GetExactSessionSnapshotSession(_ context.Context, t
 		}
 	}
 	return nil, repoerrors.ErrExactSessionSnapshotUnavailable
+}
+
+func (f *fakeTaskDataSource) OpenExactSessionMessageSnapshot(_ context.Context, installationID, workspaceID, taskID, sessionID string) (*taskmodels.ExactSessionMessageSnapshot, error) {
+	if f.exactMessageErr != nil {
+		return nil, f.exactMessageErr
+	}
+	return &taskmodels.ExactSessionMessageSnapshot{Token: "messages-" + workspaceID + "-" + taskID + "-" + sessionID, InstallationID: installationID, WorkspaceID: workspaceID, TaskID: taskID, SessionID: sessionID}, nil
+}
+func (f *fakeTaskDataSource) PageExactSessionMessageSnapshot(_ context.Context, _ string, _ string, _ string, _ string, token string, offset, limit int) ([]taskmodels.ExactSessionMessageSnapshotMessage, error) {
+	if f.exactMessageErr != nil {
+		return nil, f.exactMessageErr
+	}
+	rows := f.exactMessages[token]
+	if offset >= len(rows) {
+		return []taskmodels.ExactSessionMessageSnapshotMessage{}, nil
+	}
+	end := offset + limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	return rows[offset:end], nil
 }
 
 func (f *fakeTaskDataSource) ListTaskStepTransitions(_ context.Context, taskID string, _ int, _ string) ([]taskmodels.StepTransition, string, error) {

@@ -443,6 +443,18 @@ func (h *grpcHostClient) GetSessionExact(ctx context.Context, query ExactSession
 	return &session[0], nil
 }
 
+func (h *grpcHostClient) ListSessionMessagesExact(ctx context.Context, query ExactSessionMessageQuery) ([]ExactSessionMessage, *ExactPageInfo, error) {
+	response, err := h.client.ListSessionMessagesExact(ctx, &pluginv1.ListSessionMessagesExactRequest{WorkspaceId: query.WorkspaceID, TaskId: query.TaskID, SessionId: query.SessionID, CapabilityRevision: query.CapabilityRevision, Page: exactPageToProto(query.Page)})
+	if err != nil {
+		return nil, nil, err
+	}
+	items := make([]ExactSessionMessage, 0, len(response.GetMessages()))
+	for _, message := range response.GetMessages() {
+		items = append(items, ExactSessionMessage{ID: message.GetId(), AuthorType: message.GetAuthorType(), Content: message.GetContent(), Type: message.GetType(), RequestsInput: message.GetRequestsInput(), CreatedAt: message.GetCreatedAt(), UpdatedAt: message.GetUpdatedAt()})
+	}
+	return items, exactPageInfoFromProto(response.GetPageInfo()), nil
+}
+
 func (h *grpcHostClient) ListTaskDecisionEvidenceExact(ctx context.Context, query ExactTaskDecisionEvidenceQuery) (*ExactTaskDecisionEvidencePage, *ExactPageInfo, error) {
 	response, err := h.client.ListTaskDecisionEvidenceExact(ctx, &pluginv1.ListTaskDecisionEvidenceExactRequest{WorkspaceId: query.WorkspaceID, CapabilityRevision: query.CapabilityRevision, Page: exactPageToProto(query.Page)})
 	if err != nil {
@@ -1032,6 +1044,22 @@ func (s *grpcHostServer) GetSessionExact(ctx context.Context, request *pluginv1.
 		return nil, fmt.Errorf("pluginsdk: exact session response is missing")
 	}
 	return &pluginv1.GetSessionExactResponse{Session: exactSessionsToProto([]ExactSession{*session})[0]}, nil
+}
+
+func (s *grpcHostServer) ListSessionMessagesExact(ctx context.Context, request *pluginv1.ListSessionMessagesExactRequest) (*pluginv1.ListSessionMessagesExactResponse, error) {
+	exact, ok := s.impl.(ExactSessionMessageHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_session_messages")
+	}
+	items, page, err := exact.ListSessionMessagesExact(ctx, ExactSessionMessageQuery{WorkspaceID: request.GetWorkspaceId(), TaskID: request.GetTaskId(), SessionID: request.GetSessionId(), CapabilityRevision: request.GetCapabilityRevision(), Page: exactPageFromProto(request.GetPage())})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*pluginv1.ExactSessionMessage, 0, len(items))
+	for _, message := range items {
+		out = append(out, &pluginv1.ExactSessionMessage{Id: message.ID, AuthorType: message.AuthorType, Content: message.Content, Type: message.Type, RequestsInput: message.RequestsInput, CreatedAt: message.CreatedAt, UpdatedAt: message.UpdatedAt})
+	}
+	return &pluginv1.ListSessionMessagesExactResponse{Messages: out, PageInfo: exactPageInfoToProto(page)}, nil
 }
 
 func (s *grpcHostServer) GetTaskExact(ctx context.Context, request *pluginv1.GetTaskExactRequest) (*pluginv1.GetTaskExactResponse, error) {
