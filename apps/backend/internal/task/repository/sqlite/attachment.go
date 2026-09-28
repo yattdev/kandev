@@ -34,7 +34,41 @@ func (r *Repository) CreateMessageAttachment(ctx context.Context, attachment *mo
 	if attachment.State == "" {
 		attachment.State = models.AttachmentStateStaged
 	}
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	if attachment.TaskID == "" {
+		_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+			INSERT INTO task_message_attachments
+				(id, owner_id, workspace_id, task_id, session_id, message_id, queue_id,
+				 name, mime_type, kind, delivery_mode, size_bytes, storage_key, state,
+				 expires_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`), attachment.ID, attachment.OwnerID, attachment.WorkspaceID, attachment.TaskID,
+			attachment.SessionID, attachment.MessageID, attachment.QueueID, attachment.Name,
+			attachment.MimeType, attachment.Kind, attachment.DeliveryMode, attachment.SizeBytes,
+			attachment.StorageKey, attachment.State, attachment.ExpiresAt, attachment.CreatedAt,
+			attachment.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("create message attachment: %w", err)
+		}
+		return nil
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), attachment.TaskID).Scan(&taskExists); err != nil {
+		return err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, attachment.TaskID); err != nil {
+			return err
+		}
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, attachment.TaskID); err != nil {
+			return err
+		}
+	}
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_message_attachments
 			(id, owner_id, workspace_id, task_id, session_id, message_id, queue_id,
 			 name, mime_type, kind, delivery_mode, size_bytes, storage_key, state,
@@ -48,7 +82,7 @@ func (r *Repository) CreateMessageAttachment(ctx context.Context, attachment *mo
 	if err != nil {
 		return fmt.Errorf("create message attachment: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (r *Repository) GetMessageAttachment(ctx context.Context, id string) (*models.TaskMessageAttachment, error) {
