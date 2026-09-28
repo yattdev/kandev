@@ -80,7 +80,8 @@ func (s *Service) StopAutomationRun(ctx context.Context, taskID, sessionID, turn
 	if !valid {
 		return false, nil
 	}
-	return s.stopTaskSessionForCoordinator(ctx, taskID, sessionID)
+	stopped, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID)
+	return stopped, err
 }
 
 // AutomationRunLive is the conservative liveness check used during startup
@@ -902,7 +903,7 @@ func (s *Service) cancelAutomationDispatch(ctx context.Context, taskID, sessionI
 	if s.turnService == nil || s.executor == nil {
 		return
 	}
-	if _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID); err != nil {
+	if _, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID); err != nil {
 		s.logger.Warn("failed to cancel automation dispatch without a turn identity",
 			zap.String("task_id", taskID), zap.String("session_id", sessionID), zap.Error(err))
 	}

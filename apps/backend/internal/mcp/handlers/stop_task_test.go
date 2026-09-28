@@ -66,6 +66,7 @@ func TestHandleStopTask_AuthorizesOnlyDirectParentInWorkspace(t *testing.T) {
 		wantCode   string
 	}{
 		{name: "direct parent", senderID: "parent", targetID: "child", wantStatus: orchestrator.CoordinatorTaskStopStatusStopped},
+		{name: "direct parent incomplete receipt", senderID: "parent", targetID: "child", wantStatus: orchestrator.CoordinatorTaskStopStatusIncomplete},
 		{name: "self", senderID: "parent", targetID: "parent", wantCode: ws.ErrorCodeForbidden},
 		{name: "sibling", senderID: "parent", targetID: "sibling", wantCode: ws.ErrorCodeForbidden},
 		{name: "child", senderID: "child", targetID: "parent", wantCode: ws.ErrorCodeForbidden},

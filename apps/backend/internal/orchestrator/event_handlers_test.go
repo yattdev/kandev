@@ -16,6 +16,7 @@ import (
 
 	"github.com/kandev/kandev/internal/agent/agents"
 	"github.com/kandev/kandev/internal/agent/registry"
+	agentRuntime "github.com/kandev/kandev/internal/agent/runtime"
 	"github.com/kandev/kandev/internal/agent/runtime/agentctl"
 	"github.com/kandev/kandev/internal/agent/runtime/lifecycle"
 	"github.com/kandev/kandev/internal/agent/runtime/routingerr"
@@ -315,13 +316,14 @@ type mockAgentManager struct {
 	// ProbeBackgroundWorkloads's default Unknown/nil response.
 	probeBackgroundWorkloadsFunc func(context.Context, string) (client.ProbeResult, error)
 
-	mu                      sync.Mutex
-	stopAgentWithReasonArgs []stopAgentCall // tracks StopAgentWithReason calls
-	stopAgentWithReasonErr  error           // optional error to return from StopAgentWithReason
-	stopAgentWithReasonFunc func(context.Context, string, string, bool) error
-	stopAgentArgs           []stopAgentCall // tracks StopAgent calls (no reason)
-	stopAgentErr            error           // optional error to return from StopAgent
-	stopAgentFunc           func(context.Context, string, bool) error
+	mu                          sync.Mutex
+	stopAgentWithReasonArgs     []stopAgentCall // tracks StopAgentWithReason calls
+	stopAgentWithReasonErr      error           // optional error to return from StopAgentWithReason
+	stopAgentWithReasonFunc     func(context.Context, string, string, bool) error
+	closeExecutionAdmissionFunc func(context.Context, string, uint64) (*agentRuntime.ExecutionFenceReceipt, error)
+	stopAgentArgs               []stopAgentCall // tracks StopAgent calls (no reason)
+	stopAgentErr                error           // optional error to return from StopAgent
+	stopAgentFunc               func(context.Context, string, bool) error
 
 	// Prompt tracking — capturedPrompts records prompts only (legacy, several
 	// tests assert on it directly). capturedPromptCalls records the same with
@@ -511,6 +513,13 @@ func (m *mockAgentManager) StopAgentWithReason(ctx context.Context, agentExecuti
 		return hook(ctx, agentExecutionID, reason, force)
 	}
 	return err
+}
+
+func (m *mockAgentManager) CloseExecutionAdmission(ctx context.Context, executionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
+	if m.closeExecutionAdmissionFunc == nil {
+		return nil, errors.New("agentctl control path unavailable")
+	}
+	return m.closeExecutionAdmissionFunc(ctx, executionID, generation)
 }
 func (m *mockAgentManager) PromptAgent(ctx context.Context, executionID string, prompt string, attachments []v1.MessageAttachment, dispatchOnly bool) (*executor.PromptResult, error) {
 	m.mu.Lock()

@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	agentRuntime "github.com/kandev/kandev/internal/agent/runtime"
 	"github.com/kandev/kandev/internal/agent/runtime/lifecycle"
+	"github.com/kandev/kandev/internal/agentruntime"
 	orchestratorexec "github.com/kandev/kandev/internal/orchestrator/executor"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/orchestrator/watcher"
@@ -16,6 +18,43 @@ import (
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	"github.com/stretchr/testify/require"
 )
+
+// @covers AC-STOP-FENCE-001, AC-STOP-FENCE-004
+func TestStopTaskForCoordinator_FencesCapturedExecutionBeforeGracefulTeardown(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	const taskID, sessionID, executionID, turnID = "task-fence", "session-fence", "execution-fence", "turn-fence"
+	seedTaskAndSession(t, repo, taskID, sessionID, models.TaskSessionStateRunning)
+	now := time.Now().UTC()
+	require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: turnID, TaskID: taskID, TaskSessionID: sessionID, StartedAt: now, CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
+		ID: sessionID, SessionID: sessionID, TaskID: taskID, ExecutorID: "executor", Runtime: agentruntime.RuntimeStandalone,
+		AgentExecutionID: executionID, AgentctlGeneration: 1, Status: models.ExecutorRunningStatusRunning,
+	}))
+	manager := &mockAgentManager{repoForExecutionLookup: repo}
+	manager.closeExecutionAdmissionFunc = func(_ context.Context, gotExecutionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
+		require.Equal(t, executionID, gotExecutionID)
+		require.Equal(t, uint64(1), generation)
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true}, nil
+	}
+	manager.stopAgentWithReasonFunc = func(_ context.Context, gotExecutionID, _ string, force bool) error {
+		require.Equal(t, executionID, gotExecutionID)
+		require.False(t, force)
+		return repo.DeleteExecutorRunningBySessionID(ctx, sessionID)
+	}
+	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), manager)
+
+	result, err := svc.StopTaskForCoordinator(ctx, taskID)
+
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
+	session, err := repo.GetTaskSession(ctx, sessionID)
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateCancelled, session.State)
+	turn, err := repo.GetTurn(ctx, turnID)
+	require.NoError(t, err)
+	require.NotNil(t, turn.CompletedAt)
+}
 
 type coordinatorStopCallOutcome struct {
 	result CoordinatorTaskStopResult

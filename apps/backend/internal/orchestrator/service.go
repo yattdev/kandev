@@ -398,6 +398,7 @@ type repoStore interface {
 type sessionExecutorStore interface {
 	// Session
 	GetTaskSession(ctx context.Context, id string) (*models.TaskSession, error)
+	GetActiveTurnBySessionID(ctx context.Context, sessionID string) (*models.Turn, error)
 	// HasUserPromptHistory reads the durable prompt sequence without scanning
 	// the session transcript. Empty workflow steps use it to decide whether the
 	// task description is still eligible as the initial prompt.

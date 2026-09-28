@@ -67,7 +67,7 @@ func (h *Handlers) handleStopTask(ctx context.Context, msg *ws.Message) (*ws.Mes
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "failed to stop target task", nil)
 	}
 	switch result.Status {
-	case orchestrator.CoordinatorTaskStopStatusStopped, orchestrator.CoordinatorTaskStopStatusNotRunning:
+	case orchestrator.CoordinatorTaskStopStatusStopped, orchestrator.CoordinatorTaskStopStatusIncomplete, orchestrator.CoordinatorTaskStopStatusNotRunning:
 	default:
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "task stop returned an invalid status", nil)
 	}
