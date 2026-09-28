@@ -73,3 +73,55 @@ type ExactSessionSnapshotSession struct {
 	IsPrimary          bool
 	ResourceVersion    int64
 }
+
+// ExactSessionMessageSnapshotRequest binds a sanitized, materialized message
+// projection to the installation and exact session lifecycle identity that
+// authorized it. It has no filters because the projection is complete.
+type ExactSessionMessageSnapshotRequest struct {
+	InstallationID         string
+	WorkspaceID            string
+	TaskID                 string
+	SessionID              string
+	QueueIncarnationID     string
+	RouteGeneration        int64
+	SessionResourceVersion int64
+	TTL                    time.Duration
+}
+
+// ExactSessionMessageSnapshot identifies a server-materialized sanitized
+// message projection. The token is opaque and is usable only with its exact
+// bound identity until ExpiresAt.
+type ExactSessionMessageSnapshot struct {
+	Token                  string
+	InstallationID         string
+	WorkspaceID            string
+	TaskID                 string
+	SessionID              string
+	QueueIncarnationID     string
+	RouteGeneration        int64
+	SessionResourceVersion int64
+	ExpiresAt              time.Time
+}
+
+// ExactSessionMessageSnapshotPageRequest repeats the identity at the read
+// boundary so a captured token cannot be replayed by another installation or
+// against a replacement session generation.
+type ExactSessionMessageSnapshotPageRequest struct {
+	ExactSessionMessageSnapshotRequest
+	Token  string
+	Offset int
+	Limit  int
+}
+
+// ExactSessionMessageSnapshotMessage is the deliberately narrow, sanitized
+// message projection. It excludes author identifiers, turn identities and
+// metadata, which can carry provider or credential material.
+type ExactSessionMessageSnapshotMessage struct {
+	ID            string
+	AuthorType    MessageAuthorType
+	Content       string
+	Type          MessageType
+	RequestsInput bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}

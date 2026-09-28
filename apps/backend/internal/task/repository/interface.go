@@ -17,6 +17,7 @@ var ErrWorkspaceNotFound = repoerrors.ErrWorkspaceNotFound
 var ErrTaskNotFound = repoerrors.ErrTaskNotFound
 var ErrExactTaskSnapshotUnavailable = repoerrors.ErrExactTaskSnapshotUnavailable
 var ErrExactSessionSnapshotUnavailable = repoerrors.ErrExactSessionSnapshotUnavailable
+var ErrExactSessionMessageSnapshotUnavailable = repoerrors.ErrExactSessionMessageSnapshotUnavailable
 var ErrNoPrimarySession = repoerrors.ErrNoPrimarySession
 var ErrTaskParentMismatch = repoerrors.ErrTaskParentMismatch
 var ErrTaskPlanNotFound = repoerrors.ErrTaskPlanNotFound
@@ -246,6 +247,14 @@ type ExactSessionSnapshotReader interface {
 	PageExactSessionSnapshot(ctx context.Context, token string, offset, limit int) ([]models.ExactSessionSnapshotSession, error)
 	GetExactSessionSnapshotSession(ctx context.Context, token, sessionID string) (*models.ExactSessionSnapshotSession, error)
 	CleanupExpiredExactSessionSnapshots(ctx context.Context, limit int) (int, error)
+}
+
+// ExactSessionMessageSnapshotReader is the private, opt-in counterpart for a
+// sanitized transcript projection bound to one exact session generation.
+type ExactSessionMessageSnapshotReader interface {
+	OpenExactSessionMessageSnapshot(ctx context.Context, request models.ExactSessionMessageSnapshotRequest) (*models.ExactSessionMessageSnapshot, error)
+	PageExactSessionMessageSnapshot(ctx context.Context, request models.ExactSessionMessageSnapshotPageRequest) ([]models.ExactSessionMessageSnapshotMessage, error)
+	CleanupExpiredExactSessionMessageSnapshots(ctx context.Context, limit int) (int, error)
 }
 
 // TaskPriorityRepository updates a task's priority without replacing the

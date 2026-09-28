@@ -63,6 +63,7 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		r.migrateGitSnapshotOwnership,
 		r.ensureExactSessionResourceVersion,
 		r.initExactSessionSnapshotSchema,
+		r.initExactSessionMessageSnapshotSchema,
 		r.ensureWorkspaceIndexes,
 		r.ensureMessageMetadataIndexes,
 		r.ensurePromptOrderIndex,
