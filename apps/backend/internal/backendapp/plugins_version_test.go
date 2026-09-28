@@ -9,6 +9,7 @@ import (
 	goruntime "runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kandev/kandev/internal/agent/registry"
 	"github.com/kandev/kandev/internal/common/config"
@@ -20,6 +21,7 @@ import (
 	"github.com/kandev/kandev/internal/secrets"
 	"github.com/kandev/kandev/internal/startup"
 	taskmodels "github.com/kandev/kandev/internal/task/models"
+	tasksqlite "github.com/kandev/kandev/internal/task/repository/sqlite"
 	"github.com/kandev/kandev/pkg/pluginsdk"
 )
 
@@ -79,9 +81,24 @@ func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
 	if !ok {
 		t.Fatal("runtime did not receive exact Host")
 	}
-	items, _, err := h.ListTasksExact(ctx, pluginsdk.ExactTaskQuery{WorkspaceID: "exact-ws", CapabilityRevision: 1})
-	if err != nil || len(items) != 1 || items[0].ID != "exact-task" {
-		t.Fatalf("exact read: items=%+v err=%v", items, err)
+	items, page, err := h.ListTasksExact(ctx, pluginsdk.ExactTaskQuery{WorkspaceID: "exact-ws", CapabilityRevision: 1})
+	if err != nil || len(items) != 1 || items[0].ID != "exact-task" || page.AuditID == "" {
+		t.Fatalf("exact read: items=%+v page=%+v err=%v", items, page, err)
+	}
+	task, err := repos.Task.GetTask(ctx, "exact-task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence, err := repos.Task.ExactTaskCommandWorkspaceFence(ctx, "exact-ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := tasksqlite.ExactTaskCommandGrant{ID: "exact-grant", InstallationID: rec.InstallationID, WorkspaceID: "exact-ws", TaskID: task.ID, CapabilityID: "host.v2.read:tasks", ReceiptAuditID: page.AuditID, ApprovalRevision: 1, ActionDigest: "marker", IdempotencyKey: "marker-key", ExpiresAt: time.Now().Add(time.Minute)}
+	if err = repos.Task.IssueExactTaskCommandGrant(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, tasksqlite.ExactTaskDescriptionCommand{GrantID: grant.ID, InstallationID: grant.InstallationID, WorkspaceID: grant.WorkspaceID, TaskID: grant.TaskID, CapabilityID: grant.CapabilityID, ReceiptAuditID: grant.ReceiptAuditID, ApprovalRevision: 1, ActionDigest: grant.ActionDigest, IdempotencyKey: grant.IdempotencyKey, Marker: "[marker]", ExpectedResourceVersion: task.ResourceVersion, ExpectedFence: fence}); err != nil {
+		t.Fatal(err)
 	}
 }
 

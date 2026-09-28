@@ -18,7 +18,8 @@ const exactTaskPageLimit int32 = 99
 // approval revision, and task filter; a token therefore cannot cross either
 // a Host connection or a workspace boundary.
 func (h *pluginHost) ListTasksExact(ctx context.Context, query pluginsdk.ExactTaskQuery) ([]pluginsdk.ExactTask, *pluginsdk.ExactPageInfo, error) {
-	if err := h.authorizeExactRead(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("tasks", query.WorkspaceID, query.Page.SnapshotVersion)); err != nil {
+	receipt, err := h.authorizeExactReadReceipt(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("tasks", query.WorkspaceID, query.Page.SnapshotVersion))
+	if err != nil {
 		return nil, nil, err
 	}
 	if h.taskData == nil || h.exactSnapshots == nil {
@@ -51,7 +52,7 @@ func (h *pluginHost) ListTasksExact(ctx context.Context, query pluginsdk.ExactTa
 	if err != nil {
 		return nil, nil, status.Error(codes.Unavailable, "exact task snapshot is unavailable")
 	}
-	info := &pluginsdk.ExactPageInfo{SnapshotVersion: snapshotVersion, HasMore: len(rows) > len(items)}
+	info := &pluginsdk.ExactPageInfo{SnapshotVersion: snapshotVersion, HasMore: len(rows) > len(items), AuditID: receipt.AuditID}
 	if info.HasMore {
 		cursor, cursorErr := h.exactSnapshots.create(binding, offset+len(items))
 		if cursorErr != nil {
