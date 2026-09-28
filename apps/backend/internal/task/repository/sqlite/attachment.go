@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -1505,6 +1506,9 @@ func (r *Repository) MarkExpiredMessageAttachments(ctx context.Context, now time
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("close expired attachments: %w", err)
 	}
+	if err := r.ensureExpiredAttachmentOwnersAvailableTx(ctx, tx, expired); err != nil {
+		return nil, err
+	}
 	transitioned := make([]*models.TaskMessageAttachment, 0, len(expired))
 	for _, attachment := range expired {
 		if attachment.State == models.AttachmentStateExpired {
@@ -1532,6 +1536,51 @@ func (r *Repository) MarkExpiredMessageAttachments(ctx context.Context, now time
 		return nil, fmt.Errorf("commit expired attachment cleanup: %w", err)
 	}
 	return transitioned, nil
+}
+
+// ensureExpiredAttachmentOwnersAvailableTx checks owners in a fixed order before
+// expiry updates so a held task cannot leave an expiry batch partially applied.
+func (r *Repository) ensureExpiredAttachmentOwnersAvailableTx(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	attachments []*models.TaskMessageAttachment,
+) error {
+	for _, taskID := range orderedExpiredAttachmentTaskIDs(attachments) {
+		var taskExists bool
+		if err := tx.QueryRowContext(
+			ctx,
+			r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`),
+			taskID,
+		).Scan(&taskExists); err != nil {
+			return err
+		}
+		if !taskExists {
+			continue
+		}
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func orderedExpiredAttachmentTaskIDs(attachments []*models.TaskMessageAttachment) []string {
+	taskIDs := make(map[string]struct{})
+	for _, attachment := range attachments {
+		if attachment.TaskID != "" {
+			taskIDs[attachment.TaskID] = struct{}{}
+		}
+	}
+
+	orderedTaskIDs := make([]string, 0, len(taskIDs))
+	for taskID := range taskIDs {
+		orderedTaskIDs = append(orderedTaskIDs, taskID)
+	}
+	sort.Strings(orderedTaskIDs)
+	return orderedTaskIDs
 }
 
 func errorsIsNoRows(err error) bool { return err == sql.ErrNoRows }
