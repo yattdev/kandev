@@ -46,6 +46,9 @@ type recordingHost struct {
 	exactTaskPage       *ExactPageInfo
 	exactTaskQuery      ExactTaskQuery
 	exactTaskGetQuery   ExactTaskGetQuery
+	exactSessions       []ExactSession
+	exactSessionPage    *ExactPageInfo
+	exactSessionQuery   ExactSessionQuery
 }
 
 func (h *recordingHost) PluginOwnedTaskTrees() PluginOwnedTaskTreeManager {
@@ -134,6 +137,11 @@ func (h *recordingHost) ListTasksExact(_ context.Context, query ExactTaskQuery) 
 func (h *recordingHost) GetTaskExact(_ context.Context, query ExactTaskGetQuery) (*ExactTask, error) {
 	h.exactTaskGetQuery = query
 	return h.exactTask, nil
+}
+
+func (h *recordingHost) ListSessionsExact(_ context.Context, query ExactSessionQuery) ([]ExactSession, *ExactPageInfo, error) {
+	h.exactSessionQuery = query
+	return h.exactSessions, h.exactSessionPage, nil
 }
 
 // dialHostOverBufconn wires a grpcHostServer (wrapping impl) to a
@@ -285,6 +293,20 @@ func TestHost_ExactTasksOverWire(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, impl.exactTask, task)
 	require.Equal(t, getQuery, impl.exactTaskGetQuery)
+}
+
+func TestHost_ExactSessionsOverWire(t *testing.T) {
+	impl := &recordingHost{exactSessions: []ExactSession{{ID: "session-1", TaskID: "task-1", WorkspaceID: "workspace-1", QueueIncarnationID: "generation-1", State: "RUNNING", RouteGeneration: 2, ResourceVersion: 3}}, exactSessionPage: &ExactPageInfo{SnapshotVersion: "snapshot-1", AuditID: "audit-1"}}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := ExactSessions(host)
+	require.True(t, ok)
+
+	query := ExactSessionQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: ExactPage{Limit: 1, SnapshotVersion: "snapshot-1"}}
+	sessions, page, err := exact.ListSessionsExact(context.Background(), query)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactSessions, sessions)
+	require.Equal(t, impl.exactSessionPage, page)
+	require.Equal(t, query, impl.exactSessionQuery)
 }
 
 func TestHost_RevealSecret(t *testing.T) {

@@ -88,6 +88,7 @@ service Host {
   rpc ListWorkflowStepsExact(ListWorkflowStepsExactRequest) returns (ListWorkflowStepsExactResponse);
   rpc ListTasksExact(ListTasksExactRequest) returns (ListTasksExactResponse);
   rpc GetTaskExact(GetTaskExactRequest) returns (GetTaskExactResponse);
+  rpc ListSessionsExact(ListSessionsExactRequest) returns (ListSessionsExactResponse);
   rpc ListTaskDecisionEvidenceExact(ListTaskDecisionEvidenceExactRequest) returns (ListTaskDecisionEvidenceExactResponse);
 
   // Reads — capability api_read:<resource>
@@ -1207,6 +1208,28 @@ message GetTaskExactRequest {
   string snapshot_version = 4;
 }
 message GetTaskExactResponse { ExactTask task = 1; }
+message ExactSession {
+  string id = 1;
+  string task_id = 2;
+  string workspace_id = 3;
+  string queue_incarnation_id = 4;
+  string state = 5;
+  int64 route_generation = 6;
+  string started_at = 7;
+  string completed_at = 8;
+  string updated_at = 9;
+  bool is_primary = 10;
+  int64 resource_version = 11;
+}
+message ListSessionsExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListSessionsExactResponse {
+  repeated ExactSession sessions = 1;
+  ExactPageInfo page_info = 2;
+}
 message ExactTaskRelation {
   string task_id = 1;
   string blocker_task_id = 2;

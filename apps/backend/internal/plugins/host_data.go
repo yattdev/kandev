@@ -141,6 +141,8 @@ type taskDataSource interface {
 	OpenExactTaskSnapshot(ctx context.Context, request taskmodels.ExactTaskSnapshotRequest) (*taskmodels.ExactTaskSnapshot, error)
 	PageExactTaskSnapshot(ctx context.Context, token string, offset, limit int) ([]taskmodels.ExactTaskSnapshotTask, error)
 	GetExactTaskSnapshotTask(ctx context.Context, token, taskID string) (*taskmodels.ExactTaskSnapshotTask, error)
+	OpenExactSessionSnapshot(ctx context.Context, request taskmodels.ExactSessionSnapshotRequest) (*taskmodels.ExactSessionSnapshot, error)
+	PageExactSessionSnapshot(ctx context.Context, token string, offset, limit int) ([]taskmodels.ExactSessionSnapshotSession, error)
 	ListRepositories(ctx context.Context, workspaceID string) ([]*taskmodels.Repository, error)
 	ListTaskSessions(ctx context.Context, taskID string) ([]*taskmodels.TaskSession, error)
 	GetExecutorRunningBySessionID(ctx context.Context, sessionID string) (*taskmodels.ExecutorRunning, error)

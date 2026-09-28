@@ -423,6 +423,14 @@ func (h *grpcHostClient) ListTasksExact(ctx context.Context, query ExactTaskQuer
 	return exactTasksFromProto(response.GetTasks()), exactPageInfoFromProto(response.GetPageInfo()), nil
 }
 
+func (h *grpcHostClient) ListSessionsExact(ctx context.Context, query ExactSessionQuery) ([]ExactSession, *ExactPageInfo, error) {
+	response, err := h.client.ListSessionsExact(ctx, &pluginv1.ListSessionsExactRequest{WorkspaceId: query.WorkspaceID, CapabilityRevision: query.CapabilityRevision, Page: exactPageToProto(query.Page)})
+	if err != nil {
+		return nil, nil, err
+	}
+	return exactSessionsFromProto(response.GetSessions()), exactPageInfoFromProto(response.GetPageInfo()), nil
+}
+
 func (h *grpcHostClient) ListTaskDecisionEvidenceExact(ctx context.Context, query ExactTaskDecisionEvidenceQuery) (*ExactTaskDecisionEvidencePage, *ExactPageInfo, error) {
 	response, err := h.client.ListTaskDecisionEvidenceExact(ctx, &pluginv1.ListTaskDecisionEvidenceExactRequest{WorkspaceId: query.WorkspaceID, CapabilityRevision: query.CapabilityRevision, Page: exactPageToProto(query.Page)})
 	if err != nil {
@@ -451,6 +459,22 @@ func exactTaskFromProto(task *pluginv1.ExactTask) *ExactTask {
 		return nil
 	}
 	return &ExactTask{ID: task.GetId(), WorkspaceID: task.GetWorkspaceId(), WorkflowID: task.GetWorkflowId(), WorkflowStepID: task.GetWorkflowStepId(), Title: task.GetTitle(), Description: task.GetDescription(), State: task.GetState(), Priority: task.GetPriority(), Position: task.GetPosition(), Archived: task.GetArchived(), ResourceVersion: task.GetResourceVersion()}
+}
+
+func exactSessionsFromProto(sessions []*pluginv1.ExactSession) []ExactSession {
+	result := make([]ExactSession, 0, len(sessions))
+	for _, session := range sessions {
+		result = append(result, ExactSession{ID: session.GetId(), TaskID: session.GetTaskId(), WorkspaceID: session.GetWorkspaceId(), QueueIncarnationID: session.GetQueueIncarnationId(), State: session.GetState(), RouteGeneration: session.GetRouteGeneration(), StartedAt: session.GetStartedAt(), CompletedAt: session.GetCompletedAt(), UpdatedAt: session.GetUpdatedAt(), IsPrimary: session.GetIsPrimary(), ResourceVersion: session.GetResourceVersion()})
+	}
+	return result
+}
+
+func exactSessionsToProto(sessions []ExactSession) []*pluginv1.ExactSession {
+	result := make([]*pluginv1.ExactSession, 0, len(sessions))
+	for _, session := range sessions {
+		result = append(result, &pluginv1.ExactSession{Id: session.ID, TaskId: session.TaskID, WorkspaceId: session.WorkspaceID, QueueIncarnationId: session.QueueIncarnationID, State: session.State, RouteGeneration: session.RouteGeneration, StartedAt: session.StartedAt, CompletedAt: session.CompletedAt, UpdatedAt: session.UpdatedAt, IsPrimary: session.IsPrimary, ResourceVersion: session.ResourceVersion})
+	}
+	return result
 }
 
 func exactTaskDecisionEvidenceFromProto(in *pluginv1.ListTaskDecisionEvidenceExactResponse) *ExactTaskDecisionEvidencePage {
@@ -961,6 +985,18 @@ func (s *grpcHostServer) ListTasksExact(ctx context.Context, request *pluginv1.L
 		return nil, err
 	}
 	return &pluginv1.ListTasksExactResponse{Tasks: exactTasksToProto(items), PageInfo: exactPageInfoToProto(info)}, nil
+}
+
+func (s *grpcHostServer) ListSessionsExact(ctx context.Context, request *pluginv1.ListSessionsExactRequest) (*pluginv1.ListSessionsExactResponse, error) {
+	exact, ok := s.impl.(ExactSessionHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_sessions")
+	}
+	sessions, page, err := exact.ListSessionsExact(ctx, ExactSessionQuery{WorkspaceID: request.GetWorkspaceId(), CapabilityRevision: request.GetCapabilityRevision(), Page: exactPageFromProto(request.GetPage())})
+	if err != nil {
+		return nil, err
+	}
+	return &pluginv1.ListSessionsExactResponse{Sessions: exactSessionsToProto(sessions), PageInfo: exactPageInfoToProto(page)}, nil
 }
 
 func (s *grpcHostServer) GetTaskExact(ctx context.Context, request *pluginv1.GetTaskExactRequest) (*pluginv1.GetTaskExactResponse, error) {
