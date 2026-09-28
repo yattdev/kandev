@@ -78,3 +78,37 @@ func TestPostgresClaimForceRemovalBlocksAbsentSessionMetadataKey(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, written)
 }
+
+func TestPostgresClaimForceRemovalBlocksDifferentStepSessionMetadataKey(t *testing.T) {
+	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
+	repo, err := NewWithDB(db, db, nil)
+	require.NoError(t, err)
+	ctx := context.Background()
+	seedPostgresTaskSession(t, repo, "held-step-session-pg", "held-step-session-pg-session")
+	seedPostgresTaskSession(t, repo, "foreign-step-session-pg", "foreign-step-session-pg-session")
+
+	heldTask, err := repo.GetTask(ctx, "held-step-session-pg")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
+		TaskID: heldTask.ID, WorkspaceID: heldTask.WorkspaceID, TaskGeneration: heldTask.UpdatedAt,
+		AdmissionGeneration: "admission", OperationID: "step-session-metadata-pg",
+		RequestDigest: "request", PreviewDigest: "preview",
+	})
+	require.NoError(t, err)
+
+	written, err := repo.SetSessionMetadataKeyIfAbsentOrDifferentStep(
+		ctx, "held-step-session-pg-session", "marker", "step-held", map[string]string{"step_id": "step-held"},
+	)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	written, err = repo.SetSessionMetadataKeyIfAbsentOrDifferentStep(
+		ctx, "foreign-step-session-pg-session", "marker", "step-foreign", map[string]string{"step_id": "step-foreign"},
+	)
+	require.NoError(t, err)
+	require.True(t, written)
+	written, err = repo.SetSessionMetadataKeyIfAbsentOrDifferentStep(
+		ctx, "foreign-step-session-pg-session", "marker", "step-foreign", map[string]string{"step_id": "step-foreign", "replacement": "yes"},
+	)
+	require.NoError(t, err)
+	require.False(t, written)
+}
