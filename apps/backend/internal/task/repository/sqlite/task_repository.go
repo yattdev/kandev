@@ -245,7 +245,25 @@ func lockOrderedTaskIDs(a, b string) []string {
 
 // DeleteTaskRepository deletes a task-repository link by ID
 func (r *Repository) DeleteTaskRepository(ctx context.Context, id string) error {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_repositories WHERE id = ?`), id)
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_repositories WHERE id = ?`), id).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("task repository not found: %s", id)
+		}
+		return err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_repositories WHERE id = ?`), id)
 	if err != nil {
 		return err
 	}
@@ -253,7 +271,7 @@ func (r *Repository) DeleteTaskRepository(ctx context.Context, id string) error 
 	if rows == 0 {
 		return fmt.Errorf("task repository not found: %s", id)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // ListTaskRepositoriesByTaskIDs returns all repository links for the given task IDs,
