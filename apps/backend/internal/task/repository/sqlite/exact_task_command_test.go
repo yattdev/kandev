@@ -3,10 +3,13 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/exactsnapshotauthority"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
@@ -285,6 +288,57 @@ func TestExactTaskCommandOutboxClaimDoesNotAcknowledgePublication(t *testing.T) 
 	}
 	if publishedAt != nil {
 		t.Fatal("claim acknowledged the task update before the task service published it")
+	}
+}
+
+func TestExactTaskCommandOutboxClaimCanBeReclaimedAfterLeaseExpiry(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "exact-command-outbox-lease.db")
+	conn, err := db.OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlxDB := sqlx.NewDb(conn, "sqlite3")
+	repo, err := NewWithDB(sqlxDB, sqlxDB, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlxDB.Close() })
+	seedWorkspace(t, repo, archiveWorkspaceID)
+	if err := repo.CreateTask(ctx, &models.Task{ID: "exact-command-outbox-lease", WorkspaceID: archiveWorkspaceID, Title: "lease test"}); err != nil {
+		t.Fatal(err)
+	}
+	task, err := repo.GetTask(ctx, "exact-command-outbox-lease")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.db.ExecContext(ctx, `INSERT INTO exact_task_command_outbox(audit_id, task_id, workspace_id, resource_version) VALUES (?, ?, ?, ?)`, "audit-lease", task.ID, task.WorkspaceID, task.ResourceVersion); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	repo.clockNow = func() time.Time { return base }
+	if _, err := repo.ClaimExactTaskCommandOutbox(ctx, "audit-lease"); err != nil {
+		t.Fatalf("initial claim: %v", err)
+	}
+	if _, err := repo.ClaimExactTaskCommandOutbox(ctx, "audit-lease"); !errors.Is(err, ErrExactTaskCommandUnavailable) {
+		t.Fatalf("claim during lease = %v, want unavailable", err)
+	}
+	if err := sqlxDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopenedConn, err := db.OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenedDB := sqlx.NewDb(reopenedConn, "sqlite3")
+	t.Cleanup(func() { _ = reopenedDB.Close() })
+	reopened, err := NewWithDB(reopenedDB, reopenedDB, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.clockNow = func() time.Time { return base.Add(2 * time.Minute) }
+	if _, err := reopened.ClaimExactTaskCommandOutbox(ctx, "audit-lease"); err != nil {
+		t.Fatalf("claim after lease expiry: %v", err)
 	}
 }
 

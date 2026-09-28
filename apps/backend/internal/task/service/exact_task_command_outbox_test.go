@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/kandev/kandev/internal/events"
 	"github.com/kandev/kandev/internal/task/repository"
@@ -12,8 +13,9 @@ import (
 
 type acknowledgeFailingExactTaskCommandOutbox struct {
 	repository.TaskRepository
-	outbox  *sqliterepo.Repository
-	failAck bool
+	outbox       *sqliterepo.Repository
+	failAck      bool
+	failDelivery bool
 }
 
 func (r *acknowledgeFailingExactTaskCommandOutbox) ClaimExactTaskCommandOutbox(ctx context.Context, auditID string) (*sqliterepo.ExactTaskCommandOutboxRecord, error) {
@@ -21,7 +23,19 @@ func (r *acknowledgeFailingExactTaskCommandOutbox) ClaimExactTaskCommandOutbox(c
 }
 
 func (r *acknowledgeFailingExactTaskCommandOutbox) RecordExactTaskCommandOutboxDelivery(ctx context.Context, auditID string) error {
+	if r.failDelivery {
+		r.failDelivery = false
+		return errors.New("delivery record failed")
+	}
 	return r.outbox.RecordExactTaskCommandOutboxDelivery(ctx, auditID)
+}
+
+func (r *acknowledgeFailingExactTaskCommandOutbox) BeginExactTaskCommandOutboxDelivery(ctx context.Context, auditID string) error {
+	return r.outbox.BeginExactTaskCommandOutboxDelivery(ctx, auditID)
+}
+
+func (r *acknowledgeFailingExactTaskCommandOutbox) ResetExactTaskCommandOutboxDelivery(ctx context.Context, auditID string) error {
+	return r.outbox.ResetExactTaskCommandOutboxDelivery(ctx, auditID)
 }
 
 func (r *acknowledgeFailingExactTaskCommandOutbox) AcknowledgeExactTaskCommandOutbox(ctx context.Context, auditID string) error {
@@ -146,6 +160,40 @@ func TestPublishExactTaskCommandUpdateRecoversAcknowledgementFailureWithoutRepub
 	}
 	if got := len(eventBus.GetPublishedEvents()); got != 1 {
 		t.Fatalf("published events after replay = %d, want 1", got)
+	}
+}
+
+func TestPublishExactTaskCommandUpdateDoesNotRepublishAfterAmbiguousDelivery(t *testing.T) {
+	ctx := context.Background()
+	svc, eventBus, repo := createTestService(t)
+	createTaskWithoutRepositories(t, ctx, repo)
+	task, err := repo.GetTask(ctx, "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.DB().ExecContext(ctx, `INSERT INTO exact_task_command_outbox(audit_id, task_id, workspace_id, resource_version) VALUES (?, ?, ?, ?)`, "audit-delivery-record-retry", task.ID, task.WorkspaceID, task.ResourceVersion); err != nil {
+		t.Fatal(err)
+	}
+	failing := &acknowledgeFailingExactTaskCommandOutbox{TaskRepository: repo, outbox: repo, failDelivery: true}
+	svc.tasks = failing
+	if err = svc.PublishExactTaskCommandUpdate(ctx, "audit-delivery-record-retry"); err == nil {
+		t.Fatal("delivery record failure completed the outbox row")
+	}
+	if _, err = repo.DB().ExecContext(ctx, `UPDATE exact_task_command_outbox SET claimed_at = ? WHERE audit_id = ?`, time.Now().UTC().Add(-2*time.Minute), "audit-delivery-record-retry"); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.PublishExactTaskCommandUpdate(ctx, "audit-delivery-record-retry"); !errors.Is(err, sqliterepo.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("retry after ambiguous delivery = %v, want pending/unavailable", err)
+	}
+	published := eventBus.GetPublishedEvents()
+	if len(published) != 1 {
+		t.Fatalf("published task.updated events = %d, want one", len(published))
+	}
+	if published[0].ID == "" || published[0].ID != exactTaskCommandEventID("audit-delivery-record-retry") {
+		t.Fatalf("event ID = %q, want stable identity %q", published[0].ID, exactTaskCommandEventID("audit-delivery-record-retry"))
+	}
+	if published[0].Type != events.TaskUpdated {
+		t.Fatalf("published event type = %q, want task.updated", published[0].Type)
 	}
 }
 

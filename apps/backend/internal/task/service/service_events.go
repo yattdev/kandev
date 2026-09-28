@@ -457,6 +457,10 @@ func snapshotTaskForPublication(task *models.Task) *models.Task {
 }
 
 func (s *Service) publishTaskEventNow(ctx context.Context, eventType string, task *models.Task, oldState *v1.TaskState, extra map[string]interface{}, oldWorkflowIDs []string, activity *taskActivitySnapshot) error {
+	return s.publishTaskEventNowWithID(ctx, eventType, task, oldState, extra, oldWorkflowIDs, activity, "")
+}
+
+func (s *Service) publishTaskEventNowWithID(ctx context.Context, eventType string, task *models.Task, oldState *v1.TaskState, extra map[string]interface{}, oldWorkflowIDs []string, activity *taskActivitySnapshot, eventID string) error {
 	data := map[string]interface{}{
 		"task_id":            task.ID,
 		"step_transition_id": task.WorkflowStepTransitionID,
@@ -519,6 +523,9 @@ func (s *Service) publishTaskEventNow(ctx context.Context, eventType string, tas
 	s.addTaskEventOptionalFields(ctx, eventType, task, oldState, extra, oldWorkflowIDs, data)
 
 	event := bus.NewEvent(eventType, "task-service", data)
+	if eventID != "" {
+		event.ID = eventID
+	}
 	err := s.eventBus.Publish(ctx, eventType, event)
 	if err != nil {
 		s.logger.Error("failed to publish task event",

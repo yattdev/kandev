@@ -172,6 +172,7 @@ type exactCommandFailureBus struct {
 	bus.EventBus
 	failNext  bool
 	published int
+	eventIDs  []string
 }
 
 func (b *exactCommandFailureBus) Publish(ctx context.Context, subject string, event *bus.Event) error {
@@ -184,12 +185,13 @@ func (b *exactCommandFailureBus) Publish(ctx context.Context, subject string, ev
 	}
 	if subject == "task.updated" {
 		b.published++
+		b.eventIDs = append(b.eventIDs, event.ID)
 	}
 	return nil
 }
 
 func TestPublicExactCommandResumesPostCommitFailuresAfterRestart(t *testing.T) {
-	for _, failure := range []string{"publication", "acknowledgement"} {
+	for _, failure := range []string{"publication", "acknowledgement", "delivery_record"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newExactIssuerFixture(t)
 			log := logger.Default()
@@ -201,6 +203,11 @@ func TestPublicExactCommandResumesPostCommitFailuresAfterRestart(t *testing.T) {
 			}
 			if failure == "acknowledgement" {
 				if _, err = f.database.Exec(`CREATE TRIGGER reject_exact_ack BEFORE UPDATE OF published_at ON exact_task_command_outbox WHEN NEW.published_at IS NOT NULL BEGIN SELECT RAISE(ABORT, 'injected acknowledgement failure'); END`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if failure == "delivery_record" {
+				if _, err = f.database.Exec(`CREATE TRIGGER reject_exact_delivery BEFORE UPDATE OF delivered_at ON exact_task_command_outbox WHEN NEW.delivered_at IS NOT NULL BEGIN SELECT RAISE(ABORT, 'injected delivery record failure'); END`); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -230,11 +237,19 @@ func TestPublicExactCommandResumesPostCommitFailuresAfterRestart(t *testing.T) {
 			if err != nil || first.Outcome != pluginsdk.ExactTaskUpdatePending || first.ResourceVersion != task.ResourceVersion+1 {
 				t.Fatalf("post-commit %s result = %+v, %v", failure, first, err)
 			}
-			if failure == "publication" && events.published != 0 || failure == "acknowledgement" && events.published != 1 {
+			if failure == "publication" && events.published != 0 || failure != "publication" && events.published != 1 {
 				t.Fatalf("published events before restart = %d", events.published)
 			}
 			if failure == "acknowledgement" {
 				if _, err = f.database.Exec(`DROP TRIGGER reject_exact_ack`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if failure == "delivery_record" {
+				if _, err = f.database.Exec(`DROP TRIGGER reject_exact_delivery`); err != nil {
+					t.Fatal(err)
+				}
+				if _, err = f.database.Exec(`UPDATE exact_task_command_outbox SET claimed_at = ? WHERE audit_id = ?`, time.Now().UTC().Add(-2*time.Minute), request.IdempotencyKey); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -262,6 +277,9 @@ func TestPublicExactCommandResumesPostCommitFailuresAfterRestart(t *testing.T) {
 				t.Fatal(err)
 			}
 			restartedEvents := &exactCommandFailureBus{EventBus: bus.NewMemoryEventBus(log)}
+			if failure == "delivery_record" {
+				restartedEvents = events
+			}
 			restartedService := taskservice.NewService(taskservice.Repos{Tasks: reopenedRepo, TaskRepos: reopenedRepo, WorkspaceFolders: reopenedRepo, Sessions: reopenedRepo}, restartedEvents, log, taskservice.RepositoryDiscoveryConfig{})
 			restartedIssuer, err := NewSQLiteExactTaskCommandGrantIssuerWithTaskUpdatePublisher(reopenedRepo, reopenedEvidence, restartedService)
 			if err != nil {
@@ -269,7 +287,11 @@ func TestPublicExactCommandResumesPostCommitFailuresAfterRestart(t *testing.T) {
 			}
 			restartedHost := &pluginHost{installationID: f.approval.InstallationID, exactSnapshots: newExactSnapshotStore([]byte("new-connection-secret")), exactAuthorize: host.exactAuthorize, exactTaskCommandGrantIssuerDep: func() ExactTaskCommandGrantIssuer { return restartedIssuer }}
 			replayed, err := restartedHost.UpdateTaskExact(f.ctx, request)
-			if err != nil || replayed.Outcome != pluginsdk.ExactTaskUpdateDurable || replayed.AuditID != first.AuditID || replayed.ResourceVersion != first.ResourceVersion {
+			wantOutcome := pluginsdk.ExactTaskUpdateDurable
+			if failure == "delivery_record" {
+				wantOutcome = pluginsdk.ExactTaskUpdatePending
+			}
+			if err != nil || replayed.Outcome != wantOutcome || replayed.AuditID != first.AuditID || replayed.ResourceVersion != first.ResourceVersion {
 				t.Fatalf("restarted %s replay = %+v, %v", failure, replayed, err)
 			}
 			wantPublished := 1
@@ -278,6 +300,9 @@ func TestPublicExactCommandResumesPostCommitFailuresAfterRestart(t *testing.T) {
 			}
 			if restartedEvents.published != wantPublished {
 				t.Fatalf("restarted publications = %d, want %d", restartedEvents.published, wantPublished)
+			}
+			if failure == "delivery_record" && (len(restartedEvents.eventIDs) != 1 || restartedEvents.eventIDs[0] == "") {
+				t.Fatalf("delivery-record recovery event identities = %v, want one stable event identity", restartedEvents.eventIDs)
 			}
 			stored, err := reopenedRepo.GetTask(f.ctx, task.ID)
 			if err != nil || stored.Description != "before\n\n[marker]" || stored.ResourceVersion != first.ResourceVersion {
@@ -288,8 +313,11 @@ func TestPublicExactCommandResumesPostCommitFailuresAfterRestart(t *testing.T) {
 				t.Fatalf("reopened audit count = %d, %v", audits, err)
 			}
 			var publishedAt any
-			if err = reopenedRepo.DB().QueryRowContext(f.ctx, `SELECT published_at FROM exact_task_command_outbox WHERE audit_id = ?`, request.IdempotencyKey).Scan(&publishedAt); err != nil || publishedAt == nil {
-				t.Fatalf("reopened outbox acknowledgement = %v, %v", publishedAt, err)
+			if err = reopenedRepo.DB().QueryRowContext(f.ctx, `SELECT published_at FROM exact_task_command_outbox WHERE audit_id = ?`, request.IdempotencyKey).Scan(&publishedAt); err != nil {
+				t.Fatalf("reopened outbox acknowledgement read = %v", err)
+			}
+			if failure != "delivery_record" && publishedAt == nil || failure == "delivery_record" && publishedAt != nil {
+				t.Fatalf("reopened %s outbox acknowledgement = %v", failure, publishedAt)
 			}
 			changed := request
 			changed.Marker = "[changed]"

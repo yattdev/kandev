@@ -99,18 +99,22 @@ func (r *Repository) FindExactTaskCommandReplay(ctx context.Context, installatio
 type ExactTaskCommandOutboxRecord struct {
 	AuditID, TaskID, WorkspaceID string
 	ResourceVersion              int64
-	Delivered                    bool
+	Delivered, DeliveryStarted   bool
 }
+
+const exactTaskCommandOutboxClaimLease = time.Minute
 
 func (r *Repository) ClaimExactTaskCommandOutbox(ctx context.Context, auditID string) (*ExactTaskCommandOutboxRecord, error) {
 	if !r.ExactTaskCommandAvailable() || auditID == "" {
 		return nil, ErrExactTaskCommandUnavailable
 	}
 	row := &ExactTaskCommandOutboxRecord{AuditID: auditID}
-	var deliveredAt sql.NullTime
-	err := r.db.QueryRowxContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET claimed_at = ? WHERE audit_id = ? AND published_at IS NULL AND (claimed_at IS NULL OR delivered_at IS NOT NULL) RETURNING task_id, workspace_id, resource_version, delivered_at`), r.nowUTC(), auditID).Scan(&row.TaskID, &row.WorkspaceID, &row.ResourceVersion, &deliveredAt)
+	now := r.nowUTC()
+	var deliveredAt, deliveryStartedAt sql.NullTime
+	err := r.db.QueryRowxContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET claimed_at = ? WHERE audit_id = ? AND published_at IS NULL AND (claimed_at IS NULL OR claimed_at <= ? OR delivered_at IS NOT NULL) RETURNING task_id, workspace_id, resource_version, delivered_at, delivery_started_at`), now, auditID, now.Add(-exactTaskCommandOutboxClaimLease)).Scan(&row.TaskID, &row.WorkspaceID, &row.ResourceVersion, &deliveredAt, &deliveryStartedAt)
 	if err == nil {
 		row.Delivered = deliveredAt.Valid
+		row.DeliveryStarted = deliveryStartedAt.Valid
 		return row, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -126,6 +130,41 @@ func (r *Repository) ClaimExactTaskCommandOutbox(ctx context.Context, auditID st
 	return nil, ErrExactTaskCommandUnavailable
 }
 
+// BeginExactTaskCommandOutboxDelivery persists the at-most-once delivery
+// intent before calling the event bus. An ambiguous publish outcome remains
+// pending after a crash instead of being emitted a second time.
+func (r *Repository) BeginExactTaskCommandOutboxDelivery(ctx context.Context, auditID string) error {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET delivery_started_at = ? WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL AND delivery_started_at IS NULL`), r.nowUTC(), auditID)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
+// ResetExactTaskCommandOutboxDelivery clears an intent only when Publish
+// returned an error, which is the event bus's definitive failed-delivery path.
+func (r *Repository) ResetExactTaskCommandOutboxDelivery(ctx context.Context, auditID string) error {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET delivery_started_at = NULL WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL AND delivery_started_at IS NOT NULL`), auditID)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
 // RecordExactTaskCommandOutboxDelivery durably records a successful event
 // delivery before the final acknowledgement. A restarted publisher can then
 // finish acknowledgement without emitting a duplicate task.updated event.
@@ -133,7 +172,7 @@ func (r *Repository) RecordExactTaskCommandOutboxDelivery(ctx context.Context, a
 	if !r.ExactTaskCommandAvailable() || auditID == "" {
 		return ErrExactTaskCommandUnavailable
 	}
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET delivered_at = ? WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL`), r.nowUTC(), auditID)
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET delivered_at = ? WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL AND delivery_started_at IS NOT NULL`), r.nowUTC(), auditID)
 	if err != nil {
 		return ErrExactTaskCommandUnavailable
 	}
@@ -168,7 +207,7 @@ func (r *Repository) ReleaseExactTaskCommandOutboxClaim(ctx context.Context, aud
 	if !r.ExactTaskCommandAvailable() || auditID == "" {
 		return ErrExactTaskCommandUnavailable
 	}
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET claimed_at = NULL WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL`), auditID)
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET claimed_at = NULL WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL AND delivery_started_at IS NULL`), auditID)
 	if err != nil {
 		return ErrExactTaskCommandUnavailable
 	}
@@ -242,7 +281,10 @@ func (r *Repository) initExactTaskCommandSchema() error {
 	if err := r.migrate.Apply("exact_task_commands.outbox_delivery", `ALTER TABLE exact_task_command_outbox ADD COLUMN delivered_at TIMESTAMP`); err != nil {
 		return err
 	}
-	return r.migrate.Apply("exact_task_commands.request_identity", `ALTER TABLE exact_task_command_audits ADD COLUMN request_identity TEXT NOT NULL DEFAULT ''`)
+	if err := r.migrate.Apply("exact_task_commands.request_identity", `ALTER TABLE exact_task_command_audits ADD COLUMN request_identity TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	return r.migrate.Apply("exact_task_commands.outbox_delivery_intent", `ALTER TABLE exact_task_command_outbox ADD COLUMN delivery_started_at TIMESTAMP`)
 }
 
 // RecordExactTaskCommandReceipt binds an H6 decision receipt to the active
