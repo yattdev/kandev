@@ -90,6 +90,7 @@ func buildRunningFromExecution(execution *AgentExecution, prior *models.Executor
 		Status:             executorRunningStatusFromExecution(execution),
 		Resumable:          true,
 		AgentExecutionID:   execution.ID,
+		AgentctlGeneration: execution.startupAttemptSnapshot(),
 		ContainerID:        execution.ContainerID,
 		AgentctlURL:        agentctlURL,
 		AgentctlPort:       agentctlPort,

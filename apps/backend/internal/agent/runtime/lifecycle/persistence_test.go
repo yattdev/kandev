@@ -70,6 +70,13 @@ func TestBuildRunningFromExecutionPersistsLiveAgentctlEndpoint(t *testing.T) {
 	}
 }
 
+func TestBuildRunningFromExecutionPersistsStartupGeneration(t *testing.T) {
+	execution := &AgentExecution{ID: "exec-generation", TaskID: "task-1", SessionID: "session-1"}
+	require.Equal(t, uint64(1), execution.beginStartupAttempt())
+	running := buildRunningFromExecution(execution, nil)
+	require.Equal(t, uint64(1), running.AgentctlGeneration)
+}
+
 func TestBuildRunningFromExecutionPersistsFreshExecutorIdentity(t *testing.T) {
 	running := buildRunningFromExecution(&AgentExecution{
 		ID: "exec-1", TaskID: "task-1", SessionID: "session-1",

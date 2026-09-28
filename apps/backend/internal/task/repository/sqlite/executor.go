@@ -228,6 +228,9 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 	if err := r.ensureExecutorRegistrationNotFencedTx(ctx, tx, running); err != nil {
 		return err
 	}
+	if err := r.ensureExecutorGenerationDoesNotRegressTx(ctx, tx, running); err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO executors_running (
 			id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
@@ -290,6 +293,24 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 		return err
 	}
 	return tx.Commit()
+}
+
+func (r *Repository) ensureExecutorGenerationDoesNotRegressTx(ctx context.Context, tx *sqlx.Tx, running *models.ExecutorRunning) error {
+	if running.AgentExecutionID == "" || running.AgentctlGeneration == 0 {
+		return nil
+	}
+	var currentGeneration uint64
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT agentctl_generation FROM executors_running WHERE session_id = ? AND agent_execution_id = ?`), running.SessionID, running.AgentExecutionID).Scan(&currentGeneration)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if currentGeneration > running.AgentctlGeneration {
+		return models.ErrExecutionRotated
+	}
+	return nil
 }
 
 // ensureExecutorRegistrationNotFencedTx rejects only the exact agentctl
