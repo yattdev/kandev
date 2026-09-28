@@ -1210,6 +1210,9 @@ func (r *Repository) DeleteMessageAttachmentsByTask(ctx context.Context, taskID 
 		return nil, fmt.Errorf("begin task attachment cleanup: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureTaskAttachmentAvailableTx(ctx, tx, taskID); err != nil {
+		return nil, err
+	}
 	rows, err := tx.QueryxContext(ctx, tx.Rebind(`
 		SELECT `+attachmentSelectColumns+` FROM task_message_attachments WHERE task_id = ?
 	`), taskID)
