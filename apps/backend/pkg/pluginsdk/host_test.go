@@ -276,7 +276,7 @@ func TestHost_ExactCapabilityContext(t *testing.T) {
 func TestHost_ListWorkspacesExact(t *testing.T) {
 	impl := &recordingHost{
 		exactWorkspaces: []Workspace{{ID: "workspace-1", Name: "Exact"}},
-		exactPageInfo:   &ExactPageInfo{SnapshotVersion: "snapshot-1"},
+		exactPageInfo:   &ExactPageInfo{SnapshotVersion: "snapshot-1", AuditID: "workspace-read-audit"},
 	}
 	host := dialHostOverBufconn(t, impl)
 	exact, ok := ExactWorkspaces(host)

@@ -395,8 +395,7 @@ func (h *grpcHostClient) ListWorkspacesExact(ctx context.Context, query ExactWor
 	if err != nil {
 		return nil, nil, err
 	}
-	page := response.GetPageInfo()
-	return workspacesFromProto(response.GetWorkspaces()), &ExactPageInfo{NextCursor: page.GetNextCursor(), HasMore: page.GetHasMore(), SnapshotVersion: page.GetSnapshotVersion()}, nil
+	return workspacesFromProto(response.GetWorkspaces()), exactPageInfoFromProto(response.GetPageInfo()), nil
 }
 
 func (h *grpcHostClient) ListWorkflowsExact(ctx context.Context, query ExactWorkflowQuery) ([]Workflow, *ExactPageInfo, error) {
@@ -966,7 +965,7 @@ func (s *grpcHostServer) ListWorkspacesExact(ctx context.Context, request *plugi
 	if err != nil {
 		return nil, err
 	}
-	return &pluginv1.ListWorkspacesExactResponse{Workspaces: workspacesToProto(items), PageInfo: &pluginv1.ExactPageInfo{NextCursor: info.NextCursor, HasMore: info.HasMore, SnapshotVersion: info.SnapshotVersion}}, nil
+	return &pluginv1.ListWorkspacesExactResponse{Workspaces: workspacesToProto(items), PageInfo: exactPageInfoToProto(info)}, nil
 }
 
 func (s *grpcHostServer) ListWorkflowsExact(ctx context.Context, request *pluginv1.ListWorkflowsExactRequest) (*pluginv1.ListWorkflowsExactResponse, error) {

@@ -19,7 +19,7 @@ func TestPluginHost_ListWorkspacesExactAuthorizesAndBindsSnapshot(t *testing.T) 
 	d.host.installationID = "installation-1"
 	d.host.exactSnapshots = newExactSnapshotStore([]byte("01234567890123456789012345678901"))
 	d.host.exactAuthorize = func(workspaceID string, revision uint64, capabilityID, _ string) ApprovalDecision {
-		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:workspaces"}
+		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:workspaces", Receipt: ApprovalReceipt{AuditID: "workspace-read-audit"}}
 	}
 	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
 
@@ -28,7 +28,7 @@ func TestPluginHost_ListWorkspacesExactAuthorizesAndBindsSnapshot(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ListWorkspacesExact() error = %v", err)
 	}
-	if len(workspaces) != 1 || workspaces[0].ID != "workspace-1" || page.SnapshotVersion == "" || page.HasMore || page.NextCursor != "" {
+	if len(workspaces) != 1 || workspaces[0].ID != "workspace-1" || page.SnapshotVersion == "" || page.HasMore || page.NextCursor != "" || page.AuditID != "workspace-read-audit" {
 		t.Fatalf("ListWorkspacesExact() = %#v, %#v", workspaces, page)
 	}
 

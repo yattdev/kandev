@@ -2,10 +2,38 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/kandev/kandev/internal/events"
+	"github.com/kandev/kandev/internal/task/repository"
+	sqliterepo "github.com/kandev/kandev/internal/task/repository/sqlite"
 )
+
+type acknowledgeFailingExactTaskCommandOutbox struct {
+	repository.TaskRepository
+	outbox  *sqliterepo.Repository
+	failAck bool
+}
+
+func (r *acknowledgeFailingExactTaskCommandOutbox) ClaimExactTaskCommandOutbox(ctx context.Context, auditID string) (*sqliterepo.ExactTaskCommandOutboxRecord, error) {
+	return r.outbox.ClaimExactTaskCommandOutbox(ctx, auditID)
+}
+
+func (r *acknowledgeFailingExactTaskCommandOutbox) RecordExactTaskCommandOutboxDelivery(ctx context.Context, auditID string) error {
+	return r.outbox.RecordExactTaskCommandOutboxDelivery(ctx, auditID)
+}
+
+func (r *acknowledgeFailingExactTaskCommandOutbox) AcknowledgeExactTaskCommandOutbox(ctx context.Context, auditID string) error {
+	if r.failAck {
+		return errors.New("acknowledgement failed")
+	}
+	return r.outbox.AcknowledgeExactTaskCommandOutbox(ctx, auditID)
+}
+
+func (r *acknowledgeFailingExactTaskCommandOutbox) ReleaseExactTaskCommandOutboxClaim(ctx context.Context, auditID string) error {
+	return r.outbox.ReleaseExactTaskCommandOutboxClaim(ctx, auditID)
+}
 
 func TestPublishExactTaskCommandUpdatePublishesOnceAfterCommittedOutbox(t *testing.T) {
 	ctx := context.Background()
@@ -65,6 +93,56 @@ func TestPublishExactTaskCommandUpdateRetriesAfterEventBusFailure(t *testing.T) 
 	}
 	if err = svc.PublishExactTaskCommandUpdate(ctx, "audit-retry"); err != nil {
 		t.Fatalf("replay publication: %v", err)
+	}
+	if got := len(eventBus.GetPublishedEvents()); got != 1 {
+		t.Fatalf("published events after replay = %d, want 1", got)
+	}
+}
+
+func TestPublishExactTaskCommandUpdateRecoversAcknowledgementFailureWithoutRepublishing(t *testing.T) {
+	ctx := context.Background()
+	svc, eventBus, repo := createTestService(t)
+	createTaskWithoutRepositories(t, ctx, repo)
+	task, err := repo.GetTask(ctx, "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.DB().ExecContext(ctx, `INSERT INTO exact_task_command_outbox(audit_id, task_id, workspace_id, resource_version) VALUES (?, ?, ?, ?)`, "audit-ack-retry", task.ID, task.WorkspaceID, task.ResourceVersion); err != nil {
+		t.Fatal(err)
+	}
+	failing := &acknowledgeFailingExactTaskCommandOutbox{TaskRepository: repo, outbox: repo, failAck: true}
+	svc.tasks = failing
+	if err = svc.PublishExactTaskCommandUpdate(ctx, "audit-ack-retry"); err == nil {
+		t.Fatal("acknowledgement failure completed the outbox row")
+	}
+	if got := len(eventBus.GetPublishedEvents()); got != 1 {
+		t.Fatalf("published events after acknowledgement failure = %d, want 1", got)
+	}
+	var deliveredAt, publishedAt any
+	if err = repo.DB().QueryRowContext(ctx, `SELECT delivered_at, published_at FROM exact_task_command_outbox WHERE audit_id = ?`, "audit-ack-retry").Scan(&deliveredAt, &publishedAt); err != nil {
+		t.Fatal(err)
+	}
+	if deliveredAt == nil || publishedAt != nil {
+		t.Fatalf("outbox state after acknowledgement failure = delivered:%v published:%v, want delivered and unacknowledged", deliveredAt, publishedAt)
+	}
+
+	// A reconstructed service must finish the durable delivery without
+	// republishing the already-recorded event.
+	restarted := &Service{tasks: repo, eventBus: eventBus}
+	if err = restarted.PublishExactTaskCommandUpdate(ctx, "audit-ack-retry"); err != nil {
+		t.Fatalf("restart acknowledgement retry: %v", err)
+	}
+	if got := len(eventBus.GetPublishedEvents()); got != 1 {
+		t.Fatalf("published events after restart acknowledgement retry = %d, want 1", got)
+	}
+	if err = repo.DB().QueryRowContext(ctx, `SELECT published_at FROM exact_task_command_outbox WHERE audit_id = ?`, "audit-ack-retry").Scan(&publishedAt); err != nil {
+		t.Fatal(err)
+	}
+	if publishedAt == nil {
+		t.Fatal("restart acknowledgement retry left the delivered outbox row unacknowledged")
+	}
+	if err = restarted.PublishExactTaskCommandUpdate(ctx, "audit-ack-retry"); err != nil {
+		t.Fatalf("replay after acknowledgement retry: %v", err)
 	}
 	if got := len(eventBus.GetPublishedEvents()); got != 1 {
 		t.Fatalf("published events after replay = %d, want 1", got)
