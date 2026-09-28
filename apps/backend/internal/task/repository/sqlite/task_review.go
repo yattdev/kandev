@@ -425,8 +425,25 @@ func (r *Repository) GetTaskReviewFinding(ctx context.Context, findingID string)
 // row. The CASE expression reads the old status inside the same database write,
 // so concurrent callers cannot apply a timestamp decision from stale state.
 func (r *Repository) TransitionTaskReviewFindingStatus(ctx context.Context, findingID string, status models.ReviewFindingStatus) (*models.TaskReviewFinding, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin task review finding status transition: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var taskID string
+	if err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT task_id FROM task_review_findings WHERE id = ?`), findingID).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", models.ErrTaskReviewFindingNotFound, findingID)
+		}
+		return nil, fmt.Errorf("load task review finding owner: %w", err)
+	}
+	if err := r.ensureTaskReviewOwnerAvailableTx(ctx, tx, taskID); err != nil {
+		return nil, err
+	}
+
 	now := time.Now().UTC()
-	row := r.db.QueryRowxContext(ctx, r.db.Rebind(`
+	row := tx.QueryRowxContext(ctx, tx.Rebind(`
 		UPDATE task_review_findings
 		SET status = ?,
 			resolved_at = CASE
@@ -445,6 +462,9 @@ func (r *Repository) TransitionTaskReviewFindingStatus(ctx context.Context, find
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to transition task review finding status: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit task review finding status transition: %w", err)
 	}
 	return finding, nil
 }
