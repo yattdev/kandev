@@ -496,8 +496,16 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 		t.Fatalf("public replay audit count = %d, want 1", publicAudits)
 	}
 	other, err := repos.Task.GetTask(ctx, "exact-ws-b-task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = commandHost.UpdateTaskExact(ctx, pluginsdk.ExactTaskUpdateRequest{WorkspaceID: other.WorkspaceID, TaskID: other.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[foreign-marker]", IdempotencyKey: "foreign-command", ExpectedResourceVersion: other.ResourceVersion})
+	if err == nil {
+		t.Fatal("foreign workspace public command succeeded")
+	}
+	other, err = repos.Task.GetTask(ctx, other.ID)
 	if err != nil || other.Description != "" {
-		t.Fatalf("workspace B changed = %+v, %v", other, err)
+		t.Fatalf("foreign workspace public command changed workspace B = %+v, %v", other, err)
 	}
 }
 
