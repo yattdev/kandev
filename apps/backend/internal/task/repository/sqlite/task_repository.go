@@ -337,8 +337,27 @@ func (r *Repository) ListTaskRepositoriesByTaskIDs(ctx context.Context, taskIDs 
 
 // DeleteTaskRepositoriesByTask deletes all repository links for a task
 func (r *Repository) DeleteTaskRepositoriesByTask(ctx context.Context, taskID string) error {
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_repositories WHERE task_id = ?`), taskID)
-	return err
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_repositories WHERE task_id = ?`), taskID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // GetPrimaryTaskRepository returns the first (primary) repository for a task
