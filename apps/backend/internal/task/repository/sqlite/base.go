@@ -45,6 +45,9 @@ type Repository struct {
 	// exactSessionSnapshotReadAfterFenceHook is the session-snapshot equivalent
 	// of exactSnapshotReadAfterFenceHook.
 	exactSessionSnapshotReadAfterFenceHook func()
+	// exactTaskCommandBeforeAudit is a test-only failpoint after the task CAS
+	// and grant reservation. It proves the deferred rollback restores both.
+	exactTaskCommandBeforeAudit func() error
 	// failCutoverAfter is a test-only failpoint for the worktree ownership
 	// cutover: when set to a cutover step name, the migration aborts at that
 	// step so tests can prove rollback restores the pre-upgrade state.
