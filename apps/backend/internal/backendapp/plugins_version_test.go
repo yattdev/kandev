@@ -509,6 +509,75 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	}
 }
 
+func TestProvideServicesExactSessionMessagesReopenWithSanitizedPaging(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	services, _, repos, closeServices := provideTestServicesWithCleanup(t, "exact-messages", home)
+	if err := repos.Task.CreateWorkspace(ctx, &taskmodels.Workspace{ID: "messages-ws", Name: "Messages"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repos.Task.CreateTask(ctx, &taskmodels.Task{ID: "messages-task", WorkspaceID: "messages-ws", Title: "Messages"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repos.Task.CreateTaskSession(ctx, &taskmodels.TaskSession{ID: "messages-session", TaskID: "messages-task", State: taskmodels.TaskSessionStateCreated}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repos.Task.CreateTurn(ctx, &taskmodels.Turn{ID: "messages-turn", TaskSessionID: "messages-session", TaskID: "messages-task"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, message := range []*taskmodels.Message{
+		{ID: "messages-one", TaskID: "messages-task", TaskSessionID: "messages-session", TurnID: "messages-turn", AuthorType: taskmodels.MessageAuthorAgent, Content: "visible <kandev-system>hidden</kandev-system>", Type: taskmodels.MessageTypeMessage},
+		{ID: "messages-two", TaskID: "messages-task", TaskSessionID: "messages-session", TurnID: "messages-turn", AuthorType: taskmodels.MessageAuthorAgent, Content: "second", Type: taskmodels.MessageTypeMessage, RequestsInput: true},
+	} {
+		if err := repos.Task.CreateMessage(ctx, message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runtime := &exactHostRuntime{}
+	services.Plugins.SetRuntime(runtime)
+	record, err := services.Plugins.Install(ctx, exactHostPackage(t, "exact-messages"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = services.Plugins.GrantCapabilityApproval(record.InstallationID, "messages-ws", 1, plugins.ManifestCapabilityDigest(record.Manifest), []string{"host.v2.read:tasks"}, "human", "grant", "messages-audit"); err != nil {
+		t.Fatal(err)
+	}
+	messageHost, ok := runtime.host.(pluginsdk.ExactSessionMessageHost)
+	if !ok {
+		t.Fatal("runtime did not receive exact session message Host")
+	}
+	query := pluginsdk.ExactSessionMessageQuery{WorkspaceID: "messages-ws", TaskID: "messages-task", SessionID: "messages-session", CapabilityRevision: 1, Page: pluginsdk.ExactPage{Limit: 1}}
+	items, page, err := messageHost.ListSessionMessagesExact(ctx, query)
+	if err != nil || len(items) != 1 || items[0].Content != "visible" || !page.HasMore || page.NextCursor == "" {
+		t.Fatalf("first exact message page = %#v %#v %v", items, page, err)
+	}
+	if _, _, err = messageHost.ListSessionMessagesExact(ctx, pluginsdk.ExactSessionMessageQuery{WorkspaceID: "foreign-ws", TaskID: query.TaskID, SessionID: query.SessionID, CapabilityRevision: 1}); err == nil {
+		t.Fatal("foreign workspace exact message read succeeded")
+	}
+	closeServices()
+
+	services, _, _, closeServices = provideTestServicesWithCleanup(t, "exact-messages", home)
+	t.Cleanup(closeServices)
+	runtime = &exactHostRuntime{}
+	services.Plugins.SetRuntime(runtime)
+	services.Plugins.StartActivePlugins(ctx)
+	messageHost, ok = runtime.host.(pluginsdk.ExactSessionMessageHost)
+	if !ok {
+		t.Fatal("reopened runtime did not receive exact session message Host")
+	}
+	if _, _, err = messageHost.ListSessionMessagesExact(ctx, pluginsdk.ExactSessionMessageQuery{WorkspaceID: query.WorkspaceID, TaskID: query.TaskID, SessionID: query.SessionID, CapabilityRevision: 1, Page: pluginsdk.ExactPage{SnapshotVersion: page.SnapshotVersion, Cursor: page.NextCursor}}); err == nil {
+		t.Fatal("reopened Host accepted a connection-bound exact message cursor")
+	}
+	items, page, err = messageHost.ListSessionMessagesExact(ctx, query)
+	if err != nil || len(items) != 1 || items[0].Content != "visible" || !page.HasMore {
+		t.Fatalf("reopened first exact message page = %#v %#v %v", items, page, err)
+	}
+	items, page, err = messageHost.ListSessionMessagesExact(ctx, pluginsdk.ExactSessionMessageQuery{WorkspaceID: query.WorkspaceID, TaskID: query.TaskID, SessionID: query.SessionID, CapabilityRevision: 1, Page: pluginsdk.ExactPage{Limit: 1, SnapshotVersion: page.SnapshotVersion, Cursor: page.NextCursor}})
+	if err != nil || len(items) != 1 || items[0].ID != "messages-two" || !items[0].RequestsInput || page.HasMore {
+		t.Fatalf("reopened exact message continuation = %#v %#v %v", items, page, err)
+	}
+}
+
 func TestRequiredStoreBootstrapCompleteness(t *testing.T) {
 	_, _, repos := provideTestServices(t, "test-bootstrap-completeness")
 

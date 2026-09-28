@@ -51,6 +51,9 @@ type recordingHost struct {
 	exactSessionQuery    ExactSessionQuery
 	exactSession         *ExactSession
 	exactSessionGetQuery ExactSessionGetQuery
+	exactMessages        []ExactSessionMessage
+	exactMessagePage     *ExactPageInfo
+	exactMessageQuery    ExactSessionMessageQuery
 }
 
 func (h *recordingHost) PluginOwnedTaskTrees() PluginOwnedTaskTreeManager {
@@ -149,6 +152,11 @@ func (h *recordingHost) ListSessionsExact(_ context.Context, query ExactSessionQ
 func (h *recordingHost) GetSessionExact(_ context.Context, query ExactSessionGetQuery) (*ExactSession, error) {
 	h.exactSessionGetQuery = query
 	return h.exactSession, nil
+}
+
+func (h *recordingHost) ListSessionMessagesExact(_ context.Context, query ExactSessionMessageQuery) ([]ExactSessionMessage, *ExactPageInfo, error) {
+	h.exactMessageQuery = query
+	return h.exactMessages, h.exactMessagePage, nil
 }
 
 // dialHostOverBufconn wires a grpcHostServer (wrapping impl) to a
@@ -320,6 +328,20 @@ func TestHost_ExactSessionsOverWire(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, impl.exactSession, session)
 	require.Equal(t, getQuery, impl.exactSessionGetQuery)
+}
+
+func TestHost_ExactSessionMessagesOverWire(t *testing.T) {
+	impl := &recordingHost{exactMessages: []ExactSessionMessage{{ID: "message-1", AuthorType: "agent", Content: "safe", Type: "message", RequestsInput: true, CreatedAt: "2026-09-28T00:00:00Z", UpdatedAt: "2026-09-28T00:00:01Z"}}, exactMessagePage: &ExactPageInfo{SnapshotVersion: "snapshot-1", NextCursor: "cursor-1", HasMore: true, AuditID: "audit-1"}}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := ExactSessionMessages(host)
+	require.True(t, ok)
+
+	query := ExactSessionMessageQuery{WorkspaceID: "workspace-1", TaskID: "task-1", SessionID: "session-1", CapabilityRevision: 2, Page: ExactPage{Limit: 1, SnapshotVersion: "snapshot-1", Cursor: "cursor-1"}}
+	items, page, err := exact.ListSessionMessagesExact(context.Background(), query)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactMessages, items)
+	require.Equal(t, impl.exactMessagePage, page)
+	require.Equal(t, query, impl.exactMessageQuery)
 }
 
 func TestHost_RevealSecret(t *testing.T) {
