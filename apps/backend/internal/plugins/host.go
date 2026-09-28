@@ -91,6 +91,9 @@ type pluginHost struct {
 	// Plugin hosts can be created before orchestration finishes wiring its
 	// SQLite-only composite reader.
 	exactDecisionEvidenceDep func() exactDecisionEvidenceSource
+	// exactTaskCommandGrantIssuerDep resolves the unadvertised Host grant
+	// authority after orchestration has composed queue evidence.
+	exactTaskCommandGrantIssuerDep func() ExactTaskCommandGrantIssuer
 
 	// writeDeps returns the live task messenger and task starter behind the
 	// SendMessage RPC (api_write:messages) and CreateTask's start_agent. Read

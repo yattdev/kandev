@@ -221,6 +221,7 @@ type ExactPendingTaskTransition struct {
 	StepPosition                                         int32
 	ResourceVersion, TaskResourceVersion                 int64
 	SessionResourceVersion, QueueGeneration              int64
+	QueuedAt                                             string
 }
 
 type ExactTaskDecisionEvidenceQuery struct {

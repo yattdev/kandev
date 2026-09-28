@@ -262,6 +262,14 @@ func (r *Repository) issueExactTaskCommandGrantInAuthorityTx(ctx context.Context
 	return r.issueExactTaskCommandGrantInTx(ctx, tx.SQLX(), grant)
 }
 
+// IssueExactTaskCommandGrantInAuthorityTx is the unadvertised composition
+// seam for a Host-owned grant issuer. The transaction and authority can only
+// come from the matching SQLite queue evidence reader; callers cannot use it
+// to create a grant outside the observed pending-transition fence.
+func (r *Repository) IssueExactTaskCommandGrantInAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, grant ExactTaskCommandGrant, snapshotToken string, observed messagequeue.ExactPendingTransition) error {
+	return r.issueExactTaskCommandGrantInAuthorityTx(ctx, authority, tx, grant, snapshotToken, observed)
+}
+
 func (r *Repository) issueExactTaskCommandGrantInTx(ctx context.Context, tx *sqlx.Tx, grant ExactTaskCommandGrant) error {
 	if !r.ExactTaskCommandAvailable() || tx == nil || !validExactCommandGrant(grant) || grant.CapabilityID != exactTaskDescriptionCommandCapability || !grant.ExpiresAt.After(r.nowUTC()) {
 		return ErrExactTaskCommandUnavailable

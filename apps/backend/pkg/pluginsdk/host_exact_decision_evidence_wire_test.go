@@ -24,7 +24,7 @@ func TestHost_ListTaskDecisionEvidenceExactOverWire(t *testing.T) {
 		recordingHost: &recordingHost{},
 		page: &ExactTaskDecisionEvidencePage{
 			Relations:          []ExactTaskRelation{{TaskID: "task-1", BlockerTaskID: "task-2", WorkspaceID: "workspace-1", TaskResourceVersion: 3, BlockerResourceVersion: 4, ResourceVersion: 5}},
-			PendingTransitions: []ExactPendingTaskTransition{{SessionID: "session-1", TaskID: "task-1", WorkspaceID: "workspace-1", SessionIncarnationID: "incarnation-1", WorkflowID: "workflow-1", WorkflowStepID: "step-1", StepPosition: 2, ResourceVersion: 6, TaskResourceVersion: 3, SessionResourceVersion: 7, QueueGeneration: 8}},
+			PendingTransitions: []ExactPendingTaskTransition{{SessionID: "session-1", TaskID: "task-1", WorkspaceID: "workspace-1", SessionIncarnationID: "incarnation-1", WorkflowID: "workflow-1", WorkflowStepID: "step-1", StepPosition: 2, ResourceVersion: 6, TaskResourceVersion: 3, SessionResourceVersion: 7, QueueGeneration: 8, QueuedAt: "2026-09-28T10:00:00Z"}},
 		},
 		info: &ExactPageInfo{NextCursor: "cursor-2", HasMore: true, SnapshotVersion: "snapshot-1", AuditID: "audit-1"},
 	}

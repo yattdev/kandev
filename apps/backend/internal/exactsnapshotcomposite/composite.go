@@ -64,6 +64,11 @@ type Page struct {
 	PendingTransitions []mq.ExactPendingTransition
 }
 
+// PendingTransitionAuthorityOperation runs only after a composite snapshot
+// and its observed pending transition are current in the shared authority
+// transaction. Repository resolves the transaction after the operation.
+type PendingTransitionAuthorityOperation func(context.Context, *exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, string) error
+
 // New binds two opt-in readers to a shared authority. Both readers verify the
 // writer identity before any composite transaction can begin, so generic or
 // mismatched stores fail closed instead of accepting a best-effort composite.
@@ -227,6 +232,35 @@ func (r *Repository) GetPendingTransition(ctx context.Context, token, sessionID 
 		return nil, err
 	}
 	return &pending, nil
+}
+
+// WithPendingTransitionAuthority validates Host-observed pending evidence and
+// runs operation in the same SQLite transaction. It is the hand-off between a
+// composite Host read and a command authority; callers receive neither a raw
+// database transaction nor a durable grant on validation failure.
+func (r *Repository) WithPendingTransitionAuthority(ctx context.Context, token string, observed mq.ExactPendingTransition, operation PendingTransitionAuthorityOperation) error {
+	if r == nil || r.authority == nil || operation == nil {
+		return ErrUnavailable
+	}
+	tx, err := r.authority.Begin(ctx)
+	if err != nil {
+		return ErrUnavailable
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, pendingToken, err := requireSnapshot(ctx, tx.SQLX(), token)
+	if err != nil {
+		return ErrUnavailable
+	}
+	if err := r.pending.ValidateExactPendingTransitionInAuthorityTx(ctx, r.authority, tx, pendingToken, observed); err != nil {
+		return ErrUnavailable
+	}
+	if err := operation(ctx, r.authority, tx, pendingToken); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // CleanupExpired deletes a bounded number of expired composite tokens. Source

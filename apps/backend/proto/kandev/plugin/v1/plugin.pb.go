@@ -9922,6 +9922,7 @@ type ExactPendingTaskTransition struct {
 	TaskResourceVersion    int64                  `protobuf:"varint,9,opt,name=task_resource_version,json=taskResourceVersion,proto3" json:"task_resource_version,omitempty"`
 	SessionResourceVersion int64                  `protobuf:"varint,10,opt,name=session_resource_version,json=sessionResourceVersion,proto3" json:"session_resource_version,omitempty"`
 	QueueGeneration        int64                  `protobuf:"varint,11,opt,name=queue_generation,json=queueGeneration,proto3" json:"queue_generation,omitempty"`
+	QueuedAt               string                 `protobuf:"bytes,12,opt,name=queued_at,json=queuedAt,proto3" json:"queued_at,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -10031,6 +10032,13 @@ func (x *ExactPendingTaskTransition) GetQueueGeneration() int64 {
 		return x.QueueGeneration
 	}
 	return 0
+}
+
+func (x *ExactPendingTaskTransition) GetQueuedAt() string {
+	if x != nil {
+		return x.QueuedAt
+	}
+	return ""
 }
 
 type ListTaskDecisionEvidenceExactRequest struct {
@@ -11004,7 +11012,7 @@ const file_kandev_plugin_v1_plugin_proto_rawDesc = "" +
 	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x122\n" +
 	"\x15task_resource_version\x18\x04 \x01(\x03R\x13taskResourceVersion\x128\n" +
 	"\x18blocker_resource_version\x18\x05 \x01(\x03R\x16blockerResourceVersion\x12)\n" +
-	"\x10resource_version\x18\x06 \x01(\x03R\x0fresourceVersion\"\xe1\x03\n" +
+	"\x10resource_version\x18\x06 \x01(\x03R\x0fresourceVersion\"\xfe\x03\n" +
 	"\x1aExactPendingTaskTransition\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
@@ -11019,7 +11027,8 @@ const file_kandev_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x15task_resource_version\x18\t \x01(\x03R\x13taskResourceVersion\x128\n" +
 	"\x18session_resource_version\x18\n" +
 	" \x01(\x03R\x16sessionResourceVersion\x12)\n" +
-	"\x10queue_generation\x18\v \x01(\x03R\x0fqueueGeneration\"\xab\x01\n" +
+	"\x10queue_generation\x18\v \x01(\x03R\x0fqueueGeneration\x12\x1b\n" +
+	"\tqueued_at\x18\f \x01(\tR\bqueuedAt\"\xab\x01\n" +
 	"$ListTaskDecisionEvidenceExactRequest\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12/\n" +
 	"\x13capability_revision\x18\x02 \x01(\x04R\x12capabilityRevision\x12/\n" +

@@ -483,7 +483,7 @@ func exactTaskDecisionEvidenceFromProto(in *pluginv1.ListTaskDecisionEvidenceExa
 		out.Relations = append(out.Relations, ExactTaskRelation{TaskID: relation.GetTaskId(), BlockerTaskID: relation.GetBlockerTaskId(), WorkspaceID: relation.GetWorkspaceId(), TaskResourceVersion: relation.GetTaskResourceVersion(), BlockerResourceVersion: relation.GetBlockerResourceVersion(), ResourceVersion: relation.GetResourceVersion()})
 	}
 	for _, pending := range in.GetPendingTransitions() {
-		out.PendingTransitions = append(out.PendingTransitions, ExactPendingTaskTransition{SessionID: pending.GetSessionId(), TaskID: pending.GetTaskId(), WorkspaceID: pending.GetWorkspaceId(), SessionIncarnationID: pending.GetSessionIncarnationId(), WorkflowID: pending.GetWorkflowId(), WorkflowStepID: pending.GetWorkflowStepId(), StepPosition: pending.GetStepPosition(), ResourceVersion: pending.GetResourceVersion(), TaskResourceVersion: pending.GetTaskResourceVersion(), SessionResourceVersion: pending.GetSessionResourceVersion(), QueueGeneration: pending.GetQueueGeneration()})
+		out.PendingTransitions = append(out.PendingTransitions, ExactPendingTaskTransition{SessionID: pending.GetSessionId(), TaskID: pending.GetTaskId(), WorkspaceID: pending.GetWorkspaceId(), SessionIncarnationID: pending.GetSessionIncarnationId(), WorkflowID: pending.GetWorkflowId(), WorkflowStepID: pending.GetWorkflowStepId(), StepPosition: pending.GetStepPosition(), ResourceVersion: pending.GetResourceVersion(), TaskResourceVersion: pending.GetTaskResourceVersion(), SessionResourceVersion: pending.GetSessionResourceVersion(), QueueGeneration: pending.GetQueueGeneration(), QueuedAt: pending.GetQueuedAt()})
 	}
 	return out
 }
@@ -498,7 +498,7 @@ func exactTaskDecisionEvidenceToProto(in *ExactTaskDecisionEvidencePage) *plugin
 	}
 	out.PendingTransitions = make([]*pluginv1.ExactPendingTaskTransition, 0, len(in.PendingTransitions))
 	for _, pending := range in.PendingTransitions {
-		out.PendingTransitions = append(out.PendingTransitions, &pluginv1.ExactPendingTaskTransition{SessionId: pending.SessionID, TaskId: pending.TaskID, WorkspaceId: pending.WorkspaceID, SessionIncarnationId: pending.SessionIncarnationID, WorkflowId: pending.WorkflowID, WorkflowStepId: pending.WorkflowStepID, StepPosition: pending.StepPosition, ResourceVersion: pending.ResourceVersion, TaskResourceVersion: pending.TaskResourceVersion, SessionResourceVersion: pending.SessionResourceVersion, QueueGeneration: pending.QueueGeneration})
+		out.PendingTransitions = append(out.PendingTransitions, &pluginv1.ExactPendingTaskTransition{SessionId: pending.SessionID, TaskId: pending.TaskID, WorkspaceId: pending.WorkspaceID, SessionIncarnationId: pending.SessionIncarnationID, WorkflowId: pending.WorkflowID, WorkflowStepId: pending.WorkflowStepID, StepPosition: pending.StepPosition, ResourceVersion: pending.ResourceVersion, TaskResourceVersion: pending.TaskResourceVersion, SessionResourceVersion: pending.SessionResourceVersion, QueueGeneration: pending.QueueGeneration, QueuedAt: pending.QueuedAt})
 	}
 	return out
 }

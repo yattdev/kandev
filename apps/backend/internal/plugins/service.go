@@ -141,10 +141,11 @@ type Service struct {
 	interactionData  interactionDataSource
 	// taskPRs is guarded by mu and read through taskPRSourceDep, because hosts can
 	// outlive the late SetTaskPRSource wiring.
-	taskPRs               taskPRSource
-	taskWriter            taskWriter
-	exactDecisionEvidence exactDecisionEvidenceSource
-	exactCommandApprovals ExactTaskCommandApprovalBridge
+	taskPRs                     taskPRSource
+	taskWriter                  taskWriter
+	exactDecisionEvidence       exactDecisionEvidenceSource
+	exactTaskCommandGrantIssuer ExactTaskCommandGrantIssuer
+	exactCommandApprovals       ExactTaskCommandApprovalBridge
 
 	// Utility agent invocation dependencies, wired via SetUtilityAgent.
 	utilityDefaultProfile utilityDefaultProfileSource
@@ -819,30 +820,31 @@ func (s *Service) hostForPlugin(pluginID string) pluginsdk.Host {
 		exactAuthorize: func(workspaceID string, revision uint64, capabilityID, requestDigest string) ApprovalDecision {
 			return s.authorizePluginCapability(rec.InstallationID, workspaceID, capabilityID, revision, requestDigest, "exact-read")
 		},
-		exactReadReceipt:         s.recordExactReadReceipt,
-		exactSnapshots:           snapshots,
-		capabilities:             rec.Capabilities,
-		repositoryProviders:      rec.RepositoryProviders,
-		configSchema:             rec.ConfigSchema,
-		state:                    s.state,
-		secrets:                  s.secrets,
-		bus:                      s.eventBus,
-		configs:                  s.store,
-		taskData:                 s.taskData,
-		workflows:                s.workflows,
-		workflowSteps:            s.workflowSteps,
-		agentProfiles:            s.agentProfiles,
-		sessionCodeStats:         s.sessionCodeStats,
-		messageData:              s.messageData,
-		interactionData:          s.interactionData,
-		taskPRsDep:               s.taskPRSourceDep,
-		taskWriter:               s.taskWriter,
-		exactDecisionEvidenceDep: s.exactTaskDecisionEvidenceDep,
-		utilityDeps:              s.utilityAgentDeps,
-		writeDeps:                s.writeDependencies,
-		interactionDeps:          s.interactionResponderDep,
-		agentConversations:       s.agentConversationDeps,
-		log:                      s.log,
+		exactReadReceipt:               s.recordExactReadReceipt,
+		exactSnapshots:                 snapshots,
+		capabilities:                   rec.Capabilities,
+		repositoryProviders:            rec.RepositoryProviders,
+		configSchema:                   rec.ConfigSchema,
+		state:                          s.state,
+		secrets:                        s.secrets,
+		bus:                            s.eventBus,
+		configs:                        s.store,
+		taskData:                       s.taskData,
+		workflows:                      s.workflows,
+		workflowSteps:                  s.workflowSteps,
+		agentProfiles:                  s.agentProfiles,
+		sessionCodeStats:               s.sessionCodeStats,
+		messageData:                    s.messageData,
+		interactionData:                s.interactionData,
+		taskPRsDep:                     s.taskPRSourceDep,
+		taskWriter:                     s.taskWriter,
+		exactDecisionEvidenceDep:       s.exactTaskDecisionEvidenceDep,
+		exactTaskCommandGrantIssuerDep: s.exactTaskCommandGrantIssuerDep,
+		utilityDeps:                    s.utilityAgentDeps,
+		writeDeps:                      s.writeDependencies,
+		interactionDeps:                s.interactionResponderDep,
+		agentConversations:             s.agentConversationDeps,
+		log:                            s.log,
 	}
 }
 

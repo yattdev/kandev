@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"time"
 
 	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
 	"github.com/kandev/kandev/pkg/pluginsdk"
@@ -85,7 +86,7 @@ func exactDecisionEvidencePageToDTO(page *exactsnapshotcomposite.Page, workspace
 		if p.WorkspaceID != workspaceID {
 			return nil, status.Error(codes.FailedPrecondition, "exact task decision evidence is incomplete")
 		}
-		result.PendingTransitions[i] = pluginsdk.ExactPendingTaskTransition{SessionID: p.SessionID, TaskID: p.TaskID, WorkspaceID: p.WorkspaceID, SessionIncarnationID: p.SessionIncarnationID, WorkflowID: p.WorkflowID, WorkflowStepID: p.WorkflowStepID, StepPosition: int32(p.Position), ResourceVersion: p.ResourceVersion, TaskResourceVersion: p.TaskResourceVersion, SessionResourceVersion: p.SessionResourceVersion, QueueGeneration: p.QueueGeneration}
+		result.PendingTransitions[i] = pluginsdk.ExactPendingTaskTransition{SessionID: p.SessionID, TaskID: p.TaskID, WorkspaceID: p.WorkspaceID, SessionIncarnationID: p.SessionIncarnationID, WorkflowID: p.WorkflowID, WorkflowStepID: p.WorkflowStepID, StepPosition: int32(p.Position), ResourceVersion: p.ResourceVersion, TaskResourceVersion: p.TaskResourceVersion, SessionResourceVersion: p.SessionResourceVersion, QueueGeneration: p.QueueGeneration, QueuedAt: p.QueuedAt.UTC().Format(time.RFC3339Nano)}
 	}
 	return result, nil
 }

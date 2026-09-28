@@ -1250,6 +1250,7 @@ message ExactPendingTaskTransition {
   int64 task_resource_version = 9;
   int64 session_resource_version = 10;
   int64 queue_generation = 11;
+  string queued_at = 12;
 }
 message ListTaskDecisionEvidenceExactRequest {
   string workspace_id = 1;

@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
+	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	tasksqlite "github.com/kandev/kandev/internal/task/repository/sqlite"
 )
 
@@ -20,11 +23,42 @@ type ExactTaskCommandApprovalBridge interface {
 
 type sqliteExactTaskCommandApprovalBridge struct{ repo *tasksqlite.Repository }
 
+// ExactTaskCommandGrantIssuer is private Host composition. It accepts only a
+// composite evidence token and complete observed pending row, then creates the
+// SQLite grant in that evidence transaction. No RPC or SDK method exposes it.
+type ExactTaskCommandGrantIssuer interface {
+	Issue(context.Context, tasksqlite.ExactTaskCommandGrant, string, messagequeue.ExactPendingTransition) error
+}
+
+type sqliteExactTaskCommandGrantIssuer struct {
+	repo     *tasksqlite.Repository
+	evidence *exactsnapshotcomposite.Repository
+}
+
 func NewSQLiteExactTaskCommandApprovalBridge(repo *tasksqlite.Repository) (ExactTaskCommandApprovalBridge, error) {
 	if repo == nil || !repo.ExactTaskCommandAvailable() {
 		return nil, fmt.Errorf("plugins: exact command repository is required")
 	}
 	return sqliteExactTaskCommandApprovalBridge{repo: repo}, nil
+}
+
+// NewSQLiteExactTaskCommandGrantIssuer binds the exact command journal to the
+// same composite evidence authority used by the plugin Host. PostgreSQL and
+// unavailable repositories fail closed through the existing bridge check.
+func NewSQLiteExactTaskCommandGrantIssuer(repo *tasksqlite.Repository, evidence *exactsnapshotcomposite.Repository) (ExactTaskCommandGrantIssuer, error) {
+	if _, err := NewSQLiteExactTaskCommandApprovalBridge(repo); err != nil || evidence == nil {
+		return nil, fmt.Errorf("plugins: exact command grant issuer is required")
+	}
+	return sqliteExactTaskCommandGrantIssuer{repo: repo, evidence: evidence}, nil
+}
+
+func (i sqliteExactTaskCommandGrantIssuer) Issue(ctx context.Context, grant tasksqlite.ExactTaskCommandGrant, compositeSnapshotToken string, observed messagequeue.ExactPendingTransition) error {
+	if i.repo == nil || i.evidence == nil {
+		return tasksqlite.ErrExactTaskCommandUnavailable
+	}
+	return i.evidence.WithPendingTransitionAuthority(ctx, compositeSnapshotToken, observed, func(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, pendingSnapshotToken string) error {
+		return i.repo.IssueExactTaskCommandGrantInAuthorityTx(ctx, authority, tx, grant, pendingSnapshotToken, observed)
+	})
 }
 
 func (b sqliteExactTaskCommandApprovalBridge) Grant(ctx context.Context, approval CapabilityApproval, auditID string) error {
@@ -66,4 +100,18 @@ func (s *Service) exactTaskCommandApprovalBridge() ExactTaskCommandApprovalBridg
 // approval state and is used by composition health checks.
 func (s *Service) ExactTaskCommandAuthorityAvailable() bool {
 	return s.exactTaskCommandApprovalBridge() != nil
+}
+
+// SetExactTaskCommandGrantIssuer attaches the unadvertised Host grant path
+// after the queue and composite evidence reader are available.
+func (s *Service) SetExactTaskCommandGrantIssuer(issuer ExactTaskCommandGrantIssuer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.exactTaskCommandGrantIssuer = issuer
+}
+
+func (s *Service) exactTaskCommandGrantIssuerDep() ExactTaskCommandGrantIssuer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.exactTaskCommandGrantIssuer
 }

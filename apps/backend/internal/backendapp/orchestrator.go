@@ -131,18 +131,7 @@ func provideOrchestrator(
 	if validator, ok := queueRepo.(messagequeue.ExactPendingTransitionAuthorityReader); ok {
 		taskRepo.SetExactTaskCommandPendingValidator(validator)
 	}
-	if pluginsSvc != nil && officeRepo != nil {
-		authority, authorityErr := exactsnapshotauthority.NewSQLite(pool.Writer())
-		pending, pendingOK := queueRepo.(interface {
-			messagequeue.ExactPendingTransitionReader
-			messagequeue.ExactPendingTransitionAuthorityReader
-		})
-		if authorityErr == nil && pendingOK {
-			if composite, compositeErr := exactsnapshotcomposite.New(authority, officeRepo, pending); compositeErr == nil {
-				pluginsSvc.SetExactTaskDecisionEvidence(composite)
-			}
-		}
-	}
+	wireExactPluginEvidence(pool, taskRepo, officeRepo, pluginsSvc, queueRepo)
 	queueResolution := resolveQueueSettingsWithStore(settingsStore, pool, log, queueConfiguration(cfg))
 	queueSettings := queueResolution.Effective
 	maxPerSession := queueSettings.MaxPerSession
@@ -346,6 +335,32 @@ func provideOrchestrator(
 	orchestratorSvc.SetTaskRepositoryBaseBranchUpdater(&repoLocalPathUpdater{svc: taskSvc})
 
 	return orchestratorSvc, msgCreator, nil
+}
+
+func wireExactPluginEvidence(pool *db.Pool, taskRepo *sqliterepo.Repository, officeRepo *officesqlite.Repository, pluginsSvc *plugins.Service, queueRepo messagequeue.Repository) {
+	if pool == nil || taskRepo == nil || officeRepo == nil || pluginsSvc == nil {
+		return
+	}
+	authority, err := exactsnapshotauthority.NewSQLite(pool.Writer())
+	if err != nil {
+		return
+	}
+	pending, ok := queueRepo.(interface {
+		messagequeue.ExactPendingTransitionReader
+		messagequeue.ExactPendingTransitionAuthorityReader
+	})
+	if !ok {
+		return
+	}
+	composite, err := exactsnapshotcomposite.New(authority, officeRepo, pending)
+	if err != nil {
+		return
+	}
+	pluginsSvc.SetExactTaskDecisionEvidence(composite)
+	issuer, err := plugins.NewSQLiteExactTaskCommandGrantIssuer(taskRepo, composite)
+	if err == nil {
+		pluginsSvc.SetExactTaskCommandGrantIssuer(issuer)
+	}
 }
 
 type githubCredentialPolicyService interface {
