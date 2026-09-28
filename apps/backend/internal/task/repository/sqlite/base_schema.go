@@ -87,6 +87,17 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 }
 
 func (r *Repository) initCoordinatorStopOperationSchema() error {
+	if err := r.migrate.Apply("task_stop_session_fences.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_session_fences (
+			task_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			PRIMARY KEY(task_id, session_id),
+			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+			FOREIGN KEY (session_id) REFERENCES task_sessions(id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop session fences table: %w", err)
+	}
 	if err := r.migrate.Apply("task_stop_operations.table", `
 		CREATE TABLE IF NOT EXISTS task_stop_operations (
 			id TEXT PRIMARY KEY,

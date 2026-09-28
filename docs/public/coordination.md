@@ -161,15 +161,15 @@ Choose the control by intent:
 | ------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Send information that can wait                          | `message_task_kandev` with queued delivery or no `delivery_mode` | The current turn continues and the message waits FIFO.                                                                                       |
 | Stop the current approach and give replacement work now | `message_task_kandev` with `delivery_mode: "interrupt"`          | The direct parent requests immediate cancellation and redispatch. If that cannot proceed safely, the response reports the message as queued. |
-| Halt all current work with no replacement prompt        | `stop_task_kandev`                                               | The direct parent requests logical cancellation and graceful teardown without creating or dispatching a message.                             |
+| Halt all current work with no replacement prompt        | `stop_task_kandev`                                               | The direct parent requests logical cancellation, exact execution fencing, and graceful teardown without creating or dispatching a message. |
 
 Only a direct parent may interrupt its child. Halt-only stop is stricter: it accepts only a same-workspace direct child, while self, siblings, ancestors other than the parent, deeper descendants, unrelated tasks, and cross-workspace callers are rejected. Use interrupt for stop-and-steer work. Reserve stop for halt-only intent.
 
 ### Stop a direct child's work
 
-`stop_task_kandev` accepts the full ID of one direct child and has no session-specific option. Kandev inspects that child's active-session candidates and requests a graceful stop for every execution still observed as live, including non-primary sibling sessions. It does not recurse into descendants.
+`stop_task_kandev` accepts the full ID of one direct child and has no session-specific option. Kandev inspects that child's active sessions, captures exact executor incarnations where possible, and fences executor registration when an incarnation is unavailable. It does not recurse into descendants.
 
-For each accepted execution, Kandev persists the session as `CANCELLED` before scheduling runtime teardown. A `status: "stopped"` response confirms that logical state and scheduled teardown; cleanup continues asynchronously and the process may not have exited yet. When no live execution is accepted, the call succeeds idempotently with `status: "not_running"` and changes no task or session state.
+Kandev persists each accepted session as `CANCELLED` and fences executor registration when no exact execution incarnation can be captured. The response includes `receipts` for exact execution operations and `session_fences` for sessions stopped at the launch boundary. `status: "incomplete"` means cancellation or admission fencing succeeded but terminal runtime proof is pending; retry resumes pending exact receipts. `status: "stopped"` is reserved for verified terminal process and executor-row proof. An already settled task with no pending stop receipt returns `not_running`.
 
 After at least one accepted stop, Kandev attempts to move a regular, unarchived, non-Office task from `IN_PROGRESS` or `SCHEDULING` to `REVIEW`, provided no session remains working. Office, archived, and already non-active tasks keep their state, and a failed secondary `REVIEW` reconciliation does not undo accepted session stops.
 

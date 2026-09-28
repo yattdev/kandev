@@ -25,6 +25,7 @@ type stopTaskFailure struct {
 	err      error
 }
 
+//nolint:nestif // Caller authorization is intentionally evaluated before target inventory.
 func (h *Handlers) handleStopTask(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
 	req, validationError := parseStopTaskRequest(msg)
 	if validationError != nil {
@@ -37,7 +38,21 @@ func (h *Handlers) handleStopTask(ctx context.Context, msg *ws.Message) (*ws.Mes
 	principal, hasPrincipal := mcpscope.PrincipalFromContext(ctx)
 	automationCaller := hasPrincipal && principal.IsAutomation()
 	var sender *models.Task
-	if !automationCaller {
+	if automationCaller {
+		if principal.CallerTaskID == "" {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden,
+				"only a task's direct parent in the same workspace can stop it", nil)
+		}
+		var lookupError *stopTaskFailure
+		sender, lookupError = h.lookupStopTask(ctx, msg, principal.CallerTaskID, "caller")
+		if lookupError != nil {
+			return lookupError.response, lookupError.err
+		}
+		if sender.WorkspaceID != principal.WorkspaceID {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden,
+				"only a task's direct parent in the same workspace can stop it", nil)
+		}
+	} else {
 		var lookupError *stopTaskFailure
 		sender, lookupError = h.lookupStopTask(ctx, msg, req.SenderTaskID, "sender")
 		if lookupError != nil {
@@ -50,11 +65,7 @@ func (h *Handlers) handleStopTask(ctx context.Context, msg *ws.Message) (*ws.Mes
 		return lookupError.response, lookupError.err
 	}
 
-	if automationCaller {
-		if target.ID == principal.CallerTaskID || target.WorkspaceID != principal.WorkspaceID {
-			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target task not found", nil)
-		}
-	} else if !canStopTask(sender, target) {
+	if !canStopTask(sender, target) || (automationCaller && target.WorkspaceID != principal.WorkspaceID) {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden,
 			"only a task's direct parent in the same workspace can stop it", nil)
 	}
@@ -74,6 +85,8 @@ func (h *Handlers) handleStopTask(ctx context.Context, msg *ws.Message) (*ws.Mes
 	return ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
 		keyTaskID:         target.ID,
 		stopTaskStatusKey: result.Status,
+		"receipts":        result.Receipts,
+		"session_fences":  result.SessionFences,
 	})
 }
 

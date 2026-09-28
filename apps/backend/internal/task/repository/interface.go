@@ -555,6 +555,18 @@ type CoordinatorStopOperationRepository interface {
 	GetCoordinatorStopOperation(ctx context.Context, operationID string) (*models.CoordinatorStopOperation, error)
 	MarkCoordinatorStopOperationIncomplete(ctx context.Context, operationID, executionID string, agentctlGeneration uint64, reasonCode string) (*models.CoordinatorStopOperation, bool, error)
 	ConsumeCoordinatorStopFenceReceipt(ctx context.Context, operationID string, receipt models.CoordinatorStopFenceReceipt) (*models.CoordinatorStopOperation, error)
+	FinalizeCoordinatorStopOperation(ctx context.Context, operationID, executionID string, agentctlGeneration uint64) (*models.CoordinatorStopOperation, error)
+}
+
+// CoordinatorStopOperationLister finds durable stop receipts that still need
+// lifecycle work for a task whose session may already be CANCELLED.
+type CoordinatorStopOperationLister interface {
+	ListPendingCoordinatorStopOperations(ctx context.Context, taskID string) ([]*models.CoordinatorStopOperation, error)
+}
+
+type CoordinatorStopSessionFencer interface {
+	FenceCoordinatorStopSession(ctx context.Context, taskID, sessionID string) (bool, error)
+	ListCoordinatorStopSessionFences(ctx context.Context, taskID string) ([]models.CoordinatorStopSessionFenceReceipt, error)
 }
 
 // SessionRepository handles task session lifecycle and workflow-session relationships.

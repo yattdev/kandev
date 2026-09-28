@@ -1689,6 +1689,9 @@ func (r *Repository) UpdateTaskSessionIfCurrentState(
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
+	if err := r.clearCoordinatorStopSessionFence(ctx, session.ID, session.State); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
@@ -1741,6 +1744,9 @@ func (r *Repository) UpdateTaskSessionIfCurrentStateWithStartAttempt(
 		return false, fmt.Errorf("agent session not found: %s", session.ID)
 	}
 	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	if err := r.clearCoordinatorStopSessionFence(ctx, session.ID, models.TaskSessionStateStarting); err != nil {
 		return false, err
 	}
 	if session.Metadata == nil {
@@ -2090,6 +2096,11 @@ func (r *Repository) UpdateTaskSessionState(ctx context.Context, id string, stat
 	if rows == 0 {
 		return fmt.Errorf("%w: agent session not found: %s", models.ErrTaskSessionNotFound, id)
 	}
+	if status == models.TaskSessionStateCreated || status == models.TaskSessionStateStarting || status == models.TaskSessionStateRunning || status == models.TaskSessionStateWaitingForInput {
+		if _, err := r.db.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_stop_session_fences WHERE session_id = ?`), id); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -2116,6 +2127,11 @@ func (r *Repository) UpdateTaskSessionStateIfCurrent(
 	if err != nil {
 		return false, time.Time{}, err
 	}
+	if rows > 0 {
+		if err := r.clearCoordinatorStopSessionFence(ctx, id, status); err != nil {
+			return false, time.Time{}, err
+		}
+	}
 	return rows > 0, now, nil
 }
 
@@ -2140,7 +2156,22 @@ func (r *Repository) UpdateTaskSessionStateIfCurrentIdentity(
 	if err != nil {
 		return false, time.Time{}, err
 	}
+	if rows > 0 {
+		if err := r.clearCoordinatorStopSessionFence(ctx, id, status); err != nil {
+			return false, time.Time{}, err
+		}
+	}
 	return rows > 0, now, nil
+}
+
+func (r *Repository) clearCoordinatorStopSessionFence(ctx context.Context, sessionID string, status models.TaskSessionState) error {
+	switch status {
+	case models.TaskSessionStateCreated, models.TaskSessionStateStarting, models.TaskSessionStateRunning, models.TaskSessionStateWaitingForInput:
+		_, err := r.db.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_stop_session_fences WHERE session_id = ?`), sessionID)
+		return err
+	default:
+		return nil
+	}
 }
 
 // UpdateTaskSessionDynamicRouteIfCurrent changes only the route projection

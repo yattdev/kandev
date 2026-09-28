@@ -29,19 +29,19 @@ func TestStopTaskForCoordinator_ReviewGuardsPreserveTaskState(t *testing.T) {
 	}{
 		{
 			name: "Office task", initialState: v1.TaskStateInProgress, office: true, hasExecution: true,
-			wantStatus: CoordinatorTaskStopStatusStopped, wantSession: models.TaskSessionStateCancelled,
+			wantStatus: CoordinatorTaskStopStatusIncomplete, wantSession: models.TaskSessionStateCancelled,
 		},
 		{
 			name: "archived task", initialState: v1.TaskStateInProgress, archived: true, hasExecution: true,
-			wantStatus: CoordinatorTaskStopStatusStopped, wantSession: models.TaskSessionStateCancelled,
+			wantStatus: CoordinatorTaskStopStatusIncomplete, wantSession: models.TaskSessionStateCancelled,
 		},
 		{
 			name: "non-active task", initialState: v1.TaskStateCompleted, hasExecution: true,
-			wantStatus: CoordinatorTaskStopStatusStopped, wantSession: models.TaskSessionStateCancelled,
+			wantStatus: CoordinatorTaskStopStatusIncomplete, wantSession: models.TaskSessionStateCancelled,
 		},
 		{
 			name: "not running", initialState: v1.TaskStateInProgress, hasExecution: false,
-			wantStatus: CoordinatorTaskStopStatusNotRunning, wantSession: models.TaskSessionStateRunning,
+			wantStatus: CoordinatorTaskStopStatusIncomplete, wantSession: models.TaskSessionStateCancelled,
 		},
 	}
 
@@ -92,19 +92,28 @@ func TestStopTaskForCoordinator_ReviewGuardsPreserveTaskState(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.wantStatus, result.Status)
 			if tt.hasExecution {
-				coordinatorStopAwaitSignal(t, teardownCalled, "guarded task runtime teardown")
+				select {
+				case <-teardownCalled:
+					t.Fatal("uncaptured lifecycle execution must remain untouched")
+				default:
+				}
 			}
 			session, err := baseRepo.GetTaskSession(ctx, "session-review-guard")
 			require.NoError(t, err)
 			require.Equal(t, tt.wantSession, session.State)
 			state, history := coordinatorStopTaskStateSnapshot(taskRepo, "task-review-guard")
-			require.Equal(t, tt.initialState, state)
-			require.Empty(t, history, "task REVIEW guard allowed an ineligible state write")
+			if tt.name == "not running" {
+				require.Equal(t, v1.TaskStateReview, state)
+				require.NotEmpty(t, history)
+			} else {
+				require.Equal(t, tt.initialState, state)
+				require.Empty(t, history, "task REVIEW guard allowed an ineligible state write")
+			}
 		})
 	}
 }
 
-func TestStopTaskForCoordinator_PreRegistrationLaunchCanEscape(t *testing.T) {
+func TestStopTaskForCoordinator_PreRegistrationLaunchIsFenced(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
 	seedTaskAndSession(t, repo, "task-launch-race", "session-launch-race", models.TaskSessionStateRunning)
@@ -125,13 +134,7 @@ func TestStopTaskForCoordinator_PreRegistrationLaunchCanEscape(t *testing.T) {
 	}()
 	coordinatorStopAwaitSignal(t, launchStarted, "pre-registration launch start")
 
-	lookupObserved := make(chan struct{}, 1)
-	agentManager := &mockAgentManager{
-		getExecutionIDForSessionFunc: func(context.Context, string) (string, error) {
-			lookupObserved <- struct{}{}
-			return "", lifecycle.ErrNoExecutionForSession
-		},
-	}
+	agentManager := &mockAgentManager{}
 	taskRepo := newMockTaskRepo()
 	seedMockTaskState(taskRepo, "task-launch-race", v1.TaskStateInProgress)
 	svc := newCoordinatorStopTestService(repo, taskRepo, agentManager)
@@ -139,27 +142,36 @@ func TestStopTaskForCoordinator_PreRegistrationLaunchCanEscape(t *testing.T) {
 	result, err := svc.StopTaskForCoordinator(ctx, "task-launch-race")
 
 	require.NoError(t, err)
-	require.Equal(t, CoordinatorTaskStopStatusNotRunning, result.Status)
-	coordinatorStopAwaitSignal(t, lookupObserved, "absent lifecycle lookup")
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
+	require.Len(t, result.SessionFences, 1)
 	releaseRegistration()
 	select {
 	case registrationErr := <-registrationDone:
-		require.NoError(t, registrationErr)
+		require.ErrorIs(t, registrationErr, models.ErrExecutionStopFenced)
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for late execution registration")
 	}
 	running, err := repo.GetExecutorRunningBySessionID(ctx, "session-launch-race")
-	require.NoError(t, err)
-	require.Equal(t, "execution-late", running.AgentExecutionID)
+	require.ErrorIs(t, err, models.ErrExecutorRunningNotFound)
+	require.Nil(t, running)
 	session, err := repo.GetTaskSession(ctx, "session-launch-race")
 	require.NoError(t, err)
-	require.Equal(t, models.TaskSessionStateRunning, session.State)
+	require.Equal(t, models.TaskSessionStateCancelled, session.State)
 	agentManager.mu.Lock()
 	stopCalls := append([]stopAgentCall(nil), agentManager.stopAgentWithReasonArgs...)
 	agentManager.mu.Unlock()
-	require.Empty(t, stopCalls, "v1 has no task-wide fence for a late registration")
+	require.Empty(t, stopCalls, "no execution identity was captured")
 	_, history := coordinatorStopTaskStateSnapshot(taskRepo, "task-launch-race")
-	require.Empty(t, history)
+	require.NotEmpty(t, history)
+	retry, err := svc.StopTaskForCoordinator(ctx, "task-launch-race")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, retry.Status)
+	require.Equal(t, result.SessionFences, retry.SessionFences)
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "session-launch-race", models.TaskSessionStateStarting, "explicit restart"))
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
+		ID: "session-launch-race", SessionID: "session-launch-race", TaskID: "task-launch-race",
+		AgentExecutionID: "execution-restarted", Status: models.ExecutorRunningStatusStarting,
+	}), "an explicitly reopened session may register its replacement execution")
 }
 
 func TestFallbackFreshLaunch_CoordinatorCancellationWinsBeforeResetWrite(t *testing.T) {

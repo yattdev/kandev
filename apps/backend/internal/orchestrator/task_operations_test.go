@@ -457,8 +457,11 @@ func TestStopTaskForCoordinator_StopsAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StopTaskForCoordinator: %v", err)
 	}
-	if result.Status != CoordinatorTaskStopStatusStopped {
-		t.Fatalf("status = %q, want %q", result.Status, CoordinatorTaskStopStatusStopped)
+	if result.Status != CoordinatorTaskStopStatusIncomplete {
+		t.Fatalf("status = %q, want %q", result.Status, CoordinatorTaskStopStatusIncomplete)
+	}
+	if len(result.SessionFences) != 1 {
+		t.Fatalf("session fences = %d, want 1", len(result.SessionFences))
 	}
 	session, err := repo.GetTaskSession(ctx, "session1")
 	if err != nil {
@@ -473,20 +476,22 @@ func TestStopTaskForCoordinator_StopsAndIsIdempotent(t *testing.T) {
 	if got := svc.messageQueue.GetStatus(ctx, "session1").Count; got != 1 {
 		t.Fatalf("queued message count = %d, want 1", got)
 	}
-	waitForStopCall(t, agentManager)
 	agentManager.mu.Lock()
-	stopCall := agentManager.stopAgentWithReasonArgs[0]
+	stopCalls := append([]stopAgentCall(nil), agentManager.stopAgentWithReasonArgs...)
 	agentManager.mu.Unlock()
-	if stopCall.ExecutionID != "execution1" || stopCall.Reason != coordinatorMCPStopReason || stopCall.Force {
-		t.Fatalf("stop call = %#v", stopCall)
+	if len(stopCalls) != 0 {
+		t.Fatalf("uncaptured execution was stopped by ID: %#v", stopCalls)
 	}
 
 	repeat, err := svc.StopTaskForCoordinator(ctx, "task1")
 	if err != nil {
 		t.Fatalf("repeat StopTaskForCoordinator: %v", err)
 	}
-	if repeat.Status != CoordinatorTaskStopStatusNotRunning {
-		t.Fatalf("repeat status = %q, want %q", repeat.Status, CoordinatorTaskStopStatusNotRunning)
+	if repeat.Status != CoordinatorTaskStopStatusIncomplete {
+		t.Fatalf("repeat status = %q, want %q", repeat.Status, CoordinatorTaskStopStatusIncomplete)
+	}
+	if len(repeat.SessionFences) != 1 || repeat.SessionFences[0].SessionID != result.SessionFences[0].SessionID {
+		t.Fatalf("repeat session fences = %#v, want the same durable fence", repeat.SessionFences)
 	}
 }
 
@@ -499,14 +504,14 @@ func TestStopTaskForCoordinator_AggregatesAbsentAndFailure(t *testing.T) {
 		wantErr    error
 	}{
 		{
-			name:       "all absent is not running",
+			name:       "unknown execution is fenced incomplete",
 			lookupErr:  fmt.Errorf("wrapped: %w", lifecycle.ErrNoExecutionForSession),
-			wantStatus: CoordinatorTaskStopStatusNotRunning,
+			wantStatus: CoordinatorTaskStopStatusIncomplete,
 		},
 		{
-			name:      "genuine lookup failure is returned",
-			lookupErr: lookupFailure,
-			wantErr:   lookupFailure,
+			name:       "lookup failure cannot weaken the launch fence",
+			lookupErr:  lookupFailure,
+			wantStatus: CoordinatorTaskStopStatusIncomplete,
 		},
 	}
 
@@ -532,8 +537,11 @@ func TestStopTaskForCoordinator_AggregatesAbsentAndFailure(t *testing.T) {
 			if result.Status != tt.wantStatus {
 				t.Fatalf("status = %q, want %q", result.Status, tt.wantStatus)
 			}
-			if _, changed := taskRepo.updatedStates["task1"]; changed {
-				t.Fatal("task state changed without an accepted clean stop")
+			if len(result.SessionFences) != 1 {
+				t.Fatalf("session fences = %d, want 1", len(result.SessionFences))
+			}
+			if _, changed := taskRepo.updatedStates["task1"]; !changed {
+				t.Fatal("accepted incomplete fence did not reconcile task state")
 			}
 		})
 	}

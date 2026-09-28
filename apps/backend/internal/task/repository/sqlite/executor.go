@@ -313,10 +313,16 @@ func (r *Repository) ensureExecutorGenerationDoesNotRegressTx(ctx context.Contex
 	return nil
 }
 
-// ensureExecutorRegistrationNotFencedTx rejects only the exact agentctl
-// incarnation captured by a durable stop operation. A later generation is a
-// separate runtime and can be admitted by its own authorized launch path.
+// ensureExecutorRegistrationNotFencedTx rejects the captured incarnation and
+// any session still held behind a coordinator launch fence. An explicit
+// session restart clears the latter before its new execution is registered.
 func (r *Repository) ensureExecutorRegistrationNotFencedTx(ctx context.Context, tx *sqlx.Tx, running *models.ExecutorRunning) error {
+	var sessionFence int
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT 1 FROM task_stop_session_fences WHERE session_id = ?`), running.SessionID).Scan(&sessionFence); err == nil {
+		return models.ErrExecutionStopFenced
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("check session launch fence: %w", err)
+	}
 	if running.AgentExecutionID == "" || running.AgentctlGeneration == 0 {
 		return nil
 	}

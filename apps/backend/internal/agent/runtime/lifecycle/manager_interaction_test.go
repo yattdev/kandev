@@ -93,6 +93,25 @@ func TestStopAgentWithReason_MissingExecutionIsClassified(t *testing.T) {
 	require.ErrorIs(t, err, ErrExecutionNotFound)
 }
 
+func TestStopExecutionWithFenceRejectsUnverifiedIncarnationWithoutTeardown(t *testing.T) {
+	type exactStopper interface {
+		StopExecutionWithFence(context.Context, string, uint64, string, func(*ExecutionFenceReceipt) error) error
+	}
+	mgr := newTestManager(t)
+	execution := &AgentExecution{ID: "exec-fenced-stop", startupAttemptGeneration: 2}
+	require.NoError(t, mgr.executionStore.Add(execution))
+
+	stopper, ok := any(mgr).(exactStopper)
+	require.True(t, ok, "lifecycle manager must expose generation-bound fence and stop")
+	err := stopper.StopExecutionWithFence(context.Background(), execution.ID, 1, "parent stop", func(*ExecutionFenceReceipt) error {
+		t.Fatal("receipt callback ran for a stale generation")
+		return nil
+	})
+	require.Error(t, err)
+	_, exists := mgr.executionStore.Get(execution.ID)
+	require.True(t, exists, "stale stop must leave the current execution tracked")
+}
+
 func TestStopAgentWithReasonReleasesAgentctlBeforeStoppedEventSnapshot(t *testing.T) {
 	mgr := newTestManager(t)
 	execution := &AgentExecution{

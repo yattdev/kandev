@@ -2070,6 +2070,7 @@ type CoordinatorStopOperation struct {
 const (
 	CoordinatorStopOperationStatusFencing    = "fencing"
 	CoordinatorStopOperationStatusIncomplete = "incomplete"
+	CoordinatorStopOperationStatusStopped    = "stopped"
 	CoordinatorStopProofScopePending         = "pending_exact_runtime_proof"
 	CoordinatorStopProofScopeAgentctlFence   = "agentctl_admission_closed"
 )
@@ -2083,6 +2084,14 @@ type CoordinatorStopFenceReceipt struct {
 	AgentctlGeneration      uint64
 	AdmissionClosedAt       time.Time
 	ManagedProcessesDrained bool
+}
+
+type CoordinatorStopSessionFenceReceipt struct {
+	TaskID     string    `json:"task_id"`
+	SessionID  string    `json:"session_id"`
+	Status     string    `json:"status"`
+	ProofScope string    `json:"proof_scope"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // ReviewStatus represents the review state of a TaskSession. The zero value

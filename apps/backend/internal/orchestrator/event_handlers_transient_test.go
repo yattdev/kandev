@@ -454,7 +454,7 @@ func TestRetryTransientPrompt_OwningStopSurvivesCoordinatorCancellation(t *testi
 	coordinatorStopAwaitSignal(t, stopEntered, "transient retry teardown")
 	result, err := svc.StopTaskForCoordinator(ctx, "task-retry-race")
 	require.NoError(t, err)
-	require.Equal(t, CoordinatorTaskStopStatusStopped, result.Status)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
 	select {
 	case err := <-stopContextCancelled:
 		t.Fatalf("owning force-stop inherited retry cancellation: %v", err)

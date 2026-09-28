@@ -32,15 +32,18 @@ func TestStopTaskForCoordinator_FencesCapturedExecutionBeforeGracefulTeardown(t 
 		AgentExecutionID: executionID, AgentctlGeneration: 1, Status: models.ExecutorRunningStatusRunning,
 	}))
 	manager := &mockAgentManager{repoForExecutionLookup: repo}
+	var fenceCalls, stopCalls atomic.Int32
 	manager.closeExecutionAdmissionFunc = func(_ context.Context, gotExecutionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
+		fenceCalls.Add(1)
 		require.Equal(t, executionID, gotExecutionID)
 		require.Equal(t, uint64(1), generation)
 		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true}, nil
 	}
 	manager.stopAgentWithReasonFunc = func(_ context.Context, gotExecutionID, _ string, force bool) error {
+		stopCalls.Add(1)
 		require.Equal(t, executionID, gotExecutionID)
 		require.False(t, force)
-		return repo.DeleteExecutorRunningBySessionID(ctx, sessionID)
+		return nil
 	}
 	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), manager)
 
@@ -48,12 +51,22 @@ func TestStopTaskForCoordinator_FencesCapturedExecutionBeforeGracefulTeardown(t 
 
 	require.NoError(t, err)
 	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
+	require.Len(t, result.Receipts, 1)
+	require.NotEmpty(t, result.Receipts[0].ID)
 	session, err := repo.GetTaskSession(ctx, sessionID)
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateCancelled, session.State)
 	turn, err := repo.GetTurn(ctx, turnID)
 	require.NoError(t, err)
 	require.NotNil(t, turn.CompletedAt)
+
+	retry, err := svc.StopTaskForCoordinator(ctx, taskID)
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, retry.Status)
+	require.Len(t, retry.Receipts, 1)
+	require.Equal(t, result.Receipts[0].ID, retry.Receipts[0].ID)
+	require.EqualValues(t, 2, fenceCalls.Load())
+	require.EqualValues(t, 2, stopCalls.Load())
 }
 
 type coordinatorStopCallOutcome struct {
@@ -64,10 +77,34 @@ type coordinatorStopCallOutcome struct {
 type coordinatorStopRepoHooks struct {
 	repoStore
 	listActiveFunc   func(context.Context, string) ([]*models.TaskSession, error)
+	fenceSessionFunc func(context.Context, string, string) (bool, error)
 	getSessionFunc   func(context.Context, string) (*models.TaskSession, error)
 	cancelActiveFunc func(context.Context, string, string) (bool, time.Time, error)
 	getTaskFunc      func(context.Context, string) (*models.Task, error)
 	updateFullRowCAS func(context.Context, *models.TaskSession, models.TaskSessionState) (bool, error)
+}
+
+func (r *coordinatorStopRepoHooks) FenceCoordinatorStopSession(ctx context.Context, taskID, sessionID string) (bool, error) {
+	if r.fenceSessionFunc != nil {
+		return r.fenceSessionFunc(ctx, taskID, sessionID)
+	}
+	fencer, ok := r.repoStore.(interface {
+		FenceCoordinatorStopSession(context.Context, string, string) (bool, error)
+	})
+	if !ok {
+		return false, errors.New("coordinator stop test repository cannot fence a session")
+	}
+	return fencer.FenceCoordinatorStopSession(ctx, taskID, sessionID)
+}
+
+func (r *coordinatorStopRepoHooks) ListCoordinatorStopSessionFences(ctx context.Context, taskID string) ([]models.CoordinatorStopSessionFenceReceipt, error) {
+	fencer, ok := r.repoStore.(interface {
+		ListCoordinatorStopSessionFences(context.Context, string) ([]models.CoordinatorStopSessionFenceReceipt, error)
+	})
+	if !ok {
+		return nil, errors.New("coordinator stop test repository cannot list session fences")
+	}
+	return fencer.ListCoordinatorStopSessionFences(ctx, taskID)
 }
 
 func (r *coordinatorStopRepoHooks) UpdateTaskSessionIfCurrentState(
@@ -163,7 +200,7 @@ func TestStopTaskForCoordinator_NotRunningDisarmsTransientRetry(t *testing.T) {
 	result, err := svc.StopTaskForCoordinator(ctx, "task-no-execution")
 
 	require.NoError(t, err)
-	require.Equal(t, CoordinatorTaskStopStatusNotRunning, result.Status)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
 	coordinatorStopAwaitSignal(t, cancelled, "transient retry cancellation")
 	_, retryArmed := svc.transientRetries.Load("session-no-execution")
 	require.False(t, retryArmed)
@@ -171,10 +208,10 @@ func TestStopTaskForCoordinator_NotRunningDisarmsTransientRetry(t *testing.T) {
 	require.False(t, promptCached)
 	session, err := repo.GetTaskSession(ctx, "session-no-execution")
 	require.NoError(t, err)
-	require.Equal(t, models.TaskSessionStateRunning, session.State)
+	require.Equal(t, models.TaskSessionStateCancelled, session.State)
 	state, history := coordinatorStopTaskStateSnapshot(taskRepo, "task-no-execution")
-	require.Equal(t, v1.TaskStateInProgress, state)
-	require.Empty(t, history, "not_running stop must not change task state")
+	require.Equal(t, v1.TaskStateReview, state)
+	require.NotEmpty(t, history)
 }
 
 func TestStopManagedInputExecutionTargetsObservedGeneration(t *testing.T) {
@@ -234,12 +271,11 @@ func TestStopTaskForCoordinator_ReleasesSessionGuardBeforeTeardown(t *testing.T)
 
 	result, err := svc.StopTaskForCoordinator(ctx, "task-teardown-order")
 	require.NoError(t, err)
-	require.Equal(t, CoordinatorTaskStopStatusStopped, result.Status)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
 	select {
-	case held := <-guardHeldAtTeardown:
-		require.False(t, held, "detached teardown entered before the session guard was released")
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for teardown ordering check")
+	case <-guardHeldAtTeardown:
+		t.Fatal("uncaptured execution must not be torn down by execution ID")
+	default:
 	}
 }
 
@@ -280,7 +316,7 @@ func TestStopTaskForCoordinator_FirstForceTeardownIntentWins(t *testing.T) {
 
 	result, err := svc.StopTaskForCoordinator(ctx, "task-teardown-intent")
 	require.NoError(t, err)
-	require.Equal(t, CoordinatorTaskStopStatusStopped, result.Status)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
 	close(allowForceStop)
 	coordinatorStopAwaitSignal(t, cleanupDone, "force teardown completion")
 	select {
@@ -332,67 +368,28 @@ func TestStopTaskForCoordinator_SerializesStaleAgentFailure(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
 	seedTaskAndSession(t, repo, "task-failure-race", "session-failure-race", models.TaskSessionStateRunning)
-
-	lookupEntered := make(chan struct{})
-	allowLookup := make(chan struct{})
-	var lookupOnce sync.Once
-	var allowLookupOnce sync.Once
-	releaseLookup := func() { allowLookupOnce.Do(func() { close(allowLookup) }) }
-	t.Cleanup(releaseLookup)
 	stopCalls := make(chan stopAgentCall, 2)
-	agentManager := &mockAgentManager{
-		getExecutionIDForSessionFunc: func(context.Context, string) (string, error) {
-			lookupOnce.Do(func() { close(lookupEntered) })
-			<-allowLookup
-			return "execution-failure-race", nil
-		},
-		stopAgentWithReasonFunc: func(_ context.Context, executionID, reason string, force bool) error {
-			stopCalls <- stopAgentCall{ExecutionID: executionID, Reason: reason, Force: force}
-			return nil
-		},
-	}
+	agentManager := &mockAgentManager{stopAgentWithReasonFunc: func(_ context.Context, executionID, reason string, force bool) error {
+		stopCalls <- stopAgentCall{ExecutionID: executionID, Reason: reason, Force: force}
+		return nil
+	}}
 	taskRepo := newMockTaskRepo()
 	seedMockTaskState(taskRepo, "task-failure-race", v1.TaskStateInProgress)
 	svc := newCoordinatorStopTestService(repo, taskRepo, agentManager)
 	messages := &mockMessageCreator{}
 	svc.messageCreator = messages
 
-	stopDone := make(chan coordinatorStopCallOutcome, 1)
-	go func() {
-		result, err := svc.StopTaskForCoordinator(ctx, "task-failure-race")
-		stopDone <- coordinatorStopCallOutcome{result: result, err: err}
-	}()
-	coordinatorStopAwaitSignal(t, lookupEntered, "coordinator lifecycle lookup")
-
-	failureDone := make(chan struct{})
-	go func() {
-		defer close(failureDone)
-		svc.handleAgentFailed(ctx, watcher.AgentEventData{
-			TaskID:           "task-failure-race",
-			SessionID:        "session-failure-race",
-			AgentExecutionID: "execution-failure-race",
-			ErrorMessage:     "agent crashed",
-		})
-	}()
-	coordinatorStopWaitForGuardRefs(t, svc, "session-failure-race", 2)
-
-	releaseLookup()
-	outcome := coordinatorStopAwaitCall(t, stopDone)
-	require.NoError(t, outcome.err)
-	require.Equal(t, CoordinatorTaskStopStatusStopped, outcome.result.Status)
-	coordinatorStopAwaitSignal(t, failureDone, "stale agent.failed completion")
-
+	result, err := svc.StopTaskForCoordinator(ctx, "task-failure-race")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
+	svc.handleAgentFailed(ctx, watcher.AgentEventData{
+		TaskID: "task-failure-race", SessionID: "session-failure-race",
+		AgentExecutionID: "execution-failure-race", ErrorMessage: "agent crashed",
+	})
 	select {
 	case call := <-stopCalls:
-		require.False(t, call.Force, "coordinator graceful teardown must remain non-force")
-		require.Equal(t, coordinatorMCPStopReason, call.Reason)
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for coordinator graceful teardown")
-	}
-	select {
-	case call := <-stopCalls:
-		t.Fatalf("stale agent.failed launched extra cleanup: %#v", call)
-	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("stale failure stopped an uncaptured execution: %#v", call)
+	default:
 	}
 
 	session, err := repo.GetTaskSession(ctx, "session-failure-race")
@@ -438,11 +435,12 @@ func TestStopTaskForCoordinator_ProcessesCandidatesInStableIDOrder(t *testing.T)
 	result, err := svc.StopTaskForCoordinator(ctx, "task-order")
 
 	require.NoError(t, err)
-	require.Equal(t, CoordinatorTaskStopStatusNotRunning, result.Status)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
 	lookupMu.Lock()
 	gotOrder := append([]string(nil), lookupOrder...)
 	lookupMu.Unlock()
-	require.Equal(t, []string{"session-a", "session-b", "session-c"}, gotOrder)
+	require.Empty(t, gotOrder, "uncaptured executions must not be resolved for teardown")
+	require.Len(t, result.SessionFences, 3)
 }
 
 func TestStopTaskForCoordinator_AcceptedAndAbsentReturnsStopped(t *testing.T) {
@@ -471,14 +469,19 @@ func TestStopTaskForCoordinator_AcceptedAndAbsentReturnsStopped(t *testing.T) {
 	result, err := svc.StopTaskForCoordinator(ctx, "task-mixed")
 
 	require.NoError(t, err)
-	require.Equal(t, CoordinatorTaskStopStatusStopped, result.Status)
-	coordinatorStopAwaitSignal(t, teardownCalled, "accepted runtime teardown")
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
+	require.Len(t, result.SessionFences, 2)
+	select {
+	case <-teardownCalled:
+		t.Fatal("uncaptured execution must not be torn down by execution ID")
+	default:
+	}
 	accepted, err := repo.GetTaskSession(ctx, "session-a")
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateCancelled, accepted.State)
 	absent, err := repo.GetTaskSession(ctx, "session-b")
 	require.NoError(t, err)
-	require.Equal(t, models.TaskSessionStateRunning, absent.State)
+	require.Equal(t, models.TaskSessionStateCancelled, absent.State)
 }
 
 func TestStopTaskForCoordinator_CommittedCancellationSurvivesPostWriteReadFailure(t *testing.T) {
@@ -522,8 +525,12 @@ func TestStopTaskForCoordinator_CommittedCancellationSurvivesPostWriteReadFailur
 	result, err := svc.StopTaskForCoordinator(ctx, "task-post-write-read")
 
 	require.NoError(t, err)
-	require.Equal(t, CoordinatorTaskStopStatusStopped, result.Status)
-	coordinatorStopAwaitSignal(t, teardownCalled, "teardown after committed cancellation")
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
+	select {
+	case <-teardownCalled:
+		t.Fatal("uncaptured execution must not be torn down by execution ID")
+	default:
+	}
 	session, getErr := baseRepo.GetTaskSession(ctx, "session-post-write-read")
 	require.NoError(t, getErr)
 	require.Equal(t, models.TaskSessionStateCancelled, session.State)
@@ -553,8 +560,12 @@ func TestStopTaskForCoordinator_DelayedStaleStateWriterCannotResurrectCancelledS
 
 	result, err := svc.StopTaskForCoordinator(ctx, "task-stale-writer")
 	require.NoError(t, err)
-	require.Equal(t, CoordinatorTaskStopStatusStopped, result.Status)
-	coordinatorStopAwaitSignal(t, teardownCalled, "stale-writer runtime teardown")
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
+	select {
+	case <-teardownCalled:
+		t.Fatal("uncaptured execution must not be torn down by execution ID")
+	default:
+	}
 
 	// Model a delayed event handler that loaded RUNNING before the stop, then
 	// attempts to commit an active state after cancellation was accepted.
@@ -632,7 +643,7 @@ func TestSetSessionStarting_CoordinatorCancellationWinsAfterCurrentStateRead(t *
 	require.Equal(t, coordinatorMCPStopReason, stored.ErrorMessage)
 }
 
-func TestStopTaskForCoordinator_PartialFailureAttemptsEveryCandidateAndSkipsReview(t *testing.T) {
+func TestStopTaskForCoordinator_FencesEveryCandidateWithoutExecutionIdentity(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
 	seedTaskAndSession(t, repo, "task-partial", "session-a", models.TaskSessionStateRunning)
@@ -668,19 +679,26 @@ func TestStopTaskForCoordinator_PartialFailureAttemptsEveryCandidateAndSkipsRevi
 
 	result, err := svc.StopTaskForCoordinator(ctx, "task-partial")
 
-	require.ErrorIs(t, err, lookupFailure)
-	require.Empty(t, result.Status)
-	coordinatorStopAwaitSignal(t, teardownCalled, "successful candidate teardown")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, result.Status)
+	require.Len(t, result.SessionFences, 3)
+	select {
+	case <-teardownCalled:
+		t.Fatal("no exact execution identity was captured")
+	default:
+	}
 	lookupMu.Lock()
 	gotOrder := append([]string(nil), lookupOrder...)
 	lookupMu.Unlock()
-	require.Equal(t, []string{"session-a", "session-b", "session-c"}, gotOrder)
+	require.Empty(t, gotOrder, "sessions without executor rows must not be stopped by lifecycle lookup")
 	state, history := coordinatorStopTaskStateSnapshot(taskRepo, "task-partial")
-	require.Equal(t, v1.TaskStateInProgress, state)
-	require.Empty(t, history, "partial failure must not reconcile the task to REVIEW")
-	accepted, getErr := repo.GetTaskSession(ctx, "session-a")
-	require.NoError(t, getErr)
-	require.Equal(t, models.TaskSessionStateCancelled, accepted.State)
+	require.Equal(t, v1.TaskStateReview, state)
+	require.Equal(t, []v1.TaskState{v1.TaskStateReview}, history)
+	for _, sessionID := range []string{"session-a", "session-b", "session-c"} {
+		stopped, getErr := repo.GetTaskSession(ctx, sessionID)
+		require.NoError(t, getErr)
+		require.Equal(t, models.TaskSessionStateCancelled, stopped.State)
+	}
 }
 
 func TestStopTaskForCoordinator_PartialFailureReconcilesAcceptedStops(t *testing.T) {
@@ -713,7 +731,11 @@ func TestStopTaskForCoordinator_PartialFailureReconcilesAcceptedStops(t *testing
 
 	require.ErrorContains(t, stopErr, "candidate is nil or has an empty ID")
 	require.Empty(t, result.Status)
-	coordinatorStopAwaitSignal(t, teardownCalled, "accepted partial-stop teardown")
+	select {
+	case <-teardownCalled:
+		t.Fatal("the accepted session had no exact execution identity")
+	default:
+	}
 	state, history := coordinatorStopTaskStateSnapshot(taskRepo, "task-partial-review")
 	require.Equal(t, v1.TaskStateReview, state)
 	require.Equal(t, []v1.TaskState{v1.TaskStateReview}, history)
@@ -798,10 +820,10 @@ func TestStopTaskForCoordinator_SerializesReadyBeforeQueueDrain(t *testing.T) {
 			}
 			return session, err
 		},
-		cancelActiveFunc: func(writeCtx context.Context, sessionID, reason string) (bool, time.Time, error) {
+		fenceSessionFunc: func(writeCtx context.Context, taskID, sessionID string) (bool, error) {
 			cancelWriteOnce.Do(func() { close(cancelWriteEntered) })
 			<-allowCancelWrite
-			return baseRepo.CancelActiveTaskSession(writeCtx, sessionID, reason)
+			return baseRepo.FenceCoordinatorStopSession(writeCtx, taskID, sessionID)
 		},
 	}
 	var releaseCancelOnce sync.Once
@@ -860,10 +882,14 @@ func TestStopTaskForCoordinator_SerializesReadyBeforeQueueDrain(t *testing.T) {
 	releaseCancelWrite()
 	stopOutcome := coordinatorStopAwaitCall(t, stopDone)
 	coordinatorStopAwaitSignal(t, readyDone, "ready event guarded reread")
-	coordinatorStopAwaitSignal(t, teardownCalled, "runtime teardown")
+	select {
+	case <-teardownCalled:
+		t.Fatal("session without an exact execution receipt must not be stopped by ID")
+	default:
+	}
 
 	require.NoError(t, stopOutcome.err)
-	require.Equal(t, CoordinatorTaskStopStatusStopped, stopOutcome.result.Status)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, stopOutcome.result.Status)
 	session, err := baseRepo.GetTaskSession(ctx, "session-ready")
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateCancelled, session.State)

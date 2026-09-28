@@ -1146,6 +1146,50 @@ func (m *Manager) StopAgentWithReason(ctx context.Context, executionID string, r
 	}
 	execution.remoteInstanceLifecycleMu.Lock()
 	defer execution.remoteInstanceLifecycleMu.Unlock()
+	return m.stopAgentWithReasonLocked(ctx, executionID, execution, reason, force)
+}
+
+// StopExecutionWithFence closes command admission and gracefully stops the
+// same retained lifecycle execution while its replacement lock is held. The
+// receipt callback runs after the exact fence and before teardown can remove
+// the executor row.
+func (m *Manager) StopExecutionWithFence(
+	ctx context.Context,
+	executionID string,
+	generation uint64,
+	reason string,
+	consumeReceipt func(*ExecutionFenceReceipt) error,
+) error {
+	execution, exists := m.executionStore.Get(executionID)
+	if !exists || execution.ID != executionID {
+		return fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
+	}
+	execution.remoteInstanceLifecycleMu.Lock()
+	defer execution.remoteInstanceLifecycleMu.Unlock()
+	if current, currentExists := m.executionStore.Get(executionID); !currentExists || current != execution {
+		return fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
+	}
+	agentctlReceipt, err := execution.CloseExecutionAdmission(ctx, generation)
+	if err != nil {
+		return err
+	}
+	receipt := &ExecutionFenceReceipt{
+		ExecutionID: agentctlReceipt.ExecutionID, AgentctlGeneration: agentctlReceipt.AgentctlGeneration,
+		AdmissionClosedAt: agentctlReceipt.AdmissionClosedAt, ManagedProcessesDrained: agentctlReceipt.ManagedProcessesDrained,
+	}
+	if receipt.ExecutionID != executionID || receipt.AgentctlGeneration != generation || receipt.AdmissionClosedAt.IsZero() {
+		return errors.New("agentctl returned a mismatched execution fence receipt")
+	}
+	if consumeReceipt != nil {
+		if err := consumeReceipt(receipt); err != nil {
+			return fmt.Errorf("persist execution fence receipt: %w", err)
+		}
+	}
+	return m.stopAgentWithReasonLocked(ctx, executionID, execution, reason, false)
+}
+
+//nolint:cyclop // The existing stop sequence must keep lifecycle ownership serialized.
+func (m *Manager) stopAgentWithReasonLocked(ctx context.Context, executionID string, execution *AgentExecution, reason string, force bool) error {
 	if current, currentExists := m.executionStore.Get(executionID); !currentExists || current != execution {
 		return fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
 	}

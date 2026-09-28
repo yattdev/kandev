@@ -521,6 +521,26 @@ func (m *mockAgentManager) CloseExecutionAdmission(ctx context.Context, executio
 	}
 	return m.closeExecutionAdmissionFunc(ctx, executionID, generation)
 }
+
+func (m *mockAgentManager) StopExecutionWithFence(
+	ctx context.Context,
+	executionID string,
+	generation uint64,
+	reason string,
+	consumeReceipt func(*agentRuntime.ExecutionFenceReceipt) error,
+) error {
+	receipt, err := m.CloseExecutionAdmission(ctx, executionID, generation)
+	if err != nil {
+		return err
+	}
+	if consumeReceipt != nil {
+		if err := consumeReceipt(receipt); err != nil {
+			return err
+		}
+	}
+	return m.StopAgentWithReason(ctx, executionID, reason, false)
+}
+
 func (m *mockAgentManager) PromptAgent(ctx context.Context, executionID string, prompt string, attachments []v1.MessageAttachment, dispatchOnly bool) (*executor.PromptResult, error) {
 	m.mu.Lock()
 	first := len(m.capturedPrompts) == 0

@@ -42,13 +42,15 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 	// @covers AC-STOP-FENCE-004
 	// An exact agentctl receipt only advances the durable operation to
 	// incomplete. The executor row remains running, so it cannot claim stopped.
+	agentctlCutoff := time.Now().UTC()
 	incompleteReceipt, err := repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", models.CoordinatorStopFenceReceipt{
-		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: false,
+		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: agentctlCutoff, ManagedProcessesDrained: false,
 	})
 	require.NoError(t, err)
 	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, incompleteReceipt.Status)
 	require.Equal(t, "managed_processes_not_drained", incompleteReceipt.ReasonCode)
 	require.Equal(t, models.CoordinatorStopProofScopeAgentctlFence, incompleteReceipt.ProofScope)
+	require.Equal(t, agentctlCutoff, incompleteReceipt.AdmissionCutoff, "the durable receipt must contain agentctl's observed admission cutoff")
 
 	// @covers AC-STOP-FENCE-002
 	late := &models.ExecutorRunning{
@@ -56,6 +58,7 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 		Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: "execution-a", AgentctlGeneration: 1, Status: models.ExecutorRunningStatusReady,
 	}
 	require.Error(t, repo.UpsertExecutorRunning(ctx, late), "the fenced agentctl incarnation must not re-register")
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "session-stop", models.TaskSessionStateStarting, ""), "an explicit restart reopens the session before registering a new generation")
 	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
 		ID: "session-stop", SessionID: "session-stop", TaskID: "task-stop", ExecutorID: "executor",
 		Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: "execution-a", AgentctlGeneration: 2, Status: models.ExecutorRunningStatusStarting,
@@ -67,7 +70,7 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 
 	session, err := repo.GetTaskSession(ctx, "session-stop")
 	require.NoError(t, err)
-	require.Equal(t, models.TaskSessionStateCancelled, session.State)
+	require.Equal(t, models.TaskSessionStateStarting, session.State)
 	turn, err := repo.GetTurn(ctx, "turn-stop")
 	require.NoError(t, err)
 	require.NotNil(t, turn.CompletedAt)
@@ -78,7 +81,7 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 	})
 	require.NoError(t, err)
 	require.False(t, created)
-	require.Equal(t, op.AdmissionCutoff, repeated.AdmissionCutoff)
+	require.Equal(t, agentctlCutoff, repeated.AdmissionCutoff)
 
 	// @covers AC-STOP-FENCE-004, AC-STOP-FENCE-005
 	incomplete, changed, err := repo.MarkCoordinatorStopOperationIncomplete(ctx, "stop-op-a", "execution-a", 1, "agentctl_unreachable")
@@ -99,6 +102,31 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 
 	_, _, err = repo.MarkCoordinatorStopOperationIncomplete(ctx, "stop-op-a", "execution-a", 2, "agentctl_unreachable")
 	require.ErrorIs(t, err, models.ErrExecutionRotated)
+}
+
+// @covers AC-STOP-FENCE-003, AC-STOP-FENCE-004
+func TestFinalizeCoordinatorStopOperationRequiresCapturedTerminalExecutor(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForSessionTests(t)
+	now := time.Now().UTC()
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "task-finalize", Title: "finalize", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "session-finalize", TaskID: "task-finalize", State: models.TaskSessionStateRunning, StartedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: "turn-finalize", TaskID: "task-finalize", TaskSessionID: "session-finalize", StartedAt: now, CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{ID: "session-finalize", SessionID: "session-finalize", TaskID: "task-finalize", ExecutorID: "executor", Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: "execution-finalize", AgentctlGeneration: 1, Status: models.ExecutorRunningStatusRunning}))
+	running, err := repo.GetExecutorRunningBySessionID(ctx, "session-finalize")
+	require.NoError(t, err)
+	op, _, err := repo.CaptureCoordinatorStopOperation(ctx, models.CoordinatorStopOperation{ID: "stop-op-finalize", TaskID: "task-finalize", SessionID: "session-finalize", TurnID: "turn-finalize", ExecutionID: "execution-finalize", AgentctlGeneration: 1, ExecutorStatus: running.Status, ExecutorUpdatedAt: running.UpdatedAt})
+	require.NoError(t, err)
+	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, op.ID, models.CoordinatorStopFenceReceipt{ExecutionID: op.ExecutionID, AgentctlGeneration: op.AgentctlGeneration, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true})
+	require.NoError(t, err)
+
+	_, err = repo.FinalizeCoordinatorStopOperation(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration)
+	require.ErrorIs(t, err, models.ErrExecutionRotated, "a live captured executor cannot be promoted")
+	require.NoError(t, repo.DeleteExecutorRunningBySessionID(ctx, op.SessionID))
+
+	finalized, err := repo.FinalizeCoordinatorStopOperation(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration)
+	require.NoError(t, err)
+	require.Equal(t, models.CoordinatorStopOperationStatusStopped, finalized.Status)
 }
 
 // @covers AC-STOP-FENCE-003
