@@ -31,7 +31,18 @@ func (r *Repository) CreateTaskRepository(ctx context.Context, taskRepo *models.
 		metadataJSON = []byte("{}")
 	}
 
-	_, err = r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(ctx, tx, taskRepo.TaskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskRepo.TaskID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_repositories (
 			id, task_id, repository_id, base_branch, checkout_branch, branch_policy_id, branch_policy_name,
 			branch_policy_base_branch, branch_policy_branch_template, branch_policy_pull_request_target,
@@ -41,7 +52,10 @@ func (r *Repository) CreateTaskRepository(ctx context.Context, taskRepo *models.
 		taskRepo.BranchPolicyID, taskRepo.BranchPolicyName, taskRepo.BranchPolicyBaseBranch,
 		taskRepo.BranchPolicyBranchTemplate, taskRepo.BranchPolicyPullRequestTarget,
 		taskRepo.Position, string(metadataJSON), taskRepo.CreatedAt, taskRepo.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // GetTaskRepository retrieves a task-repository link by ID
