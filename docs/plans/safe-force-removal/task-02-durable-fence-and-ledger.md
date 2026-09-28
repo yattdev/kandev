@@ -163,3 +163,19 @@ then GREEN after the fence. The full SQLite repository suite and focused race
 tests passed. PostgreSQL execution remains the CI-only parity gate because
 `KANDEV_TEST_POSTGRES_DSN` is unavailable locally. W02 remains in progress;
 the next lifecycle audit must select one remaining unfenced production writer.
+
+## Dynamic route projection fence receipt (2026-09-28)
+
+`UpdateTaskSessionDynamicRouteIfCurrent` now resolves the stored session owner,
+locks its exact task row, and checks the force-removal claim in the same
+transaction as its existing route-generation and prior-state CAS. A held task
+returns `ErrForceRemovalTaskHeld` without changing the route projection. An
+unrelated task still updates, and a stale generation remains a no-op.
+
+The focused test was RED because the held projection changed without error,
+then GREEN after the fence. Focused `-race` and the full SQLite repository
+suite passed. The work-order service suite still fails in the previously
+recorded directory-listing fixture (`parent directory cannot be accessed`),
+outside this repository writer. PostgreSQL execution remains a CI-only parity
+gate while `KANDEV_TEST_POSTGRES_DSN` is unavailable locally. W02 remains in
+progress; the next audit must select one remaining unfenced production writer.
