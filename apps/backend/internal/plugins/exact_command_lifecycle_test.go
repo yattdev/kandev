@@ -91,6 +91,7 @@ type exactIssuerFixture struct {
 	database      *sqlx.DB
 	repo          *tasksqlite.Repository
 	queue         messagequeue.Repository
+	evidence      *exactsnapshotcomposite.Repository
 	issuer        ExactTaskCommandGrantIssuer
 	approval      tasksqlite.ExactTaskCommandApproval
 	grant         tasksqlite.ExactTaskCommandGrant
@@ -158,7 +159,31 @@ func newExactIssuerFixture(t *testing.T) *exactIssuerFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &exactIssuerFixture{ctx: ctx, database: database, repo: repo, queue: queue, issuer: issuer, approval: approval, grant: tasksqlite.ExactTaskCommandGrant{ID: "grant", InstallationID: approval.InstallationID, WorkspaceID: approval.WorkspaceID, TaskID: "task", CapabilityID: approval.CapabilityID, ReceiptAuditID: approval.ReceiptAuditID, ApprovalRevision: approval.Revision, ActionDigest: "marker", IdempotencyKey: "key", ExpiresAt: time.Now().UTC().Add(time.Minute)}, snapshotToken: snapshot.Token, pending: page.PendingTransitions[0]}
+	return &exactIssuerFixture{ctx: ctx, database: database, repo: repo, queue: queue, evidence: evidence, issuer: issuer, approval: approval, grant: tasksqlite.ExactTaskCommandGrant{ID: "grant", InstallationID: approval.InstallationID, WorkspaceID: approval.WorkspaceID, TaskID: "task", CapabilityID: approval.CapabilityID, ReceiptAuditID: approval.ReceiptAuditID, ApprovalRevision: approval.Revision, ActionDigest: "marker", IdempotencyKey: "key", ExpiresAt: time.Now().UTC().Add(time.Minute)}, snapshotToken: snapshot.Token, pending: page.PendingTransitions[0]}
+}
+
+func TestExactCommandCompositeBridgeMintsAndConsumesGrantAtomically(t *testing.T) {
+	f := newExactIssuerFixture(t)
+	task, err := f.repo.GetTask(f.ctx, f.grant.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence, err := f.repo.ExactTaskCommandWorkspaceFence(f.ctx, f.grant.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := tasksqlite.ExactTaskDescriptionCommand{GrantID: f.grant.ID, InstallationID: f.grant.InstallationID, WorkspaceID: f.grant.WorkspaceID, TaskID: f.grant.TaskID, CapabilityID: f.grant.CapabilityID, ReceiptAuditID: f.grant.ReceiptAuditID, ApprovalRevision: f.grant.ApprovalRevision, ActionDigest: f.grant.ActionDigest, IdempotencyKey: f.grant.IdempotencyKey, Marker: "[marker]", ExpectedResourceVersion: task.ResourceVersion, ExpectedFence: fence, PendingSnapshotToken: f.snapshotToken, PendingTransition: &f.pending}
+	receipt, err := f.repo.ExecuteExactTaskDescriptionCommandWithCompositeEvidence(f.ctx, f.evidence, f.snapshotToken, f.pending, f.grant, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.AuditID != f.grant.IdempotencyKey {
+		t.Fatalf("receipt = %+v", receipt)
+	}
+	stored, err := f.repo.GetTask(f.ctx, f.grant.TaskID)
+	if err != nil || stored.Description != command.Marker || stored.ResourceVersion != receipt.ResourceVersion {
+		t.Fatalf("stored task = %+v, %v", stored, err)
+	}
 }
 
 func (f *exactIssuerFixture) assertNoEffect(t *testing.T) {

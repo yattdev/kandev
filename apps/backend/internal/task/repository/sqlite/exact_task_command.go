@@ -279,6 +279,50 @@ func (r *Repository) IssueExactTaskCommandGrantInAuthorityTx(ctx context.Context
 	return r.issueExactTaskCommandGrantInAuthorityTx(ctx, authority, tx, grant, snapshotToken, observed)
 }
 
+// ExecuteExactTaskDescriptionCommandWithCompositeEvidence resolves the first
+// exact command attempt in one composite-authority transaction. The Host owns
+// grant construction; callers never supply an authority token or workspace
+// fence that can be used outside this transaction.
+func (r *Repository) ExecuteExactTaskDescriptionCommandWithCompositeEvidence(ctx context.Context, evidence *exactsnapshotcomposite.Repository, compositeSnapshotToken string, observed messagequeue.ExactPendingTransition, grant ExactTaskCommandGrant, command ExactTaskDescriptionCommand) (ExactTaskDescriptionReceipt, error) {
+	if !r.exactTaskDescriptionCommandAvailable(command) || evidence == nil || compositeSnapshotToken == "" || !exactTaskCommandMatchesGrant(command, grant) {
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	authority, authorityTx, err := evidence.BeginPendingTransitionAuthorityTx(ctx)
+	if err != nil || authority == nil || authorityTx == nil || !authority.Matches(r.db) {
+		if authorityTx != nil {
+			_ = authorityTx.Rollback()
+		}
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	defer func() { _ = authorityTx.Rollback() }()
+	tx := authorityTx.SQLX()
+	if receipt, replayed, replayErr := exactTaskCommandReplay(ctx, r, tx, command); replayed {
+		if replayErr != nil {
+			return ExactTaskDescriptionReceipt{}, replayErr
+		}
+		return receipt, authorityTx.Commit()
+	}
+	if err = evidence.ValidatePendingTransitionInAuthorityTx(ctx, authority, authorityTx, compositeSnapshotToken, observed); err != nil {
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	if err = r.issueExactTaskCommandGrantInTx(ctx, tx, grant); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	return r.applyExactTaskDescriptionCommandInTx(ctx, tx, command, authorityTx.Commit)
+}
+
+func exactTaskCommandMatchesGrant(command ExactTaskDescriptionCommand, grant ExactTaskCommandGrant) bool {
+	return command.GrantID == grant.ID &&
+		command.InstallationID == grant.InstallationID &&
+		command.WorkspaceID == grant.WorkspaceID &&
+		command.TaskID == grant.TaskID &&
+		command.CapabilityID == grant.CapabilityID &&
+		command.ReceiptAuditID == grant.ReceiptAuditID &&
+		command.ApprovalRevision == grant.ApprovalRevision &&
+		command.ActionDigest == grant.ActionDigest &&
+		command.IdempotencyKey == grant.IdempotencyKey
+}
+
 func (r *Repository) issueExactTaskCommandGrantInTx(ctx context.Context, tx *sqlx.Tx, grant ExactTaskCommandGrant) error {
 	if !r.ExactTaskCommandAvailable() || tx == nil || !validExactCommandGrant(grant) || grant.CapabilityID != exactTaskDescriptionCommandCapability || !grant.ExpiresAt.After(r.nowUTC()) {
 		return ErrExactTaskCommandUnavailable
@@ -317,7 +361,14 @@ func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, comma
 	if err = commandTx.validatePending(ctx, command); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
-	tx := commandTx.tx
+	return r.applyExactTaskDescriptionCommandInTx(ctx, commandTx.tx, command, commandTx.commit)
+}
+
+func (r *Repository) applyExactTaskDescriptionCommandInTx(ctx context.Context, tx *sqlx.Tx, command ExactTaskDescriptionCommand, commit func() error) (ExactTaskDescriptionReceipt, error) {
+	if tx == nil || commit == nil {
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	var err error
 	if err = requireExactCommandApproval(ctx, r, tx, command.InstallationID, command.WorkspaceID, command.CapabilityID, command.ApprovalRevision); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
@@ -346,7 +397,7 @@ func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, comma
 	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_audits(audit_id, installation_id, workspace_id, task_id, action_digest, idempotency_key, resource_version, command_identity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`), command.IdempotencyKey, command.InstallationID, command.WorkspaceID, command.TaskID, command.ActionDigest, command.IdempotencyKey, version, exactTaskCommandIdentity(command), now); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
-	if err = commandTx.commit(); err != nil {
+	if err = commit(); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
 	return ExactTaskDescriptionReceipt{AuditID: command.IdempotencyKey, ResourceVersion: version}, nil
