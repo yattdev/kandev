@@ -428,3 +428,35 @@ func TestClaimForceRemovalBlocksAbsentStateSessionMetadataWithoutPersistingIt(t 
 	require.NoError(t, err)
 	require.False(t, written)
 }
+
+func TestClaimForceRemovalBlocksStateGuardedSessionMetadataRemoval(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-remove-state-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-remove-state-held", "force-remove-state-foreign", "force-remove-state-terminal"} {
+		state := models.TaskSessionStateCreated
+		if taskID == "force-remove-state-terminal" {
+			state = models.TaskSessionStateCompleted
+		}
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-remove-state-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID, State: state, Metadata: map[string]interface{}{"marker": true}}))
+	}
+	held, err := repo.GetTask(ctx, "force-remove-state-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "remove-state", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	removed, err := repo.RemoveSessionMetadataKeyIfState(ctx, "force-remove-state-held-session", "marker", models.TaskSessionStateCreated)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, removed)
+	heldSession, err := repo.GetTaskSession(ctx, "force-remove-state-held-session")
+	require.NoError(t, err)
+	require.Contains(t, heldSession.Metadata, "marker")
+
+	removed, err = repo.RemoveSessionMetadataKeyIfState(ctx, "force-remove-state-foreign-session", "marker", models.TaskSessionStateCreated)
+	require.NoError(t, err)
+	require.True(t, removed)
+	removed, err = repo.RemoveSessionMetadataKeyIfState(ctx, "force-remove-state-terminal-session", "marker", models.TaskSessionStateCreated)
+	require.NoError(t, err)
+	require.False(t, removed)
+}
