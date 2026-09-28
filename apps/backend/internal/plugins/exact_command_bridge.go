@@ -60,3 +60,10 @@ func (s *Service) exactTaskCommandApprovalBridge() ExactTaskCommandApprovalBridg
 	defer s.mu.Unlock()
 	return s.exactCommandApprovals
 }
+
+// ExactTaskCommandAuthorityAvailable reports whether startup bound this
+// service to a same-writer exact-command authority. It discloses no grant or
+// approval state and is used by composition health checks.
+func (s *Service) ExactTaskCommandAuthorityAvailable() bool {
+	return s.exactTaskCommandApprovalBridge() != nil
+}

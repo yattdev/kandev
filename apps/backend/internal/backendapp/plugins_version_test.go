@@ -36,6 +36,16 @@ func TestProvideServicesWiresPluginsKandevVersion(t *testing.T) {
 	}
 }
 
+func TestProvideServicesWiresExactCommandAuthorityToTaskSQLite(t *testing.T) {
+	services, _, repos := provideTestServices(t, "exact-command-authority")
+	if services.Plugins == nil || !services.Plugins.ExactTaskCommandAuthorityAvailable() {
+		t.Fatal("provideServices did not bind the exact command authority")
+	}
+	if repos.Task == nil || !repos.Task.ExactTaskCommandAvailable() {
+		t.Fatal("test bootstrap did not provide a SQLite exact command writer")
+	}
+}
+
 func TestRequiredStoreBootstrapCompleteness(t *testing.T) {
 	_, _, repos := provideTestServices(t, "test-bootstrap-completeness")
 
