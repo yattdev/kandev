@@ -2596,7 +2596,18 @@ func (r *Repository) RecoverTaskSessionByCandidate(
 		RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
 			review_status, metadata, task_environment_id, state, updated_at, is_primary
 	`
-	rows, err := r.db.QueryContext(writeCtx, r.db.Rebind(query), args...)
+	tx, err := r.db.BeginTxx(writeCtx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(writeCtx, tx, candidate.TaskID); err != nil {
+		return nil, err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(writeCtx, r.db, tx, candidate.TaskID); err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(writeCtx, r.db.Rebind(query), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2608,7 +2619,16 @@ func (r *Repository) RecoverTaskSessionByCandidate(
 	if err != nil {
 		return nil, err
 	}
-	return session, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 func interruptedRecoveryToken(candidate models.ActiveSessionRecoveryCandidate) string {
