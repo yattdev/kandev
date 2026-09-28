@@ -7,8 +7,216 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
 )
+
+type exactTaskCommandQueue interface {
+	messagequeue.Repository
+	messagequeue.ExactPendingTransitionReader
+	messagequeue.ExactPendingTransitionAuthorityReader
+}
+
+func TestIssueExactTaskCommandGrantInAuthorityTxBindsPendingEvidenceAndCommit(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForArchiveTests(t, "exact-grant-authority")
+	queueRepo, err := messagequeue.NewSQLiteRepository(repo.db, repo.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, ok := queueRepo.(exactTaskCommandQueue)
+	if !ok {
+		t.Fatalf("queue does not provide exact authority: %T", queueRepo)
+	}
+	repo.SetExactTaskCommandPendingValidator(queue)
+
+	task, err := repo.GetTask(ctx, "exact-grant-authority")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = repo.CreateTaskSession(ctx, &models.TaskSession{ID: "grant-session", TaskID: task.ID, State: models.TaskSessionStateCreated}); err != nil {
+		t.Fatal(err)
+	}
+	if err = queue.SetPendingMove(ctx, "grant-session", &messagequeue.PendingMove{TaskID: task.ID, WorkflowID: "workflow", WorkflowStepID: "step"}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := queue.OpenExactPendingTransitionSnapshot(ctx, messagequeue.ExactPendingTransitionSnapshotRequest{WorkspaceID: task.WorkspaceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := queue.PageExactPendingTransitionSnapshot(ctx, snapshot.Token, 0, 1)
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending evidence = %#v, %v", pending, err)
+	}
+	approval := ExactTaskCommandApproval{InstallationID: "installation", WorkspaceID: task.WorkspaceID, CapabilityID: exactTaskDescriptionCommandCapability, ReceiptAuditID: "receipt", Revision: 1}
+	if err = repo.UpsertExactTaskCommandApproval(ctx, approval); err != nil {
+		t.Fatal(err)
+	}
+	if err = repo.RecordExactTaskCommandReceipt(ctx, approval, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	grant := ExactTaskCommandGrant{ID: "grant", InstallationID: approval.InstallationID, WorkspaceID: task.WorkspaceID, TaskID: task.ID, CapabilityID: approval.CapabilityID, ReceiptAuditID: approval.ReceiptAuditID, ApprovalRevision: approval.Revision, ActionDigest: "marker-v1", IdempotencyKey: "command", ExpiresAt: time.Now().UTC().Add(time.Minute)}
+	authority, err := exactsnapshotauthority.NewSQLite(repo.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := queue.BeginExactPendingTransitionSnapshotAuthorityTx(ctx, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err = repo.issueExactTaskCommandGrantInAuthorityTx(ctx, authority, tx, grant, snapshot.Token, pending[0]); err != nil {
+		t.Fatalf("issue grant in authority transaction: %v", err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err = repo.db.GetContext(ctx, &count, repo.db.Rebind(`SELECT COUNT(*) FROM exact_task_command_grants WHERE id = ?`), grant.ID); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("grant count = %d, want 1", count)
+	}
+}
+
+func TestIssueExactTaskCommandGrantInAuthorityTxRejectsChangedEvidenceWithoutEffect(t *testing.T) {
+	for name, mutate := range map[string]func(t *testing.T, fixture *exactTaskGrantAuthorityFixture){
+		"stale pending row": func(t *testing.T, fixture *exactTaskGrantAuthorityFixture) {
+			t.Helper()
+			if _, err := fixture.queue.TakePendingMove(fixture.ctx, fixture.pending.SessionID); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"foreign row": func(t *testing.T, fixture *exactTaskGrantAuthorityFixture) {
+			t.Helper()
+			fixture.pending.WorkspaceID = "other-workspace"
+		},
+		"expired snapshot": func(t *testing.T, fixture *exactTaskGrantAuthorityFixture) {
+			t.Helper()
+			if _, err := fixture.repo.db.Exec(fixture.repo.db.Rebind(`UPDATE exact_pending_snapshots SET expires_at = ? WHERE token = ?`), time.Now().UTC().Add(-time.Minute), fixture.snapshotToken); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"revoked approval": func(t *testing.T, fixture *exactTaskGrantAuthorityFixture) {
+			t.Helper()
+			if err := fixture.repo.RevokeExactTaskCommandApproval(fixture.ctx, fixture.approval); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"expired grant": func(t *testing.T, fixture *exactTaskGrantAuthorityFixture) {
+			t.Helper()
+			fixture.grant.ExpiresAt = time.Now().UTC().Add(-time.Minute)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fixture := newExactTaskGrantAuthorityFixture(t)
+			mutate(t, fixture)
+			tx, err := fixture.queue.BeginExactPendingTransitionSnapshotAuthorityTx(fixture.ctx, fixture.authority)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = fixture.repo.issueExactTaskCommandGrantInAuthorityTx(fixture.ctx, fixture.authority, tx, fixture.grant, fixture.snapshotToken, fixture.pending); !errors.Is(err, ErrExactTaskCommandUnavailable) {
+				t.Fatalf("issue changed evidence = %v", err)
+			}
+			if err = tx.Rollback(); err != nil {
+				t.Fatal(err)
+			}
+			assertExactTaskGrantAuthorityNoEffect(t, fixture)
+		})
+	}
+}
+
+func TestIssueExactTaskCommandGrantInAuthorityTxRollsBackGrant(t *testing.T) {
+	fixture := newExactTaskGrantAuthorityFixture(t)
+	tx, err := fixture.queue.BeginExactPendingTransitionSnapshotAuthorityTx(fixture.ctx, fixture.authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = fixture.repo.issueExactTaskCommandGrantInAuthorityTx(fixture.ctx, fixture.authority, tx, fixture.grant, fixture.snapshotToken, fixture.pending); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	assertExactTaskGrantAuthorityNoEffect(t, fixture)
+}
+
+type exactTaskGrantAuthorityFixture struct {
+	ctx           context.Context
+	repo          *Repository
+	queue         exactTaskCommandQueue
+	authority     *exactsnapshotauthority.Authority
+	approval      ExactTaskCommandApproval
+	grant         ExactTaskCommandGrant
+	snapshotToken string
+	pending       messagequeue.ExactPendingTransition
+}
+
+func newExactTaskGrantAuthorityFixture(t *testing.T) *exactTaskGrantAuthorityFixture {
+	t.Helper()
+	ctx := context.Background()
+	repo := newRepoForArchiveTests(t, "exact-grant-authority")
+	queueRepo, err := messagequeue.NewSQLiteRepository(repo.db, repo.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, ok := queueRepo.(exactTaskCommandQueue)
+	if !ok {
+		t.Fatalf("queue does not provide exact authority: %T", queueRepo)
+	}
+	repo.SetExactTaskCommandPendingValidator(queue)
+	task, err := repo.GetTask(ctx, "exact-grant-authority")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = repo.CreateTaskSession(ctx, &models.TaskSession{ID: "grant-session", TaskID: task.ID, State: models.TaskSessionStateCreated}); err != nil {
+		t.Fatal(err)
+	}
+	if err = queue.SetPendingMove(ctx, "grant-session", &messagequeue.PendingMove{TaskID: task.ID, WorkflowID: "workflow", WorkflowStepID: "step"}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := queue.OpenExactPendingTransitionSnapshot(ctx, messagequeue.ExactPendingTransitionSnapshotRequest{WorkspaceID: task.WorkspaceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := queue.PageExactPendingTransitionSnapshot(ctx, snapshot.Token, 0, 1)
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending evidence = %#v, %v", pending, err)
+	}
+	approval := ExactTaskCommandApproval{InstallationID: "installation", WorkspaceID: task.WorkspaceID, CapabilityID: exactTaskDescriptionCommandCapability, ReceiptAuditID: "receipt", Revision: 1}
+	if err = repo.UpsertExactTaskCommandApproval(ctx, approval); err != nil {
+		t.Fatal(err)
+	}
+	if err = repo.RecordExactTaskCommandReceipt(ctx, approval, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := exactsnapshotauthority.NewSQLite(repo.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &exactTaskGrantAuthorityFixture{ctx: ctx, repo: repo, queue: queue, authority: authority, approval: approval, grant: ExactTaskCommandGrant{ID: "grant", InstallationID: approval.InstallationID, WorkspaceID: task.WorkspaceID, TaskID: task.ID, CapabilityID: approval.CapabilityID, ReceiptAuditID: approval.ReceiptAuditID, ApprovalRevision: approval.Revision, ActionDigest: "marker-v1", IdempotencyKey: "command", ExpiresAt: time.Now().UTC().Add(time.Minute)}, snapshotToken: snapshot.Token, pending: pending[0]}
+}
+
+func assertExactTaskGrantAuthorityNoEffect(t *testing.T, fixture *exactTaskGrantAuthorityFixture) {
+	t.Helper()
+	var grants, audits int
+	if err := fixture.repo.db.Get(&grants, fixture.repo.db.Rebind(`SELECT COUNT(*) FROM exact_task_command_grants WHERE id = ?`), fixture.grant.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.repo.db.Get(&audits, fixture.repo.db.Rebind(`SELECT COUNT(*) FROM exact_task_command_audits WHERE idempotency_key = ?`), fixture.grant.IdempotencyKey); err != nil {
+		t.Fatal(err)
+	}
+	task, err := fixture.repo.GetTask(fixture.ctx, fixture.grant.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grants != 0 || audits != 0 || task.Description != "" {
+		t.Fatalf("unexpected authority issuance effect: grants=%d audits=%d task=%+v", grants, audits, task)
+	}
+}
 
 func TestExactTaskCommandConsumesGrantAndPersistsReceipt(t *testing.T) {
 	repo := newRepoForArchiveTests(t, "exact-command-task")

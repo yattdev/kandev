@@ -237,25 +237,46 @@ func (r *Repository) RevokeExactTaskCommandWorkspace(ctx context.Context, instal
 }
 
 func (r *Repository) IssueExactTaskCommandGrant(ctx context.Context, grant ExactTaskCommandGrant) error {
-	if !validExactCommandGrant(grant) || grant.CapabilityID != exactTaskDescriptionCommandCapability || !grant.ExpiresAt.After(r.nowUTC()) {
-		return ErrExactTaskCommandUnavailable
-	}
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err = requireExactCommandApproval(ctx, r, tx, grant.InstallationID, grant.WorkspaceID, grant.CapabilityID, grant.ApprovalRevision); err != nil {
+	if err = r.issueExactTaskCommandGrantInTx(ctx, tx, grant); err != nil {
 		return err
 	}
-	if err = requireExactCommandReceipt(ctx, r, tx, grant.InstallationID, grant.WorkspaceID, grant.CapabilityID, grant.ReceiptAuditID, grant.ApprovalRevision); err != nil {
+	return tx.Commit()
+}
+
+// issueExactTaskCommandGrantInAuthorityTx creates a grant only after the
+// queue-owned evidence validator has accepted its observed pending row in the
+// same sealed SQLite transaction. It intentionally leaves resolution of that
+// transaction to the authority owner.
+func (r *Repository) issueExactTaskCommandGrantInAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, grant ExactTaskCommandGrant, snapshotToken string, observed messagequeue.ExactPendingTransition) error {
+	if !r.ExactTaskCommandAvailable() || r.exactTaskCommandPendingValidator == nil || authority == nil || !authority.Matches(r.db) || tx == nil || !tx.Matches(authority) || snapshotToken == "" || observed.WorkspaceID != grant.WorkspaceID || observed.TaskID != grant.TaskID {
+		return ErrExactTaskCommandUnavailable
+	}
+	if err := r.exactTaskCommandPendingValidator.ValidateExactPendingTransitionInAuthorityTx(ctx, authority, tx, snapshotToken, observed); err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	return r.issueExactTaskCommandGrantInTx(ctx, tx.SQLX(), grant)
+}
+
+func (r *Repository) issueExactTaskCommandGrantInTx(ctx context.Context, tx *sqlx.Tx, grant ExactTaskCommandGrant) error {
+	if !r.ExactTaskCommandAvailable() || tx == nil || !validExactCommandGrant(grant) || grant.CapabilityID != exactTaskDescriptionCommandCapability || !grant.ExpiresAt.After(r.nowUTC()) {
+		return ErrExactTaskCommandUnavailable
+	}
+	if err := requireExactCommandApproval(ctx, r, tx, grant.InstallationID, grant.WorkspaceID, grant.CapabilityID, grant.ApprovalRevision); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_grants(id, installation_id, workspace_id, task_id, capability_id, receipt_audit_id, approval_revision, action_digest, idempotency_key, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), grant.ID, grant.InstallationID, grant.WorkspaceID, grant.TaskID, grant.CapabilityID, grant.ReceiptAuditID, grant.ApprovalRevision, grant.ActionDigest, grant.IdempotencyKey, grant.ExpiresAt.UTC())
+	if err := requireExactCommandReceipt(ctx, r, tx, grant.InstallationID, grant.WorkspaceID, grant.CapabilityID, grant.ReceiptAuditID, grant.ApprovalRevision); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_grants(id, installation_id, workspace_id, task_id, capability_id, receipt_audit_id, approval_revision, action_digest, idempotency_key, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), grant.ID, grant.InstallationID, grant.WorkspaceID, grant.TaskID, grant.CapabilityID, grant.ReceiptAuditID, grant.ApprovalRevision, grant.ActionDigest, grant.IdempotencyKey, grant.ExpiresAt.UTC())
 	if err != nil {
 		return fmt.Errorf("issue exact task command grant: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 // ApplyExactTaskDescriptionCommand is intentionally unadvertised. It proves
