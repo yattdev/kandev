@@ -245,7 +245,7 @@ func (r *Repository) ClaimQueuedMessageAttachments(
 		return fmt.Errorf("begin queued attachment claim: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.ensureQueuedAttachmentTaskAvailableTx(ctx, tx, taskID); err != nil {
+	if err := r.ensureTaskAttachmentAvailableTx(ctx, tx, taskID); err != nil {
 		return err
 	}
 
@@ -270,7 +270,7 @@ func (r *Repository) ClaimQueuedMessageAttachments(
 	return nil
 }
 
-func (r *Repository) ensureQueuedAttachmentTaskAvailableTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
+func (r *Repository) ensureTaskAttachmentAvailableTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
 	if taskID == "" {
 		return nil
 	}
@@ -377,7 +377,7 @@ func (r *Repository) RestoreQueuedMessageAttachments(
 		return fmt.Errorf("begin queued attachment restore: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.ensureQueuedAttachmentTaskAvailableTx(ctx, tx, taskID); err != nil {
+	if err := r.ensureTaskAttachmentAvailableTx(ctx, tx, taskID); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
@@ -707,6 +707,9 @@ func (r *Repository) PrepareClaimedMessageAttachmentsForRelease(
 		return nil, fmt.Errorf("begin claimed attachment release preparation: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureTaskAttachmentAvailableTx(ctx, tx, taskID); err != nil {
+		return nil, err
+	}
 	referenced, err := referencedAttachmentIDsTx(ctx, r, tx, taskID, sessionID, queueTablePresent)
 	if err != nil {
 		return nil, err
