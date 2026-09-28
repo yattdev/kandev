@@ -461,7 +461,9 @@ func validateCoordinatorStopTerminalBoundaryTx(ctx context.Context, tx *sqlx.Tx,
 	var generation uint64
 	err := tx.QueryRowxContext(ctx, db.Rebind(`SELECT agent_execution_id, agentctl_generation, status FROM executors_running WHERE session_id = ?`), op.SessionID).Scan(&currentExecutionID, &generation, &status)
 	if errors.Is(err, sql.ErrNoRows) {
-		return models.ErrExecutionRotated
+		// Lifecycle deletes the captured row after terminal teardown; its exact
+		// proof was checked before this transaction can promote the operation.
+		return nil
 	}
 	if err != nil || currentExecutionID != op.ExecutionID || generation != op.AgentctlGeneration || !terminalCoordinatorStopExecutorStatus(status) {
 		return models.ErrExecutionRotated

@@ -130,8 +130,9 @@ func TestFinalizeCoordinatorStopOperationRequiresCapturedTerminalExecutor(t *tes
 	require.NoError(t, err)
 	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, finalized.Status)
 	require.NoError(t, repo.RecordCoordinatorStopLifecycleProof(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration))
-	_, err = repo.FinalizeCoordinatorStopOperation(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration)
-	require.ErrorIs(t, err, models.ErrExecutionRotated, "row absence alone cannot certify an exact terminal executor")
+	finalized, err = repo.FinalizeCoordinatorStopOperation(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration)
+	require.NoError(t, err, "exact lifecycle proof certifies terminal deletion of the captured executor")
+	require.Equal(t, models.CoordinatorStopOperationStatusStopped, finalized.Status)
 }
 
 func TestCoordinatorStopCannotRecordLifecycleProofWithoutDrainedAgentctlReceipt(t *testing.T) {
