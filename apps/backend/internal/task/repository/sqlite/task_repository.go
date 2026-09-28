@@ -180,6 +180,16 @@ func (r *Repository) UpdateTaskRepository(ctx context.Context, taskRepo *models.
 			return lockErr
 		}
 	}
+	if currentTaskID != "" {
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, currentTaskID); err != nil {
+			return err
+		}
+		if taskRepo.TaskID != currentTaskID {
+			if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskRepo.TaskID); err != nil {
+				return err
+			}
+		}
+	}
 
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_repositories SET
