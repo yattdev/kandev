@@ -3187,13 +3187,6 @@ func (r *Repository) SetSessionMetadataKeyIfAbsent(
 	if err != nil {
 		return false, fmt.Errorf("failed to serialize metadata value: %w", err)
 	}
-	now := time.Now().UTC()
-	driver := r.db.DriverName()
-	path := key
-	if !dialect.IsPostgres(driver) {
-		path = "$." + key
-	}
-	query := setSessionMetadataKeyIfAbsentQuery(driver)
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -3206,12 +3199,25 @@ func (r *Repository) SetSessionMetadataKeyIfAbsent(
 		}
 		return false, err
 	}
-	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
 		return false, err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return false, err
+		}
 	}
 	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
 		return false, err
 	}
+	now := time.Now().UTC()
+	driver := r.db.DriverName()
+	path := key
+	if !dialect.IsPostgres(driver) {
+		path = "$." + key
+	}
+	query := setSessionMetadataKeyIfAbsentQuery(driver)
 	result, err := tx.ExecContext(ctx, r.db.Rebind(query), path, string(valueJSON), now, sessionID, path)
 	if err != nil {
 		return false, err
@@ -3357,17 +3363,44 @@ func (r *Repository) SetSessionMetadataKeyIfAbsentIfState(
 	if err != nil {
 		return false, fmt.Errorf("failed to serialize metadata value: %w", err)
 	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), sessionID).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return false, err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return false, err
+		}
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return false, err
+	}
 	now := time.Now().UTC()
 	driver := r.db.DriverName()
 	path := key
 	if !dialect.IsPostgres(driver) {
 		path = "$." + key
 	}
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(setSessionMetadataKeyIfAbsentIfStateQuery(driver)), path, string(valueJSON), now, sessionID, path, expectedState)
+	result, err := tx.ExecContext(ctx, r.db.Rebind(setSessionMetadataKeyIfAbsentIfStateQuery(driver)), path, string(valueJSON), now, sessionID, path, expectedState)
 	if err != nil {
 		return false, err
 	}
 	rows, _ := result.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
 	return rows > 0, nil
 }
 

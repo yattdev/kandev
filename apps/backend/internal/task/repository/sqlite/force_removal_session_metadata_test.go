@@ -393,3 +393,38 @@ func TestClaimForceRemovalBlocksACPSessionIDWithoutPersistingIt(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, written)
 }
+
+func TestClaimForceRemovalBlocksAbsentStateSessionMetadataWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-absent-state-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-absent-state-held", "force-absent-state-foreign", "force-absent-state-terminal"} {
+		state := models.TaskSessionStateCreated
+		if taskID == "force-absent-state-terminal" {
+			state = models.TaskSessionStateCompleted
+		}
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-absent-state-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID, State: state}))
+	}
+	held, err := repo.GetTask(ctx, "force-absent-state-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "absent-state", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	written, err := repo.SetSessionMetadataKeyIfAbsentIfState(ctx, "force-absent-state-held-session", "marker", true, models.TaskSessionStateCreated)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	heldSession, err := repo.GetTaskSession(ctx, "force-absent-state-held-session")
+	require.NoError(t, err)
+	require.NotContains(t, heldSession.Metadata, "marker")
+
+	written, err = repo.SetSessionMetadataKeyIfAbsentIfState(ctx, "force-absent-state-foreign-session", "marker", true, models.TaskSessionStateCreated)
+	require.NoError(t, err)
+	require.True(t, written)
+	written, err = repo.SetSessionMetadataKeyIfAbsentIfState(ctx, "force-absent-state-foreign-session", "marker", false, models.TaskSessionStateCreated)
+	require.NoError(t, err)
+	require.False(t, written)
+	written, err = repo.SetSessionMetadataKeyIfAbsentIfState(ctx, "force-absent-state-terminal-session", "marker", true, models.TaskSessionStateCreated)
+	require.NoError(t, err)
+	require.False(t, written)
+}
