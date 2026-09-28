@@ -74,19 +74,15 @@ func TestRetryPreparedWorkflowSessionUsesRecordedDestination(t *testing.T) {
 	taskRepo := newMockTaskRepo()
 	taskRepo.tasks[task.ID] = &v1.Task{ID: task.ID, WorkspaceID: "ws1", WorkflowID: "wf1",
 		Title: "Retry task", Description: "task brief", State: v1.TaskStateScheduling}
+	launches := 0
 	agentMgr := &mockAgentManager{repoForExecutionLookup: repo,
 		launchAgentFunc: func(context.Context, *executor.LaunchAgentRequest) (*executor.LaunchAgentResponse, error) {
+			launches++
 			return &executor.LaunchAgentResponse{AgentExecutionID: "retry-execution"}, nil
 		},
 	}
 	svc := createTestServiceWithScheduler(repo, steps, taskRepo, agentMgr)
-	response, err := svc.retryPreparedWorkflowSession(ctx, &LaunchSessionRequest{TaskID: task.ID, SessionID: "destination"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.SessionID != "destination" {
-		t.Fatalf("session = %q", response.SessionID)
-	}
+	svc.reconcilePreparedWorkflowSessionsOnStartup(ctx)
 	sessions, err := repo.ListTaskSessions(ctx, task.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +105,14 @@ func TestRetryPreparedWorkflowSessionUsesRecordedDestination(t *testing.T) {
 	startedDestination, err := repo.GetTaskSession(ctx, "destination")
 	if err != nil || startedDestination.State == models.TaskSessionStateCreated {
 		t.Fatalf("destination stayed CREATED: %v, error = %v", startedDestination, err)
+	}
+	if launches == 0 {
+		t.Fatal("startup recovery did not launch the recorded session")
+	}
+	initialLaunches := launches
+	svc.reconcilePreparedWorkflowSessionsOnStartup(ctx)
+	if launches != initialLaunches {
+		t.Fatalf("second recovery added %d agent launches", launches-initialLaunches)
 	}
 	if _, err := svc.retryPreparedWorkflowSession(ctx, &LaunchSessionRequest{TaskID: task.ID, SessionID: "destination"}); err == nil {
 		t.Fatal("a second retry could start another turn")

@@ -8,10 +8,46 @@ import (
 	"github.com/kandev/kandev/internal/task/models"
 	wfmodels "github.com/kandev/kandev/internal/workflow/models"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
+	"go.uber.org/zap"
 )
 
 type workflowRetryTransitionReader interface {
 	ListTaskStepTransitions(context.Context, string, int64, int) ([]models.StepTransition, error)
+}
+
+// reconcilePreparedWorkflowSessionsOnStartup retries recorded routes only after
+// the watcher and scheduler have started. A prior process cannot still own an
+// in-flight route at this point; retryPreparedWorkflowSession checks the exact
+// transition, sessions, workspace and profile before it starts a turn.
+func (s *Service) reconcilePreparedWorkflowSessionsOnStartup(ctx context.Context) {
+	lister, ok := s.repo.(lifecycleTaskMetadataLister)
+	if !ok {
+		return
+	}
+	tasks, err := lister.ListTasksWithMetadataKey(ctx, models.MetaKeyWorkflowSessionRoute)
+	if err != nil {
+		s.logger.Warn("failed to list prepared workflow routes on startup", zap.Error(err))
+		return
+	}
+	for _, task := range tasks {
+		if ctx.Err() != nil {
+			return
+		}
+		if task == nil || task.State != v1.TaskStateScheduling {
+			continue
+		}
+		route, ok := models.LoadWorkflowSessionRoute(task.Metadata)
+		if !ok || route.Phase != workflowSessionRoutePrepared || route.DestinationID == "" {
+			continue
+		}
+		_, err := s.retryPreparedWorkflowSession(ctx, &LaunchSessionRequest{
+			TaskID: task.ID, SessionID: route.DestinationID,
+		})
+		if err != nil {
+			s.logger.Warn("failed to reconcile prepared workflow route on startup",
+				zap.String("task_id", task.ID), zap.String("session_id", route.DestinationID), zap.Error(err))
+		}
+	}
 }
 
 // retryPreparedWorkflowSession completes only the exact route whose workspace
@@ -20,8 +56,11 @@ type workflowRetryTransitionReader interface {
 // destination has passed the ordinary workspace inventory and attach checks.
 func (s *Service) retryPreparedWorkflowSession(ctx context.Context, req *LaunchSessionRequest) (*LaunchSessionResponse, error) {
 	task, err := s.repo.GetTask(ctx, req.TaskID)
-	if err != nil || task == nil {
+	if err != nil {
 		return nil, fmt.Errorf("load workflow retry task: %w", err)
+	}
+	if task == nil {
+		return nil, fmt.Errorf("load workflow retry task: task is missing")
 	}
 	route, ok := models.LoadWorkflowSessionRoute(task.Metadata)
 	if !ok || route.Phase != workflowSessionRoutePrepared || route.DestinationID == "" ||
