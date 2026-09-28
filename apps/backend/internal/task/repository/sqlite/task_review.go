@@ -349,10 +349,17 @@ func (r *Repository) CreateTaskReviewFindings(ctx context.Context, findings []*m
 	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now().UTC()
+	taskIDs := make([]string, 0, len(findings))
+	for _, f := range findings {
+		applyFindingDefaults(f, now)
+		taskIDs = append(taskIDs, f.TaskID)
+	}
+	if err := r.ensureTaskReviewOwnersAvailableTx(ctx, tx, taskIDs); err != nil {
+		return err
+	}
 	stmt := tx.Rebind(`INSERT INTO task_review_findings (` + reviewFindingColumns + `)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	for _, f := range findings {
-		applyFindingDefaults(f, now)
 		if _, execErr := tx.ExecContext(ctx, stmt,
 			f.ID, f.RunID, f.TaskID, f.RepositoryID, f.RepositoryName, f.FilePath,
 			f.StartLine, f.EndLine, f.Side, string(f.Severity), f.Category, f.Title,
@@ -364,6 +371,15 @@ func (r *Repository) CreateTaskReviewFindings(ctx context.Context, findings []*m
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit task review findings: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) ensureTaskReviewOwnersAvailableTx(ctx context.Context, tx *sqlx.Tx, taskIDs []string) error {
+	for _, taskID := range orderedReviewRunTaskIDs(taskIDs) {
+		if err := r.ensureTaskReviewOwnerAvailableTx(ctx, tx, taskID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
