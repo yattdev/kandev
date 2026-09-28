@@ -3187,6 +3187,13 @@ func (r *Repository) SetSessionMetadataKeyIfAbsent(
 	if err != nil {
 		return false, fmt.Errorf("failed to serialize metadata value: %w", err)
 	}
+	now := time.Now().UTC()
+	driver := r.db.DriverName()
+	path := key
+	if !dialect.IsPostgres(driver) {
+		path = "$." + key
+	}
+	query := setSessionMetadataKeyIfAbsentQuery(driver)
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -3199,25 +3206,12 @@ func (r *Repository) SetSessionMetadataKeyIfAbsent(
 		}
 		return false, err
 	}
-	var taskExists bool
-	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
 		return false, err
-	}
-	if taskExists {
-		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
-			return false, err
-		}
 	}
 	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
 		return false, err
 	}
-	now := time.Now().UTC()
-	driver := r.db.DriverName()
-	path := key
-	if !dialect.IsPostgres(driver) {
-		path = "$." + key
-	}
-	query := setSessionMetadataKeyIfAbsentQuery(driver)
 	result, err := tx.ExecContext(ctx, r.db.Rebind(query), path, string(valueJSON), now, sessionID, path)
 	if err != nil {
 		return false, err
