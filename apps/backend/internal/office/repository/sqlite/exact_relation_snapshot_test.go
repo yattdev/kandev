@@ -54,6 +54,30 @@ func TestExactRelationSnapshotInvalidatesForTaskAndEdgeMutation(t *testing.T) {
 	}
 }
 
+func TestExactRelationSnapshotInTxRollbackLeavesNoSnapshot(t *testing.T) {
+	repo, taskRepo := newExactRelationRepos(t, ":memory:")
+	ctx := context.Background()
+	seedExactRelationTask(t, taskRepo, "ws-a", "a1")
+	seedExactRelationTask(t, taskRepo, "ws-a", "a2")
+	if err := repo.CreateTaskBlocker(ctx, &models.TaskBlocker{TaskID: "a1", BlockerTaskID: "a2"}); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := repo.BeginExactRelationSnapshotTx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repo.OpenExactRelationSnapshotInTx(ctx, tx, models.ExactRelationSnapshotRequest{WorkspaceID: "ws-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.PageExactRelationSnapshot(ctx, snapshot.Token, 0, 1); !errors.Is(err, ErrExactRelationSnapshotUnavailable) {
+		t.Fatalf("rolled-back snapshot = %v", err)
+	}
+}
+
 func TestExactRelationSnapshotRejectsCrossWorkspaceAndExpires(t *testing.T) {
 	repo, taskRepo := newExactRelationRepos(t, ":memory:")
 	ctx := context.Background()

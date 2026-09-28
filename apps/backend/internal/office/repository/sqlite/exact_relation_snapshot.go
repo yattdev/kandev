@@ -85,21 +85,44 @@ func (r *Repository) initExactRelationSnapshotSchema() error {
 }
 
 func (r *Repository) OpenExactRelationSnapshot(ctx context.Context, request models.ExactRelationSnapshotRequest) (*models.ExactRelationSnapshot, error) {
-	if !r.exactRelationSnapshotsEnabled {
+	if _, err := r.CleanupExpiredExactRelationSnapshots(ctx, exactRelationSnapshotCleanupMax); err != nil {
+		return nil, err
+	}
+	tx, err := r.BeginExactRelationSnapshotTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	snapshot, err := r.OpenExactRelationSnapshotInTx(ctx, tx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
+// BeginExactRelationSnapshotTx starts the SQLite authority transaction a
+// compositor must use. PostgreSQL stays fail-closed until it has conformance.
+func (r *Repository) BeginExactRelationSnapshotTx(ctx context.Context) (*sqlx.Tx, error) {
+	if !r.exactRelationSnapshotsEnabled || dialect.IsPostgres(r.db.DriverName()) {
+		return nil, ErrExactRelationSnapshotUnavailable
+	}
+	return r.db.BeginTxx(ctx, nil)
+}
+
+// OpenExactRelationSnapshotInTx materializes one relation projection without
+// committing it. Callers must use BeginExactRelationSnapshotTx; the wrapper
+// preserves the legacy standalone API.
+func (r *Repository) OpenExactRelationSnapshotInTx(ctx context.Context, tx *sqlx.Tx, request models.ExactRelationSnapshotRequest) (*models.ExactRelationSnapshot, error) {
+	if !r.exactRelationSnapshotsEnabled || tx == nil || dialect.IsPostgres(r.db.DriverName()) {
 		return nil, ErrExactRelationSnapshotUnavailable
 	}
 	ttl, err := exactRelationSnapshotTTL(request)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := r.CleanupExpiredExactRelationSnapshots(ctx, exactRelationSnapshotCleanupMax); err != nil {
-		return nil, err
-	}
-	tx, err := r.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_relation_workspace_fences(workspace_id,revision) VALUES(?,0) ON CONFLICT(workspace_id) DO NOTHING`), request.WorkspaceID); err != nil {
 		return nil, err
 	}
@@ -123,9 +146,6 @@ func (r *Repository) OpenExactRelationSnapshot(ctx context.Context, request mode
 		if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_relation_snapshot_rows(snapshot_token,ordinal,task_id,blocker_task_id,workspace_id,task_resource_version,blocker_resource_version,resource_version,created_at) VALUES(?,?,?,?,?,?,?,?,?)`), token, i, item.TaskID, item.BlockerTaskID, item.WorkspaceID, item.TaskResourceVersion, item.BlockerResourceVersion, item.ResourceVersion, item.CreatedAt); err != nil {
 			return nil, err
 		}
-	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
 	}
 	return &models.ExactRelationSnapshot{Token: token, WorkspaceID: request.WorkspaceID, ExpiresAt: expiresAt}, nil
 }
