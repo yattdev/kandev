@@ -311,6 +311,15 @@ type Repository interface {
 	DeletePendingMoveIfMatch(ctx context.Context, expected PendingMoveRecord, handoffEntryID string) (bool, error)
 }
 
+// ExactPendingTransitionReader is optional because queue databases may be
+// intentionally deployed without the task/session authority tables.
+type ExactPendingTransitionReader interface {
+	OpenExactPendingTransitionSnapshot(context.Context, ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error)
+	PageExactPendingTransitionSnapshot(context.Context, string, int, int) ([]ExactPendingTransition, error)
+	GetExactPendingTransition(context.Context, string, string) (*ExactPendingTransition, error)
+	CleanupExpiredExactPendingTransitionSnapshots(context.Context, int) (int, error)
+}
+
 // applyMetadataUpdates merges metadata key updates into current; a nil value removes the key.
 func applyMetadataUpdates(current, updates map[string]interface{}) map[string]interface{} {
 	merged := make(map[string]interface{}, len(current)+len(updates))
