@@ -311,6 +311,7 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 		RuntimeName:          r.Name(),
 		Client:               client,
 		ControlClient:        r.ctl,
+		AgentctlInstanceID:   resp.ID,
 		StandaloneInstanceID: resp.ID,
 		StandalonePort:       resp.Port,
 		WorkspacePath:        req.WorkspacePath,

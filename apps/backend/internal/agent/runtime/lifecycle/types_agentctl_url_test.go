@@ -16,6 +16,19 @@ func (f generationControllerFunc) UpdateExecutionGeneration(ctx context.Context,
 	return f(ctx, instanceID, update)
 }
 
+type fenceControllerFunc struct {
+	update generationControllerFunc
+	fence  func(context.Context, string, agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error)
+}
+
+func (f fenceControllerFunc) UpdateExecutionGeneration(ctx context.Context, instanceID string, update agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error) {
+	return f.update(ctx, instanceID, update)
+}
+
+func (f fenceControllerFunc) CloseExecutionAdmission(ctx context.Context, instanceID string, request agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error) {
+	return f.fence(ctx, instanceID, request)
+}
+
 func newNopLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	log, err := logger.NewLogger(logger.LoggingConfig{Level: "error", Format: "json"})
@@ -95,5 +108,35 @@ func TestAgentExecutionAdvanceAgentctlGenerationRejectsControlFailure(t *testing
 	)}
 	if err := exec.advanceAgentctlGeneration(t.Context(), 2); err == nil {
 		t.Fatal("advanceAgentctlGeneration succeeded after control CAS failure")
+	}
+}
+
+func TestAgentExecutionCloseExecutionAdmissionUsesCurrentExactIdentity(t *testing.T) {
+	var gotInstance string
+	var gotRequest agentctl.ExecutionFenceRequest
+	exec := &AgentExecution{
+		ID: "execution-fence", agentctlInstanceID: "agentctl-instance", startupAttemptGeneration: 2,
+		agentctlControl: fenceControllerFunc{
+			update: func(context.Context, string, agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error) {
+				return nil, nil
+			},
+			fence: func(_ context.Context, instanceID string, request agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error) {
+				gotInstance, gotRequest = instanceID, request
+				return &agentctl.ExecutionFenceReceipt{ExecutionID: request.ExecutionID, AgentctlGeneration: request.AgentctlGeneration}, nil
+			},
+		},
+	}
+	if _, err := exec.CloseExecutionAdmission(t.Context(), 2); err != nil {
+		t.Fatalf("CloseExecutionAdmission: %v", err)
+	}
+	if gotInstance != "agentctl-instance" || gotRequest.ExecutionID != "execution-fence" || gotRequest.AgentctlGeneration != 2 {
+		t.Fatalf("fence request = (%q, %+v), want exact current identity", gotInstance, gotRequest)
+	}
+}
+
+func TestAgentExecutionCloseExecutionAdmissionRejectsStaleGeneration(t *testing.T) {
+	exec := &AgentExecution{ID: "execution-fence", startupAttemptGeneration: 2}
+	if _, err := exec.CloseExecutionAdmission(t.Context(), 1); err == nil {
+		t.Fatal("CloseExecutionAdmission accepted stale generation")
 	}
 }

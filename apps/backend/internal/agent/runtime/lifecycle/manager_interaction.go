@@ -1656,6 +1656,23 @@ func (m *Manager) GetExecutionBySessionID(sessionID string) (*AgentExecution, bo
 	return m.executionStore.GetBySessionID(sessionID)
 }
 
+// CloseExecutionAdmission closes agentctl command admission for one exact
+// in-memory execution incarnation and returns its drain observation. It never
+// calls StopAgent or settles repository state; stop promotion remains owned by
+// the durable task/session boundary.
+func (m *Manager) CloseExecutionAdmission(ctx context.Context, executionID string, generation uint64) (*agentctlclient.ExecutionFenceReceipt, error) {
+	execution, exists := m.executionStore.Get(executionID)
+	if !exists || execution.ID != executionID {
+		return nil, fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
+	}
+	execution.remoteInstanceLifecycleMu.Lock()
+	defer execution.remoteInstanceLifecycleMu.Unlock()
+	if current, ok := m.executionStore.Get(executionID); !ok || current != execution {
+		return nil, fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
+	}
+	return execution.CloseExecutionAdmission(ctx, generation)
+}
+
 // ResolveTaskEnvironmentID returns the task environment ID for a session.
 // User shell resources must be environment-scoped; missing mappings are
 // lifecycle errors and must not be converted into session-scoped shell state.

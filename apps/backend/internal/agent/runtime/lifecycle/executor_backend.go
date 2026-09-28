@@ -694,6 +694,9 @@ type ExecutorInstance struct {
 	// ControlClient owns generation compare-and-swap for this exact agentctl
 	// instance. It is available only for runtimes that keep a control path.
 	ControlClient AgentctlGenerationController
+	// AgentctlInstanceID is the control-server instance identity. It can differ
+	// from the lifecycle execution ID after a runtime reconnect.
+	AgentctlInstanceID string
 
 	// Runtime-specific identifiers (only one set is populated)
 	ContainerID          string // Docker
@@ -804,6 +807,7 @@ func (ri *ExecutorInstance) ToAgentExecution(req *ExecutorCreateRequest) *AgentE
 		metadata:             metadata,
 		agentctl:             ri.Client,
 		agentctlControl:      ri.ControlClient,
+		agentctlInstanceID:   ri.AgentctlInstanceID,
 		standaloneInstanceID: ri.StandaloneInstanceID,
 		standalonePort:       ri.StandalonePort,
 		historyEnabled:       historyEnabled,

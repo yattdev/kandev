@@ -154,6 +154,7 @@ type AgentExecution struct {
 	// agentctl client for this execution
 	agentctl                  *agentctl.Client
 	agentctlControl           AgentctlGenerationController
+	agentctlInstanceID        string
 	agentctlOverride          atomic.Pointer[agentctl.Client]
 	agentctlLifecycleMu       sync.RWMutex
 	remoteInstanceLifecycleMu sync.Mutex
@@ -832,6 +833,37 @@ func (ae *AgentExecution) advanceAgentctlGeneration(ctx context.Context, generat
 		return fmt.Errorf("advance agentctl generation %d: %w", generation, err)
 	}
 	return nil
+}
+
+type agentctlFenceController interface {
+	CloseExecutionAdmission(context.Context, string, agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error)
+}
+
+// CloseExecutionAdmission returns agentctl's bounded drain observation for
+// exactly the current lifecycle startup generation. It does not terminate
+// work or alter task/session state, so callers must keep the result incomplete
+// until their own turn and executor-row settlement checks succeed.
+func (ae *AgentExecution) CloseExecutionAdmission(ctx context.Context, generation uint64) (*agentctl.ExecutionFenceReceipt, error) {
+	if ae == nil || generation == 0 || ae.startupAttemptSnapshot() != generation {
+		return nil, fmt.Errorf("execution generation mismatch")
+	}
+	ae.agentctlLifecycleMu.RLock()
+	control, ok := ae.agentctlControl.(agentctlFenceController)
+	instanceID := ae.agentctlInstanceID
+	ae.agentctlLifecycleMu.RUnlock()
+	if !ok || control == nil || instanceID == "" {
+		return nil, fmt.Errorf("execution %q has no exact agentctl control path", ae.ID)
+	}
+	receipt, err := control.CloseExecutionAdmission(ctx, instanceID, agentctl.ExecutionFenceRequest{
+		ExecutionID: ae.ID, AgentctlGeneration: generation,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("close execution admission: %w", err)
+	}
+	if receipt == nil || receipt.ExecutionID != ae.ID || receipt.AgentctlGeneration != generation {
+		return nil, fmt.Errorf("agentctl returned mismatched execution fence receipt")
+	}
+	return receipt, nil
 }
 
 // replaceAgentctlClient atomically publishes a replacement connection while
