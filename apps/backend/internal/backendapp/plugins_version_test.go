@@ -100,6 +100,32 @@ func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
 	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, tasksqlite.ExactTaskDescriptionCommand{GrantID: grant.ID, InstallationID: grant.InstallationID, WorkspaceID: grant.WorkspaceID, TaskID: grant.TaskID, CapabilityID: grant.CapabilityID, ReceiptAuditID: grant.ReceiptAuditID, ApprovalRevision: 1, ActionDigest: grant.ActionDigest, IdempotencyKey: grant.IdempotencyKey, Marker: "[marker]", ExpectedResourceVersion: task.ResourceVersion, ExpectedFence: fence}); err != nil {
 		t.Fatal(err)
 	}
+	if err = repos.Task.CreateTask(ctx, &taskmodels.Task{ID: "revoked-task", WorkspaceID: "exact-ws", Title: "Revoked", Description: "before"}); err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := repos.Task.GetTask(ctx, "revoked-task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence, err = repos.Task.ExactTaskCommandWorkspaceFence(ctx, "exact-ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant.ID, grant.TaskID, grant.ActionDigest, grant.IdempotencyKey = "revoked-grant", revoked.ID, "revoked-marker", "revoked-key"
+	if err = repos.Task.IssueExactTaskCommandGrant(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = services.Plugins.RevokeCapabilityApproval(rec.InstallationID, "exact-ws", 1, "human", "revoke", "revoke-audit"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, tasksqlite.ExactTaskDescriptionCommand{GrantID: grant.ID, InstallationID: grant.InstallationID, WorkspaceID: grant.WorkspaceID, TaskID: grant.TaskID, CapabilityID: grant.CapabilityID, ReceiptAuditID: grant.ReceiptAuditID, ApprovalRevision: 1, ActionDigest: grant.ActionDigest, IdempotencyKey: grant.IdempotencyKey, Marker: "[revoked]", ExpectedResourceVersion: revoked.ResourceVersion, ExpectedFence: fence})
+	if !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("revoked command = %v", err)
+	}
+	stored, err := repos.Task.GetTask(ctx, revoked.ID)
+	if err != nil || stored.Description != "before" || stored.ResourceVersion != revoked.ResourceVersion {
+		t.Fatalf("revoked task = %+v, %v", stored, err)
+	}
 }
 
 func exactHostPackage(t *testing.T, id string) *bytes.Buffer {
