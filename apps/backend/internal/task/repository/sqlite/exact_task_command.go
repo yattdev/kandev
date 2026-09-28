@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -67,7 +69,7 @@ type ExactTaskDescriptionReceipt struct {
 }
 
 func (r *Repository) initExactTaskCommandSchema() error {
-	return r.migrate.Apply("exact_task_commands.tables", `
+	if err := r.migrate.Apply("exact_task_commands.tables", `
 		CREATE TABLE IF NOT EXISTS exact_task_command_approvals (
 			installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			capability_id TEXT NOT NULL, receipt_audit_id TEXT NOT NULL,
@@ -85,13 +87,16 @@ func (r *Repository) initExactTaskCommandSchema() error {
 			audit_id TEXT PRIMARY KEY, installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			task_id TEXT NOT NULL, action_digest TEXT NOT NULL, idempotency_key TEXT NOT NULL,
 			resource_version BIGINT NOT NULL, created_at TIMESTAMP NOT NULL,
-			UNIQUE (installation_id, workspace_id, idempotency_key)
+		UNIQUE (installation_id, workspace_id, idempotency_key)
 		);
 		CREATE TABLE IF NOT EXISTS exact_task_command_receipts (
 			audit_id TEXT PRIMARY KEY, installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			capability_id TEXT NOT NULL, approval_revision BIGINT NOT NULL, observed_at TIMESTAMP NOT NULL,
-			UNIQUE (installation_id, workspace_id, capability_id, audit_id)
-		);`)
+		UNIQUE (installation_id, workspace_id, capability_id, audit_id)
+		);`); err != nil {
+		return err
+	}
+	return r.migrate.Apply("exact_task_commands.audit_identity", `ALTER TABLE exact_task_command_audits ADD COLUMN command_identity TEXT NOT NULL DEFAULT ''`)
 }
 
 // RecordExactTaskCommandReceipt binds an H6 decision receipt to the active
@@ -280,7 +285,7 @@ func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, comma
 			return ExactTaskDescriptionReceipt{}, err
 		}
 	}
-	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_audits(audit_id, installation_id, workspace_id, task_id, action_digest, idempotency_key, resource_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`), command.IdempotencyKey, command.InstallationID, command.WorkspaceID, command.TaskID, command.ActionDigest, command.IdempotencyKey, version, now); err != nil {
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_audits(audit_id, installation_id, workspace_id, task_id, action_digest, idempotency_key, resource_version, command_identity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`), command.IdempotencyKey, command.InstallationID, command.WorkspaceID, command.TaskID, command.ActionDigest, command.IdempotencyKey, version, exactTaskCommandIdentity(command), now); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -302,19 +307,24 @@ func (r *Repository) consumeExactTaskCommandGrant(ctx context.Context, tx *sqlx.
 }
 
 func exactTaskCommandReplay(ctx context.Context, r *Repository, tx *sqlx.Tx, command ExactTaskDescriptionCommand) (ExactTaskDescriptionReceipt, bool, error) {
-	var digest string
+	var digest, identity string
 	var version int64
-	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT action_digest, resource_version FROM exact_task_command_audits WHERE installation_id = ? AND workspace_id = ? AND idempotency_key = ?`), command.InstallationID, command.WorkspaceID, command.IdempotencyKey).Scan(&digest, &version)
+	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT action_digest, command_identity, resource_version FROM exact_task_command_audits WHERE installation_id = ? AND workspace_id = ? AND idempotency_key = ?`), command.InstallationID, command.WorkspaceID, command.IdempotencyKey).Scan(&digest, &identity, &version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ExactTaskDescriptionReceipt{}, false, nil
 	}
 	if err != nil {
 		return ExactTaskDescriptionReceipt{}, true, err
 	}
-	if digest != command.ActionDigest {
+	if digest != command.ActionDigest || identity != exactTaskCommandIdentity(command) {
 		return ExactTaskDescriptionReceipt{}, true, ErrExactTaskCommandUnavailable
 	}
 	return ExactTaskDescriptionReceipt{AuditID: command.IdempotencyKey, ResourceVersion: version}, true, nil
+}
+
+func exactTaskCommandIdentity(c ExactTaskDescriptionCommand) string {
+	s := sha256.Sum256([]byte(c.GrantID + "\x00" + c.InstallationID + "\x00" + c.WorkspaceID + "\x00" + c.TaskID + "\x00" + c.CapabilityID + "\x00" + c.ReceiptAuditID + "\x00" + fmt.Sprint(c.ApprovalRevision) + "\x00" + c.ActionDigest + "\x00" + c.IdempotencyKey + "\x00" + c.Marker + "\x00" + fmt.Sprint(c.ExpectedResourceVersion) + "\x00" + fmt.Sprint(c.ExpectedFence)))
+	return hex.EncodeToString(s[:])
 }
 
 func requireExactCommandApproval(ctx context.Context, r *Repository, tx *sqlx.Tx, installationID, workspaceID, capabilityID string, revision uint64) error {

@@ -36,6 +36,11 @@ func TestExactTaskCommandConsumesGrantAndPersistsReceipt(t *testing.T) {
 	if _, err = repo.ApplyExactTaskDescriptionCommand(ctx, changed); !errors.Is(err, ErrExactTaskCommandUnavailable) {
 		t.Fatalf("changed replay = %v", err)
 	}
+	competing := command
+	competing.TaskID, competing.GrantID, competing.Marker = "other-task", "other-grant", "[other-marker]"
+	if _, err = repo.ApplyExactTaskDescriptionCommand(ctx, competing); !errors.Is(err, ErrExactTaskCommandUnavailable) {
+		t.Fatalf("competing replay = %v", err)
+	}
 }
 
 func TestExactTaskCommandRejectsRevokedAndStaleVersionWithoutEffect(t *testing.T) {
