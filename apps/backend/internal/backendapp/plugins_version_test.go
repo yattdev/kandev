@@ -480,6 +480,21 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	if err != nil || stored.Description != "[public-marker]" || stored.ResourceVersion != receipt.ResourceVersion {
 		t.Fatalf("public marker readback = %+v, %v", stored, err)
 	}
+	_, err = commandHost.UpdateTaskExact(ctx, pluginsdk.ExactTaskUpdateRequest{WorkspaceID: "exact-ws-a", TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[changed-marker]", IdempotencyKey: "public-command", ExpectedResourceVersion: receipt.ResourceVersion})
+	if err == nil {
+		t.Fatal("changed public command replay succeeded")
+	}
+	stored, err = repos.Task.GetTask(ctx, task.ID)
+	if err != nil || stored.Description != "[public-marker]" || stored.ResourceVersion != receipt.ResourceVersion {
+		t.Fatalf("changed public replay altered task = %+v, %v", stored, err)
+	}
+	var publicAudits int
+	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_audits WHERE installation_id = ? AND workspace_id = ? AND idempotency_key = ?`, record.InstallationID, task.WorkspaceID, "public-command").Scan(&publicAudits); err != nil {
+		t.Fatal(err)
+	}
+	if publicAudits != 1 {
+		t.Fatalf("public replay audit count = %d, want 1", publicAudits)
+	}
 	other, err := repos.Task.GetTask(ctx, "exact-ws-b-task")
 	if err != nil || other.Description != "" {
 		t.Fatalf("workspace B changed = %+v, %v", other, err)
