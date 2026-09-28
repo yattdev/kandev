@@ -268,9 +268,16 @@ func TestExternalProviderFailureIsolation(t *testing.T) {
 // database, the same way Run does, and returns the resulting services.
 func provideTestServices(t *testing.T, version string) (*Services, *config.Config, *Repositories) {
 	t.Helper()
+	services, cfg, repos, close := provideTestServicesWithCleanup(t, version, t.TempDir())
+	t.Cleanup(close)
+	return services, cfg, repos
+}
+
+func provideTestServicesWithCleanup(t *testing.T, version, home string) (*Services, *config.Config, *Repositories, func()) {
+	t.Helper()
 
 	cfg := &config.Config{
-		HomeDir:  t.TempDir(),
+		HomeDir:  home,
 		Database: config.DatabaseConfig{Driver: "sqlite"},
 	}
 	log := newTestLogger()
@@ -279,35 +286,51 @@ func provideTestServices(t *testing.T, version string) (*Services, *config.Confi
 	if err != nil {
 		t.Fatalf("provideRepositories: %v", err)
 	}
-	t.Cleanup(func() {
+	var services *Services
+	closed := false
+	close := func() {
+		if closed {
+			return
+		}
+		closed = true
+		if services.PluginsCleanup != nil {
+			_ = services.PluginsCleanup()
+		}
+		if services.Workflow != nil {
+			_ = services.Workflow.Close()
+		}
 		for i := len(cleanups) - 1; i >= 0; i-- {
 			if cleanups[i] != nil {
 				_ = cleanups[i]()
 			}
 		}
-	})
+	}
 
 	agentRegistry, registryCleanup, err := registry.Provide(log)
 	if err != nil {
 		t.Fatalf("registry.Provide: %v", err)
 	}
-	t.Cleanup(func() {
-		if registryCleanup != nil {
-			_ = registryCleanup()
-		}
-	})
 
-	services, _, err := provideServices(context.Background(), cfg, log, repos, pool, bus.NewMemoryEventBus(log), agentRegistry, version)
+	services, _, err = provideServices(context.Background(), cfg, log, repos, pool, bus.NewMemoryEventBus(log), agentRegistry, version)
 	if err != nil {
 		t.Fatalf("provideServices: %v", err)
 	}
-	if services.PluginsCleanup != nil {
-		t.Cleanup(func() { _ = services.PluginsCleanup() })
+	if registryCleanup != nil {
+		previous := close
+		close = func() { previous(); _ = registryCleanup() }
 	}
-	if services.Workflow != nil {
-		t.Cleanup(func() { _ = services.Workflow.Close() })
+	return services, cfg, repos, close
+}
+
+func TestProvideTestServicesCleanupReopensSQLiteHome(t *testing.T) {
+	home := t.TempDir()
+	_, firstCfg, _, closeFirst := provideTestServicesWithCleanup(t, "fixture-reopen", home)
+	closeFirst()
+	_, secondCfg, _, closeSecond := provideTestServicesWithCleanup(t, "fixture-reopen", home)
+	t.Cleanup(closeSecond)
+	if firstCfg.HomeDir != secondCfg.HomeDir {
+		t.Fatalf("reopened home = %q, want %q", secondCfg.HomeDir, firstCfg.HomeDir)
 	}
-	return services, cfg, repos
 }
 
 type failingExternalSecretStore struct {
