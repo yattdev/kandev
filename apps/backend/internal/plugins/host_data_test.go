@@ -125,6 +125,18 @@ func (f *fakeTaskDataSource) PageExactSessionSnapshot(_ context.Context, token s
 	return rows[offset:end], nil
 }
 
+func (f *fakeTaskDataSource) GetExactSessionSnapshotSession(_ context.Context, token, sessionID string) (*taskmodels.ExactSessionSnapshotSession, error) {
+	if f.exactSessionErr != nil {
+		return nil, f.exactSessionErr
+	}
+	for _, row := range f.exactSessions[token] {
+		if row.ID == sessionID {
+			return &row, nil
+		}
+	}
+	return nil, repoerrors.ErrExactSessionSnapshotUnavailable
+}
+
 func (f *fakeTaskDataSource) ListTaskStepTransitions(_ context.Context, taskID string, _ int, _ string) ([]taskmodels.StepTransition, string, error) {
 	f.transitionCalls++
 	return f.transitionRows[taskID], "", nil

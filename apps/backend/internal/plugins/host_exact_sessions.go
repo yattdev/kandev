@@ -58,6 +58,31 @@ func (h *pluginHost) ListSessionsExact(ctx context.Context, query pluginsdk.Exac
 	return items, info, nil
 }
 
+// GetSessionExact reads one lifecycle projection from the supplied durable
+// session snapshot. The snapshot binds the session incarnation and route
+// generation, so callers cannot infer current progress from a stale session.
+func (h *pluginHost) GetSessionExact(ctx context.Context, query pluginsdk.ExactSessionGetQuery) (*pluginsdk.ExactSession, error) {
+	if err := h.authorizeExactRead(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("session", query.WorkspaceID, query.SessionID, query.SnapshotVersion)); err != nil {
+		return nil, err
+	}
+	if h.taskData == nil || query.SessionID == "" || query.SnapshotVersion == "" {
+		return nil, status.Error(codes.FailedPrecondition, "exact session read is unavailable")
+	}
+	binding, err := h.exactSessionBinding(query.WorkspaceID, query.CapabilityRevision, query.SnapshotVersion)
+	if err != nil {
+		return nil, err
+	}
+	row, err := h.taskData.GetExactSessionSnapshotSession(ctx, binding.ProjectionVersion, query.SessionID)
+	if err != nil {
+		return nil, exactSessionSnapshotError(err)
+	}
+	if row == nil || row.WorkspaceID != query.WorkspaceID || row.QueueIncarnationID == "" || row.ResourceVersion <= 0 {
+		return nil, status.Error(codes.FailedPrecondition, "exact session projection is incomplete")
+	}
+	result := exactSessionToDTO(*row)
+	return &result, nil
+}
+
 func (h *pluginHost) exactSessionSnapshot(ctx context.Context, query pluginsdk.ExactSessionQuery) (exactSnapshotBinding, error) {
 	if query.Page.Limit < 0 || query.Page.Limit > exactSessionPageLimit || query.Page.Cursor != "" && query.Page.SnapshotVersion == "" {
 		return exactSnapshotBinding{}, status.Error(codes.InvalidArgument, "exact snapshot page is invalid")

@@ -431,6 +431,18 @@ func (h *grpcHostClient) ListSessionsExact(ctx context.Context, query ExactSessi
 	return exactSessionsFromProto(response.GetSessions()), exactPageInfoFromProto(response.GetPageInfo()), nil
 }
 
+func (h *grpcHostClient) GetSessionExact(ctx context.Context, query ExactSessionGetQuery) (*ExactSession, error) {
+	response, err := h.client.GetSessionExact(ctx, &pluginv1.GetSessionExactRequest{WorkspaceId: query.WorkspaceID, SessionId: query.SessionID, CapabilityRevision: query.CapabilityRevision, SnapshotVersion: query.SnapshotVersion})
+	if err != nil {
+		return nil, err
+	}
+	if response.GetSession() == nil {
+		return nil, fmt.Errorf("pluginsdk: exact session response is missing")
+	}
+	session := exactSessionsFromProto([]*pluginv1.ExactSession{response.GetSession()})
+	return &session[0], nil
+}
+
 func (h *grpcHostClient) ListTaskDecisionEvidenceExact(ctx context.Context, query ExactTaskDecisionEvidenceQuery) (*ExactTaskDecisionEvidencePage, *ExactPageInfo, error) {
 	response, err := h.client.ListTaskDecisionEvidenceExact(ctx, &pluginv1.ListTaskDecisionEvidenceExactRequest{WorkspaceId: query.WorkspaceID, CapabilityRevision: query.CapabilityRevision, Page: exactPageToProto(query.Page)})
 	if err != nil {
@@ -1005,6 +1017,21 @@ func (s *grpcHostServer) ListSessionsExact(ctx context.Context, request *pluginv
 		return nil, err
 	}
 	return &pluginv1.ListSessionsExactResponse{Sessions: exactSessionsToProto(sessions), PageInfo: exactPageInfoToProto(page)}, nil
+}
+
+func (s *grpcHostServer) GetSessionExact(ctx context.Context, request *pluginv1.GetSessionExactRequest) (*pluginv1.GetSessionExactResponse, error) {
+	exact, ok := s.impl.(ExactSessionHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_sessions")
+	}
+	session, err := exact.GetSessionExact(ctx, ExactSessionGetQuery{WorkspaceID: request.GetWorkspaceId(), SessionID: request.GetSessionId(), CapabilityRevision: request.GetCapabilityRevision(), SnapshotVersion: request.GetSnapshotVersion()})
+	if err != nil {
+		return nil, err
+	}
+	if session == nil {
+		return nil, fmt.Errorf("pluginsdk: exact session response is missing")
+	}
+	return &pluginv1.GetSessionExactResponse{Session: exactSessionsToProto([]ExactSession{*session})[0]}, nil
 }
 
 func (s *grpcHostServer) GetTaskExact(ctx context.Context, request *pluginv1.GetTaskExactRequest) (*pluginv1.GetTaskExactResponse, error) {

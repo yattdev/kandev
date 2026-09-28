@@ -34,21 +34,23 @@ type recordingHost struct {
 		name    string
 		payload map[string]any
 	}
-	deleteStateCalled   bool
-	taskTrees           PluginOwnedTaskTreeManager
-	capabilityContext   *CapabilityContext
-	exactWorkspaces     []Workspace
-	exactPageInfo       *ExactPageInfo
-	exactWorkspaceErr   error
-	exactWorkspaceQuery ExactWorkspaceQuery
-	exactTasks          []ExactTask
-	exactTask           *ExactTask
-	exactTaskPage       *ExactPageInfo
-	exactTaskQuery      ExactTaskQuery
-	exactTaskGetQuery   ExactTaskGetQuery
-	exactSessions       []ExactSession
-	exactSessionPage    *ExactPageInfo
-	exactSessionQuery   ExactSessionQuery
+	deleteStateCalled    bool
+	taskTrees            PluginOwnedTaskTreeManager
+	capabilityContext    *CapabilityContext
+	exactWorkspaces      []Workspace
+	exactPageInfo        *ExactPageInfo
+	exactWorkspaceErr    error
+	exactWorkspaceQuery  ExactWorkspaceQuery
+	exactTasks           []ExactTask
+	exactTask            *ExactTask
+	exactTaskPage        *ExactPageInfo
+	exactTaskQuery       ExactTaskQuery
+	exactTaskGetQuery    ExactTaskGetQuery
+	exactSessions        []ExactSession
+	exactSessionPage     *ExactPageInfo
+	exactSessionQuery    ExactSessionQuery
+	exactSession         *ExactSession
+	exactSessionGetQuery ExactSessionGetQuery
 }
 
 func (h *recordingHost) PluginOwnedTaskTrees() PluginOwnedTaskTreeManager {
@@ -142,6 +144,11 @@ func (h *recordingHost) GetTaskExact(_ context.Context, query ExactTaskGetQuery)
 func (h *recordingHost) ListSessionsExact(_ context.Context, query ExactSessionQuery) ([]ExactSession, *ExactPageInfo, error) {
 	h.exactSessionQuery = query
 	return h.exactSessions, h.exactSessionPage, nil
+}
+
+func (h *recordingHost) GetSessionExact(_ context.Context, query ExactSessionGetQuery) (*ExactSession, error) {
+	h.exactSessionGetQuery = query
+	return h.exactSession, nil
 }
 
 // dialHostOverBufconn wires a grpcHostServer (wrapping impl) to a
@@ -307,6 +314,12 @@ func TestHost_ExactSessionsOverWire(t *testing.T) {
 	require.Equal(t, impl.exactSessions, sessions)
 	require.Equal(t, impl.exactSessionPage, page)
 	require.Equal(t, query, impl.exactSessionQuery)
+	impl.exactSession = &impl.exactSessions[0]
+	getQuery := ExactSessionGetQuery{WorkspaceID: "workspace-1", SessionID: "session-1", CapabilityRevision: 2, SnapshotVersion: "snapshot-1"}
+	session, err := exact.GetSessionExact(context.Background(), getQuery)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactSession, session)
+	require.Equal(t, getQuery, impl.exactSessionGetQuery)
 }
 
 func TestHost_RevealSecret(t *testing.T) {

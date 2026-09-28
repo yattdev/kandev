@@ -84,6 +84,7 @@ type ExactTaskUpdateReceipt struct {
 // projection for all sessions in one approved workspace.
 type ExactSessionHost interface {
 	ListSessionsExact(context.Context, ExactSessionQuery) ([]ExactSession, *ExactPageInfo, error)
+	GetSessionExact(context.Context, ExactSessionGetQuery) (*ExactSession, error)
 }
 
 type ExactTask struct {
@@ -109,6 +110,10 @@ type ExactSessionQuery struct {
 	WorkspaceID        string
 	CapabilityRevision uint64
 	Page               ExactPage
+}
+type ExactSessionGetQuery struct {
+	WorkspaceID, SessionID, SnapshotVersion string
+	CapabilityRevision                      uint64
 }
 
 type ExactSession struct {

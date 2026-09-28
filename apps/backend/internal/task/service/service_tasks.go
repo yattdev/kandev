@@ -2004,6 +2004,14 @@ func (s *Service) PageExactSessionSnapshot(ctx context.Context, token string, of
 	return reader.PageExactSessionSnapshot(ctx, token, offset, limit)
 }
 
+func (s *Service) GetExactSessionSnapshotSession(ctx context.Context, token, sessionID string) (*models.ExactSessionSnapshotSession, error) {
+	reader, ok := s.tasks.(taskrepo.ExactSessionSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactSessionSnapshotUnavailable
+	}
+	return reader.GetExactSessionSnapshotSession(ctx, token, sessionID)
+}
+
 // GetWorkflowStep resolves one workflow step by ID for a caller that has
 // already authorized the owning task/workspace, mirroring GetTasksByIDs.
 // The Inbox History read uses this to test whether a task's current step
