@@ -49,9 +49,11 @@ func TestProvideServicesWiresPluginsKandevVersion(t *testing.T) {
 type exactHostRuntime struct{ host pluginsdk.Host }
 
 type exactCommandFixture struct {
-	record *store.Record
-	grant  tasksqlite.ExactTaskCommandGrant
-	task   *taskmodels.Task
+	record  *store.Record
+	grant   tasksqlite.ExactTaskCommandGrant
+	command tasksqlite.ExactTaskDescriptionCommand
+	receipt tasksqlite.ExactTaskDescriptionReceipt
+	task    *taskmodels.Task
 }
 
 func (r *exactHostRuntime) Start(_ context.Context, rec *store.Record, f func(string) pluginsdk.Host) error {
@@ -107,10 +109,29 @@ func setupProductionExactCommand(t *testing.T, services *Services, repos *Reposi
 	if err = repos.Task.IssueExactTaskCommandGrant(ctx, g); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, tasksqlite.ExactTaskDescriptionCommand{GrantID: g.ID, InstallationID: g.InstallationID, WorkspaceID: g.WorkspaceID, TaskID: g.TaskID, CapabilityID: g.CapabilityID, ReceiptAuditID: g.ReceiptAuditID, ApprovalRevision: 1, ActionDigest: g.ActionDigest, IdempotencyKey: g.IdempotencyKey, Marker: "[marker]", ExpectedResourceVersion: task.ResourceVersion, ExpectedFence: fence}); err != nil {
+	command := exactDescriptionCommand(g, "[marker]", task.ResourceVersion, fence)
+	receipt, err := repos.Task.ApplyExactTaskDescriptionCommand(ctx, command)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return exactCommandFixture{record: rec, grant: g, task: task}
+	return exactCommandFixture{record: rec, grant: g, command: command, receipt: receipt, task: task}
+}
+
+func exactDescriptionCommand(grant tasksqlite.ExactTaskCommandGrant, marker string, resourceVersion, fence int64) tasksqlite.ExactTaskDescriptionCommand {
+	return tasksqlite.ExactTaskDescriptionCommand{
+		GrantID:                 grant.ID,
+		InstallationID:          grant.InstallationID,
+		WorkspaceID:             grant.WorkspaceID,
+		TaskID:                  grant.TaskID,
+		CapabilityID:            grant.CapabilityID,
+		ReceiptAuditID:          grant.ReceiptAuditID,
+		ApprovalRevision:        grant.ApprovalRevision,
+		ActionDigest:            grant.ActionDigest,
+		IdempotencyKey:          grant.IdempotencyKey,
+		Marker:                  marker,
+		ExpectedResourceVersion: resourceVersion,
+		ExpectedFence:           fence,
+	}
 }
 
 func TestSetupProductionExactCommandPersistsMarker(t *testing.T) {
@@ -119,6 +140,73 @@ func TestSetupProductionExactCommandPersistsMarker(t *testing.T) {
 	stored, err := repos.Task.GetTask(context.Background(), fixture.task.ID)
 	if err != nil || stored.Description != "[marker]" {
 		t.Fatalf("fixture marker = %+v, %v", stored, err)
+	}
+}
+
+func TestProvideServicesExactCommandProjectionSurvivesSQLiteRestart(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	servicesFirst, _, reposFirst, closeFirst := provideTestServicesWithCleanup(t, "exact-command-restart", home)
+	fixture := setupProductionExactCommand(t, servicesFirst, reposFirst)
+
+	fence, err := reposFirst.Task.ExactTaskCommandWorkspaceFence(ctx, fixture.task.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revokedGrant := fixture.grant
+	revokedGrant.ID = "restart-revoked-grant"
+	revokedGrant.ActionDigest = "restart-revoked-marker"
+	revokedGrant.IdempotencyKey = "restart-revoked-key"
+	if err = reposFirst.Task.IssueExactTaskCommandGrant(ctx, revokedGrant); err != nil {
+		t.Fatal(err)
+	}
+	expiredGrant := fixture.grant
+	expiredGrant.ID = "restart-expired-grant"
+	expiredGrant.ActionDigest = "restart-expired-marker"
+	expiredGrant.IdempotencyKey = "restart-expired-key"
+	if err = reposFirst.Task.IssueExactTaskCommandGrant(ctx, expiredGrant); err != nil {
+		t.Fatal(err)
+	}
+	closeFirst()
+
+	servicesSecond, _, reposSecond, closeSecond := provideTestServicesWithCleanup(t, "exact-command-restart", home)
+	t.Cleanup(closeSecond)
+	replay, err := reposSecond.Task.ApplyExactTaskDescriptionCommand(ctx, fixture.command)
+	if err != nil || replay != fixture.receipt {
+		t.Fatalf("restarted replay = %+v, %v; want %+v", replay, err, fixture.receipt)
+	}
+	stored, err := reposSecond.Task.GetTask(ctx, fixture.task.ID)
+	if err != nil || stored.Description != "[marker]" || stored.ResourceVersion != fixture.receipt.ResourceVersion {
+		t.Fatalf("restarted marker = %+v, %v", stored, err)
+	}
+	var auditCount int
+	if err = reposSecond.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_audits WHERE audit_id = ?`, fixture.receipt.AuditID).Scan(&auditCount); err != nil {
+		t.Fatal(err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("restarted audit count = %d, want 1", auditCount)
+	}
+	if _, err = reposSecond.Task.DB().ExecContext(ctx, `UPDATE exact_task_command_grants SET expires_at = ? WHERE id = ?`, time.Now().UTC().Add(-time.Minute), expiredGrant.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = reposSecond.Task.ApplyExactTaskDescriptionCommand(ctx, exactDescriptionCommand(expiredGrant, "[expired]", stored.ResourceVersion, fence)); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("restarted expired command = %v", err)
+	}
+	if _, err = servicesSecond.Plugins.RevokeCapabilityApproval(fixture.record.InstallationID, fixture.task.WorkspaceID, 1, "human", "revoke", "restart-revoke"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = reposSecond.Task.ApplyExactTaskDescriptionCommand(ctx, exactDescriptionCommand(revokedGrant, "[revoked]", stored.ResourceVersion, fence)); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("restarted revoked command = %v", err)
+	}
+	stored, err = reposSecond.Task.GetTask(ctx, fixture.task.ID)
+	if err != nil || stored.Description != "[marker]" || stored.ResourceVersion != fixture.receipt.ResourceVersion {
+		t.Fatalf("restarted denied effect = %+v, %v", stored, err)
+	}
+	if err = reposSecond.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_audits`).Scan(&auditCount); err != nil {
+		t.Fatal(err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("restarted denied audit count = %d, want 1", auditCount)
 	}
 }
 
