@@ -11,15 +11,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/kandev/kandev/internal/agent/registry"
+	"github.com/kandev/kandev/internal/agent/runtime/lifecycle"
 	"github.com/kandev/kandev/internal/common/config"
+	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/events/bus"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/persistence/requiredstores"
 	"github.com/kandev/kandev/internal/plugins"
 	"github.com/kandev/kandev/internal/plugins/pkgtar/pkgtartest"
 	"github.com/kandev/kandev/internal/plugins/store"
 	"github.com/kandev/kandev/internal/secrets"
 	"github.com/kandev/kandev/internal/startup"
+	"github.com/kandev/kandev/internal/system/sessioncapacity"
 	taskmodels "github.com/kandev/kandev/internal/task/models"
 	tasksqlite "github.com/kandev/kandev/internal/task/repository/sqlite"
 	"github.com/kandev/kandev/pkg/pluginsdk"
@@ -314,6 +319,77 @@ func TestProvideServicesWiresExactCommandAuthorityToTaskSQLite(t *testing.T) {
 	}
 	if repos.Task == nil || !repos.Task.ExactTaskCommandAvailable() {
 		t.Fatal("test bootstrap did not provide a SQLite exact command writer")
+	}
+}
+
+func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing.T) {
+	ctx := context.Background()
+	services, cfg, repos := provideTestServices(t, "exact-command-orchestrator")
+	agentRegistry, cleanup, err := registry.Provide(newTestLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cleanup() })
+	lifecycleMgr := lifecycle.NewManager(nil, nil, nil, nil, nil, nil, lifecycle.ExecutorFallbackDeny, t.TempDir(), newTestLogger())
+	sqliteDB := sqlx.NewDb(repos.Task.DB(), "sqlite3")
+	pool := db.NewPool(sqliteDB, sqliteDB)
+	if _, _, err = provideOrchestrator(ctx, cfg, newTestLogger(), pool, bus.NewMemoryEventBus(newTestLogger()), repos.Task, nil, services.Plugins, services.Task, services.User, lifecycleMgr, agentRegistry, services.Workflow, nil, nil, nil, nil, nil, nil, sessioncapacity.ReadEnvironment()); err != nil {
+		t.Fatalf("provideOrchestrator: %v", err)
+	}
+
+	queueRepository, err := messagequeue.NewSQLiteRepository(sqliteDB, sqliteDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue := queueRepository.(interface {
+		messagequeue.Repository
+		messagequeue.ExactPendingTransitionReader
+	})
+	for _, workspaceID := range []string{"exact-ws-a", "exact-ws-b"} {
+		taskID, sessionID := workspaceID+"-task", workspaceID+"-session"
+		if err = repos.Task.CreateWorkspace(ctx, &taskmodels.Workspace{ID: workspaceID, Name: workspaceID}); err != nil {
+			t.Fatal(err)
+		}
+		if err = repos.Task.CreateTask(ctx, &taskmodels.Task{ID: taskID, WorkspaceID: workspaceID, Title: taskID}); err != nil {
+			t.Fatal(err)
+		}
+		if err = repos.Task.CreateTaskSession(ctx, &taskmodels.TaskSession{ID: sessionID, TaskID: taskID, State: taskmodels.TaskSessionStateCreated}); err != nil {
+			t.Fatal(err)
+		}
+		if err = queue.SetPendingMove(ctx, sessionID, &messagequeue.PendingMove{TaskID: taskID, WorkflowID: "workflow", WorkflowStepID: "step"}); err != nil {
+			t.Fatal(err)
+		}
+		snapshot, snapshotErr := queue.OpenExactPendingTransitionSnapshot(ctx, messagequeue.ExactPendingTransitionSnapshotRequest{WorkspaceID: workspaceID})
+		if snapshotErr != nil {
+			t.Fatal(snapshotErr)
+		}
+		rows, pageErr := queue.PageExactPendingTransitionSnapshot(ctx, snapshot.Token, 0, 1)
+		if pageErr != nil || len(rows) != 1 {
+			t.Fatalf("pending rows for %s = %#v, %v", workspaceID, rows, pageErr)
+		}
+	}
+	services.Plugins.SetRuntime(&exactHostRuntime{})
+	record, err := services.Plugins.Install(ctx, exactHostPackage(t, "exact-command-orchestrator"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = services.Plugins.GrantCapabilityApproval(record.InstallationID, "exact-ws-a", 1, plugins.ManifestCapabilityDigest(record.Manifest), []string{"host.v2.write:tasks"}, "human", "grant", "grant-audit"); err != nil {
+		t.Fatal(err)
+	}
+	task, err := repos.Task.GetTask(ctx, "exact-ws-a-task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := services.Plugins.AuthorizeAndRecordExactCapability(record.InstallationID, task.WorkspaceID, "host.v2.write:tasks", 1, "marker", "exact-command")
+	if err != nil || !decision.Allowed {
+		t.Fatalf("write decision = %+v, %v", decision, err)
+	}
+	grant := tasksqlite.ExactTaskCommandGrant{ID: "exact-command-orchestrator-grant", InstallationID: record.InstallationID, WorkspaceID: task.WorkspaceID, TaskID: task.ID, CapabilityID: "host.v2.write:tasks", ReceiptAuditID: decision.Receipt.AuditID, ApprovalRevision: 1, ActionDigest: "marker", IdempotencyKey: "command", ExpiresAt: time.Now().Add(time.Minute)}
+	if err = repos.Task.IssueExactTaskCommandGrant(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, exactDescriptionCommand(grant, "[marker]", task.ResourceVersion, 0)); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("missing pending evidence command = %v", err)
 	}
 }
 
