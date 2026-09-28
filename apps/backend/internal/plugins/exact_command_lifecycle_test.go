@@ -168,12 +168,8 @@ func TestExactCommandCompositeBridgeMintsAndConsumesGrantAtomically(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	fence, err := f.repo.ExactTaskCommandWorkspaceFence(f.ctx, f.grant.WorkspaceID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	command := tasksqlite.ExactTaskDescriptionCommand{GrantID: f.grant.ID, InstallationID: f.grant.InstallationID, WorkspaceID: f.grant.WorkspaceID, TaskID: f.grant.TaskID, CapabilityID: f.grant.CapabilityID, ReceiptAuditID: f.grant.ReceiptAuditID, ApprovalRevision: f.grant.ApprovalRevision, ActionDigest: f.grant.ActionDigest, IdempotencyKey: f.grant.IdempotencyKey, Marker: "[marker]", ExpectedResourceVersion: task.ResourceVersion, ExpectedFence: fence, PendingSnapshotToken: f.snapshotToken, PendingTransition: &f.pending}
-	receipt, err := f.repo.ExecuteExactTaskDescriptionCommandWithCompositeEvidence(f.ctx, f.evidence, f.snapshotToken, f.pending, f.grant, command)
+	marker := "[marker]"
+	receipt, err := f.issuer.Execute(f.ctx, f.grant, f.snapshotToken, f.pending, marker, task.ResourceVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +177,7 @@ func TestExactCommandCompositeBridgeMintsAndConsumesGrantAtomically(t *testing.T
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	stored, err := f.repo.GetTask(f.ctx, f.grant.TaskID)
-	if err != nil || stored.Description != command.Marker || stored.ResourceVersion != receipt.ResourceVersion {
+	if err != nil || stored.Description != marker || stored.ResourceVersion != receipt.ResourceVersion {
 		t.Fatalf("stored task = %+v, %v", stored, err)
 	}
 }

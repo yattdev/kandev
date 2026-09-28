@@ -24,24 +24,49 @@ type exactTaskCommandGrantRequest struct {
 }
 
 func (h *pluginHost) issueExactTaskCommandGrant(ctx context.Context, request exactTaskCommandGrantRequest) (tasksqlite.ExactTaskCommandGrant, error) {
-	if h == nil || h.installationID == "" || !validExactTaskCommandGrantRequest(request) {
+	grant, binding, pending, issuer, err := h.exactTaskCommandGrant(ctx, request)
+	if err != nil {
 		return tasksqlite.ExactTaskCommandGrant{}, ErrExactTaskGrantUnavailable
+	}
+	if err := issuer.Issue(ctx, grant, binding.ProjectionVersion, pending); err != nil {
+		return tasksqlite.ExactTaskCommandGrant{}, ErrExactTaskGrantUnavailable
+	}
+	return grant, nil
+}
+
+// executeExactTaskCommand keeps the future public writer behind a private
+// Host boundary until its wire contract is independently reviewed.
+func (h *pluginHost) executeExactTaskCommand(ctx context.Context, request exactTaskCommandGrantRequest, expectedResourceVersion int64) (tasksqlite.ExactTaskDescriptionReceipt, error) {
+	grant, binding, pending, issuer, err := h.exactTaskCommandGrant(ctx, request)
+	if err != nil || expectedResourceVersion <= 0 {
+		return tasksqlite.ExactTaskDescriptionReceipt{}, ErrExactTaskGrantUnavailable
+	}
+	receipt, err := issuer.Execute(ctx, grant, binding.ProjectionVersion, pending, request.Marker, expectedResourceVersion)
+	if err != nil {
+		return tasksqlite.ExactTaskDescriptionReceipt{}, ErrExactTaskGrantUnavailable
+	}
+	return receipt, nil
+}
+
+func (h *pluginHost) exactTaskCommandGrant(ctx context.Context, request exactTaskCommandGrantRequest) (tasksqlite.ExactTaskCommandGrant, exactSnapshotBinding, messagequeue.ExactPendingTransition, ExactTaskCommandGrantIssuer, error) {
+	if h == nil || h.installationID == "" || !validExactTaskCommandGrantRequest(request) {
+		return tasksqlite.ExactTaskCommandGrant{}, exactSnapshotBinding{}, messagequeue.ExactPendingTransition{}, nil, ErrExactTaskGrantUnavailable
 	}
 	binding, pending, err := h.exactTaskCommandGrantEvidence(request)
 	if err != nil {
-		return tasksqlite.ExactTaskCommandGrant{}, ErrExactTaskGrantUnavailable
+		return tasksqlite.ExactTaskCommandGrant{}, exactSnapshotBinding{}, messagequeue.ExactPendingTransition{}, nil, ErrExactTaskGrantUnavailable
 	}
 	receipt, err := h.authorizeExactReadReceipt(request.WorkspaceID, request.CapabilityRevision, exactTaskDescriptionCommandCapability, CanonicalApprovalDigest("exact-task-command-grant", request.TaskID, binding.ProjectionVersion, pending.SessionID, request.Marker, request.IdempotencyKey))
 	if err != nil {
-		return tasksqlite.ExactTaskCommandGrant{}, ErrExactTaskGrantUnavailable
+		return tasksqlite.ExactTaskCommandGrant{}, exactSnapshotBinding{}, messagequeue.ExactPendingTransition{}, nil, ErrExactTaskGrantUnavailable
 	}
 	issuerDep := h.exactTaskCommandGrantIssuerDep
 	if issuerDep == nil {
-		return tasksqlite.ExactTaskCommandGrant{}, ErrExactTaskGrantUnavailable
+		return tasksqlite.ExactTaskCommandGrant{}, exactSnapshotBinding{}, messagequeue.ExactPendingTransition{}, nil, ErrExactTaskGrantUnavailable
 	}
 	issuer := issuerDep()
 	if issuer == nil {
-		return tasksqlite.ExactTaskCommandGrant{}, ErrExactTaskGrantUnavailable
+		return tasksqlite.ExactTaskCommandGrant{}, exactSnapshotBinding{}, messagequeue.ExactPendingTransition{}, nil, ErrExactTaskGrantUnavailable
 	}
 	now := time.Now().UTC()
 	grant := tasksqlite.ExactTaskCommandGrant{
@@ -56,10 +81,7 @@ func (h *pluginHost) issueExactTaskCommandGrant(ctx context.Context, request exa
 		IdempotencyKey:   request.IdempotencyKey,
 		ExpiresAt:        now.Add(exactTaskGrantTTL),
 	}
-	if err := issuer.Issue(ctx, grant, binding.ProjectionVersion, pending); err != nil {
-		return tasksqlite.ExactTaskCommandGrant{}, ErrExactTaskGrantUnavailable
-	}
-	return grant, nil
+	return grant, binding, pending, issuer, nil
 }
 
 func validExactTaskCommandGrantRequest(request exactTaskCommandGrantRequest) bool {

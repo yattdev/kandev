@@ -218,15 +218,19 @@ func TestPluginHostMintsExactTaskGrantFromConnectionBoundEvidence(t *testing.T) 
 		t.Fatal(err)
 	}
 	pending := page.PendingTransitions[0]
-	grant, err := host.issueExactTaskCommandGrant(ctx, exactTaskCommandGrantRequest{WorkspaceID: "workspace", TaskID: "task", CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: version, PendingTransition: pluginsdk.ExactPendingTaskTransition{SessionID: pending.SessionID, TaskID: pending.TaskID, WorkspaceID: pending.WorkspaceID, SessionIncarnationID: pending.SessionIncarnationID, WorkflowID: pending.WorkflowID, WorkflowStepID: pending.WorkflowStepID, StepPosition: int32(pending.Position), ResourceVersion: pending.ResourceVersion, TaskResourceVersion: pending.TaskResourceVersion, SessionResourceVersion: pending.SessionResourceVersion, QueueGeneration: pending.QueueGeneration, QueuedAt: pending.QueuedAt.UTC().Format(time.RFC3339Nano)}, Marker: "[marker]", IdempotencyKey: "key"})
+	task, err := repo.GetTask(ctx, "task")
 	if err != nil {
-		t.Fatalf("issue host grant: %v", err)
+		t.Fatal(err)
 	}
-	if grant.ID == "" || grant.InstallationID != "installation" || grant.WorkspaceID != "workspace" || grant.TaskID != "task" {
-		t.Fatalf("grant = %+v", grant)
+	receipt, err := host.executeExactTaskCommand(ctx, exactTaskCommandGrantRequest{WorkspaceID: "workspace", TaskID: "task", CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: version, PendingTransition: pluginsdk.ExactPendingTaskTransition{SessionID: pending.SessionID, TaskID: pending.TaskID, WorkspaceID: pending.WorkspaceID, SessionIncarnationID: pending.SessionIncarnationID, WorkflowID: pending.WorkflowID, WorkflowStepID: pending.WorkflowStepID, StepPosition: int32(pending.Position), ResourceVersion: pending.ResourceVersion, TaskResourceVersion: pending.TaskResourceVersion, SessionResourceVersion: pending.SessionResourceVersion, QueueGeneration: pending.QueueGeneration, QueuedAt: pending.QueuedAt.UTC().Format(time.RFC3339Nano)}, Marker: "[marker]", IdempotencyKey: "key"}, task.ResourceVersion)
+	if err != nil {
+		t.Fatalf("execute host command: %v", err)
+	}
+	if receipt.AuditID != "key" || receipt.ResourceVersion != task.ResourceVersion+1 {
+		t.Fatalf("receipt = %+v", receipt)
 	}
 	var count int
-	if err = database.GetContext(ctx, &count, `SELECT COUNT(*) FROM exact_task_command_grants WHERE id = ?`, grant.ID); err != nil {
+	if err = database.GetContext(ctx, &count, `SELECT COUNT(*) FROM exact_task_command_grants WHERE installation_id = ? AND workspace_id = ? AND idempotency_key = ?`, "installation", "workspace", "key"); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {

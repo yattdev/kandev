@@ -28,6 +28,7 @@ type sqliteExactTaskCommandApprovalBridge struct{ repo *tasksqlite.Repository }
 // SQLite grant in that evidence transaction. No RPC or SDK method exposes it.
 type ExactTaskCommandGrantIssuer interface {
 	Issue(context.Context, tasksqlite.ExactTaskCommandGrant, string, messagequeue.ExactPendingTransition) error
+	Execute(context.Context, tasksqlite.ExactTaskCommandGrant, string, messagequeue.ExactPendingTransition, string, int64) (tasksqlite.ExactTaskDescriptionReceipt, error)
 }
 
 type sqliteExactTaskCommandGrantIssuer struct {
@@ -59,6 +60,20 @@ func (i sqliteExactTaskCommandGrantIssuer) Issue(ctx context.Context, grant task
 	return i.evidence.WithPendingTransitionAuthority(ctx, compositeSnapshotToken, observed, func(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, pendingSnapshotToken string) error {
 		return i.repo.IssueExactTaskCommandGrantInAuthorityTx(ctx, authority, tx, grant, pendingSnapshotToken, observed)
 	})
+}
+
+// Execute derives the workspace writer fence inside the Host-owned bridge and
+// resolves issuance plus the exact marker command in one composite transaction.
+func (i sqliteExactTaskCommandGrantIssuer) Execute(ctx context.Context, grant tasksqlite.ExactTaskCommandGrant, compositeSnapshotToken string, observed messagequeue.ExactPendingTransition, marker string, expectedResourceVersion int64) (tasksqlite.ExactTaskDescriptionReceipt, error) {
+	if i.repo == nil || i.evidence == nil {
+		return tasksqlite.ExactTaskDescriptionReceipt{}, tasksqlite.ErrExactTaskCommandUnavailable
+	}
+	fence, err := i.repo.ExactTaskCommandWorkspaceFence(ctx, grant.WorkspaceID)
+	if err != nil {
+		return tasksqlite.ExactTaskDescriptionReceipt{}, tasksqlite.ErrExactTaskCommandUnavailable
+	}
+	command := tasksqlite.ExactTaskDescriptionCommand{GrantID: grant.ID, InstallationID: grant.InstallationID, WorkspaceID: grant.WorkspaceID, TaskID: grant.TaskID, CapabilityID: grant.CapabilityID, ReceiptAuditID: grant.ReceiptAuditID, ApprovalRevision: grant.ApprovalRevision, ActionDigest: grant.ActionDigest, IdempotencyKey: grant.IdempotencyKey, Marker: marker, ExpectedResourceVersion: expectedResourceVersion, ExpectedFence: fence, PendingSnapshotToken: compositeSnapshotToken, PendingTransition: &observed}
+	return i.repo.ExecuteExactTaskDescriptionCommandWithCompositeEvidence(ctx, i.evidence, compositeSnapshotToken, observed, grant, command)
 }
 
 func (b sqliteExactTaskCommandApprovalBridge) Grant(ctx context.Context, approval CapabilityApproval, auditID string) error {
