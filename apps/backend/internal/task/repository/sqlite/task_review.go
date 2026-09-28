@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/kandev/kandev/internal/task/models"
 )
@@ -48,7 +49,15 @@ func (r *Repository) CreateTaskReviewRun(ctx context.Context, run *models.TaskRe
 	if run.Trigger == "" {
 		run.Trigger = models.ReviewTriggerManual
 	}
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin task review run: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureTaskReviewOwnerAvailableTx(ctx, tx, run.TaskID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, tx.Rebind(`
 		INSERT INTO task_review_runs (`+reviewRunColumns+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`), run.ID, run.TaskID, run.SessionID, string(run.Trigger), run.WorkflowStepID, run.AgentID,
@@ -61,7 +70,28 @@ func (r *Repository) CreateTaskReviewRun(ctx context.Context, run *models.TaskRe
 		}
 		return fmt.Errorf("failed to create task review run: %w", err)
 	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit task review run: %w", err)
+	}
 	return nil
+}
+
+func (r *Repository) ensureTaskReviewOwnerAvailableTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
+	var taskExists bool
+	if err := tx.QueryRowContext(
+		ctx,
+		r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`),
+		taskID,
+	).Scan(&taskExists); err != nil {
+		return err
+	}
+	if !taskExists {
+		return nil
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	return ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID)
 }
 
 // ErrTaskReviewRunEntryConflict is returned by CreateTaskReviewRun when a run
