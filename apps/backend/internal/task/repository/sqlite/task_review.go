@@ -543,14 +543,25 @@ func (r *Repository) DeleteSupersededTaskReviewFindings(ctx context.Context, tas
 // DeleteTaskReviewByTask removes every run and finding for a task. Findings go
 // first so the run FK never dangles on a connection without enforced FKs.
 func (r *Repository) DeleteTaskReviewByTask(ctx context.Context, taskID string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin task review cleanup: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureTaskReviewOwnerAvailableTx(ctx, tx, taskID); err != nil {
+		return err
+	}
 	statements := []string{
 		`DELETE FROM task_review_findings WHERE task_id = ?`,
 		`DELETE FROM task_review_runs WHERE task_id = ?`,
 	}
 	for _, stmt := range statements {
-		if _, err := r.db.ExecContext(ctx, r.db.Rebind(stmt), taskID); err != nil {
+		if _, err := tx.ExecContext(ctx, tx.Rebind(stmt), taskID); err != nil {
 			return fmt.Errorf("failed to delete task review state: %w", err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit task review cleanup: %w", err)
 	}
 	return nil
 }
