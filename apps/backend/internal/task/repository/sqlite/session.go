@@ -2697,6 +2697,17 @@ func (r *Repository) CancelActiveTaskSessionsByCandidates(
 	now := time.Now().UTC()
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
+	tx, err := r.db.BeginTxx(writeCtx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(writeCtx, tx, taskID); err != nil {
+		return nil, err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(writeCtx, r.db, tx, taskID); err != nil {
+		return nil, err
+	}
 	// Each candidate contributes at most five bind parameters. Keep a margin
 	// below SQLite's host-parameter limit and use the same bounded-chunk shape
 	// as the ID-scoped cancellation path.
@@ -2720,7 +2731,7 @@ func (r *Repository) CancelActiveTaskSessionsByCandidates(
 		}
 		args := []interface{}{string(models.TaskSessionStateCancelled), reason, now, now, taskID}
 		args = append(args, predicateArgs...)
-		rows, err := r.db.QueryContext(writeCtx, r.db.Rebind(`
+		rows, err := tx.QueryContext(writeCtx, r.db.Rebind(`
 			UPDATE task_sessions
 			SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
 			WHERE task_id = ?
@@ -2745,6 +2756,9 @@ func (r *Repository) CancelActiveTaskSessionsByCandidates(
 			return nil, err
 		}
 		_ = rows.Close()
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	return sessions, nil
 }

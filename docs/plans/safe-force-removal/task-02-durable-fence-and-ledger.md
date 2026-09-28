@@ -149,3 +149,17 @@ task/environment writers, cleanup retry/reset, and executed PostgreSQL parity.
 ```bash
 (cd apps/backend && go test -count=1 ./internal/task/repository/sqlite ./internal/task/service)
 ```
+
+## Candidate cancellation fence receipt (2026-09-28)
+
+`CancelActiveTaskSessionsByCandidates` now holds the exact task-row lock and
+checks the force-removal claim in one bounded transaction before running its
+unchanged activity and current-turn CAS predicates. A held task returns
+`ErrForceRemovalTaskHeld` without cancelling its session. An unrelated running
+session still cancels, while a terminal or stale candidate remains unchanged.
+
+The focused test was RED because the held session cancelled without an error,
+then GREEN after the fence. The full SQLite repository suite and focused race
+tests passed. PostgreSQL execution remains the CI-only parity gate because
+`KANDEV_TEST_POSTGRES_DSN` is unavailable locally. W02 remains in progress;
+the next lifecycle audit must select one remaining unfenced production writer.
