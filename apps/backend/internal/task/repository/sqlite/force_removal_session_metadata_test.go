@@ -335,3 +335,31 @@ func TestClaimForceRemovalBlocksStaleRunningSessionCancellation(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, cancelled)
 }
+
+func TestClaimForceRemovalBlocksLastAgentErrorDismissal(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-dismiss-error-ws", Name: "Force"}))
+	lastErr := models.LastAgentError{Message: "connection lost", OccurredAt: time.Date(2026, 9, 28, 4, 0, 0, 0, time.UTC)}
+	for _, taskID := range []string{"force-dismiss-error-held", "force-dismiss-error-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-dismiss-error-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID, Metadata: map[string]interface{}{models.SessionMetaKeyLastAgentError: lastErr}}))
+	}
+	held, err := repo.GetTask(ctx, "force-dismiss-error-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "dismiss-error", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	dismissed, err := repo.DismissLastAgentError(ctx, "force-dismiss-error-held-session", lastErr, time.Now().UTC())
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, dismissed)
+	heldSession, err := repo.GetTaskSession(ctx, "force-dismiss-error-held-session")
+	require.NoError(t, err)
+	stored, ok := models.LoadLastAgentError(heldSession.Metadata)
+	require.True(t, ok)
+	require.False(t, stored.IsDismissed())
+
+	dismissed, err = repo.DismissLastAgentError(ctx, "force-dismiss-error-foreign-session", lastErr, time.Now().UTC())
+	require.NoError(t, err)
+	require.True(t, dismissed)
+}
