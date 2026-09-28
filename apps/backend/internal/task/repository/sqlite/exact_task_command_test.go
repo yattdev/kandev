@@ -36,10 +36,29 @@ func TestExactTaskCommandConsumesGrantAndPersistsReceipt(t *testing.T) {
 	if _, err = repo.ApplyExactTaskDescriptionCommand(ctx, changed); !errors.Is(err, ErrExactTaskCommandUnavailable) {
 		t.Fatalf("changed replay = %v", err)
 	}
-	competing := command
-	competing.TaskID, competing.GrantID, competing.Marker = "other-task", "other-grant", "[other-marker]"
-	if _, err = repo.ApplyExactTaskDescriptionCommand(ctx, competing); !errors.Is(err, ErrExactTaskCommandUnavailable) {
-		t.Fatalf("competing replay = %v", err)
+	for name, mutate := range map[string]func(*ExactTaskDescriptionCommand){
+		"target": func(competing *ExactTaskDescriptionCommand) { competing.TaskID = "other-task" },
+		"grant":  func(competing *ExactTaskDescriptionCommand) { competing.GrantID = "other-grant" },
+		"marker": func(competing *ExactTaskDescriptionCommand) { competing.Marker = "[other-marker]" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			competing := command
+			mutate(&competing)
+			if _, err = repo.ApplyExactTaskDescriptionCommand(ctx, competing); !errors.Is(err, ErrExactTaskCommandUnavailable) {
+				t.Fatalf("competing replay = %v", err)
+			}
+		})
+	}
+	var auditCount int
+	if err = repo.db.QueryRow(repo.db.Rebind(`SELECT COUNT(*) FROM exact_task_command_audits WHERE idempotency_key = ?`), command.IdempotencyKey).Scan(&auditCount); err != nil {
+		t.Fatal(err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("audit count after competing replays = %d, want 1", auditCount)
+	}
+	task, err = repo.GetTask(ctx, command.TaskID)
+	if err != nil || task.Description != command.Marker || task.ResourceVersion != receipt.ResourceVersion {
+		t.Fatalf("task after competing replays = %+v, %v", task, err)
 	}
 }
 
