@@ -11,10 +11,12 @@ import (
 	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/exactsnapshotauthority"
 	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
+	officemodels "github.com/kandev/kandev/internal/office/models"
 	officesqlite "github.com/kandev/kandev/internal/office/repository/sqlite"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	taskmodels "github.com/kandev/kandev/internal/task/models"
 	tasksqlite "github.com/kandev/kandev/internal/task/repository/sqlite"
+	v1 "github.com/kandev/kandev/pkg/api/v1"
 	"github.com/kandev/kandev/pkg/pluginsdk"
 )
 
@@ -204,7 +206,18 @@ func TestExactCommandComposedTwoWorkspaceLifecycleAfterRestart(t *testing.T) {
 		if err := repo.CreateWorkspace(ctx, &taskmodels.Workspace{ID: workspaceID, Name: workspaceID}); err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.CreateTask(ctx, &taskmodels.Task{ID: "task-" + workspaceID, WorkspaceID: workspaceID, Title: "Disposable", Description: "before"}); err != nil {
+		primaryID := "task-" + workspaceID
+		if err := repo.CreateTask(ctx, &taskmodels.Task{ID: primaryID, WorkspaceID: workspaceID, Title: "Disposable", Description: "before", State: v1.TaskStateTODO}); err != nil {
+			t.Fatal(err)
+		}
+		blockedID := "blocked-" + workspaceID
+		if err := repo.CreateTask(ctx, &taskmodels.Task{ID: blockedID, WorkspaceID: workspaceID, Title: "Blocked", State: v1.TaskStateBlocked}); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.CreateTask(ctx, &taskmodels.Task{ID: "done-" + workspaceID, WorkspaceID: workspaceID, Title: "Done", State: v1.TaskStateCompleted}); err != nil {
+			t.Fatal(err)
+		}
+		if err := office.CreateTaskBlocker(ctx, &officemodels.TaskBlocker{TaskID: blockedID, BlockerTaskID: primaryID}); err != nil {
 			t.Fatal(err)
 		}
 		if err := repo.CreateTaskSession(ctx, &taskmodels.TaskSession{ID: "session-" + workspaceID, TaskID: "task-" + workspaceID, State: taskmodels.TaskSessionStateCreated}); err != nil {
@@ -250,9 +263,25 @@ func TestExactCommandComposedTwoWorkspaceLifecycleAfterRestart(t *testing.T) {
 	workspaceID := "workspace-a"
 	taskID := "task-" + workspaceID
 	for _, observedWorkspace := range []string{"workspace-a", "workspace-b"} {
-		rows, info, err := host.ListTasksExact(ctx, pluginsdk.ExactTaskQuery{WorkspaceID: observedWorkspace, CapabilityRevision: 1})
-		if err != nil || len(rows) != 1 || info.HasMore || info.AuditID == "" {
-			t.Fatalf("initial task inventory %s = %+v, %+v, %v", observedWorkspace, rows, info, err)
+		rows, info, err := host.ListTasksExact(ctx, pluginsdk.ExactTaskQuery{WorkspaceID: observedWorkspace, CapabilityRevision: 1, Page: pluginsdk.ExactPage{Limit: 2}})
+		if err != nil || len(rows) != 2 || !info.HasMore || info.NextCursor == "" || info.SnapshotVersion == "" {
+			t.Fatalf("initial task page %s = %+v, %+v, %v", observedWorkspace, rows, info, err)
+		}
+		states := map[string]string{}
+		for _, row := range rows {
+			states[row.ID] = row.State
+		}
+		for info.HasMore {
+			rows, info, err = host.ListTasksExact(ctx, pluginsdk.ExactTaskQuery{WorkspaceID: observedWorkspace, CapabilityRevision: 1, Page: pluginsdk.ExactPage{Limit: 2, Cursor: info.NextCursor, SnapshotVersion: info.SnapshotVersion}})
+			if err != nil {
+				t.Fatalf("next task page %s: %v", observedWorkspace, err)
+			}
+			for _, row := range rows {
+				states[row.ID] = row.State
+			}
+		}
+		if len(states) != 3 || states["blocked-"+observedWorkspace] != string(v1.TaskStateBlocked) || states["done-"+observedWorkspace] != string(v1.TaskStateCompleted) || states["task-"+observedWorkspace] != string(v1.TaskStateTODO) || info.AuditID == "" {
+			t.Fatalf("exhausted task inventory %s = %#v; final page %+v", observedWorkspace, states, info)
 		}
 	}
 	before, err := repo.GetTask(ctx, taskID)
@@ -260,8 +289,16 @@ func TestExactCommandComposedTwoWorkspaceLifecycleAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, info, err := host.ListTaskDecisionEvidenceExact(ctx, pluginsdk.ExactTaskDecisionEvidenceQuery{WorkspaceID: workspaceID, CapabilityRevision: 1})
-	if err != nil || len(page.PendingTransitions) != 1 || info.HasMore {
+	if err != nil || len(page.PendingTransitions) != 1 || len(page.Relations) != 1 || info.HasMore {
 		t.Fatalf("decision evidence = %+v, %+v, %v", page, info, err)
+	}
+	relation := page.Relations[0]
+	blocked, err := repo.GetTask(ctx, "blocked-"+workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relation.WorkspaceID != workspaceID || relation.TaskID != blocked.ID || relation.BlockerTaskID != taskID || relation.TaskResourceVersion != blocked.ResourceVersion || relation.BlockerResourceVersion != before.ResourceVersion || relation.ResourceVersion <= 0 {
+		t.Fatalf("complete blocker relation = %+v, blocked=%+v, blocker=%+v", relation, blocked, before)
 	}
 	grant, err := host.issueExactTaskCommandGrant(ctx, exactTaskCommandGrantRequest{WorkspaceID: workspaceID, TaskID: taskID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: info.SnapshotVersion, PendingTransition: page.PendingTransitions[0], Marker: "[exact-marker]", IdempotencyKey: "command-a"})
 	if err != nil {
@@ -316,7 +353,7 @@ func TestExactCommandComposedTwoWorkspaceLifecycleAfterRestart(t *testing.T) {
 		{"workspace-b", "before", otherBeforeRestart.ResourceVersion},
 	} {
 		rows, info, err := readHost.ListTasksExact(ctx, pluginsdk.ExactTaskQuery{WorkspaceID: check.workspace, CapabilityRevision: 1})
-		if err != nil || len(rows) != 1 || info.HasMore || info.AuditID == "" {
+		if err != nil || len(rows) != 3 || info.HasMore || info.AuditID == "" {
 			t.Fatalf("restart list %s = %+v, %+v, %v", check.workspace, rows, info, err)
 		}
 		got, err := readHost.GetTaskExact(ctx, pluginsdk.ExactTaskGetQuery{WorkspaceID: check.workspace, TaskID: "task-" + check.workspace, CapabilityRevision: 1, SnapshotVersion: info.SnapshotVersion})
