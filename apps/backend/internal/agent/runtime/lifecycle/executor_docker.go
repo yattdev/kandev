@@ -637,10 +637,12 @@ func buildReconnectCreateInstanceRequest(req *ExecutorCreateRequest, instanceID 
 		}
 	}
 	return &agentctl.CreateInstanceRequest{
-		ID:            instanceID,
-		WorkspacePath: dockerWorkspacePath,
-		AgentType:     agentType,
-		Env:           selectedCheckoutAgentEnv(req.Env, req.Metadata),
+		ID:                 instanceID,
+		ExecutionID:        req.InstanceID,
+		AgentctlGeneration: req.AgentctlGeneration,
+		WorkspacePath:      dockerWorkspacePath,
+		AgentType:          agentType,
+		Env:                selectedCheckoutAgentEnv(req.Env, req.Metadata),
 		AutoApprovePermissions: autoApprovePermissionsOverride(
 			req.AutoApprovePermissions,
 			req.AutoApprovePermissionsOverride,

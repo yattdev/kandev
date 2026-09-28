@@ -89,4 +89,25 @@ func TestManagerLaunchCarriesMCPProvidersToExecutor(t *testing.T) {
 	if !reflect.DeepEqual(backend.lastRequest.McpProviders, want) {
 		t.Fatalf("executor McpProviders = %#v, want %#v", backend.lastRequest.McpProviders, want)
 	}
+	if backend.lastRequest.AgentctlGeneration != initialAgentctlGeneration {
+		t.Fatalf("executor AgentctlGeneration = %d, want %d", backend.lastRequest.AgentctlGeneration, initialAgentctlGeneration)
+	}
+}
+
+func TestAgentctlInstanceRequestsCarryInitialExecutionGeneration(t *testing.T) {
+	req := &ExecutorCreateRequest{InstanceID: "execution-1", AgentctlGeneration: initialAgentctlGeneration}
+	sprites := spriteCreateInstanceRequest(req)
+	ssh := buildSSHCreateInstanceRequest(req, "/workspace", "/agentctl")
+	requests := map[string]*agentctl.CreateInstanceRequest{
+		"standalone": buildStandaloneCreateInstanceRequest(req, nil, "", false, false, false, false, nil),
+		"container":  buildContainerCreateInstanceRequest(ContainerConfig{InstanceID: req.InstanceID, AgentctlGeneration: req.AgentctlGeneration}, "", false, false, false, false, nil),
+		"ssh":        &ssh,
+		"sprites":    &sprites,
+		"reconnect":  buildReconnectCreateInstanceRequest(req, req.InstanceID),
+	}
+	for name, create := range requests {
+		if create.ExecutionID != req.InstanceID || create.AgentctlGeneration != initialAgentctlGeneration {
+			t.Errorf("%s identity = (%q, %d), want (%q, %d)", name, create.ExecutionID, create.AgentctlGeneration, req.InstanceID, initialAgentctlGeneration)
+		}
+	}
 }

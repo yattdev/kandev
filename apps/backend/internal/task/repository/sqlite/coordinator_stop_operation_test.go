@@ -39,6 +39,17 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 	require.Equal(t, models.CoordinatorStopOperationStatusFencing, op.Status)
 	require.Equal(t, models.CoordinatorStopProofScopePending, op.ProofScope)
 
+	// @covers AC-STOP-FENCE-004
+	// An exact agentctl receipt only advances the durable operation to
+	// incomplete. The executor row remains running, so it cannot claim stopped.
+	incompleteReceipt, err := repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", models.CoordinatorStopFenceReceipt{
+		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: false,
+	})
+	require.NoError(t, err)
+	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, incompleteReceipt.Status)
+	require.Equal(t, "managed_processes_not_drained", incompleteReceipt.ReasonCode)
+	require.Equal(t, models.CoordinatorStopProofScopeAgentctlFence, incompleteReceipt.ProofScope)
+
 	// @covers AC-STOP-FENCE-002
 	late := &models.ExecutorRunning{
 		ID: "session-stop", SessionID: "session-stop", TaskID: "task-stop", ExecutorID: "executor",
@@ -49,6 +60,10 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 		ID: "session-stop", SessionID: "session-stop", TaskID: "task-stop", ExecutorID: "executor",
 		Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: "execution-a", AgentctlGeneration: 2, Status: models.ExecutorRunningStatusStarting,
 	}), "a distinct agentctl generation remains available to an explicit restart path")
+	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", models.CoordinatorStopFenceReceipt{
+		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true,
+	})
+	require.ErrorIs(t, err, models.ErrExecutionRotated, "a receipt for the old generation cannot mutate a replacement row")
 
 	session, err := repo.GetTaskSession(ctx, "session-stop")
 	require.NoError(t, err)
@@ -68,9 +83,9 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 	// @covers AC-STOP-FENCE-004, AC-STOP-FENCE-005
 	incomplete, changed, err := repo.MarkCoordinatorStopOperationIncomplete(ctx, "stop-op-a", "execution-a", 1, "agentctl_unreachable")
 	require.NoError(t, err)
-	require.True(t, changed)
+	require.False(t, changed)
 	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, incomplete.Status)
-	require.Equal(t, "agentctl_unreachable", incomplete.ReasonCode)
+	require.Equal(t, "managed_processes_not_drained", incomplete.ReasonCode)
 
 	// A restart/retry reads the durable incomplete receipt rather than treating
 	// the cancelled session as proof that the exact process stopped.

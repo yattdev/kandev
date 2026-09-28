@@ -602,6 +602,10 @@ type RemoteInstanceRefresher interface {
 // ExecutorCreateRequest contains parameters for creating an agentctl instance.
 type ExecutorCreateRequest struct {
 	InstanceID string
+	// AgentctlGeneration identifies the startup incarnation that this
+	// registration is authorized to create. A later replacement must advance
+	// the lifecycle generation and cannot reuse this registration as proof.
+	AgentctlGeneration uint64
 	// ExecutorType is retained in execution metadata so recovered sessions can
 	// safely re-check host-local filesystem eligibility.
 	ExecutorType      string

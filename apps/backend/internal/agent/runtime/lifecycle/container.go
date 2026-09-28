@@ -57,6 +57,7 @@ type ContainerConfig struct {
 	AutoApprovePermissionsOverride *bool
 	ProfileInfo                    *AgentProfileInfo
 	InstanceID                     string
+	AgentctlGeneration             uint64
 	MainRepoGitDir                 string // Path to main repo's .git directory (for worktrees)
 	McpServers                     []McpServerConfig
 	McpMode                        string
@@ -119,11 +120,13 @@ func buildContainerCreateInstanceRequest(
 	stripEnv []string,
 ) *agentctl.CreateInstanceRequest {
 	return &agentctl.CreateInstanceRequest{
-		ID:            config.InstanceID,
-		WorkspacePath: "/workspace",
-		AgentCommand:  "",
-		AgentType:     agentType,
-		Env:           selectedCheckoutAgentEnv(config.Credentials, config.Metadata),
+		ID:                 config.InstanceID,
+		ExecutionID:        config.InstanceID,
+		AgentctlGeneration: config.AgentctlGeneration,
+		WorkspacePath:      "/workspace",
+		AgentCommand:       "",
+		AgentType:          agentType,
+		Env:                selectedCheckoutAgentEnv(config.Credentials, config.Metadata),
 		AutoApprovePermissions: autoApprovePermissionsOverride(
 			config.AutoApprovePermissions,
 			config.AutoApprovePermissionsOverride,

@@ -1124,6 +1124,7 @@ func (m *Manager) launchBuildExecutorRequest(ctx context.Context, executionID st
 
 	execReq := &ExecutorCreateRequest{
 		InstanceID:                     executionID,
+		AgentctlGeneration:             initialAgentctlGeneration,
 		ExecutorType:                   reqWithWorktree.ExecutorType,
 		TaskID:                         reqWithWorktree.TaskID,
 		TaskTitle:                      reqWithWorktree.TaskTitle,

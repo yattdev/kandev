@@ -28,6 +28,11 @@ import (
 // AgentCtlPort is the default agentctl control port.
 const AgentCtlPort = ports.AgentCtl
 
+// initialAgentctlGeneration is reserved for a newly created agentctl instance.
+// startAgentProcess advances the matching AgentExecution to this generation
+// before it admits the first agent process.
+const initialAgentctlGeneration uint64 = 1
+
 // AgentExecution represents a running agent execution
 type AgentExecution struct {
 	ID string

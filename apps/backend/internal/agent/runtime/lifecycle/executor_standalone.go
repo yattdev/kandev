@@ -199,12 +199,14 @@ func buildStandaloneCreateInstanceRequest(
 	stripEnv []string,
 ) *agentctl.CreateInstanceRequest {
 	return &agentctl.CreateInstanceRequest{
-		ID:            req.InstanceID,
-		WorkspacePath: req.WorkspacePath,
-		AgentCommand:  "", // Agent command set via Configure endpoint
-		Protocol:      req.Protocol,
-		AgentType:     agentType,
-		Env:           env,
+		ID:                 req.InstanceID,
+		ExecutionID:        req.InstanceID,
+		AgentctlGeneration: req.AgentctlGeneration,
+		WorkspacePath:      req.WorkspacePath,
+		AgentCommand:       "", // Agent command set via Configure endpoint
+		Protocol:           req.Protocol,
+		AgentType:          agentType,
+		Env:                env,
 		AutoApprovePermissions: autoApprovePermissionsOverride(
 			req.AutoApprovePermissions,
 			req.AutoApprovePermissionsOverride,

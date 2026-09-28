@@ -175,6 +175,100 @@ func (r *Repository) MarkCoordinatorStopOperationIncomplete(
 	return operation, changed == 1, nil
 }
 
+// ConsumeCoordinatorStopFenceReceipt records agentctl's exact admission fence
+// only after the captured executor row and turn remain current. It never writes
+// stopped: even a drained agentctl receipt lacks the lifecycle-owned terminal
+// executor proof.
+func (r *Repository) ConsumeCoordinatorStopFenceReceipt(
+	ctx context.Context, operationID string, receipt models.CoordinatorStopFenceReceipt,
+) (*models.CoordinatorStopOperation, error) {
+	if operationID == "" || receipt.ExecutionID == "" || receipt.AgentctlGeneration == 0 || receipt.AdmissionClosedAt.IsZero() {
+		return nil, errors.New("coordinator stop fence receipt requires operation, execution, agentctl generation, and cutoff")
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin coordinator stop receipt: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	op, err := loadCoordinatorStopReceiptOperationTx(ctx, tx, r.db, r.db.DriverName(), operationID, receipt)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCoordinatorStopReceiptBoundaryTx(ctx, tx, r.db, op); err != nil {
+		return nil, err
+	}
+	if err := markCoordinatorStopReceiptIncompleteTx(ctx, tx, r.db, operationID, receipt); err != nil {
+		return nil, err
+	}
+	updated, found, err := getCoordinatorStopOperationTx(ctx, tx, r.db, operationID)
+	if err != nil || !found {
+		if err != nil {
+			return nil, err
+		}
+		return nil, models.ErrExecutionRotated
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+func loadCoordinatorStopReceiptOperationTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, driverName, operationID string, receipt models.CoordinatorStopFenceReceipt) (*models.CoordinatorStopOperation, error) {
+	op, found, err := getCoordinatorStopOperationTx(ctx, tx, db, operationID)
+	if err != nil {
+		return nil, err
+	}
+	if !found || op.ExecutionID != receipt.ExecutionID || op.AgentctlGeneration != receipt.AgentctlGeneration {
+		return nil, models.ErrExecutionRotated
+	}
+	if err := kandevdb.LockTaskRowInTx(ctx, tx, driverName, op.TaskID); err != nil {
+		return nil, err
+	}
+	if err := lockSessionTurnWrites(ctx, tx, driverName, op.SessionID); err != nil {
+		return nil, err
+	}
+	return op, nil
+}
+
+func validateCoordinatorStopReceiptBoundaryTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, op *models.CoordinatorStopOperation) error {
+	if err := matchCoordinatorStopExecutorTx(ctx, tx, db, *op); err != nil {
+		return err
+	}
+	var completed, successorOpen bool
+	if err := tx.GetContext(ctx, &completed, db.Rebind(`SELECT EXISTS(SELECT 1 FROM task_session_turns WHERE id = ? AND task_session_id = ? AND task_id = ? AND completed_at IS NOT NULL)`), op.TurnID, op.SessionID, op.TaskID); err != nil {
+		return err
+	}
+	if !completed {
+		return models.ErrExecutionRotated
+	}
+	if err := tx.GetContext(ctx, &successorOpen, db.Rebind(`SELECT EXISTS(SELECT 1 FROM task_session_turns WHERE task_session_id = ? AND task_id = ? AND id <> ? AND completed_at IS NULL)`), op.SessionID, op.TaskID, op.TurnID); err != nil {
+		return err
+	}
+	if successorOpen {
+		return models.ErrExecutionRotated
+	}
+	return nil
+}
+
+func markCoordinatorStopReceiptIncompleteTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, operationID string, receipt models.CoordinatorStopFenceReceipt) error {
+	reasonCode := "executor_terminal_proof_pending"
+	if !receipt.ManagedProcessesDrained {
+		reasonCode = "managed_processes_not_drained"
+	}
+	result, err := tx.ExecContext(ctx, db.Rebind(`UPDATE task_stop_operations SET status = ?, reason_code = ?, proof_scope = ?, updated_at = ? WHERE id = ? AND execution_id = ? AND agentctl_generation = ? AND status IN (?, ?)`), models.CoordinatorStopOperationStatusIncomplete, reasonCode, models.CoordinatorStopProofScopeAgentctlFence, time.Now().UTC(), operationID, receipt.ExecutionID, receipt.AgentctlGeneration, models.CoordinatorStopOperationStatusFencing, models.CoordinatorStopOperationStatusIncomplete)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return models.ErrExecutionRotated
+	}
+	return nil
+}
+
 func getCoordinatorStopOperationTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, id string) (*models.CoordinatorStopOperation, bool, error) {
 	operation := &models.CoordinatorStopOperation{}
 	err := tx.QueryRowxContext(ctx, db.Rebind(`SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, status, reason_code, proof_scope, created_at, updated_at FROM task_stop_operations WHERE id = ?`), id).Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt)

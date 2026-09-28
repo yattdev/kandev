@@ -2071,7 +2071,19 @@ const (
 	CoordinatorStopOperationStatusFencing    = "fencing"
 	CoordinatorStopOperationStatusIncomplete = "incomplete"
 	CoordinatorStopProofScopePending         = "pending_exact_runtime_proof"
+	CoordinatorStopProofScopeAgentctlFence   = "agentctl_admission_closed"
 )
+
+// CoordinatorStopFenceReceipt is the bounded proof reported by agentctl after
+// it closes command admission for one execution incarnation. It is deliberately
+// insufficient to certify stopped by itself: lifecycle must still establish the
+// terminal executor/process boundary.
+type CoordinatorStopFenceReceipt struct {
+	ExecutionID             string
+	AgentctlGeneration      uint64
+	AdmissionClosedAt       time.Time
+	ManagedProcessesDrained bool
+}
 
 // ReviewStatus represents the review state of a TaskSession. The zero value
 // (ReviewStatusNone, the empty string) means "no review needed" and serializes
