@@ -1308,4 +1308,12 @@ message UpdateTaskExactRequest {
 message UpdateTaskExactResponse {
   string audit_id = 1;
   int64 resource_version = 2;
+  ExactTaskUpdateOutcome outcome = 3;
+}
+enum ExactTaskUpdateOutcome {
+  EXACT_TASK_UPDATE_OUTCOME_UNSPECIFIED = 0;
+  // The marker, audit, and task.updated outbox acknowledgement are durable.
+  EXACT_TASK_UPDATE_OUTCOME_DURABLE = 1;
+  // The marker and audit committed; task.updated delivery remains unresolved.
+  EXACT_TASK_UPDATE_OUTCOME_PENDING = 2;
 }

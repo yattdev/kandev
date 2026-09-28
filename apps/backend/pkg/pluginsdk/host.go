@@ -19,6 +19,7 @@ package pluginsdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	pluginv1 "github.com/kandev/kandev/proto/kandev/plugin/v1"
@@ -475,7 +476,16 @@ func (h *grpcHostClient) UpdateTaskExact(ctx context.Context, request ExactTaskU
 	if err != nil {
 		return nil, err
 	}
-	return &ExactTaskUpdateReceipt{AuditID: response.GetAuditId(), ResourceVersion: response.GetResourceVersion()}, nil
+	outcome := ExactTaskUpdateOutcome("")
+	switch response.GetOutcome() {
+	case pluginv1.ExactTaskUpdateOutcome_EXACT_TASK_UPDATE_OUTCOME_DURABLE:
+		outcome = ExactTaskUpdateDurable
+	case pluginv1.ExactTaskUpdateOutcome_EXACT_TASK_UPDATE_OUTCOME_PENDING:
+		outcome = ExactTaskUpdatePending
+	default:
+		return nil, errors.New("exact task update outcome is unavailable")
+	}
+	return &ExactTaskUpdateReceipt{AuditID: response.GetAuditId(), ResourceVersion: response.GetResourceVersion(), Outcome: outcome}, nil
 }
 
 func exactPageToProto(page ExactPage) *pluginv1.ExactPage {
@@ -1089,7 +1099,16 @@ func (s *grpcHostServer) UpdateTaskExact(ctx context.Context, request *pluginv1.
 	if err != nil {
 		return nil, err
 	}
-	return &pluginv1.UpdateTaskExactResponse{AuditId: receipt.AuditID, ResourceVersion: receipt.ResourceVersion}, nil
+	var outcome pluginv1.ExactTaskUpdateOutcome
+	switch receipt.Outcome {
+	case ExactTaskUpdateDurable:
+		outcome = pluginv1.ExactTaskUpdateOutcome_EXACT_TASK_UPDATE_OUTCOME_DURABLE
+	case ExactTaskUpdatePending:
+		outcome = pluginv1.ExactTaskUpdateOutcome_EXACT_TASK_UPDATE_OUTCOME_PENDING
+	default:
+		return nil, status.Error(codes.FailedPrecondition, "exact task update outcome is unavailable")
+	}
+	return &pluginv1.UpdateTaskExactResponse{AuditId: receipt.AuditID, ResourceVersion: receipt.ResourceVersion, Outcome: outcome}, nil
 }
 
 func exactPageFromProto(page *pluginv1.ExactPage) ExactPage {

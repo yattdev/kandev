@@ -63,6 +63,7 @@ type ExactTaskDescriptionCommand struct {
 	CapabilityID, ReceiptAuditID                 string
 	ApprovalRevision                             uint64
 	ActionDigest, IdempotencyKey, Marker         string
+	RequestIdentity                              string
 	ExpectedResourceVersion, ExpectedFence       int64
 	PendingSnapshotToken                         string
 	PendingTransition                            *messagequeue.ExactPendingTransition
@@ -71,6 +72,28 @@ type ExactTaskDescriptionCommand struct {
 type ExactTaskDescriptionReceipt struct {
 	AuditID         string
 	ResourceVersion int64
+	Pending         bool
+}
+
+// FindExactTaskCommandReplay reads only an already committed public command.
+// A changed request sharing an idempotency key is denied before another grant
+// can be issued, including after the evidence snapshot has expired.
+func (r *Repository) FindExactTaskCommandReplay(ctx context.Context, installationID, workspaceID, taskID, idempotencyKey, requestIdentity string, approvalRevision uint64) (*ExactTaskDescriptionReceipt, error) {
+	if !r.ExactTaskCommandAvailable() || installationID == "" || workspaceID == "" || taskID == "" || idempotencyKey == "" || requestIdentity == "" {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	var storedTaskID, storedIdentity string
+	var storedRevision uint64
+	var version int64
+	var publishedAt sql.NullTime
+	err := r.db.QueryRowxContext(ctx, r.db.Rebind(`SELECT a.task_id, a.request_identity, g.approval_revision, a.resource_version, o.published_at FROM exact_task_command_audits a JOIN exact_task_command_grants g ON g.installation_id = a.installation_id AND g.workspace_id = a.workspace_id AND g.idempotency_key = a.idempotency_key JOIN exact_task_command_outbox o ON o.audit_id = a.audit_id WHERE a.installation_id = ? AND a.workspace_id = ? AND a.idempotency_key = ?`), installationID, workspaceID, idempotencyKey).Scan(&storedTaskID, &storedIdentity, &storedRevision, &version, &publishedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil || storedTaskID != taskID || storedIdentity != requestIdentity || storedRevision != approvalRevision {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	return &ExactTaskDescriptionReceipt{AuditID: idempotencyKey, ResourceVersion: version, Pending: !publishedAt.Valid}, nil
 }
 
 type ExactTaskCommandOutboxRecord struct {
@@ -216,7 +239,10 @@ func (r *Repository) initExactTaskCommandSchema() error {
 	if err := r.migrate.Apply("exact_task_commands.outbox_claim", `ALTER TABLE exact_task_command_outbox ADD COLUMN claimed_at TIMESTAMP`); err != nil {
 		return err
 	}
-	return r.migrate.Apply("exact_task_commands.outbox_delivery", `ALTER TABLE exact_task_command_outbox ADD COLUMN delivered_at TIMESTAMP`)
+	if err := r.migrate.Apply("exact_task_commands.outbox_delivery", `ALTER TABLE exact_task_command_outbox ADD COLUMN delivered_at TIMESTAMP`); err != nil {
+		return err
+	}
+	return r.migrate.Apply("exact_task_commands.request_identity", `ALTER TABLE exact_task_command_audits ADD COLUMN request_identity TEXT NOT NULL DEFAULT ''`)
 }
 
 // RecordExactTaskCommandReceipt binds an H6 decision receipt to the active
@@ -487,7 +513,7 @@ func (r *Repository) applyExactTaskDescriptionCommandInTx(ctx context.Context, t
 	if err = r.afterExactTaskCommandCAS(); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
-	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_audits(audit_id, installation_id, workspace_id, task_id, action_digest, idempotency_key, resource_version, command_identity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`), command.IdempotencyKey, command.InstallationID, command.WorkspaceID, command.TaskID, command.ActionDigest, command.IdempotencyKey, version, exactTaskCommandIdentity(command), now); err != nil {
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_audits(audit_id, installation_id, workspace_id, task_id, action_digest, idempotency_key, resource_version, command_identity, request_identity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), command.IdempotencyKey, command.InstallationID, command.WorkspaceID, command.TaskID, command.ActionDigest, command.IdempotencyKey, version, exactTaskCommandIdentity(command), command.RequestIdentity, now); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
 	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_outbox(audit_id, task_id, workspace_id, resource_version) VALUES (?, ?, ?, ?)`), command.IdempotencyKey, command.TaskID, command.WorkspaceID, version); err != nil {
@@ -587,7 +613,7 @@ func exactTaskCommandReplay(ctx context.Context, r *Repository, tx *sqlx.Tx, com
 }
 
 func exactTaskCommandIdentity(c ExactTaskDescriptionCommand) string {
-	identity := c.GrantID + "\x00" + c.InstallationID + "\x00" + c.WorkspaceID + "\x00" + c.TaskID + "\x00" + c.CapabilityID + "\x00" + c.ReceiptAuditID + "\x00" + fmt.Sprint(c.ApprovalRevision) + "\x00" + c.ActionDigest + "\x00" + c.IdempotencyKey + "\x00" + c.Marker + "\x00" + fmt.Sprint(c.ExpectedResourceVersion) + "\x00" + fmt.Sprint(c.ExpectedFence)
+	identity := c.GrantID + "\x00" + c.InstallationID + "\x00" + c.WorkspaceID + "\x00" + c.TaskID + "\x00" + c.CapabilityID + "\x00" + c.ReceiptAuditID + "\x00" + fmt.Sprint(c.ApprovalRevision) + "\x00" + c.ActionDigest + "\x00" + c.IdempotencyKey + "\x00" + c.Marker + "\x00" + fmt.Sprint(c.ExpectedResourceVersion) + "\x00" + fmt.Sprint(c.ExpectedFence) + "\x00" + c.RequestIdentity
 	if c.PendingTransition != nil || c.PendingSnapshotToken != "" {
 		identity += "\x00" + c.PendingSnapshotToken + "\x00" + exactPendingTransitionIdentity(c.PendingTransition)
 	}

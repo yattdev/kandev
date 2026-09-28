@@ -28,7 +28,8 @@ type sqliteExactTaskCommandApprovalBridge struct{ repo *tasksqlite.Repository }
 // SQLite grant in that evidence transaction. No RPC or SDK method exposes it.
 type ExactTaskCommandGrantIssuer interface {
 	Issue(context.Context, tasksqlite.ExactTaskCommandGrant, string, messagequeue.ExactPendingTransition) error
-	Execute(context.Context, tasksqlite.ExactTaskCommandGrant, string, messagequeue.ExactPendingTransition, string, int64) (tasksqlite.ExactTaskDescriptionReceipt, error)
+	Execute(context.Context, tasksqlite.ExactTaskCommandGrant, string, messagequeue.ExactPendingTransition, string, int64, string) (tasksqlite.ExactTaskDescriptionReceipt, error)
+	Replay(context.Context, string, string, string, string, string, uint64) (*tasksqlite.ExactTaskDescriptionReceipt, error)
 }
 
 // ExactTaskCommandEventPublisher is the task-service boundary that consumes
@@ -87,7 +88,7 @@ func (i sqliteExactTaskCommandGrantIssuer) Issue(ctx context.Context, grant task
 
 // Execute derives the workspace writer fence inside the Host-owned bridge and
 // resolves issuance plus the exact marker command in one composite transaction.
-func (i sqliteExactTaskCommandGrantIssuer) Execute(ctx context.Context, grant tasksqlite.ExactTaskCommandGrant, compositeSnapshotToken string, observed messagequeue.ExactPendingTransition, marker string, expectedResourceVersion int64) (tasksqlite.ExactTaskDescriptionReceipt, error) {
+func (i sqliteExactTaskCommandGrantIssuer) Execute(ctx context.Context, grant tasksqlite.ExactTaskCommandGrant, compositeSnapshotToken string, observed messagequeue.ExactPendingTransition, marker string, expectedResourceVersion int64, requestIdentity string) (tasksqlite.ExactTaskDescriptionReceipt, error) {
 	if i.repo == nil || i.evidence == nil {
 		return tasksqlite.ExactTaskDescriptionReceipt{}, tasksqlite.ErrExactTaskCommandUnavailable
 	}
@@ -95,13 +96,27 @@ func (i sqliteExactTaskCommandGrantIssuer) Execute(ctx context.Context, grant ta
 	if err != nil {
 		return tasksqlite.ExactTaskDescriptionReceipt{}, tasksqlite.ErrExactTaskCommandUnavailable
 	}
-	command := tasksqlite.ExactTaskDescriptionCommand{GrantID: grant.ID, InstallationID: grant.InstallationID, WorkspaceID: grant.WorkspaceID, TaskID: grant.TaskID, CapabilityID: grant.CapabilityID, ReceiptAuditID: grant.ReceiptAuditID, ApprovalRevision: grant.ApprovalRevision, ActionDigest: grant.ActionDigest, IdempotencyKey: grant.IdempotencyKey, Marker: marker, ExpectedResourceVersion: expectedResourceVersion, ExpectedFence: fence, PendingSnapshotToken: compositeSnapshotToken, PendingTransition: &observed}
+	command := tasksqlite.ExactTaskDescriptionCommand{GrantID: grant.ID, InstallationID: grant.InstallationID, WorkspaceID: grant.WorkspaceID, TaskID: grant.TaskID, CapabilityID: grant.CapabilityID, ReceiptAuditID: grant.ReceiptAuditID, ApprovalRevision: grant.ApprovalRevision, ActionDigest: grant.ActionDigest, IdempotencyKey: grant.IdempotencyKey, Marker: marker, ExpectedResourceVersion: expectedResourceVersion, ExpectedFence: fence, PendingSnapshotToken: compositeSnapshotToken, PendingTransition: &observed, RequestIdentity: requestIdentity}
 	receipt, err := i.repo.ExecuteExactTaskDescriptionCommandWithCompositeEvidence(ctx, i.evidence, compositeSnapshotToken, observed, grant, command)
 	if err != nil || i.publisher == nil {
 		return receipt, err
 	}
 	if err = i.publisher.PublishExactTaskCommandUpdate(ctx, receipt.AuditID); err != nil {
-		return tasksqlite.ExactTaskDescriptionReceipt{}, err
+		receipt.Pending = true
+	}
+	return receipt, nil
+}
+
+func (i sqliteExactTaskCommandGrantIssuer) Replay(ctx context.Context, installationID, workspaceID, taskID, idempotencyKey, requestIdentity string, approvalRevision uint64) (*tasksqlite.ExactTaskDescriptionReceipt, error) {
+	if i.repo == nil || i.publisher == nil {
+		return nil, tasksqlite.ErrExactTaskCommandUnavailable
+	}
+	receipt, err := i.repo.FindExactTaskCommandReplay(ctx, installationID, workspaceID, taskID, idempotencyKey, requestIdentity, approvalRevision)
+	if err != nil || receipt == nil || !receipt.Pending {
+		return receipt, err
+	}
+	if err = i.publisher.PublishExactTaskCommandUpdate(ctx, receipt.AuditID); err == nil {
+		receipt.Pending = false
 	}
 	return receipt, nil
 }

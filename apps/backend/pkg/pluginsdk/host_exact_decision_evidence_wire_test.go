@@ -17,7 +17,7 @@ type decisionEvidenceRecordingHost struct {
 
 func (h *decisionEvidenceRecordingHost) UpdateTaskExact(_ context.Context, request ExactTaskUpdateRequest) (*ExactTaskUpdateReceipt, error) {
 	h.update = request
-	return &ExactTaskUpdateReceipt{AuditID: "audit-update", ResourceVersion: request.ExpectedResourceVersion + 1}, nil
+	return &ExactTaskUpdateReceipt{AuditID: "audit-update", ResourceVersion: request.ExpectedResourceVersion + 1, Outcome: ExactTaskUpdatePending}, nil
 }
 
 func (h *decisionEvidenceRecordingHost) ListTaskDecisionEvidenceExact(_ context.Context, query ExactTaskDecisionEvidenceQuery) (*ExactTaskDecisionEvidencePage, *ExactPageInfo, error) {
@@ -34,7 +34,7 @@ func TestHost_UpdateTaskExactOverWire(t *testing.T) {
 	receipt, err := exact.UpdateTaskExact(context.Background(), request)
 	require.NoError(t, err)
 	require.Equal(t, request, impl.update)
-	require.Equal(t, &ExactTaskUpdateReceipt{AuditID: "audit-update", ResourceVersion: 8}, receipt)
+	require.Equal(t, &ExactTaskUpdateReceipt{AuditID: "audit-update", ResourceVersion: 8, Outcome: ExactTaskUpdatePending}, receipt)
 }
 
 func TestHost_ListTaskDecisionEvidenceExactOverWire(t *testing.T) {

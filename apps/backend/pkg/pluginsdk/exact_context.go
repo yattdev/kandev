@@ -78,7 +78,17 @@ type ExactTaskUpdateRequest struct {
 type ExactTaskUpdateReceipt struct {
 	AuditID         string
 	ResourceVersion int64
+	// Outcome is pending when the task mutation committed but event delivery
+	// has not been acknowledged. Retry the identical request to resolve it.
+	Outcome ExactTaskUpdateOutcome
 }
+
+type ExactTaskUpdateOutcome string
+
+const (
+	ExactTaskUpdateDurable ExactTaskUpdateOutcome = "durable"
+	ExactTaskUpdatePending ExactTaskUpdateOutcome = "pending"
+)
 
 // ExactSessionHost exposes the public-safe, snapshot-bound lifecycle
 // projection for all sessions in one approved workspace.

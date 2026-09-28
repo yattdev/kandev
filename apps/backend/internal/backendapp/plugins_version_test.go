@@ -476,8 +476,9 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	if err != nil || len(evidence.PendingTransitions) != 1 || page.SnapshotVersion == "" {
 		t.Fatalf("Host decision evidence = %+v %+v %v", evidence, page, err)
 	}
-	receipt, err := commandHost.UpdateTaskExact(ctx, pluginsdk.ExactTaskUpdateRequest{WorkspaceID: "exact-ws-a", TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[public-marker]", IdempotencyKey: "public-command", ExpectedResourceVersion: task.ResourceVersion})
-	if err != nil || receipt.AuditID == "" || receipt.ResourceVersion != task.ResourceVersion+1 {
+	commandRequest := pluginsdk.ExactTaskUpdateRequest{WorkspaceID: "exact-ws-a", TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[public-marker]", IdempotencyKey: "public-command", ExpectedResourceVersion: task.ResourceVersion}
+	receipt, err := commandHost.UpdateTaskExact(ctx, commandRequest)
+	if err != nil || receipt.AuditID == "" || receipt.ResourceVersion != task.ResourceVersion+1 || receipt.Outcome != pluginsdk.ExactTaskUpdateDurable {
 		t.Fatalf("public exact command = %+v, %v", receipt, err)
 	}
 	stored, err = repos.Task.GetTask(ctx, task.ID)
@@ -554,9 +555,9 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	if err != nil || len(evidence.PendingTransitions) != 1 {
 		t.Fatalf("reopened decision evidence = %+v %+v %v", evidence, page, err)
 	}
-	_, err = commandHost.UpdateTaskExact(ctx, pluginsdk.ExactTaskUpdateRequest{WorkspaceID: task.WorkspaceID, TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[public-marker]", IdempotencyKey: "public-command", ExpectedResourceVersion: receipt.ResourceVersion - 1})
-	if err == nil {
-		t.Fatal("reopened public replay was inferred as a new command")
+	replayed, err := commandHost.UpdateTaskExact(ctx, commandRequest)
+	if err != nil || replayed.AuditID != receipt.AuditID || replayed.ResourceVersion != receipt.ResourceVersion || replayed.Outcome != pluginsdk.ExactTaskUpdateDurable {
+		t.Fatalf("reopened public replay = %+v, %v; want %+v", replayed, err, receipt)
 	}
 	_, err = commandHost.UpdateTaskExact(ctx, pluginsdk.ExactTaskUpdateRequest{WorkspaceID: task.WorkspaceID, TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[reopened-change]", IdempotencyKey: "public-command", ExpectedResourceVersion: task.ResourceVersion})
 	if err == nil {

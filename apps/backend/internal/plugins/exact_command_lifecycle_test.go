@@ -2,13 +2,16 @@ package plugins
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/db"
+	"github.com/kandev/kandev/internal/events/bus"
 	"github.com/kandev/kandev/internal/exactsnapshotauthority"
 	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
 	officemodels "github.com/kandev/kandev/internal/office/models"
@@ -16,6 +19,7 @@ import (
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	taskmodels "github.com/kandev/kandev/internal/task/models"
 	tasksqlite "github.com/kandev/kandev/internal/task/repository/sqlite"
+	taskservice "github.com/kandev/kandev/internal/task/service"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	"github.com/kandev/kandev/pkg/pluginsdk"
 )
@@ -88,6 +92,7 @@ func TestExactCommandComposedIssuerConcurrentSameKeyHasOneGrant(t *testing.T) {
 
 type exactIssuerFixture struct {
 	ctx           context.Context
+	path          string
 	database      *sqlx.DB
 	repo          *tasksqlite.Repository
 	queue         messagequeue.Repository
@@ -102,7 +107,8 @@ type exactIssuerFixture struct {
 func newExactIssuerFixture(t *testing.T) *exactIssuerFixture {
 	t.Helper()
 	ctx := context.Background()
-	database, repo := openExactLifecycleRepository(t, filepath.Join(t.TempDir(), "issuer.db"))
+	path := filepath.Join(t.TempDir(), "issuer.db")
+	database, repo := openExactLifecycleRepository(t, path)
 	office, err := officesqlite.NewWithDB(database, database, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +165,143 @@ func newExactIssuerFixture(t *testing.T) *exactIssuerFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &exactIssuerFixture{ctx: ctx, database: database, repo: repo, queue: queue, evidence: evidence, issuer: issuer, approval: approval, grant: tasksqlite.ExactTaskCommandGrant{ID: "grant", InstallationID: approval.InstallationID, WorkspaceID: approval.WorkspaceID, TaskID: "task", CapabilityID: approval.CapabilityID, ReceiptAuditID: approval.ReceiptAuditID, ApprovalRevision: approval.Revision, ActionDigest: "marker", IdempotencyKey: "key", ExpiresAt: time.Now().UTC().Add(time.Minute)}, snapshotToken: snapshot.Token, pending: page.PendingTransitions[0]}
+	return &exactIssuerFixture{ctx: ctx, path: path, database: database, repo: repo, queue: queue, evidence: evidence, issuer: issuer, approval: approval, grant: tasksqlite.ExactTaskCommandGrant{ID: "grant", InstallationID: approval.InstallationID, WorkspaceID: approval.WorkspaceID, TaskID: "task", CapabilityID: approval.CapabilityID, ReceiptAuditID: approval.ReceiptAuditID, ApprovalRevision: approval.Revision, ActionDigest: "marker", IdempotencyKey: "key", ExpiresAt: time.Now().UTC().Add(time.Minute)}, snapshotToken: snapshot.Token, pending: page.PendingTransitions[0]}
+}
+
+type exactCommandFailureBus struct {
+	bus.EventBus
+	failNext  bool
+	published int
+}
+
+func (b *exactCommandFailureBus) Publish(ctx context.Context, subject string, event *bus.Event) error {
+	if b.failNext {
+		b.failNext = false
+		return errors.New("injected publication failure")
+	}
+	if err := b.EventBus.Publish(ctx, subject, event); err != nil {
+		return err
+	}
+	if subject == "task.updated" {
+		b.published++
+	}
+	return nil
+}
+
+func TestPublicExactCommandResumesPostCommitFailuresAfterRestart(t *testing.T) {
+	for _, failure := range []string{"publication", "acknowledgement"} {
+		t.Run(failure, func(t *testing.T) {
+			f := newExactIssuerFixture(t)
+			log := logger.Default()
+			events := &exactCommandFailureBus{EventBus: bus.NewMemoryEventBus(log), failNext: failure == "publication"}
+			service := taskservice.NewService(taskservice.Repos{Tasks: f.repo, TaskRepos: f.repo, WorkspaceFolders: f.repo, Sessions: f.repo}, events, log, taskservice.RepositoryDiscoveryConfig{})
+			issuer, err := NewSQLiteExactTaskCommandGrantIssuerWithTaskUpdatePublisher(f.repo, f.evidence, service)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if failure == "acknowledgement" {
+				if _, err = f.database.Exec(`CREATE TRIGGER reject_exact_ack BEFORE UPDATE OF published_at ON exact_task_command_outbox WHEN NEW.published_at IS NOT NULL BEGIN SELECT RAISE(ABORT, 'injected acknowledgement failure'); END`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			snapshots := newExactSnapshotStore([]byte("public-command-restart-secret"))
+			host := &pluginHost{installationID: f.approval.InstallationID, exactSnapshots: snapshots,
+				exactAuthorize: func(workspaceID string, revision uint64, capabilityID, _ string) ApprovalDecision {
+					if workspaceID != f.approval.WorkspaceID || revision != f.approval.Revision || capabilityID != f.approval.CapabilityID {
+						return ApprovalDecision{}
+					}
+					return ApprovalDecision{Allowed: true, Receipt: ApprovalReceipt{InstallationID: f.approval.InstallationID, WorkspaceID: f.approval.WorkspaceID, CapabilityID: f.approval.CapabilityID, Revision: 1, AuditID: f.approval.ReceiptAuditID, Result: approvalReceiptAllowed, ObservedAt: time.Now().UTC()}}
+				},
+				exactReadReceipt: func(receipt ApprovalReceipt) error {
+					return f.repo.RecordExactTaskCommandReceipt(f.ctx, tasksqlite.ExactTaskCommandApproval{InstallationID: receipt.InstallationID, WorkspaceID: receipt.WorkspaceID, CapabilityID: receipt.CapabilityID, ReceiptAuditID: receipt.AuditID, Revision: receipt.Revision}, receipt.ObservedAt)
+				}, exactTaskCommandGrantIssuerDep: func() ExactTaskCommandGrantIssuer { return issuer },
+			}
+			version, err := snapshots.create(host.exactPageBinding(f.approval.WorkspaceID, 1, "task-decision-evidence", f.snapshotToken), 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pending := f.pending
+			task, err := f.repo.GetTask(f.ctx, f.grant.TaskID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := pluginsdk.ExactTaskUpdateRequest{WorkspaceID: f.approval.WorkspaceID, TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: version, PendingTransition: pluginsdk.ExactPendingTaskTransition{SessionID: pending.SessionID, TaskID: pending.TaskID, WorkspaceID: pending.WorkspaceID, SessionIncarnationID: pending.SessionIncarnationID, WorkflowID: pending.WorkflowID, WorkflowStepID: pending.WorkflowStepID, StepPosition: int32(pending.Position), ResourceVersion: pending.ResourceVersion, TaskResourceVersion: pending.TaskResourceVersion, SessionResourceVersion: pending.SessionResourceVersion, QueueGeneration: pending.QueueGeneration, QueuedAt: pending.QueuedAt.UTC().Format(time.RFC3339Nano)}, Marker: "[marker]", IdempotencyKey: "public-failure", ExpectedResourceVersion: task.ResourceVersion}
+			first, err := host.UpdateTaskExact(f.ctx, request)
+			if err != nil || first.Outcome != pluginsdk.ExactTaskUpdatePending || first.ResourceVersion != task.ResourceVersion+1 {
+				t.Fatalf("post-commit %s result = %+v, %v", failure, first, err)
+			}
+			if failure == "publication" && events.published != 0 || failure == "acknowledgement" && events.published != 1 {
+				t.Fatalf("published events before restart = %d", events.published)
+			}
+			if failure == "acknowledgement" {
+				if _, err = f.database.Exec(`DROP TRIGGER reject_exact_ack`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err = f.database.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopenedDB, reopenedRepo := openExactLifecycleRepository(t, f.path)
+			reopenedOffice, err := officesqlite.NewWithDB(reopenedDB, reopenedDB, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reopenedQueue, err := messagequeue.NewSQLiteRepository(reopenedDB, reopenedDB)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reopenedAuthority, err := exactsnapshotauthority.NewSQLite(reopenedDB)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reopenedEvidence, err := exactsnapshotcomposite.New(reopenedAuthority, reopenedOffice, reopenedQueue.(interface {
+				messagequeue.ExactPendingTransitionReader
+				messagequeue.ExactPendingTransitionAuthorityReader
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			restartedEvents := &exactCommandFailureBus{EventBus: bus.NewMemoryEventBus(log)}
+			restartedService := taskservice.NewService(taskservice.Repos{Tasks: reopenedRepo, TaskRepos: reopenedRepo, WorkspaceFolders: reopenedRepo, Sessions: reopenedRepo}, restartedEvents, log, taskservice.RepositoryDiscoveryConfig{})
+			restartedIssuer, err := NewSQLiteExactTaskCommandGrantIssuerWithTaskUpdatePublisher(reopenedRepo, reopenedEvidence, restartedService)
+			if err != nil {
+				t.Fatal(err)
+			}
+			restartedHost := &pluginHost{installationID: f.approval.InstallationID, exactSnapshots: newExactSnapshotStore([]byte("new-connection-secret")), exactAuthorize: host.exactAuthorize, exactTaskCommandGrantIssuerDep: func() ExactTaskCommandGrantIssuer { return restartedIssuer }}
+			replayed, err := restartedHost.UpdateTaskExact(f.ctx, request)
+			if err != nil || replayed.Outcome != pluginsdk.ExactTaskUpdateDurable || replayed.AuditID != first.AuditID || replayed.ResourceVersion != first.ResourceVersion {
+				t.Fatalf("restarted %s replay = %+v, %v", failure, replayed, err)
+			}
+			wantPublished := 1
+			if failure == "acknowledgement" {
+				wantPublished = 0
+			}
+			if restartedEvents.published != wantPublished {
+				t.Fatalf("restarted publications = %d, want %d", restartedEvents.published, wantPublished)
+			}
+			stored, err := reopenedRepo.GetTask(f.ctx, task.ID)
+			if err != nil || stored.Description != "before\n\n[marker]" || stored.ResourceVersion != first.ResourceVersion {
+				t.Fatalf("reopened task = %+v, %v", stored, err)
+			}
+			var audits int
+			if err = reopenedRepo.DB().QueryRowContext(f.ctx, `SELECT COUNT(*) FROM exact_task_command_audits WHERE idempotency_key = ?`, request.IdempotencyKey).Scan(&audits); err != nil || audits != 1 {
+				t.Fatalf("reopened audit count = %d, %v", audits, err)
+			}
+			var publishedAt any
+			if err = reopenedRepo.DB().QueryRowContext(f.ctx, `SELECT published_at FROM exact_task_command_outbox WHERE audit_id = ?`, request.IdempotencyKey).Scan(&publishedAt); err != nil || publishedAt == nil {
+				t.Fatalf("reopened outbox acknowledgement = %v, %v", publishedAt, err)
+			}
+			changed := request
+			changed.Marker = "[changed]"
+			if _, err = restartedHost.UpdateTaskExact(f.ctx, changed); err == nil {
+				t.Fatal("changed replay succeeded")
+			}
+			stored, err = reopenedRepo.GetTask(f.ctx, task.ID)
+			if err != nil || stored.Description != "before\n\n[marker]" || stored.ResourceVersion != first.ResourceVersion {
+				t.Fatalf("changed replay altered reopened task = %+v, %v", stored, err)
+			}
+		})
+	}
 }
 
 func TestExactCommandCompositeBridgeMintsAndConsumesGrantAtomically(t *testing.T) {
@@ -169,7 +311,7 @@ func TestExactCommandCompositeBridgeMintsAndConsumesGrantAtomically(t *testing.T
 		t.Fatal(err)
 	}
 	marker := "[marker]"
-	receipt, err := f.issuer.Execute(f.ctx, f.grant, f.snapshotToken, f.pending, marker, task.ResourceVersion)
+	receipt, err := f.issuer.Execute(f.ctx, f.grant, f.snapshotToken, f.pending, marker, task.ResourceVersion, "")
 	if err != nil {
 		t.Fatal(err)
 	}

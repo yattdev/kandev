@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,8 +13,7 @@ import (
 
 const exactTaskDescriptionCommandCapability = "host.v2.write:tasks"
 
-// exactTaskCommandGrantRequest is intentionally Host-private while the public
-// UpdateTaskExact RPC remains disabled. Installation identity, capability, ID,
+// exactTaskCommandGrantRequest is intentionally Host-private. Installation identity, capability, ID,
 // expiry, receipt, and action digest all come from the Host rather than this
 // request.
 type exactTaskCommandGrantRequest struct {
@@ -41,7 +41,13 @@ func (h *pluginHost) executeExactTaskCommand(ctx context.Context, request exactT
 	if err != nil || expectedResourceVersion <= 0 {
 		return tasksqlite.ExactTaskDescriptionReceipt{}, ErrExactTaskGrantUnavailable
 	}
-	receipt, err := issuer.Execute(ctx, grant, binding.ProjectionVersion, pending, request.Marker, expectedResourceVersion)
+	identityRequest := pluginsdk.ExactTaskUpdateRequest{
+		WorkspaceID: request.WorkspaceID, TaskID: request.TaskID,
+		CapabilityRevision: request.CapabilityRevision, DecisionEvidenceSnapshotVersion: request.DecisionEvidenceSnapshotVersion,
+		PendingTransition: request.PendingTransition, Marker: request.Marker,
+		IdempotencyKey: request.IdempotencyKey, ExpectedResourceVersion: expectedResourceVersion,
+	}
+	receipt, err := issuer.Execute(ctx, grant, binding.ProjectionVersion, pending, request.Marker, expectedResourceVersion, exactTaskUpdateRequestIdentity(identityRequest))
 	if err != nil {
 		return tasksqlite.ExactTaskDescriptionReceipt{}, ErrExactTaskGrantUnavailable
 	}
@@ -49,11 +55,44 @@ func (h *pluginHost) executeExactTaskCommand(ctx context.Context, request exactT
 }
 
 func (h *pluginHost) UpdateTaskExact(ctx context.Context, request pluginsdk.ExactTaskUpdateRequest) (*pluginsdk.ExactTaskUpdateReceipt, error) {
+	if h == nil || h.installationID == "" || request.ExpectedResourceVersion <= 0 || !validExactTaskCommandGrantRequest(exactTaskCommandGrantRequest{WorkspaceID: request.WorkspaceID, TaskID: request.TaskID, CapabilityRevision: request.CapabilityRevision, Marker: request.Marker, IdempotencyKey: request.IdempotencyKey}) {
+		return nil, ErrExactTaskGrantUnavailable
+	}
+	if _, err := h.authorizeExactReadDecision(request.WorkspaceID, request.CapabilityRevision, exactTaskDescriptionCommandCapability, CanonicalApprovalDigest("exact-task-command-replay", request.TaskID, request.IdempotencyKey)); err != nil {
+		return nil, ErrExactTaskGrantUnavailable
+	}
+	if h.exactTaskCommandGrantIssuerDep == nil {
+		return nil, ErrExactTaskGrantUnavailable
+	}
+	issuer := h.exactTaskCommandGrantIssuerDep()
+	if issuer == nil {
+		return nil, ErrExactTaskGrantUnavailable
+	}
+	replayed, err := issuer.Replay(ctx, h.installationID, request.WorkspaceID, request.TaskID, request.IdempotencyKey, exactTaskUpdateRequestIdentity(request), request.CapabilityRevision)
+	if err != nil {
+		return nil, ErrExactTaskGrantUnavailable
+	}
+	if replayed != nil {
+		return exactTaskUpdateReceipt(*replayed), nil
+	}
 	receipt, err := h.executeExactTaskCommand(ctx, exactTaskCommandGrantRequest{WorkspaceID: request.WorkspaceID, TaskID: request.TaskID, CapabilityRevision: request.CapabilityRevision, DecisionEvidenceSnapshotVersion: request.DecisionEvidenceSnapshotVersion, PendingTransition: request.PendingTransition, Marker: request.Marker, IdempotencyKey: request.IdempotencyKey}, request.ExpectedResourceVersion)
 	if err != nil {
 		return nil, ErrExactTaskGrantUnavailable
 	}
-	return &pluginsdk.ExactTaskUpdateReceipt{AuditID: receipt.AuditID, ResourceVersion: receipt.ResourceVersion}, nil
+	return exactTaskUpdateReceipt(receipt), nil
+}
+
+func exactTaskUpdateRequestIdentity(request pluginsdk.ExactTaskUpdateRequest) string {
+	encoded, _ := json.Marshal(request)
+	return CanonicalApprovalDigest("exact-task-update-request", string(encoded))
+}
+
+func exactTaskUpdateReceipt(receipt tasksqlite.ExactTaskDescriptionReceipt) *pluginsdk.ExactTaskUpdateReceipt {
+	outcome := pluginsdk.ExactTaskUpdateDurable
+	if receipt.Pending {
+		outcome = pluginsdk.ExactTaskUpdatePending
+	}
+	return &pluginsdk.ExactTaskUpdateReceipt{AuditID: receipt.AuditID, ResourceVersion: receipt.ResourceVersion, Outcome: outcome}
 }
 
 func (h *pluginHost) exactTaskCommandGrant(ctx context.Context, request exactTaskCommandGrantRequest) (tasksqlite.ExactTaskCommandGrant, exactSnapshotBinding, messagequeue.ExactPendingTransition, ExactTaskCommandGrantIssuer, error) {
