@@ -460,3 +460,31 @@ func TestClaimForceRemovalBlocksStateGuardedSessionMetadataRemoval(t *testing.T)
 	require.NoError(t, err)
 	require.False(t, removed)
 }
+
+func TestClaimForceRemovalBlocksStampedSessionMetadataRemoval(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-remove-stamp-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-remove-stamp-held", "force-remove-stamp-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-remove-stamp-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID, Metadata: map[string]interface{}{"marker": map[string]interface{}{"stamp": taskID + "-stamp"}}}))
+	}
+	held, err := repo.GetTask(ctx, "force-remove-stamp-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "remove-stamp", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	removed, err := repo.RemoveSessionMetadataKeyIfStamp(ctx, "force-remove-stamp-held-session", "marker", "force-remove-stamp-held-stamp")
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, removed)
+	heldSession, err := repo.GetTaskSession(ctx, "force-remove-stamp-held-session")
+	require.NoError(t, err)
+	require.Contains(t, heldSession.Metadata, "marker")
+
+	removed, err = repo.RemoveSessionMetadataKeyIfStamp(ctx, "force-remove-stamp-foreign-session", "marker", "stale-stamp")
+	require.NoError(t, err)
+	require.False(t, removed)
+	removed, err = repo.RemoveSessionMetadataKeyIfStamp(ctx, "force-remove-stamp-foreign-session", "marker", "force-remove-stamp-foreign-stamp")
+	require.NoError(t, err)
+	require.True(t, removed)
+}
