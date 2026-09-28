@@ -300,7 +300,7 @@ func (r *Repository) issueExactTaskCommandGrantInTx(ctx context.Context, tx *sql
 // the one-transaction prerequisite only; wiring it to UpdateTaskExact waits
 // for the Host approval bridge and independent contract gates.
 func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, command ExactTaskDescriptionCommand) (ExactTaskDescriptionReceipt, error) {
-	if !validExactCommand(command) {
+	if !r.exactTaskDescriptionCommandAvailable(command) {
 		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
 	}
 	commandTx, err := r.beginExactTaskCommandTransaction(ctx, command)
@@ -350,6 +350,10 @@ func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, comma
 		return ExactTaskDescriptionReceipt{}, err
 	}
 	return ExactTaskDescriptionReceipt{AuditID: command.IdempotencyKey, ResourceVersion: version}, nil
+}
+
+func (r *Repository) exactTaskDescriptionCommandAvailable(command ExactTaskDescriptionCommand) bool {
+	return r.ExactTaskCommandAvailable() && validExactCommand(command)
 }
 
 func (r *Repository) afterExactTaskCommandCAS() error {

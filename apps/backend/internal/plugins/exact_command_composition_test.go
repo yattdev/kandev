@@ -127,8 +127,16 @@ func TestSQLiteExactTaskCommandBridgeRejectsNilAndPostgresAuthorities(t *testing
 	}
 	postgresShaped := sqlx.NewDb(raw, "pgx")
 	t.Cleanup(func() { _ = postgresShaped.Close() })
-	if _, err := NewSQLiteExactTaskCommandApprovalBridge(tasksqlite.NewReadOnlyWithDB(postgresShaped, nil)); err == nil {
+	postgresRepo := tasksqlite.NewReadOnlyWithDB(postgresShaped, nil)
+	if _, err := NewSQLiteExactTaskCommandApprovalBridge(postgresRepo); err == nil {
 		t.Fatal("PostgreSQL exact command authority was accepted")
+	}
+	if _, err := NewSQLiteExactTaskCommandGrantIssuer(postgresRepo, nil); err == nil {
+		t.Fatal("PostgreSQL exact grant issuer was accepted")
+	}
+	_, err = postgresRepo.ApplyExactTaskDescriptionCommand(context.Background(), tasksqlite.ExactTaskDescriptionCommand{GrantID: "grant", InstallationID: "installation", WorkspaceID: "workspace", TaskID: "task", CapabilityID: "host.v2.write:tasks", ReceiptAuditID: "receipt", ApprovalRevision: 1, ActionDigest: "digest", IdempotencyKey: "key", Marker: "[marker]", ExpectedResourceVersion: 1})
+	if !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("PostgreSQL exact command = %v, want unavailable", err)
 	}
 }
 
