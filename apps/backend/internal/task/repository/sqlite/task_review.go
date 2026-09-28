@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -250,8 +251,17 @@ func collectReviewRuns(rows *sql.Rows) ([]*models.TaskReviewRun, error) {
 // CancelInFlightTaskReviewRuns closes runs left pending/running by a previous
 // process. Returns the number of runs cancelled.
 func (r *Repository) CancelInFlightTaskReviewRuns(ctx context.Context) (int, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin in-flight task review cancellation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureInFlightReviewRunOwnersAvailableTx(ctx, tx); err != nil {
+		return 0, err
+	}
+
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, tx.Rebind(`
 		UPDATE task_review_runs
 		SET status = ?, error_code = ?, error_message = ?, completed_at = ?
 		WHERE status IN ('pending', 'running')
@@ -260,7 +270,70 @@ func (r *Repository) CancelInFlightTaskReviewRuns(ctx context.Context) (int, err
 		return 0, fmt.Errorf("failed to cancel in-flight task review runs: %w", err)
 	}
 	rows, _ := result.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit in-flight task review cancellation: %w", err)
+	}
 	return int(rows), nil
+}
+
+func (r *Repository) ensureInFlightReviewRunOwnersAvailableTx(ctx context.Context, tx *sqlx.Tx) error {
+	rows, err := tx.QueryxContext(ctx, tx.Rebind(`
+		SELECT DISTINCT task_id FROM task_review_runs
+		WHERE status IN ('pending', 'running')
+	`))
+	if err != nil {
+		return fmt.Errorf("list in-flight task review run owners: %w", err)
+	}
+	var taskIDs []string
+	for rows.Next() {
+		var taskID string
+		if err := rows.Scan(&taskID); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan in-flight task review run owner: %w", err)
+		}
+		taskIDs = append(taskIDs, taskID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate in-flight task review run owners: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close in-flight task review run owners: %w", err)
+	}
+
+	for _, taskID := range orderedReviewRunTaskIDs(taskIDs) {
+		var taskExists bool
+		if err := tx.QueryRowContext(
+			ctx,
+			r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`),
+			taskID,
+		).Scan(&taskExists); err != nil {
+			return err
+		}
+		if !taskExists {
+			continue
+		}
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func orderedReviewRunTaskIDs(taskIDs []string) []string {
+	unique := make(map[string]struct{}, len(taskIDs))
+	for _, taskID := range taskIDs {
+		unique[taskID] = struct{}{}
+	}
+	ordered := make([]string, 0, len(unique))
+	for taskID := range unique {
+		ordered = append(ordered, taskID)
+	}
+	sort.Strings(ordered)
+	return ordered
 }
 
 // CreateTaskReviewFindings inserts findings in a single transaction so a
