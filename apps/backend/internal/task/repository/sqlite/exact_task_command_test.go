@@ -270,6 +270,43 @@ func TestExactTaskCommandConsumesGrantAndPersistsReceipt(t *testing.T) {
 	}
 }
 
+func TestExactTaskCommandOutboxClaimDoesNotAcknowledgePublication(t *testing.T) {
+	repo := newRepoForArchiveTests(t, "exact-command-outbox")
+	command := prepareExactTaskCommand(t, repo, "exact-command-outbox", "grant-outbox", "key-outbox")
+	if _, err := repo.ApplyExactTaskDescriptionCommand(context.Background(), command); err != nil {
+		t.Fatalf("ApplyExactTaskDescriptionCommand: %v", err)
+	}
+	if _, err := repo.ClaimExactTaskCommandOutbox(context.Background(), command.IdempotencyKey); err != nil {
+		t.Fatalf("ClaimExactTaskCommandOutbox: %v", err)
+	}
+	var publishedAt *time.Time
+	if err := repo.db.QueryRow(repo.db.Rebind(`SELECT published_at FROM exact_task_command_outbox WHERE audit_id = ?`), command.IdempotencyKey).Scan(&publishedAt); err != nil {
+		t.Fatal(err)
+	}
+	if publishedAt != nil {
+		t.Fatal("claim acknowledged the task update before the task service published it")
+	}
+}
+
+func TestExactTaskCommandAppendsMarkerWithoutReplacingDescription(t *testing.T) {
+	repo := newRepoForArchiveTests(t, "exact-command-marker")
+	ctx := context.Background()
+	if _, err := repo.db.Exec(repo.db.Rebind(`UPDATE tasks SET description = ? WHERE id = ?`), "operator context", "exact-command-marker"); err != nil {
+		t.Fatal(err)
+	}
+	command := prepareExactTaskCommand(t, repo, "exact-command-marker", "grant-marker", "key-marker")
+	if _, err := repo.ApplyExactTaskDescriptionCommand(ctx, command); err != nil {
+		t.Fatalf("ApplyExactTaskDescriptionCommand: %v", err)
+	}
+	task, err := repo.GetTask(ctx, command.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Description != "operator context\n\n"+command.Marker {
+		t.Fatalf("description = %q, want original description plus marker", task.Description)
+	}
+}
+
 func TestExactTaskCommandRejectsRevokedAndStaleVersionWithoutEffect(t *testing.T) {
 	repo := newRepoForArchiveTests(t, "exact-command-revoked", "exact-command-stale")
 	ctx := context.Background()
@@ -326,6 +363,13 @@ func TestExactTaskCommandRollsBackMarkerAndGrantOnAuditFailure(t *testing.T) {
 	}
 	if consumedAt != nil {
 		t.Fatal("rollback consumed grant")
+	}
+	var outboxRows int
+	if err := repo.db.QueryRow(repo.db.Rebind(`SELECT COUNT(*) FROM exact_task_command_outbox WHERE audit_id = ?`), command.IdempotencyKey).Scan(&outboxRows); err != nil {
+		t.Fatal(err)
+	}
+	if outboxRows != 0 {
+		t.Fatalf("rollback left publishable outbox rows = %d", outboxRows)
 	}
 }
 

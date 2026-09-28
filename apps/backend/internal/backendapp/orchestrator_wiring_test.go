@@ -101,10 +101,17 @@ func TestProvideOrchestratorWiresExactTaskDecisionEvidence(t *testing.T) {
 // same queue authority to grant issuance as it does to command application.
 func TestProvideOrchestratorWiresExactTaskCommandGrantIssuer(t *testing.T) {
 	provideFn := findFuncDecl(t, "orchestrator.go", "wireExactPluginEvidence")
-	wired := false
+	wired, publishesUpdates := false, false
 	ast.Inspect(provideFn, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
-		if !ok || len(call.Args) != 1 {
+		if !ok {
+			return true
+		}
+		if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "NewSQLiteExactTaskCommandGrantIssuerWithTaskUpdatePublisher" && len(call.Args) == 3 {
+			publisher, publisherOK := call.Args[2].(*ast.Ident)
+			publishesUpdates = publisherOK && publisher.Name == "taskSvc"
+		}
+		if len(call.Args) != 1 {
 			return true
 		}
 		selector, ok := call.Fun.(*ast.SelectorExpr)
@@ -117,5 +124,8 @@ func TestProvideOrchestratorWiresExactTaskCommandGrantIssuer(t *testing.T) {
 	})
 	if !wired {
 		t.Fatal("wireExactPluginEvidence does not wire the exact task command grant issuer into plugins")
+	}
+	if !publishesUpdates {
+		t.Fatal("wireExactPluginEvidence does not attach the task-service exact command outbox publisher")
 	}
 }

@@ -457,7 +457,6 @@ func snapshotTaskForPublication(task *models.Task) *models.Task {
 }
 
 func (s *Service) publishTaskEventNow(ctx context.Context, eventType string, task *models.Task, oldState *v1.TaskState, extra map[string]interface{}, oldWorkflowIDs []string, activity *taskActivitySnapshot) {
-
 	data := map[string]interface{}{
 		"task_id":            task.ID,
 		"step_transition_id": task.WorkflowStepTransitionID,

@@ -451,15 +451,18 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	if err != nil || stored.Description != "" || stored.ResourceVersion != task.ResourceVersion {
 		t.Fatalf("denied command changed task: %+v, %v", stored, err)
 	}
-	var consumed, audits int
+	var consumed, audits, outboxRows int
 	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_grants WHERE id = ? AND consumed_at IS NOT NULL`, grant.ID).Scan(&consumed); err != nil {
 		t.Fatal(err)
 	}
 	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_audits WHERE idempotency_key = ?`, grant.IdempotencyKey).Scan(&audits); err != nil {
 		t.Fatal(err)
 	}
-	if consumed != 0 || audits != 0 {
-		t.Fatalf("denied command effects: consumed=%d audits=%d", consumed, audits)
+	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_outbox WHERE audit_id = ?`, grant.IdempotencyKey).Scan(&outboxRows); err != nil {
+		t.Fatal(err)
+	}
+	if consumed != 0 || audits != 0 || outboxRows != 0 {
+		t.Fatalf("denied command effects: consumed=%d audits=%d outbox=%d", consumed, audits, outboxRows)
 	}
 	evidenceHost, ok := runtime.host.(pluginsdk.ExactTaskDecisionEvidenceHost)
 	if !ok {
@@ -481,6 +484,9 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	if err != nil || stored.Description != "[public-marker]" || stored.ResourceVersion != receipt.ResourceVersion {
 		t.Fatalf("public marker readback = %+v, %v", stored, err)
 	}
+	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_outbox WHERE audit_id = ? AND published_at IS NOT NULL`, receipt.AuditID).Scan(&outboxRows); err != nil || outboxRows != 1 {
+		t.Fatalf("published exact command outbox = %d, %v", outboxRows, err)
+	}
 	_, err = commandHost.UpdateTaskExact(ctx, pluginsdk.ExactTaskUpdateRequest{WorkspaceID: "exact-ws-a", TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[changed-marker]", IdempotencyKey: "public-command", ExpectedResourceVersion: receipt.ResourceVersion})
 	if err == nil {
 		t.Fatal("changed public command replay succeeded")
@@ -495,6 +501,9 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	}
 	if publicAudits != 1 {
 		t.Fatalf("public replay audit count = %d, want 1", publicAudits)
+	}
+	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_outbox WHERE audit_id = ? AND published_at IS NOT NULL`, receipt.AuditID).Scan(&outboxRows); err != nil || outboxRows != 1 {
+		t.Fatalf("public replay published outbox = %d, %v", outboxRows, err)
 	}
 	other, err := repos.Task.GetTask(ctx, "exact-ws-b-task")
 	if err != nil {

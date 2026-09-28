@@ -177,7 +177,7 @@ func TestExactCommandCompositeBridgeMintsAndConsumesGrantAtomically(t *testing.T
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	stored, err := f.repo.GetTask(f.ctx, f.grant.TaskID)
-	if err != nil || stored.Description != marker || stored.ResourceVersion != receipt.ResourceVersion {
+	if err != nil || stored.Description != "before\n\n"+marker || stored.ResourceVersion != receipt.ResourceVersion {
 		t.Fatalf("stored task = %+v, %v", stored, err)
 	}
 }
@@ -370,7 +370,7 @@ func TestExactCommandComposedTwoWorkspaceLifecycleAfterRestart(t *testing.T) {
 		workspace, description string
 		version                int64
 	}{
-		{"workspace-a", "[exact-marker]", receipt.ResourceVersion},
+		{"workspace-a", "before\n\n[exact-marker]", receipt.ResourceVersion},
 		{"workspace-b", "before", otherBeforeRestart.ResourceVersion},
 	} {
 		rows, info, err := readHost.ListTasksExact(ctx, pluginsdk.ExactTaskQuery{WorkspaceID: check.workspace, CapabilityRevision: 1})

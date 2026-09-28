@@ -31,9 +31,16 @@ type ExactTaskCommandGrantIssuer interface {
 	Execute(context.Context, tasksqlite.ExactTaskCommandGrant, string, messagequeue.ExactPendingTransition, string, int64) (tasksqlite.ExactTaskDescriptionReceipt, error)
 }
 
+// ExactTaskCommandEventPublisher is the task-service boundary that consumes
+// the command outbox after its atomic database commit.
+type ExactTaskCommandEventPublisher interface {
+	PublishExactTaskCommandUpdate(context.Context, string) error
+}
+
 type sqliteExactTaskCommandGrantIssuer struct {
-	repo     *tasksqlite.Repository
-	evidence *exactsnapshotcomposite.Repository
+	repo      *tasksqlite.Repository
+	evidence  *exactsnapshotcomposite.Repository
+	publisher ExactTaskCommandEventPublisher
 }
 
 func NewSQLiteExactTaskCommandApprovalBridge(repo *tasksqlite.Repository) (ExactTaskCommandApprovalBridge, error) {
@@ -51,6 +58,22 @@ func NewSQLiteExactTaskCommandGrantIssuer(repo *tasksqlite.Repository, evidence 
 		return nil, fmt.Errorf("plugins: exact command grant issuer is required")
 	}
 	return sqliteExactTaskCommandGrantIssuer{repo: repo, evidence: evidence}, nil
+}
+
+// NewSQLiteExactTaskCommandGrantIssuerWithTaskUpdatePublisher enables the
+// public command path only when its committed mutation has a task-service
+// outbox consumer for the corresponding task.updated event.
+func NewSQLiteExactTaskCommandGrantIssuerWithTaskUpdatePublisher(repo *tasksqlite.Repository, evidence *exactsnapshotcomposite.Repository, publisher ExactTaskCommandEventPublisher) (ExactTaskCommandGrantIssuer, error) {
+	if publisher == nil {
+		return nil, fmt.Errorf("plugins: exact task command event publisher is required")
+	}
+	issuer, err := NewSQLiteExactTaskCommandGrantIssuer(repo, evidence)
+	if err != nil {
+		return nil, err
+	}
+	base := issuer.(sqliteExactTaskCommandGrantIssuer)
+	base.publisher = publisher
+	return base, nil
 }
 
 func (i sqliteExactTaskCommandGrantIssuer) Issue(ctx context.Context, grant tasksqlite.ExactTaskCommandGrant, compositeSnapshotToken string, observed messagequeue.ExactPendingTransition) error {
@@ -73,7 +96,14 @@ func (i sqliteExactTaskCommandGrantIssuer) Execute(ctx context.Context, grant ta
 		return tasksqlite.ExactTaskDescriptionReceipt{}, tasksqlite.ErrExactTaskCommandUnavailable
 	}
 	command := tasksqlite.ExactTaskDescriptionCommand{GrantID: grant.ID, InstallationID: grant.InstallationID, WorkspaceID: grant.WorkspaceID, TaskID: grant.TaskID, CapabilityID: grant.CapabilityID, ReceiptAuditID: grant.ReceiptAuditID, ApprovalRevision: grant.ApprovalRevision, ActionDigest: grant.ActionDigest, IdempotencyKey: grant.IdempotencyKey, Marker: marker, ExpectedResourceVersion: expectedResourceVersion, ExpectedFence: fence, PendingSnapshotToken: compositeSnapshotToken, PendingTransition: &observed}
-	return i.repo.ExecuteExactTaskDescriptionCommandWithCompositeEvidence(ctx, i.evidence, compositeSnapshotToken, observed, grant, command)
+	receipt, err := i.repo.ExecuteExactTaskDescriptionCommandWithCompositeEvidence(ctx, i.evidence, compositeSnapshotToken, observed, grant, command)
+	if err != nil || i.publisher == nil {
+		return receipt, err
+	}
+	if err = i.publisher.PublishExactTaskCommandUpdate(ctx, receipt.AuditID); err != nil {
+		return tasksqlite.ExactTaskDescriptionReceipt{}, err
+	}
+	return receipt, nil
 }
 
 func (b sqliteExactTaskCommandApprovalBridge) Grant(ctx context.Context, approval CapabilityApproval, auditID string) error {

@@ -85,8 +85,8 @@ func TestRegisteredHostExactReceiptEnablesOnlyTheComposedSQLiteCommandPath(t *te
 	if err != nil {
 		t.Fatalf("GetTask after command: %v", err)
 	}
-	if stored.Description != "[exact-marker]" {
-		t.Fatalf("description = %q, want marker", stored.Description)
+	if stored.Description != "before\n\n[exact-marker]" {
+		t.Fatalf("description = %q, want preserved description plus marker", stored.Description)
 	}
 
 	if err := repo.CreateTask(ctx, &taskmodels.Task{ID: "task-2", WorkspaceID: "workspace-1", Title: "Revoked task", Description: "unchanged"}); err != nil {
@@ -296,7 +296,7 @@ func TestNarrowedApprovalDisablesRemovedExactCommandCapability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if otherStored.Description != "[other-marker]" {
+	if otherStored.Description != "other before\n\n[other-marker]" {
 		t.Fatalf("other workspace description = %q", otherStored.Description)
 	}
 }

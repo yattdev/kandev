@@ -131,7 +131,7 @@ func provideOrchestrator(
 	if validator, ok := queueRepo.(messagequeue.ExactPendingTransitionAuthorityReader); ok {
 		taskRepo.SetExactTaskCommandPendingValidator(validator)
 	}
-	wireExactPluginEvidence(pool, taskRepo, officeRepo, pluginsSvc, queueRepo)
+	wireExactPluginEvidence(pool, taskRepo, officeRepo, pluginsSvc, taskSvc, queueRepo)
 	queueResolution := resolveQueueSettingsWithStore(settingsStore, pool, log, queueConfiguration(cfg))
 	queueSettings := queueResolution.Effective
 	maxPerSession := queueSettings.MaxPerSession
@@ -337,8 +337,8 @@ func provideOrchestrator(
 	return orchestratorSvc, msgCreator, nil
 }
 
-func wireExactPluginEvidence(pool *db.Pool, taskRepo *sqliterepo.Repository, officeRepo *officesqlite.Repository, pluginsSvc *plugins.Service, queueRepo messagequeue.Repository) {
-	if pool == nil || taskRepo == nil || officeRepo == nil || pluginsSvc == nil {
+func wireExactPluginEvidence(pool *db.Pool, taskRepo *sqliterepo.Repository, officeRepo *officesqlite.Repository, pluginsSvc *plugins.Service, taskSvc *taskservice.Service, queueRepo messagequeue.Repository) {
+	if pool == nil || taskRepo == nil || officeRepo == nil || pluginsSvc == nil || taskSvc == nil {
 		return
 	}
 	authority, err := exactsnapshotauthority.NewSQLite(pool.Writer())
@@ -358,7 +358,7 @@ func wireExactPluginEvidence(pool *db.Pool, taskRepo *sqliterepo.Repository, off
 	}
 	pluginsSvc.SetExactTaskDecisionEvidence(composite)
 	taskRepo.SetExactTaskCommandCompositeValidator(composite)
-	issuer, err := plugins.NewSQLiteExactTaskCommandGrantIssuer(taskRepo, composite)
+	issuer, err := plugins.NewSQLiteExactTaskCommandGrantIssuerWithTaskUpdatePublisher(taskRepo, composite, taskSvc)
 	if err == nil {
 		pluginsSvc.SetExactTaskCommandGrantIssuer(issuer)
 	}

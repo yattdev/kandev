@@ -73,6 +73,68 @@ type ExactTaskDescriptionReceipt struct {
 	ResourceVersion int64
 }
 
+type ExactTaskCommandOutboxRecord struct {
+	AuditID, TaskID, WorkspaceID string
+	ResourceVersion              int64
+}
+
+func (r *Repository) ClaimExactTaskCommandOutbox(ctx context.Context, auditID string) (*ExactTaskCommandOutboxRecord, error) {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	row := &ExactTaskCommandOutboxRecord{AuditID: auditID}
+	err := r.db.QueryRowxContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET claimed_at = ? WHERE audit_id = ? AND published_at IS NULL AND claimed_at IS NULL RETURNING task_id, workspace_id, resource_version`), r.nowUTC(), auditID).Scan(&row.TaskID, &row.WorkspaceID, &row.ResourceVersion)
+	if err == nil {
+		return row, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	var publishedAt sql.NullTime
+	if err = r.db.QueryRowxContext(ctx, r.db.Rebind(`SELECT published_at FROM exact_task_command_outbox WHERE audit_id = ?`), auditID).Scan(&publishedAt); err != nil {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	if publishedAt.Valid {
+		return nil, nil
+	}
+	return nil, ErrExactTaskCommandUnavailable
+}
+
+// AcknowledgeExactTaskCommandOutbox records a completed task.updated
+// publication. A claim remains durable until this acknowledgement so a
+// database commit can never be mistaken for a delivered event.
+func (r *Repository) AcknowledgeExactTaskCommandOutbox(ctx context.Context, auditID string) error {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET published_at = ? WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL`), r.nowUTC(), auditID)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
+// ReleaseExactTaskCommandOutboxClaim makes an unpublished row available for
+// a later authoritative retry when reading or publishing its task fails.
+func (r *Repository) ReleaseExactTaskCommandOutboxClaim(ctx context.Context, auditID string) error {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET claimed_at = NULL WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL`), auditID)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
 type exactTaskCommandTransaction struct {
 	tx               *sqlx.Tx
 	commit, rollback func() error
@@ -116,6 +178,10 @@ func (r *Repository) initExactTaskCommandSchema() error {
 			resource_version BIGINT NOT NULL, created_at TIMESTAMP NOT NULL,
 		UNIQUE (installation_id, workspace_id, idempotency_key)
 		);
+		CREATE TABLE IF NOT EXISTS exact_task_command_outbox (
+			audit_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+			resource_version BIGINT NOT NULL, published_at TIMESTAMP
+		);
 		CREATE TABLE IF NOT EXISTS exact_task_command_receipts (
 			audit_id TEXT PRIMARY KEY, installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			capability_id TEXT NOT NULL, approval_revision BIGINT NOT NULL, observed_at TIMESTAMP NOT NULL,
@@ -123,7 +189,10 @@ func (r *Repository) initExactTaskCommandSchema() error {
 		);`); err != nil {
 		return err
 	}
-	return r.migrate.Apply("exact_task_commands.audit_identity", `ALTER TABLE exact_task_command_audits ADD COLUMN command_identity TEXT NOT NULL DEFAULT ''`)
+	if err := r.migrate.Apply("exact_task_commands.audit_identity", `ALTER TABLE exact_task_command_audits ADD COLUMN command_identity TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	return r.migrate.Apply("exact_task_commands.outbox_claim", `ALTER TABLE exact_task_command_outbox ADD COLUMN claimed_at TIMESTAMP`)
 }
 
 // RecordExactTaskCommandReceipt binds an H6 decision receipt to the active
@@ -379,7 +448,7 @@ func (r *Repository) applyExactTaskDescriptionCommandInTx(ctx context.Context, t
 	if err = r.consumeExactTaskCommandGrant(ctx, tx, command, now); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
-	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET description = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND resource_version = ? AND (SELECT revision FROM exact_task_workspace_fences WHERE workspace_id = ?) = ?`), command.Marker, now, command.TaskID, command.WorkspaceID, command.ExpectedResourceVersion, command.WorkspaceID, command.ExpectedFence)
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET description = CASE WHEN description = '' THEN ? ELSE description || ? END, updated_at = ? WHERE id = ? AND workspace_id = ? AND resource_version = ? AND (SELECT revision FROM exact_task_workspace_fences WHERE workspace_id = ?) = ?`), command.Marker, "\n\n"+command.Marker, now, command.TaskID, command.WorkspaceID, command.ExpectedResourceVersion, command.WorkspaceID, command.ExpectedFence)
 	if err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
@@ -395,6 +464,9 @@ func (r *Repository) applyExactTaskDescriptionCommandInTx(ctx context.Context, t
 		return ExactTaskDescriptionReceipt{}, err
 	}
 	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_audits(audit_id, installation_id, workspace_id, task_id, action_digest, idempotency_key, resource_version, command_identity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`), command.IdempotencyKey, command.InstallationID, command.WorkspaceID, command.TaskID, command.ActionDigest, command.IdempotencyKey, version, exactTaskCommandIdentity(command), now); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_outbox(audit_id, task_id, workspace_id, resource_version) VALUES (?, ?, ?, ?)`), command.IdempotencyKey, command.TaskID, command.WorkspaceID, version); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
 	if err = commit(); err != nil {

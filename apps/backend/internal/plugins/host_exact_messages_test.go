@@ -28,6 +28,7 @@ func TestPluginHostExactSessionMessagesBindApprovalSnapshotAndContinuation(t *te
 	require.NoError(t, err)
 	require.Equal(t, "one", items[0].ID)
 	require.True(t, page.HasMore)
+	require.Equal(t, "audit", page.AuditID)
 	items, page2, err := d.host.ListSessionMessagesExact(context.Background(), pluginsdk.ExactSessionMessageQuery{WorkspaceID: "workspace-1", TaskID: "task-1", SessionID: "session-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1, SnapshotVersion: page.SnapshotVersion, Cursor: page.NextCursor}})
 	require.NoError(t, err)
 	require.Equal(t, "two", items[0].ID)
