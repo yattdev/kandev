@@ -674,7 +674,23 @@ func (r *Repository) PrepareMessageAttachmentsForTaskDelete(
 }
 
 func (r *Repository) DeleteMessageAttachment(ctx context.Context, id, ownerID string) error {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	err = tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_message_attachments WHERE id = ? AND owner_id = ?`), id, ownerID).Scan(&taskID)
+	if errorsIsNoRows(err) {
+		return models.ErrAttachmentNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("load message attachment for delete: %w", err)
+	}
+	if err := r.ensureTaskAttachmentAvailableTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		DELETE FROM task_message_attachments WHERE id = ? AND owner_id = ?
 	`), id, ownerID)
 	if err != nil {
@@ -684,7 +700,7 @@ func (r *Repository) DeleteMessageAttachment(ctx context.Context, id, ownerID st
 	if rows == 0 {
 		return models.ErrAttachmentNotFound
 	}
-	return nil
+	return tx.Commit()
 }
 
 // PrepareClaimedMessageAttachmentsForRelease retains attachment rows as
