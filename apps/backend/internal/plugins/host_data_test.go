@@ -34,6 +34,8 @@ type fakeTaskDataSource struct {
 	tasksByWorkspace map[string][]*taskmodels.Task
 	tasksByID        map[string]*taskmodels.Task
 	exactSnapshots   map[string][]taskmodels.ExactTaskSnapshotTask
+	exactSnapshotErr error
+	exactPageErr     error
 	exactSessions    map[string][]taskmodels.ExactSessionSnapshotSession
 	exactSessionErr  error
 	repositories     map[string][]*taskmodels.Repository
@@ -74,10 +76,16 @@ type fakeTaskDataSource struct {
 }
 
 func (f *fakeTaskDataSource) OpenExactTaskSnapshot(_ context.Context, request taskmodels.ExactTaskSnapshotRequest) (*taskmodels.ExactTaskSnapshot, error) {
+	if f.exactSnapshotErr != nil {
+		return nil, f.exactSnapshotErr
+	}
 	return &taskmodels.ExactTaskSnapshot{Token: "snapshot-" + request.WorkspaceID, WorkspaceID: request.WorkspaceID}, nil
 }
 
 func (f *fakeTaskDataSource) PageExactTaskSnapshot(_ context.Context, token string, offset, limit int) ([]taskmodels.ExactTaskSnapshotTask, error) {
+	if f.exactPageErr != nil {
+		return nil, f.exactPageErr
+	}
 	rows := f.exactSnapshots[token]
 	if offset >= len(rows) {
 		return []taskmodels.ExactTaskSnapshotTask{}, nil

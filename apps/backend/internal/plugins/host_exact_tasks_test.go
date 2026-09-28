@@ -9,6 +9,7 @@ import (
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/plugins/manifest"
 	taskmodels "github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 	"github.com/kandev/kandev/pkg/pluginsdk"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -67,6 +68,57 @@ func TestPluginHostExactTasksUseApprovalBoundDurableSnapshot(t *testing.T) {
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 	_, err = d.host.GetTaskExact(context.Background(), pluginsdk.ExactTaskGetQuery{WorkspaceID: "workspace-2", TaskID: "task-2", CapabilityRevision: 2, SnapshotVersion: "snapshot-workspace-1"})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+func TestPluginHostExactTaskReceiptRequiresCompleteValidRead(t *testing.T) {
+	newHost := func() (*testDataHost, *[]ApprovalReceipt) {
+		d := newTestDataHost(manifest.Capabilities{})
+		d.host.installationID = "installation-1"
+		d.host.exactSnapshots = newExactSnapshotStore([]byte("01234567890123456789012345678901"))
+		d.host.exactAuthorize = func(workspaceID string, revision uint64, capabilityID, _ string) ApprovalDecision {
+			return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:tasks", Receipt: ApprovalReceipt{AuditID: "task-read-audit"}}
+		}
+		receipts := []ApprovalReceipt{}
+		d.host.exactReadReceipt = func(receipt ApprovalReceipt) error { receipts = append(receipts, receipt); return nil }
+		return d, &receipts
+	}
+
+	t.Run("snapshot open failure", func(t *testing.T) {
+		d, receipts := newHost()
+		d.tasks.exactSnapshotErr = repoerrors.ErrExactTaskSnapshotUnavailable
+		_, _, err := d.host.ListTasksExact(context.Background(), pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2})
+		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		require.Empty(t, *receipts)
+	})
+
+	t.Run("page validation failure", func(t *testing.T) {
+		d, receipts := newHost()
+		d.tasks.exactSnapshots = map[string][]taskmodels.ExactTaskSnapshotTask{
+			"snapshot-workspace-1": {{ID: "foreign", WorkspaceID: "workspace-2"}},
+		}
+		_, _, err := d.host.ListTasksExact(context.Background(), pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2})
+		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		require.Empty(t, *receipts)
+	})
+
+	t.Run("truncated page and invalid continuation", func(t *testing.T) {
+		d, receipts := newHost()
+		d.tasks.exactSnapshots = map[string][]taskmodels.ExactTaskSnapshotTask{
+			"snapshot-workspace-1": {
+				{ID: "task-1", WorkspaceID: "workspace-1"},
+				{ID: "task-2", WorkspaceID: "workspace-1"},
+			},
+		}
+		_, page, err := d.host.ListTasksExact(context.Background(), pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1}})
+		require.NoError(t, err)
+		require.True(t, page.HasMore)
+		require.Empty(t, page.AuditID)
+		require.Empty(t, *receipts)
+
+		_, _, err = d.host.ListTasksExact(context.Background(), pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{SnapshotVersion: page.SnapshotVersion, Cursor: page.NextCursor + "invalid"}})
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		require.Empty(t, *receipts)
+	})
 }
 
 type fakeExactDecisionEvidence struct{}
