@@ -412,6 +412,12 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	if err = queue.SetPendingMove(ctx, "exact-ws-a-session", &messagequeue.PendingMove{TaskID: task.ID, WorkflowID: "workflow", WorkflowStepID: "step"}); err != nil {
 		t.Fatal(err)
 	}
+	// Queue re-enqueue updates the task's own metadata and resource version.
+	// Compare the expired command against the state after that independent write.
+	task, err = repos.Task.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	expiredSnapshot, err := queue.OpenExactPendingTransitionSnapshot(ctx, messagequeue.ExactPendingTransitionSnapshotRequest{WorkspaceID: task.WorkspaceID})
 	if err != nil {
 		t.Fatal(err)

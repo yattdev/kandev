@@ -12,6 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/exactsnapshotauthority"
+	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 )
 
@@ -76,6 +77,7 @@ type exactTaskCommandTransaction struct {
 	tx               *sqlx.Tx
 	commit, rollback func() error
 	validator        messagequeue.ExactPendingTransitionAuthorityReader
+	composite        *exactsnapshotcomposite.Repository
 	authority        *exactsnapshotauthority.Authority
 	authorityTx      *exactsnapshotauthority.Transaction
 }
@@ -84,6 +86,13 @@ type exactTaskCommandTransaction struct {
 // used only by the unadvertised exact command path.
 func (r *Repository) SetExactTaskCommandPendingValidator(validator messagequeue.ExactPendingTransitionAuthorityReader) {
 	r.exactTaskCommandPendingValidator = validator
+}
+
+// SetExactTaskCommandCompositeValidator accepts the Host's complete evidence
+// token at commit time. The queue-only validator remains for older private
+// command tests; production composition installs both.
+func (r *Repository) SetExactTaskCommandCompositeValidator(validator *exactsnapshotcomposite.Repository) {
+	r.exactTaskCommandCompositeValidator = validator
 }
 
 func (r *Repository) initExactTaskCommandSchema() error {
@@ -351,6 +360,16 @@ func (r *Repository) afterExactTaskCommandCAS() error {
 }
 
 func (r *Repository) beginExactTaskCommandTransaction(ctx context.Context, command ExactTaskDescriptionCommand) (*exactTaskCommandTransaction, error) {
+	if r.exactTaskCommandCompositeValidator != nil {
+		authority, authorityTx, err := r.exactTaskCommandCompositeValidator.BeginPendingTransitionAuthorityTx(ctx)
+		if err != nil || !authority.Matches(r.db) {
+			if authorityTx != nil {
+				_ = authorityTx.Rollback()
+			}
+			return nil, ErrExactTaskCommandUnavailable
+		}
+		return &exactTaskCommandTransaction{tx: authorityTx.SQLX(), commit: authorityTx.Commit, rollback: authorityTx.Rollback, composite: r.exactTaskCommandCompositeValidator, authority: authority, authorityTx: authorityTx}, nil
+	}
 	if r.exactTaskCommandPendingValidator == nil {
 		tx, err := r.db.BeginTxx(ctx, nil)
 		if err != nil {
@@ -373,6 +392,12 @@ func (r *Repository) beginExactTaskCommandTransaction(ctx context.Context, comma
 }
 
 func (t *exactTaskCommandTransaction) validatePending(ctx context.Context, command ExactTaskDescriptionCommand) error {
+	if t.composite != nil {
+		if command.PendingTransition == nil || command.PendingSnapshotToken == "" || command.PendingTransition.WorkspaceID != command.WorkspaceID || command.PendingTransition.TaskID != command.TaskID || t.composite.ValidatePendingTransitionInAuthorityTx(ctx, t.authority, t.authorityTx, command.PendingSnapshotToken, *command.PendingTransition) != nil {
+			return ErrExactTaskCommandUnavailable
+		}
+		return nil
+	}
 	if t.validator == nil {
 		return nil
 	}

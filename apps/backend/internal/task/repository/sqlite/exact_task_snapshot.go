@@ -67,7 +67,16 @@ func (r *Repository) initExactTaskSnapshotSchema() error {
 		}
 		return r.migrate.Apply("exact_task_snapshots.fence_trigger", `CREATE TRIGGER exact_task_workspace_fence_trigger AFTER INSERT OR UPDATE OR DELETE ON tasks FOR EACH ROW EXECUTE FUNCTION kandev_exact_task_workspace_fence()`)
 	}
-	return r.migrate.Apply("exact_task_snapshots.fence_trigger", `CREATE TRIGGER exact_task_workspace_fence_insert AFTER INSERT ON tasks BEGIN INSERT INTO exact_task_workspace_fences(workspace_id, revision) VALUES (NEW.workspace_id, 1) ON CONFLICT(workspace_id) DO UPDATE SET revision = revision + 1; END; CREATE TRIGGER exact_task_workspace_fence_update AFTER UPDATE ON tasks BEGIN INSERT INTO exact_task_workspace_fences(workspace_id, revision) VALUES (NEW.workspace_id, 1) ON CONFLICT(workspace_id) DO UPDATE SET revision = revision + 1; INSERT INTO exact_task_workspace_fences(workspace_id, revision) SELECT OLD.workspace_id, 1 WHERE OLD.workspace_id <> NEW.workspace_id ON CONFLICT(workspace_id) DO UPDATE SET revision = revision + 1; END; CREATE TRIGGER exact_task_workspace_fence_delete AFTER DELETE ON tasks BEGIN INSERT INTO exact_task_workspace_fences(workspace_id, revision) VALUES (OLD.workspace_id, 1) ON CONFLICT(workspace_id) DO UPDATE SET revision = revision + 1; END`)
+	for _, trigger := range []struct{ name, statement string }{
+		{"insert", `CREATE TRIGGER IF NOT EXISTS exact_task_workspace_fence_insert AFTER INSERT ON tasks BEGIN INSERT INTO exact_task_workspace_fences(workspace_id, revision) VALUES (NEW.workspace_id, 1) ON CONFLICT(workspace_id) DO UPDATE SET revision = revision + 1; END`},
+		{"update", `CREATE TRIGGER IF NOT EXISTS exact_task_workspace_fence_update AFTER UPDATE ON tasks BEGIN INSERT INTO exact_task_workspace_fences(workspace_id, revision) VALUES (NEW.workspace_id, 1) ON CONFLICT(workspace_id) DO UPDATE SET revision = revision + 1; INSERT INTO exact_task_workspace_fences(workspace_id, revision) SELECT OLD.workspace_id, 1 WHERE OLD.workspace_id <> NEW.workspace_id ON CONFLICT(workspace_id) DO UPDATE SET revision = revision + 1; END`},
+		{"delete", `CREATE TRIGGER IF NOT EXISTS exact_task_workspace_fence_delete AFTER DELETE ON tasks BEGIN INSERT INTO exact_task_workspace_fences(workspace_id, revision) VALUES (OLD.workspace_id, 1) ON CONFLICT(workspace_id) DO UPDATE SET revision = revision + 1; END`},
+	} {
+		if err := r.migrate.Apply("exact_task_snapshots.fence_trigger."+trigger.name, trigger.statement); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Repository) OpenExactTaskSnapshot(ctx context.Context, request models.ExactTaskSnapshotRequest) (*models.ExactTaskSnapshot, error) {

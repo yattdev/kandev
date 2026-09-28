@@ -68,6 +68,7 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		r.ensurePromptOrderIndex,
 		r.initConversationSourceSchema,
 		r.cleanupLegacyConversationJournal,
+		r.ensureExactTaskTriggers,
 	}
 	// Every boundary is checked before and after its step. The task repository
 	// passes the same context to startup SQL through migrationContext, so a
@@ -87,6 +88,28 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// Task-table rebuilds in the legacy migration list can remove triggers that
+// were created earlier in startup. Reinstall the exact fences after all such
+// rebuilds so fresh and upgraded databases expose the same task versions.
+func (r *Repository) ensureExactTaskTriggers() error {
+	if err := r.initExactTaskSnapshotSchema(); err != nil {
+		return err
+	}
+	if dialect.IsPostgres(r.db.DriverName()) {
+		return nil
+	}
+	return r.migrate.Apply("tasks.resource_version_trigger.final", `CREATE TRIGGER IF NOT EXISTS tasks_resource_version_trigger AFTER UPDATE ON tasks FOR EACH ROW WHEN NEW.resource_version = OLD.resource_version BEGIN UPDATE tasks SET resource_version = OLD.resource_version + 1 WHERE id = OLD.id; END`)
+}
+
+// RestoreExactTaskTriggersAfterOfficeMigration repairs task-table triggers
+// after the Office priority migration recreates tasks on older SQLite stores.
+func (r *Repository) RestoreExactTaskTriggersAfterOfficeMigration() error {
+	if r == nil || r.db == nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	return r.ensureExactTaskTriggers()
 }
 
 // ensureTaskEnvironmentRecoveryClaimsSchema creates the durable authority used

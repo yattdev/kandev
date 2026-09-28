@@ -263,6 +263,35 @@ func (r *Repository) WithPendingTransitionAuthority(ctx context.Context, token s
 	return nil
 }
 
+// BeginPendingTransitionAuthorityTx gives the private exact command the same
+// sealed writer used by Host decision evidence. The caller owns resolution.
+func (r *Repository) BeginPendingTransitionAuthorityTx(ctx context.Context) (*exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, error) {
+	if r == nil || r.authority == nil {
+		return nil, nil, ErrUnavailable
+	}
+	tx, err := r.authority.Begin(ctx)
+	if err != nil {
+		return nil, nil, ErrUnavailable
+	}
+	return r.authority, tx, nil
+}
+
+// ValidatePendingTransitionInAuthorityTx checks the composite fence and its
+// queue row without opening a second transaction or exposing a source token.
+func (r *Repository) ValidatePendingTransitionInAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, token string, observed mq.ExactPendingTransition) error {
+	if r == nil || r.authority == nil || authority != r.authority || !tx.Matches(authority) {
+		return ErrUnavailable
+	}
+	_, pendingToken, err := requireSnapshot(ctx, tx.SQLX(), token)
+	if err != nil {
+		return ErrUnavailable
+	}
+	if err := r.pending.ValidateExactPendingTransitionInAuthorityTx(ctx, authority, tx, pendingToken, observed); err != nil {
+		return ErrUnavailable
+	}
+	return nil
+}
+
 // CleanupExpired deletes a bounded number of expired composite tokens. Source
 // snapshots retain their owners' independent cleanup lifecycle.
 func (r *Repository) CleanupExpired(ctx context.Context, limit int) (int, error) {

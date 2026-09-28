@@ -357,6 +357,7 @@ func wireExactPluginEvidence(pool *db.Pool, taskRepo *sqliterepo.Repository, off
 		return
 	}
 	pluginsSvc.SetExactTaskDecisionEvidence(composite)
+	taskRepo.SetExactTaskCommandCompositeValidator(composite)
 	issuer, err := plugins.NewSQLiteExactTaskCommandGrantIssuer(taskRepo, composite)
 	if err == nil {
 		pluginsSvc.SetExactTaskCommandGrantIssuer(issuer)
