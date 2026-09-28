@@ -1484,19 +1484,26 @@ func (r *Repository) claimPromptableTaskSessionIfActive(
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var storedTaskID string
 	var state models.TaskSessionState
 	var active bool
 	err = tx.QueryRowxContext(ctx, r.db.Rebind(`
-		SELECT ts.state, t.archived_at IS NULL
+		SELECT ts.task_id, ts.state, t.archived_at IS NULL
 		FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
 		WHERE ts.id = ?
 		  AND (? = '' OR ts.task_id = ?)
 		  AND (? = '' OR ts.queue_incarnation_id = ?)
-	`), id, taskID, taskID, incarnationID, incarnationID).Scan(&state, &active)
+	`), id, taskID, taskID, incarnationID, incarnationID).Scan(&storedTaskID, &state, &active)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.PromptableTaskSessionClaim{Status: models.PromptableTaskSessionInactive}, nil
 	}
 	if err != nil {
+		return models.PromptableTaskSessionClaim{}, err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, storedTaskID); err != nil {
+		return models.PromptableTaskSessionClaim{}, err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, storedTaskID); err != nil {
 		return models.PromptableTaskSessionClaim{}, err
 	}
 	if !active {
