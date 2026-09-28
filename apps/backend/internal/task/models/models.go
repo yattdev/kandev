@@ -2068,8 +2068,9 @@ type CoordinatorStopOperation struct {
 }
 
 const (
-	CoordinatorStopOperationStatusFencing = "fencing"
-	CoordinatorStopProofScopePending      = "pending_exact_runtime_proof"
+	CoordinatorStopOperationStatusFencing    = "fencing"
+	CoordinatorStopOperationStatusIncomplete = "incomplete"
+	CoordinatorStopProofScopePending         = "pending_exact_runtime_proof"
 )
 
 // ReviewStatus represents the review state of a TaskSession. The zero value

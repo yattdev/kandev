@@ -140,6 +140,41 @@ func (r *Repository) GetCoordinatorStopOperation(ctx context.Context, operationI
 	return operation, nil
 }
 
+// MarkCoordinatorStopOperationIncomplete records that exact runtime proof was
+// unavailable. It cannot manufacture a stopped receipt, and a replacement
+// agentctl generation cannot mutate the predecessor's operation.
+func (r *Repository) MarkCoordinatorStopOperationIncomplete(
+	ctx context.Context, operationID, executionID string, agentctlGeneration uint64, reasonCode string,
+) (*models.CoordinatorStopOperation, bool, error) {
+	if operationID == "" || executionID == "" || agentctlGeneration == 0 || reasonCode == "" {
+		return nil, false, errors.New("incomplete stop operation requires operation, execution, agentctl generation, and reason")
+	}
+	now := time.Now().UTC()
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+		UPDATE task_stop_operations
+		SET status = ?, reason_code = ?, updated_at = ?
+		WHERE id = ? AND execution_id = ? AND agentctl_generation = ? AND status = ?
+	`), models.CoordinatorStopOperationStatusIncomplete, reasonCode, now, operationID, executionID, agentctlGeneration, models.CoordinatorStopOperationStatusFencing)
+	if err != nil {
+		return nil, false, err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return nil, false, err
+	}
+	operation, err := r.GetCoordinatorStopOperation(ctx, operationID)
+	if err != nil {
+		return nil, false, err
+	}
+	if operation.ExecutionID != executionID || operation.AgentctlGeneration != agentctlGeneration {
+		return nil, false, models.ErrExecutionRotated
+	}
+	if changed == 0 && operation.Status != models.CoordinatorStopOperationStatusIncomplete {
+		return nil, false, models.ErrExecutionRotated
+	}
+	return operation, changed == 1, nil
+}
+
 func getCoordinatorStopOperationTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, id string) (*models.CoordinatorStopOperation, bool, error) {
 	operation := &models.CoordinatorStopOperation{}
 	err := tx.QueryRowxContext(ctx, db.Rebind(`SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, status, reason_code, proof_scope, created_at, updated_at FROM task_stop_operations WHERE id = ?`), id).Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt)

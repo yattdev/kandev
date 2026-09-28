@@ -64,6 +64,26 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 	require.NoError(t, err)
 	require.False(t, created)
 	require.Equal(t, op.AdmissionCutoff, repeated.AdmissionCutoff)
+
+	// @covers AC-STOP-FENCE-004, AC-STOP-FENCE-005
+	incomplete, changed, err := repo.MarkCoordinatorStopOperationIncomplete(ctx, "stop-op-a", "execution-a", 1, "agentctl_unreachable")
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, incomplete.Status)
+	require.Equal(t, "agentctl_unreachable", incomplete.ReasonCode)
+
+	// A restart/retry reads the durable incomplete receipt rather than treating
+	// the cancelled session as proof that the exact process stopped.
+	reloaded, err := repo.GetCoordinatorStopOperation(ctx, "stop-op-a")
+	require.NoError(t, err)
+	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, reloaded.Status)
+	repeatedIncomplete, changed, err := repo.MarkCoordinatorStopOperationIncomplete(ctx, "stop-op-a", "execution-a", 1, "agentctl_unreachable")
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, repeatedIncomplete.Status)
+
+	_, _, err = repo.MarkCoordinatorStopOperationIncomplete(ctx, "stop-op-a", "execution-a", 2, "agentctl_unreachable")
+	require.ErrorIs(t, err, models.ErrExecutionRotated)
 }
 
 // @covers AC-STOP-FENCE-003
