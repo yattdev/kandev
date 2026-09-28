@@ -30,6 +30,7 @@ type ExactRelationSnapshotTransactionReader interface {
 // ExactRelationSnapshotAuthorityReader materializes relation evidence only with
 // a provenance-checked transaction from the shared SQLite authority.
 type ExactRelationSnapshotAuthorityReader interface {
+	ValidateExactRelationSnapshotAuthority(*exactsnapshotauthority.Authority) error
 	BeginExactRelationSnapshotAuthorityTx(context.Context, *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error)
 	OpenExactRelationSnapshotInAuthorityTx(context.Context, *exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, models.ExactRelationSnapshotRequest) (*models.ExactRelationSnapshot, error)
 }

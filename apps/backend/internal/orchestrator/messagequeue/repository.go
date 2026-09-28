@@ -336,6 +336,7 @@ type ExactPendingTransitionTransactionReader interface {
 // ExactPendingTransitionAuthorityReader materializes queue evidence only with
 // a provenance-checked transaction from the shared SQLite authority.
 type ExactPendingTransitionAuthorityReader interface {
+	ValidateExactPendingTransitionSnapshotAuthority(*exactsnapshotauthority.Authority) error
 	BeginExactPendingTransitionSnapshotAuthorityTx(context.Context, *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error)
 	OpenExactPendingTransitionSnapshotInAuthorityTx(context.Context, *exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error)
 }

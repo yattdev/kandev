@@ -78,9 +78,18 @@ func (r *sqliteRepository) BeginExactPendingTransitionSnapshotTx(ctx context.Con
 	return r.db.BeginTxx(ctx, nil)
 }
 
-func (r *sqliteRepository) BeginExactPendingTransitionSnapshotAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error) {
+// ValidateExactPendingTransitionSnapshotAuthority verifies the authority
+// before a composite transaction is opened.
+func (r *sqliteRepository) ValidateExactPendingTransitionSnapshotAuthority(authority *exactsnapshotauthority.Authority) error {
 	if !r.exactPendingTransitionsEnabled || r.db.DriverName() == postgresDriverName || !authority.Matches(r.db) {
-		return nil, ErrExactPendingTransitionUnavailable
+		return ErrExactPendingTransitionUnavailable
+	}
+	return nil
+}
+
+func (r *sqliteRepository) BeginExactPendingTransitionSnapshotAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error) {
+	if err := r.ValidateExactPendingTransitionSnapshotAuthority(authority); err != nil {
+		return nil, err
 	}
 	tx, err := authority.Begin(ctx)
 	if err != nil {

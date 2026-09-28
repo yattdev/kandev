@@ -113,9 +113,18 @@ func (r *Repository) BeginExactRelationSnapshotTx(ctx context.Context) (*sqlx.Tx
 	return r.db.BeginTxx(ctx, nil)
 }
 
-func (r *Repository) BeginExactRelationSnapshotAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error) {
+// ValidateExactRelationSnapshotAuthority verifies the authority before a
+// composite transaction is opened.
+func (r *Repository) ValidateExactRelationSnapshotAuthority(authority *exactsnapshotauthority.Authority) error {
 	if !r.exactRelationSnapshotsEnabled || dialect.IsPostgres(r.db.DriverName()) || !authority.Matches(r.db) {
-		return nil, ErrExactRelationSnapshotUnavailable
+		return ErrExactRelationSnapshotUnavailable
+	}
+	return nil
+}
+
+func (r *Repository) BeginExactRelationSnapshotAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error) {
+	if err := r.ValidateExactRelationSnapshotAuthority(authority); err != nil {
+		return nil, err
 	}
 	tx, err := authority.Begin(ctx)
 	if err != nil {
