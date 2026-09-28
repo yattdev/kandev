@@ -48,6 +48,12 @@ func TestProvideServicesWiresPluginsKandevVersion(t *testing.T) {
 
 type exactHostRuntime struct{ host pluginsdk.Host }
 
+type exactCommandFixture struct {
+	record *store.Record
+	grant  tasksqlite.ExactTaskCommandGrant
+	task   *taskmodels.Task
+}
+
 func (r *exactHostRuntime) Start(_ context.Context, rec *store.Record, f func(string) pluginsdk.Host) error {
 	r.host = f(rec.ID)
 	return nil
@@ -59,9 +65,9 @@ func (*exactHostRuntime) Running(string) bool                        { return fa
 func (*exactHostRuntime) RestartCount(string) int                    { return 0 }
 func (*exactHostRuntime) StopAll()                                   {}
 
-func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
+func setupProductionExactCommand(t *testing.T, services *Services, repos *Repositories) exactCommandFixture {
+	t.Helper()
 	ctx := context.Background()
-	services, _, repos := provideTestServices(t, "exact-host")
 	if err := repos.Task.CreateWorkspace(ctx, &taskmodels.Workspace{ID: "exact-ws", Name: "Exact"}); err != nil {
 		t.Fatal(err)
 	}
@@ -93,17 +99,39 @@ func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeDecision, err := services.Plugins.AuthorizeAndRecordExactCapability(rec.InstallationID, "exact-ws", "host.v2.write:tasks", 1, "exact-marker", "exact-command")
-	if err != nil || !writeDecision.Allowed {
-		t.Fatalf("exact write authorization = %+v, %v", writeDecision, err)
+	d, err := services.Plugins.AuthorizeAndRecordExactCapability(rec.InstallationID, "exact-ws", "host.v2.write:tasks", 1, "exact-marker", "exact-command")
+	if err != nil || !d.Allowed {
+		t.Fatalf("exact write authorization = %+v, %v", d, err)
 	}
-	grant := tasksqlite.ExactTaskCommandGrant{ID: "exact-grant", InstallationID: rec.InstallationID, WorkspaceID: "exact-ws", TaskID: task.ID, CapabilityID: "host.v2.write:tasks", ReceiptAuditID: writeDecision.Receipt.AuditID, ApprovalRevision: 1, ActionDigest: "marker", IdempotencyKey: "marker-key", ExpiresAt: time.Now().Add(time.Minute)}
-	if err = repos.Task.IssueExactTaskCommandGrant(ctx, grant); err != nil {
+	g := tasksqlite.ExactTaskCommandGrant{ID: "exact-grant", InstallationID: rec.InstallationID, WorkspaceID: "exact-ws", TaskID: task.ID, CapabilityID: "host.v2.write:tasks", ReceiptAuditID: d.Receipt.AuditID, ApprovalRevision: 1, ActionDigest: "marker", IdempotencyKey: "marker-key", ExpiresAt: time.Now().Add(time.Minute)}
+	if err = repos.Task.IssueExactTaskCommandGrant(ctx, g); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, tasksqlite.ExactTaskDescriptionCommand{GrantID: grant.ID, InstallationID: grant.InstallationID, WorkspaceID: grant.WorkspaceID, TaskID: grant.TaskID, CapabilityID: grant.CapabilityID, ReceiptAuditID: grant.ReceiptAuditID, ApprovalRevision: 1, ActionDigest: grant.ActionDigest, IdempotencyKey: grant.IdempotencyKey, Marker: "[marker]", ExpectedResourceVersion: task.ResourceVersion, ExpectedFence: fence}); err != nil {
+	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, tasksqlite.ExactTaskDescriptionCommand{GrantID: g.ID, InstallationID: g.InstallationID, WorkspaceID: g.WorkspaceID, TaskID: g.TaskID, CapabilityID: g.CapabilityID, ReceiptAuditID: g.ReceiptAuditID, ApprovalRevision: 1, ActionDigest: g.ActionDigest, IdempotencyKey: g.IdempotencyKey, Marker: "[marker]", ExpectedResourceVersion: task.ResourceVersion, ExpectedFence: fence}); err != nil {
 		t.Fatal(err)
 	}
+	return exactCommandFixture{record: rec, grant: g, task: task}
+}
+
+func TestSetupProductionExactCommandPersistsMarker(t *testing.T) {
+	services, _, repos := provideTestServices(t, "exact-command-fixture")
+	fixture := setupProductionExactCommand(t, services, repos)
+	stored, err := repos.Task.GetTask(context.Background(), fixture.task.ID)
+	if err != nil || stored.Description != "[marker]" {
+		t.Fatalf("fixture marker = %+v, %v", stored, err)
+	}
+}
+
+func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
+	ctx := context.Background()
+	services, _, repos := provideTestServices(t, "exact-host")
+	fixture := setupProductionExactCommand(t, services, repos)
+	storedMarker, err := repos.Task.GetTask(ctx, fixture.task.ID)
+	if err != nil || storedMarker.Description != "[marker]" {
+		t.Fatalf("exact marker = %+v, %v", storedMarker, err)
+	}
+	rec := fixture.record
+	grant := fixture.grant
 	if err = repos.Task.CreateTask(ctx, &taskmodels.Task{ID: "revoked-task", WorkspaceID: "exact-ws", Title: "Revoked", Description: "before"}); err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +139,7 @@ func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fence, err = repos.Task.ExactTaskCommandWorkspaceFence(ctx, "exact-ws")
+	fence, err := repos.Task.ExactTaskCommandWorkspaceFence(ctx, "exact-ws")
 	if err != nil {
 		t.Fatal(err)
 	}
