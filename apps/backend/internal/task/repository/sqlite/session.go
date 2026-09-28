@@ -2124,21 +2124,28 @@ func (r *Repository) updateTaskSessionWithSnapshotGuard(
 }
 
 // ensureTaskSessionEnvironmentAvailableTx protects full-row session updates
-// that can attach a session to an environment. The current environment and a
-// newly supplied environment are both checked because a stale session object
-// can otherwise move an environment pointer through an active recovery claim.
+// and environment worktree snapshots. It resolves and locks the stored task
+// owner before checking its force-removal claim, then checks both the current
+// and newly supplied environments against recovery claims.
 func (r *Repository) ensureTaskSessionEnvironmentAvailableTx(
 	ctx context.Context,
 	tx *sqlx.Tx,
 	sessionID, nextEnvironmentID string,
 ) error {
 	var current sql.NullString
+	var taskID string
 	if err := tx.QueryRowContext(ctx, r.db.Rebind(`
-		SELECT task_environment_id FROM task_sessions WHERE id = ?
-	`), sessionID).Scan(&current); err != nil {
+		SELECT task_id, task_environment_id FROM task_sessions WHERE id = ?
+	`), sessionID).Scan(&taskID, &current); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
+		return err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
 		return err
 	}
 	if current.Valid && current.String != "" {
@@ -4189,8 +4196,25 @@ func (r *Repository) ResetTaskSessionBasesForRepository(ctx context.Context, tas
 	if repositoryID == "" {
 		return 0, fmt.Errorf("repository_id is required")
 	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return 0, err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return 0, err
+		}
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return 0, err
+	}
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_sessions
 		SET base_branch = ?, base_commit_sha = '', updated_at = ?
 		WHERE task_id = ? AND repository_id = ?
@@ -4198,7 +4222,13 @@ func (r *Repository) ResetTaskSessionBasesForRepository(ctx context.Context, tas
 	if err != nil {
 		return 0, err
 	}
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
 	return rows, nil
 }
 
