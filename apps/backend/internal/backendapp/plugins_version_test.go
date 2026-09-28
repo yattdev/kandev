@@ -400,6 +400,34 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, foreign); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
 		t.Fatalf("foreign pending evidence command = %v", err)
 	}
+	if _, err = queue.TakePendingMove(ctx, "exact-ws-a-session"); err != nil {
+		t.Fatal(err)
+	}
+	staleRow := pendingRows["exact-ws-a"]
+	stale := exactDescriptionCommand(grant, "[marker]", task.ResourceVersion, 0)
+	stale.PendingSnapshotToken, stale.PendingTransition = pendingTokens["exact-ws-a"], &staleRow
+	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, stale); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("stale pending evidence command = %v", err)
+	}
+	if err = queue.SetPendingMove(ctx, "exact-ws-a-session", &messagequeue.PendingMove{TaskID: task.ID, WorkflowID: "workflow", WorkflowStepID: "step"}); err != nil {
+		t.Fatal(err)
+	}
+	expiredSnapshot, err := queue.OpenExactPendingTransitionSnapshot(ctx, messagequeue.ExactPendingTransitionSnapshotRequest{WorkspaceID: task.WorkspaceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredRows, err := queue.PageExactPendingTransitionSnapshot(ctx, expiredSnapshot.Token, 0, 1)
+	if err != nil || len(expiredRows) != 1 {
+		t.Fatalf("expired pending evidence = %#v, %v", expiredRows, err)
+	}
+	if _, err = repos.Task.DB().ExecContext(ctx, `UPDATE exact_pending_snapshots SET expires_at = ? WHERE token = ?`, time.Now().Add(-time.Minute), expiredSnapshot.Token); err != nil {
+		t.Fatal(err)
+	}
+	expired := exactDescriptionCommand(grant, "[marker]", task.ResourceVersion, 0)
+	expired.PendingSnapshotToken, expired.PendingTransition = expiredSnapshot.Token, &expiredRows[0]
+	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, expired); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("expired pending evidence command = %v", err)
+	}
 	stored, err := repos.Task.GetTask(ctx, task.ID)
 	if err != nil || stored.Description != "" || stored.ResourceVersion != task.ResourceVersion {
 		t.Fatalf("denied command changed task: %+v, %v", stored, err)
