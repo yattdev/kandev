@@ -982,7 +982,7 @@ func exactPageFromProto(page *pluginv1.ExactPage) ExactPage {
 	return ExactPage{Limit: page.GetLimit(), Cursor: page.GetCursor(), SnapshotVersion: page.GetSnapshotVersion()}
 }
 func exactPageInfoToProto(page *ExactPageInfo) *pluginv1.ExactPageInfo {
-	return &pluginv1.ExactPageInfo{NextCursor: page.NextCursor, HasMore: page.HasMore, SnapshotVersion: page.SnapshotVersion}
+	return &pluginv1.ExactPageInfo{NextCursor: page.NextCursor, HasMore: page.HasMore, SnapshotVersion: page.SnapshotVersion, AuditId: page.AuditID}
 }
 
 func (s *grpcHostServer) RevealSecret(ctx context.Context, req *pluginv1.RevealSecretRequest) (*pluginv1.RevealSecretResponse, error) {
