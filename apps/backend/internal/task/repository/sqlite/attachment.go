@@ -245,7 +245,7 @@ func (r *Repository) ClaimQueuedMessageAttachments(
 		return fmt.Errorf("begin queued attachment claim: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.ensureQueuedAttachmentClaimTaskAvailableTx(ctx, tx, taskID); err != nil {
+	if err := r.ensureQueuedAttachmentTaskAvailableTx(ctx, tx, taskID); err != nil {
 		return err
 	}
 
@@ -270,7 +270,7 @@ func (r *Repository) ClaimQueuedMessageAttachments(
 	return nil
 }
 
-func (r *Repository) ensureQueuedAttachmentClaimTaskAvailableTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
+func (r *Repository) ensureQueuedAttachmentTaskAvailableTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
 	if taskID == "" {
 		return nil
 	}
@@ -377,6 +377,9 @@ func (r *Repository) RestoreQueuedMessageAttachments(
 		return fmt.Errorf("begin queued attachment restore: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureQueuedAttachmentTaskAvailableTx(ctx, tx, taskID); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	for _, id := range ids {
 		if _, err := tx.ExecContext(ctx, tx.Rebind(`
