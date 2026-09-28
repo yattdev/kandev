@@ -8,11 +8,16 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/db/dialect"
 )
 
 // ErrExactTaskCommandUnavailable is the fail-closed result for an exact
 // command whose approval, grant, task version, or workspace fence changed.
 var ErrExactTaskCommandUnavailable = errors.New("exact task command unavailable")
+
+func (r *Repository) ExactTaskCommandAvailable() bool {
+	return r != nil && r.db != nil && !dialect.IsPostgres(r.db.DriverName())
+}
 
 // ExactTaskCommandApproval is the SQLite-owned approval projection used only
 // by the future exact command path. Legacy approvals.json is deliberately not

@@ -19,7 +19,7 @@ type ExactTaskCommandApprovalBridge interface {
 type sqliteExactTaskCommandApprovalBridge struct{ repo *tasksqlite.Repository }
 
 func NewSQLiteExactTaskCommandApprovalBridge(repo *tasksqlite.Repository) (ExactTaskCommandApprovalBridge, error) {
-	if repo == nil {
+	if repo == nil || !repo.ExactTaskCommandAvailable() {
 		return nil, fmt.Errorf("plugins: exact command repository is required")
 	}
 	return sqliteExactTaskCommandApprovalBridge{repo: repo}, nil
