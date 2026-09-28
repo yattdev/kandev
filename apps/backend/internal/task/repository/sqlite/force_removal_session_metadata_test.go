@@ -153,3 +153,46 @@ func TestClaimForceRemovalBlocksDifferentStepSessionMetadataKey(t *testing.T) {
 	require.Equal(t, "step-foreign", marker["step_id"])
 	require.NotContains(t, marker, "replacement")
 }
+
+func TestClaimForceRemovalBlocksCurrentSessionStateTransition(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-state-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-state-held", "force-state-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-state-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{
+			ID: taskID + "-session", TaskID: taskID, State: models.TaskSessionStateCreated,
+		}))
+	}
+	held, err := repo.GetTask(ctx, "force-state-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
+		TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt,
+		AdmissionGeneration: "admission", OperationID: "session-state-operation",
+		RequestDigest: "request", PreviewDigest: "preview",
+	})
+	require.NoError(t, err)
+
+	changed, _, err := repo.UpdateTaskSessionStateIfCurrent(
+		ctx, "force-state-held-session", models.TaskSessionStateCreated, models.TaskSessionStateRunning, "",
+	)
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, changed)
+	heldSession, err := repo.GetTaskSession(ctx, "force-state-held-session")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateCreated, heldSession.State)
+
+	changed, _, err = repo.UpdateTaskSessionStateIfCurrent(
+		ctx, "force-state-foreign-session", models.TaskSessionStateCreated, models.TaskSessionStateRunning, "",
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+	changed, _, err = repo.UpdateTaskSessionStateIfCurrent(
+		ctx, "force-state-foreign-session", models.TaskSessionStateCreated, models.TaskSessionStateCompleted, "stale",
+	)
+	require.NoError(t, err)
+	require.False(t, changed)
+	foreignSession, err := repo.GetTaskSession(ctx, "force-state-foreign-session")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateRunning, foreignSession.State)
+}
