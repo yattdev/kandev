@@ -34,6 +34,7 @@ type RouteOverride = lifecycle.RouteOverride
 type AgentStreamEventPayload = lifecycle.AgentStreamEventPayload
 type AgentExecution = lifecycle.AgentExecution
 type CachedModeState = lifecycle.CachedModeState
+type ExecutionFenceReceipt = lifecycle.ExecutionFenceReceipt
 
 // ErrNoExecutionForSession reports that a session has no live execution.
 var ErrNoExecutionForSession = lifecycle.ErrNoExecutionForSession

@@ -1660,7 +1660,16 @@ func (m *Manager) GetExecutionBySessionID(sessionID string) (*AgentExecution, bo
 // in-memory execution incarnation and returns its drain observation. It never
 // calls StopAgent or settles repository state; stop promotion remains owned by
 // the durable task/session boundary.
-func (m *Manager) CloseExecutionAdmission(ctx context.Context, executionID string, generation uint64) (*agentctlclient.ExecutionFenceReceipt, error) {
+// ExecutionFenceReceipt is lifecycle's transport-neutral observation of an
+// exact agentctl admission fence.
+type ExecutionFenceReceipt struct {
+	ExecutionID             string
+	AgentctlGeneration      uint64
+	AdmissionClosedAt       time.Time
+	ManagedProcessesDrained bool
+}
+
+func (m *Manager) CloseExecutionAdmission(ctx context.Context, executionID string, generation uint64) (*ExecutionFenceReceipt, error) {
 	execution, exists := m.executionStore.Get(executionID)
 	if !exists || execution.ID != executionID {
 		return nil, fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
@@ -1670,7 +1679,11 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, executionID strin
 	if current, ok := m.executionStore.Get(executionID); !ok || current != execution {
 		return nil, fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
 	}
-	return execution.CloseExecutionAdmission(ctx, generation)
+	receipt, err := execution.CloseExecutionAdmission(ctx, generation)
+	if err != nil {
+		return nil, err
+	}
+	return &ExecutionFenceReceipt{ExecutionID: receipt.ExecutionID, AgentctlGeneration: receipt.AgentctlGeneration, AdmissionClosedAt: receipt.AdmissionClosedAt, ManagedProcessesDrained: receipt.ManagedProcessesDrained}, nil
 }
 
 // ResolveTaskEnvironmentID returns the task environment ID for a session.
