@@ -1256,6 +1256,9 @@ func (r *Repository) DeleteMessageAttachmentsBySession(ctx context.Context, task
 		return nil, fmt.Errorf("begin session attachment cleanup: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureTaskAttachmentAvailableTx(ctx, tx, taskID); err != nil {
+		return nil, err
+	}
 	rows, err := tx.QueryxContext(ctx, tx.Rebind(`
 		SELECT `+attachmentSelectColumns+` FROM task_message_attachments
 		WHERE task_id = ? AND session_id = ?
