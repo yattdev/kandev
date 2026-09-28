@@ -66,7 +66,34 @@ func (r *Repository) initExactTaskCommandSchema() error {
 			task_id TEXT NOT NULL, action_digest TEXT NOT NULL, idempotency_key TEXT NOT NULL,
 			resource_version BIGINT NOT NULL, created_at TIMESTAMP NOT NULL,
 			UNIQUE (installation_id, workspace_id, idempotency_key)
+		);
+		CREATE TABLE IF NOT EXISTS exact_task_command_receipts (
+			audit_id TEXT PRIMARY KEY, installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+			capability_id TEXT NOT NULL, approval_revision BIGINT NOT NULL, observed_at TIMESTAMP NOT NULL,
+			UNIQUE (installation_id, workspace_id, capability_id, audit_id)
 		);`)
+}
+
+// RecordExactTaskCommandReceipt binds an H6 decision receipt to the active
+// SQLite approval projection. A missing projection is denied rather than
+// falling back to approvals.json.
+func (r *Repository) RecordExactTaskCommandReceipt(ctx context.Context, approval ExactTaskCommandApproval, observedAt time.Time) error {
+	if !validExactCommandApproval(approval) || observedAt.IsZero() {
+		return ErrExactTaskCommandUnavailable
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = requireExactCommandApproval(ctx, r, tx, approval.InstallationID, approval.WorkspaceID, approval.CapabilityID, approval.Revision); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_receipts(audit_id, installation_id, workspace_id, capability_id, approval_revision, observed_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(audit_id) DO NOTHING`), approval.ReceiptAuditID, approval.InstallationID, approval.WorkspaceID, approval.CapabilityID, approval.Revision, observedAt.UTC())
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // UpsertExactTaskCommandApproval is the narrow future bridge from an H6
@@ -132,7 +159,10 @@ func (r *Repository) IssueExactTaskCommandGrant(ctx context.Context, grant Exact
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err = requireExactCommandApproval(ctx, r, tx, grant.InstallationID, grant.WorkspaceID, grant.CapabilityID, grant.ReceiptAuditID, grant.ApprovalRevision); err != nil {
+	if err = requireExactCommandApproval(ctx, r, tx, grant.InstallationID, grant.WorkspaceID, grant.CapabilityID, grant.ApprovalRevision); err != nil {
+		return err
+	}
+	if err = requireExactCommandReceipt(ctx, r, tx, grant.InstallationID, grant.WorkspaceID, grant.CapabilityID, grant.ReceiptAuditID, grant.ApprovalRevision); err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_grants(id, installation_id, workspace_id, task_id, capability_id, receipt_audit_id, approval_revision, action_digest, idempotency_key, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), grant.ID, grant.InstallationID, grant.WorkspaceID, grant.TaskID, grant.CapabilityID, grant.ReceiptAuditID, grant.ApprovalRevision, grant.ActionDigest, grant.IdempotencyKey, grant.ExpiresAt.UTC())
@@ -160,23 +190,21 @@ func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, comma
 		}
 		return receipt, tx.Commit()
 	}
-	if err = requireExactCommandApproval(ctx, r, tx, command.InstallationID, command.WorkspaceID, command.CapabilityID, command.ReceiptAuditID, command.ApprovalRevision); err != nil {
+	if err = requireExactCommandApproval(ctx, r, tx, command.InstallationID, command.WorkspaceID, command.CapabilityID, command.ApprovalRevision); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	if err = requireExactCommandReceipt(ctx, r, tx, command.InstallationID, command.WorkspaceID, command.CapabilityID, command.ReceiptAuditID, command.ApprovalRevision); err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
 	now := r.nowUTC()
-	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_grants SET consumed_at = ? WHERE id = ? AND installation_id = ? AND workspace_id = ? AND task_id = ? AND capability_id = ? AND receipt_audit_id = ? AND approval_revision = ? AND action_digest = ? AND idempotency_key = ? AND expires_at > ? AND consumed_at IS NULL AND revoked_at IS NULL`), now, command.GrantID, command.InstallationID, command.WorkspaceID, command.TaskID, command.CapabilityID, command.ReceiptAuditID, command.ApprovalRevision, command.ActionDigest, command.IdempotencyKey, now)
+	if err = r.consumeExactTaskCommandGrant(ctx, tx, command, now); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET description = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND resource_version = ? AND (SELECT revision FROM exact_task_workspace_fences WHERE workspace_id = ?) = ?`), command.Marker, now, command.TaskID, command.WorkspaceID, command.ExpectedResourceVersion, command.WorkspaceID, command.ExpectedFence)
 	if err != nil {
 		return ExactTaskDescriptionReceipt{}, err
 	}
 	rows, _ := result.RowsAffected()
-	if rows != 1 {
-		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
-	}
-	result, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET description = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND resource_version = ? AND (SELECT revision FROM exact_task_workspace_fences WHERE workspace_id = ?) = ?`), command.Marker, now, command.TaskID, command.WorkspaceID, command.ExpectedResourceVersion, command.WorkspaceID, command.ExpectedFence)
-	if err != nil {
-		return ExactTaskDescriptionReceipt{}, err
-	}
-	rows, _ = result.RowsAffected()
 	if rows != 1 {
 		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
 	}
@@ -198,6 +226,18 @@ func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, comma
 	return ExactTaskDescriptionReceipt{AuditID: command.IdempotencyKey, ResourceVersion: version}, nil
 }
 
+func (r *Repository) consumeExactTaskCommandGrant(ctx context.Context, tx *sqlx.Tx, command ExactTaskDescriptionCommand, now time.Time) error {
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_grants SET consumed_at = ? WHERE id = ? AND installation_id = ? AND workspace_id = ? AND task_id = ? AND capability_id = ? AND receipt_audit_id = ? AND approval_revision = ? AND action_digest = ? AND idempotency_key = ? AND expires_at > ? AND consumed_at IS NULL AND revoked_at IS NULL`), now, command.GrantID, command.InstallationID, command.WorkspaceID, command.TaskID, command.CapabilityID, command.ReceiptAuditID, command.ApprovalRevision, command.ActionDigest, command.IdempotencyKey, now)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
 func exactTaskCommandReplay(ctx context.Context, r *Repository, tx *sqlx.Tx, command ExactTaskDescriptionCommand) (ExactTaskDescriptionReceipt, bool, error) {
 	var digest string
 	var version int64
@@ -214,9 +254,17 @@ func exactTaskCommandReplay(ctx context.Context, r *Repository, tx *sqlx.Tx, com
 	return ExactTaskDescriptionReceipt{AuditID: command.IdempotencyKey, ResourceVersion: version}, true, nil
 }
 
-func requireExactCommandApproval(ctx context.Context, r *Repository, tx *sqlx.Tx, installationID, workspaceID, capabilityID, auditID string, revision uint64) error {
+func requireExactCommandApproval(ctx context.Context, r *Repository, tx *sqlx.Tx, installationID, workspaceID, capabilityID string, revision uint64) error {
 	var value int
-	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT 1 FROM exact_task_command_approvals WHERE installation_id = ? AND workspace_id = ? AND capability_id = ? AND receipt_audit_id = ? AND revision = ? AND revoked_at IS NULL`), installationID, workspaceID, capabilityID, auditID, revision).Scan(&value)
+	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT 1 FROM exact_task_command_approvals WHERE installation_id = ? AND workspace_id = ? AND capability_id = ? AND revision = ? AND revoked_at IS NULL`), installationID, workspaceID, capabilityID, revision).Scan(&value)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+func requireExactCommandReceipt(ctx context.Context, r *Repository, tx *sqlx.Tx, installationID, workspaceID, capabilityID, auditID string, revision uint64) error {
+	var value int
+	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT 1 FROM exact_task_command_receipts WHERE audit_id = ? AND installation_id = ? AND workspace_id = ? AND capability_id = ? AND approval_revision = ?`), auditID, installationID, workspaceID, capabilityID, revision).Scan(&value)
 	if err != nil {
 		return ErrExactTaskCommandUnavailable
 	}

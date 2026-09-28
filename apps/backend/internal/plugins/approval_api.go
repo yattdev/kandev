@@ -1,6 +1,9 @@
 package plugins
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // ListCapabilityApprovals returns the current approval rows for one installed
 // plugin identity.
@@ -50,6 +53,16 @@ func (s *Service) RevokeCapabilityApproval(installationID, workspaceID string, e
 	ledger := s.approvalLedger()
 	if ledger == nil {
 		return CapabilityApprovalDTO{}, ErrApprovalRevisionConflict
+	}
+	current, ok, lookupErr := ledger.get(installationID, workspaceID)
+	if lookupErr != nil {
+		return CapabilityApprovalDTO{}, lookupErr
+	}
+	if ok && current.Revision == expectedRevision && s.exactTaskCommandApprovalBridge() != nil {
+		bridge := s.exactTaskCommandApprovalBridge()
+		if err := bridge.Revoke(context.Background(), current, auditID); err != nil {
+			return CapabilityApprovalDTO{}, err
+		}
 	}
 	row, err := ledger.revokeIfRevision(installationID, workspaceID, expectedRevision, actor, reason, auditID, time.Now().UTC(), false)
 	if err != nil {

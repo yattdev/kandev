@@ -144,6 +144,7 @@ type Service struct {
 	taskPRs               taskPRSource
 	taskWriter            taskWriter
 	exactDecisionEvidence exactDecisionEvidenceSource
+	exactCommandApprovals ExactTaskCommandApprovalBridge
 
 	// Utility agent invocation dependencies, wired via SetUtilityAgent.
 	utilityDefaultProfile utilityDefaultProfileSource

@@ -139,6 +139,9 @@ func prepareExactTaskCommand(t *testing.T, repo *Repository, taskID, grantID, ke
 	if err = repo.UpsertExactTaskCommandApproval(ctx, approval); err != nil {
 		t.Fatal(err)
 	}
+	if err = repo.RecordExactTaskCommandReceipt(ctx, approval, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
 	grant := ExactTaskCommandGrant{ID: grantID, InstallationID: approval.InstallationID, WorkspaceID: approval.WorkspaceID, TaskID: taskID, CapabilityID: approval.CapabilityID, ReceiptAuditID: approval.ReceiptAuditID, ApprovalRevision: approval.Revision, ActionDigest: "digest-" + grantID, IdempotencyKey: key, ExpiresAt: time.Now().UTC().Add(time.Minute)}
 	if err = repo.IssueExactTaskCommandGrant(ctx, grant); err != nil {
 		t.Fatal(err)

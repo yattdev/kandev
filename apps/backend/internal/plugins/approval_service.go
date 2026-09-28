@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -30,7 +31,16 @@ func (s *Service) approvalGrant(installationID, workspaceID string, revision uin
 	if err := s.validateApprovalManifest(installationID, manifestDigest, canonical); err != nil {
 		return CapabilityApproval{}, err
 	}
-	return ledger.grant(installationID, workspaceID, revision, manifestDigest, canonical, actor, reason, auditID, time.Now().UTC())
+	approval, err := ledger.grant(installationID, workspaceID, revision, manifestDigest, canonical, actor, reason, auditID, time.Now().UTC())
+	if err != nil {
+		return CapabilityApproval{}, err
+	}
+	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+		if err := bridge.Grant(context.Background(), approval, auditID); err != nil {
+			return CapabilityApproval{}, err
+		}
+	}
+	return approval, nil
 }
 
 func (s *Service) validateApprovalManifest(installationID, manifestDigest string, capabilityIDs []string) error {
@@ -71,6 +81,11 @@ func (s *Service) approvalRevoke(installationID, workspaceID, actor, reason, aud
 			return CapabilityApproval{}, err
 		}
 		return CapabilityApproval{}, fmt.Errorf("plugins: approval not found")
+	}
+	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+		if err := bridge.Revoke(context.Background(), current, auditID); err != nil {
+			return CapabilityApproval{}, err
+		}
 	}
 	return ledger.revokeIfRevision(installationID, workspaceID, current.Revision, actor, reason, auditID, time.Now().UTC(), true)
 }
@@ -163,7 +178,13 @@ func (s *Service) recordExactReadReceipt(receipt ApprovalReceipt) error {
 	if s.approvals == nil {
 		return errors.New("plugins: approval ledger not configured")
 	}
-	return s.approvals.recordReadReceipt(receipt)
+	if err := s.approvals.recordReadReceipt(receipt); err != nil {
+		return err
+	}
+	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+		return bridge.RecordReceipt(context.Background(), receipt)
+	}
+	return nil
 }
 
 // malformedAuthorizationRequestReason validates the structural shape of an
