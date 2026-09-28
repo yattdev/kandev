@@ -2,7 +2,9 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/kandev/kandev/internal/orchestrator/executor"
 	"github.com/kandev/kandev/internal/task/models"
@@ -14,6 +16,13 @@ import (
 type workflowRetryTransitionReader interface {
 	ListTaskStepTransitions(context.Context, string, int64, int) ([]models.StepTransition, error)
 }
+
+type workflowRetryRearmStore interface {
+	ListTurnsBySession(context.Context, string) ([]*models.Turn, error)
+	UpdateTaskSessionStateIfCurrent(context.Context, string, models.TaskSessionState, models.TaskSessionState, string) (bool, time.Time, error)
+}
+
+const workflowRetryAttachFailure = "environment preparation failed: base branch does not exist"
 
 // reconcilePreparedWorkflowSessionsOnStartup retries recorded routes only after
 // the watcher and scheduler have started. A prior process cannot still own an
@@ -33,7 +42,7 @@ func (s *Service) reconcilePreparedWorkflowSessionsOnStartup(ctx context.Context
 		if ctx.Err() != nil {
 			return
 		}
-		if task == nil || task.State != v1.TaskStateScheduling {
+		if task == nil || (task.State != v1.TaskStateScheduling && task.State != v1.TaskStateFailed) {
 			continue
 		}
 		route, ok := models.LoadWorkflowSessionRoute(task.Metadata)
@@ -66,7 +75,7 @@ func (s *Service) retryPreparedWorkflowSession(ctx context.Context, req *LaunchS
 	if !ok || route.Phase != workflowSessionRoutePrepared || route.DestinationID == "" ||
 		route.DestinationID != req.SessionID || route.SourceSessionID == "" ||
 		route.DestinationStepID != task.WorkflowStepID || route.EntryIdentity != s.workflowEntryIdentity(ctx, req.TaskID) ||
-		task.State != v1.TaskStateScheduling {
+		(task.State != v1.TaskStateScheduling && task.State != v1.TaskStateFailed) {
 		return nil, fmt.Errorf("prepared workflow route is not current for requested session")
 	}
 	reader, ok := s.repo.(workflowRetryTransitionReader)
@@ -102,11 +111,48 @@ func (s *Service) retryPreparedWorkflowSession(ctx context.Context, req *LaunchS
 	}
 	if source.TaskID != req.TaskID || destination.TaskID != req.TaskID ||
 		!source.IsPrimary || source.State != models.TaskSessionStateWaitingForInput ||
-		destination.IsPrimary || destination.State != models.TaskSessionStateCreated ||
+		destination.IsPrimary || (destination.State != models.TaskSessionStateCreated && destination.State != models.TaskSessionStateFailed) ||
 		destination.IsPassthrough ||
 		destination.AgentProfileID != route.AgentProfileID ||
 		source.TaskEnvironmentID == "" || source.TaskEnvironmentID != destination.TaskEnvironmentID {
 		return nil, fmt.Errorf("prepared workflow session ownership changed")
+	}
+	if destination.State == models.TaskSessionStateFailed {
+		rearmer, ok := s.repo.(workflowRetryRearmStore)
+		if !ok {
+			return nil, fmt.Errorf("conditional prepared workflow rearm is unavailable")
+		}
+		// This bounded rearm covers a failed attach before any turn was created.
+		// It cannot turn a failed agent turn or an active runtime into a second
+		// writer. The state changes use conditional repository APIs.
+		if destination.ErrorMessage != workflowRetryAttachFailure {
+			return nil, fmt.Errorf("prepared workflow failure is not an attach failure")
+		}
+		turns, err := rearmer.ListTurnsBySession(ctx, destination.ID)
+		if err != nil || len(turns) != 0 {
+			return nil, fmt.Errorf("prepared workflow destination has a turn or turn lookup failed: %w", err)
+		}
+		running, err := s.repo.GetExecutorRunningBySessionID(ctx, destination.ID)
+		if err != nil && !errors.Is(err, models.ErrExecutorRunningNotFound) {
+			return nil, fmt.Errorf("inspect prepared workflow runtime: %w", err)
+		}
+		if running != nil {
+			return nil, fmt.Errorf("prepared workflow destination still owns a runtime")
+		}
+		if task.State == v1.TaskStateFailed {
+			changed, err := s.taskRepo.UpdateTaskStateIfCurrentIn(ctx, task.ID, v1.TaskStateScheduling, []v1.TaskState{v1.TaskStateFailed})
+			if err != nil || !changed {
+				return nil, fmt.Errorf("rearm prepared workflow task: changed=%t: %w", changed, err)
+			}
+		}
+		changed, _, err := rearmer.UpdateTaskSessionStateIfCurrent(ctx, destination.ID,
+			models.TaskSessionStateFailed, models.TaskSessionStateCreated, "")
+		if err != nil || !changed {
+			return nil, fmt.Errorf("rearm prepared workflow session: changed=%t: %w", changed, err)
+		}
+		destination.State = models.TaskSessionStateCreated
+	} else if task.State != v1.TaskStateScheduling {
+		return nil, fmt.Errorf("prepared workflow task is not scheduling")
 	}
 	launchTask, err := s.scheduler.GetTask(ctx, req.TaskID)
 	if err != nil || launchTask == nil {

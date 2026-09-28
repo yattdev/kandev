@@ -2257,6 +2257,12 @@ func repoInfosForWorkspaceReuse(infos []*repoInfo) []*repoInfo {
 		}
 		copy := *info
 		copy.BaseBranch = info.WorkspaceBaseBranch
+		// Qualified PR targets and remote contribution setup describe a new
+		// checkout. They also require BaseBranch to equal the PR target, which
+		// is deliberately different from the canonical workspace checkout base.
+		// Attach-only reuse performs neither operation.
+		copy.QualifiedPRBase = nil
+		copy.RemoteContribution = nil
 		result[i] = &copy
 	}
 	return result
