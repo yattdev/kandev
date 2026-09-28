@@ -39,6 +39,17 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 	require.Equal(t, models.CoordinatorStopOperationStatusFencing, op.Status)
 	require.Equal(t, models.CoordinatorStopProofScopePending, op.ProofScope)
 
+	// @covers AC-STOP-FENCE-002
+	late := &models.ExecutorRunning{
+		ID: "session-stop", SessionID: "session-stop", TaskID: "task-stop", ExecutorID: "executor",
+		Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: "execution-a", AgentctlGeneration: 1, Status: models.ExecutorRunningStatusReady,
+	}
+	require.Error(t, repo.UpsertExecutorRunning(ctx, late), "the fenced agentctl incarnation must not re-register")
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
+		ID: "session-stop", SessionID: "session-stop", TaskID: "task-stop", ExecutorID: "executor",
+		Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: "execution-a", AgentctlGeneration: 2, Status: models.ExecutorRunningStatusStarting,
+	}), "a distinct agentctl generation remains available to an explicit restart path")
+
 	session, err := repo.GetTaskSession(ctx, "session-stop")
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateCancelled, session.State)

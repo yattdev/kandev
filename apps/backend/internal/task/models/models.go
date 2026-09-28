@@ -44,6 +44,10 @@ var ErrExecutorNotFound = errors.New("executor not found")
 // will produce its own events.
 var ErrExecutionRotated = errors.New("execution rotated; CAS write rejected")
 
+// ErrExecutionStopFenced is returned when a durable parent stop already owns
+// the exact agentctl execution incarnation a registration would revive.
+var ErrExecutionStopFenced = errors.New("execution stop fenced; admission rejected")
+
 // Status values for executors_running.status. The lifecycle manager mirrors
 // active execution state into this column; the orchestrator flips a row to
 // "prepared" when a prepare-only launch finishes with the agent process

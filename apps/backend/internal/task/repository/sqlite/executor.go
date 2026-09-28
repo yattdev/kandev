@@ -225,6 +225,9 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 			return err
 		}
 	}
+	if err := r.ensureExecutorRegistrationNotFencedTx(ctx, tx, running); err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO executors_running (
 			id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
@@ -287,6 +290,28 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 		return err
 	}
 	return tx.Commit()
+}
+
+// ensureExecutorRegistrationNotFencedTx rejects only the exact agentctl
+// incarnation captured by a durable stop operation. A later generation is a
+// separate runtime and can be admitted by its own authorized launch path.
+func (r *Repository) ensureExecutorRegistrationNotFencedTx(ctx context.Context, tx *sqlx.Tx, running *models.ExecutorRunning) error {
+	if running.AgentExecutionID == "" || running.AgentctlGeneration == 0 {
+		return nil
+	}
+	var found int
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT 1 FROM task_stop_operations
+		WHERE task_id = ? AND session_id = ? AND execution_id = ? AND agentctl_generation = ?
+		LIMIT 1
+	`), running.TaskID, running.SessionID, running.AgentExecutionID, running.AgentctlGeneration).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check executor registration fence: %w", err)
+	}
+	return models.ErrExecutionStopFenced
 }
 
 func (r *Repository) ListExecutorsRunning(ctx context.Context) ([]*models.ExecutorRunning, error) {
