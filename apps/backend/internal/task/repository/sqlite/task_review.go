@@ -149,7 +149,24 @@ func (r *Repository) FindTaskReviewRunByEntryID(ctx context.Context, entryID str
 
 // UpdateTaskReviewRun persists every mutable field of a run.
 func (r *Repository) UpdateTaskReviewRun(ctx context.Context, run *models.TaskReviewRun) error {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin task review run update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var taskID string
+	if err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT task_id FROM task_review_runs WHERE id = ?`), run.ID).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: %s", models.ErrTaskReviewRunNotFound, run.ID)
+		}
+		return fmt.Errorf("load task review run owner: %w", err)
+	}
+	if err := r.ensureTaskReviewOwnerAvailableTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+
+	result, err := tx.ExecContext(ctx, tx.Rebind(`
 		UPDATE task_review_runs SET
 			session_id = ?, agent_id = ?, model = ?, status = ?, error_code = ?,
 			error_message = ?, summary = ?, finding_count = ?, file_count = ?,
@@ -165,6 +182,9 @@ func (r *Repository) UpdateTaskReviewRun(ctx context.Context, run *models.TaskRe
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return fmt.Errorf("%w: %s", models.ErrTaskReviewRunNotFound, run.ID)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit task review run update: %w", err)
 	}
 	return nil
 }
