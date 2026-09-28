@@ -26,12 +26,13 @@ const sessionTerminalErrText = "session is terminal"
 type SessionIntent string
 
 const (
-	IntentPrepare          SessionIntent = "prepare"           // Create session, optionally launch workspace, NO agent
-	IntentStart            SessionIntent = "start"             // Create session + launch agent (new session)
-	IntentStartCreated     SessionIntent = "start_created"     // Start agent on existing CREATED session
-	IntentResume           SessionIntent = "resume"            // Restart stopped session with resume token
-	IntentWorkflowStep     SessionIntent = "workflow_step"     // Start session with workflow step prompt config
-	IntentRestoreWorkspace SessionIntent = "restore_workspace" // Restore workspace access for terminal-state session
+	IntentPrepare               SessionIntent = "prepare"                 // Create session, optionally launch workspace, NO agent
+	IntentStart                 SessionIntent = "start"                   // Create session + launch agent (new session)
+	IntentStartCreated          SessionIntent = "start_created"           // Start agent on existing CREATED session
+	IntentResume                SessionIntent = "resume"                  // Restart stopped session with resume token
+	IntentWorkflowStep          SessionIntent = "workflow_step"           // Start session with workflow step prompt config
+	IntentRestoreWorkspace      SessionIntent = "restore_workspace"       // Restore workspace access for terminal-state session
+	IntentRetryPreparedWorkflow SessionIntent = "retry_prepared_workflow" // Resume one recorded workflow replacement after attach failure
 )
 
 type LaunchActivationSource string
@@ -252,6 +253,8 @@ func (s *Service) LaunchSession(ctx context.Context, req *LaunchSessionRequest) 
 		return s.launchWorkflowStep(ctx, req)
 	case IntentRestoreWorkspace:
 		return s.launchRestoreWorkspace(ctx, req)
+	case IntentRetryPreparedWorkflow:
+		return s.retryPreparedWorkflowSession(ctx, req)
 	default:
 		return nil, fmt.Errorf("unknown intent: %s", intent)
 	}

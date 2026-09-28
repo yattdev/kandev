@@ -2324,6 +2324,16 @@ func (e *Executor) buildLaunchAgentRequest(ctx context.Context, task *v1.Task, s
 	repoBacked := e.taskIsRepoBacked(ctx, task.ID)
 	workspaceReuseRequired = workspaceReuseAllowed(existingEnv, req.ExecutorType, workspaceReuseRequired, repoBacked)
 	req.WorkspaceReuseRequired = workspaceReuseRequired
+	if workspaceReuseRequired {
+		// PR base resolution updates BaseBranch for new checkouts. An existing
+		// workspace retains the task repository's checkout base: changing the
+		// launch identity here would make the canonical inventory reject its own
+		// worktree after a PR is opened or retargeted.
+		allRepos = repoInfosForWorkspaceReuse(allRepos)
+		if len(allRepos) > 0 {
+			repoInfo = allRepos[0]
+		}
+	}
 
 	// For remote executors (containerized *and* SSH), resolve only explicitly
 	// selected profile auth secrets. Workspace GitHub automation is configured
@@ -2372,6 +2382,20 @@ func (e *Executor) buildLaunchAgentRequest(ctx context.Context, task *v1.Task, s
 	}
 
 	return req, execConfig, nil
+}
+
+func repoInfosForWorkspaceReuse(infos []*repoInfo) []*repoInfo {
+	result := make([]*repoInfo, len(infos))
+	for i, info := range infos {
+		if info == nil || info.WorkspaceBaseBranch == "" {
+			result[i] = info
+			continue
+		}
+		copy := *info
+		copy.BaseBranch = info.WorkspaceBaseBranch
+		result[i] = &copy
+	}
+	return result
 }
 
 func workspaceReuseAllowed(existingEnv *models.TaskEnvironment, requestedExecutorType string, required, repoBacked bool) bool {

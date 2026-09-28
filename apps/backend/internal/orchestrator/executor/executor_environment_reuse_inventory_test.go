@@ -209,3 +209,33 @@ func TestValidateReuseEnvironmentInventory_NonWorktreeLegacyToleranceRequiresRea
 		t.Fatalf("validateReuseEnvironmentInventory() = %v, want nil: a spec requiring branch %q must match only the branch-scoped row, not also the stray empty-branch row", err, "main")
 	}
 }
+
+// A PR can target main after the task worktree was created from upstream/main.
+// The PR base remains available for comparisons, but attaching a sibling
+// session must use the unchanged checkout identity from the task repository.
+func TestRepoInfosForWorkspaceReuse_PreservesCheckoutIdentityAfterPROpened(t *testing.T) {
+	prBase := &models.PRBase{}
+	original := &repoInfo{
+		RepositoryID: "repo-1", BaseBranch: "main",
+		WorkspaceBaseBranch: "upstream/main", PRBase: prBase,
+	}
+	reused := repoInfosForWorkspaceReuse([]*repoInfo{original})
+	if original.BaseBranch != "main" || reused[0].BaseBranch != "upstream/main" {
+		t.Fatalf("fresh base = %q, reuse base = %q", original.BaseBranch, reused[0].BaseBranch)
+	}
+	if reused[0].PRBase != prBase {
+		t.Fatal("workspace reuse discarded the live PR base")
+	}
+	row := &models.TaskEnvironmentRepo{
+		RepositoryID: "repo-1", BranchSlug: "upstream-main", WorktreeID: "wt-1",
+		Status: taskEnvironmentRepoStatusActive,
+	}
+	freshSpec, _ := topLevelLaunchRepoSpec(&LaunchAgentRequest{RepositoryID: original.RepositoryID, BaseBranch: original.BaseBranch})
+	reuseSpec, _ := topLevelLaunchRepoSpec(&LaunchAgentRequest{RepositoryID: reused[0].RepositoryID, BaseBranch: reused[0].BaseBranch})
+	if got := canonicalInventoryMatches(freshSpec, []*models.TaskEnvironmentRepo{row}, true); got != 0 {
+		t.Fatalf("PR base unexpectedly matched checkout inventory: %d", got)
+	}
+	if got := canonicalInventoryMatches(reuseSpec, []*models.TaskEnvironmentRepo{row}, true); got != 1 {
+		t.Fatalf("checkout base failed to match canonical inventory: %d", got)
+	}
+}

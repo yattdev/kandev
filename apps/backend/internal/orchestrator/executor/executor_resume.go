@@ -65,10 +65,13 @@ func isTerminalSessionState(state models.TaskSessionState) bool {
 
 // repoInfo holds resolved repository details for agent launch.
 type repoInfo struct {
-	TaskRepositoryID           string
-	RepositoryID               string
-	RepositoryPath             string
-	BaseBranch                 string
+	TaskRepositoryID string
+	RepositoryID     string
+	RepositoryPath   string
+	BaseBranch       string
+	// WorkspaceBaseBranch is the task repository's checkout base. A live PR
+	// may target another branch without changing an already materialized worktree.
+	WorkspaceBaseBranch        string
 	IntegrationRef             string
 	CheckoutBranch             string
 	PRNumber                   int // GitHub PR number when CheckoutBranch is a PR head; sourced from task_repositories.metadata["pr_number"].
@@ -176,14 +179,15 @@ func (e *Executor) resolveTaskRepoInfoForSession(
 		return nil, err
 	}
 	info := &repoInfo{
-		CheckoutOptions:  options,
-		TaskRepositoryID: tr.ID,
-		RepositoryID:     tr.RepositoryID,
-		BaseBranch:       tr.BaseBranch,
-		IntegrationRef:   tr.BranchPolicyPullRequestTarget,
-		CheckoutBranch:   tr.CheckoutBranch,
-		PRNumber:         prNumberFromMetadata(tr.Metadata),
-		Position:         tr.Position,
+		CheckoutOptions:     options,
+		TaskRepositoryID:    tr.ID,
+		RepositoryID:        tr.RepositoryID,
+		BaseBranch:          tr.BaseBranch,
+		WorkspaceBaseBranch: tr.BaseBranch,
+		IntegrationRef:      tr.BranchPolicyPullRequestTarget,
+		CheckoutBranch:      tr.CheckoutBranch,
+		PRNumber:            prNumberFromMetadata(tr.Metadata),
+		Position:            tr.Position,
 	}
 	if binding, found, err := models.LoadRemoteContribution(tr.Metadata); err != nil {
 		return nil, fmt.Errorf("load remote contribution for task repository %q: %w", tr.ID, err)
