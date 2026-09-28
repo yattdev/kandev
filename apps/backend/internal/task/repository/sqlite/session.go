@@ -2633,11 +2633,22 @@ func (r *Repository) CancelActiveTaskSessionsByIDs(ctx context.Context, taskID s
 	now := time.Now().UTC()
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
+	tx, err := r.db.BeginTxx(writeCtx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(writeCtx, tx, taskID); err != nil {
+		return nil, err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(writeCtx, r.db, tx, taskID); err != nil {
+		return nil, err
+	}
 	var sessions []*models.TaskSession
 	for _, chunk := range chunkIDs(sessionIDs, sqliteMaxHostParams) {
 		placeholders, args := buildInPlaceholders(chunk)
 		args = append([]interface{}{string(models.TaskSessionStateCancelled), reason, now, now, taskID}, args...)
-		rows, err := r.db.QueryContext(writeCtx, r.db.Rebind(`
+		rows, err := tx.QueryContext(writeCtx, r.db.Rebind(`
 			UPDATE task_sessions
 			SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
 			WHERE task_id = ?
@@ -2662,6 +2673,9 @@ func (r *Repository) CancelActiveTaskSessionsByIDs(ctx context.Context, taskID s
 			return nil, err
 		}
 		_ = rows.Close()
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	return sessions, nil
 }

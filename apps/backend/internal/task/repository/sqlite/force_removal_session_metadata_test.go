@@ -270,6 +270,36 @@ func TestClaimForceRemovalBlocksBulkActiveSessionCancellation(t *testing.T) {
 	require.Len(t, foreign, 1)
 }
 
+func TestClaimForceRemovalBlocksSelectedActiveSessionCancellation(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-selected-cancel-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-selected-held", "force-selected-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-selected-cancel-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-running", TaskID: taskID, State: models.TaskSessionStateRunning}))
+	}
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "force-selected-foreign-completed", TaskID: "force-selected-foreign", State: models.TaskSessionStateCompleted}))
+
+	held, err := repo.GetTask(ctx, "force-selected-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "selected-cancel", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	_, err = repo.CancelActiveTaskSessionsByIDs(ctx, held.ID, []string{"force-selected-held-running"}, "held")
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	heldSession, err := repo.GetTaskSession(ctx, "force-selected-held-running")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateRunning, heldSession.State)
+
+	foreign, err := repo.CancelActiveTaskSessionsByIDs(ctx, "force-selected-foreign", []string{"force-selected-foreign-running", "force-selected-foreign-completed"}, "foreign")
+	require.NoError(t, err)
+	require.Len(t, foreign, 1)
+	require.Equal(t, "force-selected-foreign-running", foreign[0].ID)
+	completed, err := repo.GetTaskSession(ctx, "force-selected-foreign-completed")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateCompleted, completed.State)
+}
+
 func TestClaimForceRemovalBlocksStaleRunningSessionCancellation(t *testing.T) {
 	ctx := context.Background()
 	repo := newRepoForHealTests(t)
