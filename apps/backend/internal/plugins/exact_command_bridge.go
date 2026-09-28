@@ -13,6 +13,8 @@ import (
 type ExactTaskCommandApprovalBridge interface {
 	Grant(context.Context, CapabilityApproval, string) error
 	Revoke(context.Context, CapabilityApproval, string) error
+	RevokeWorkspace(context.Context, string, string) error
+	RevokeInstallation(context.Context, string) error
 	RecordReceipt(context.Context, ApprovalReceipt) error
 }
 
@@ -33,13 +35,14 @@ func (b sqliteExactTaskCommandApprovalBridge) Grant(ctx context.Context, approva
 	}
 	return nil
 }
-func (b sqliteExactTaskCommandApprovalBridge) Revoke(ctx context.Context, approval CapabilityApproval, auditID string) error {
-	for _, capabilityID := range approval.CapabilityIDs {
-		if err := b.repo.RevokeExactTaskCommandApproval(ctx, tasksqlite.ExactTaskCommandApproval{InstallationID: approval.InstallationID, WorkspaceID: approval.WorkspaceID, CapabilityID: capabilityID, ReceiptAuditID: auditID, Revision: approval.Revision}); err != nil {
-			return err
-		}
-	}
-	return nil
+func (b sqliteExactTaskCommandApprovalBridge) Revoke(ctx context.Context, approval CapabilityApproval, _ string) error {
+	return b.repo.RevokeExactTaskCommandWorkspace(ctx, approval.InstallationID, approval.WorkspaceID)
+}
+func (b sqliteExactTaskCommandApprovalBridge) RevokeInstallation(ctx context.Context, installationID string) error {
+	return b.repo.RevokeExactTaskCommandInstallation(ctx, installationID)
+}
+func (b sqliteExactTaskCommandApprovalBridge) RevokeWorkspace(ctx context.Context, installationID, workspaceID string) error {
+	return b.repo.RevokeExactTaskCommandWorkspace(ctx, installationID, workspaceID)
 }
 func (b sqliteExactTaskCommandApprovalBridge) RecordReceipt(ctx context.Context, receipt ApprovalReceipt) error {
 	return b.repo.RecordExactTaskCommandReceipt(ctx, tasksqlite.ExactTaskCommandApproval{InstallationID: receipt.InstallationID, WorkspaceID: receipt.WorkspaceID, CapabilityID: receipt.CapabilityID, ReceiptAuditID: receipt.AuditID, Revision: receipt.Revision}, receipt.ObservedAt)

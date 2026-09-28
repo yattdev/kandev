@@ -113,11 +113,12 @@ func (r *Repository) UpsertExactTaskCommandApproval(ctx context.Context, approva
 	}
 	defer func() { _ = tx.Rollback() }()
 	var revision uint64
-	err = tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT revision FROM exact_task_command_approvals WHERE installation_id = ? AND workspace_id = ? AND capability_id = ?`), approval.InstallationID, approval.WorkspaceID, approval.CapabilityID).Scan(&revision)
+	var revokedAt sql.NullTime
+	err = tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT revision, revoked_at FROM exact_task_command_approvals WHERE installation_id = ? AND workspace_id = ? AND capability_id = ?`), approval.InstallationID, approval.WorkspaceID, approval.CapabilityID).Scan(&revision, &revokedAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if err == nil && approval.Revision != revision+1 {
+	if err == nil && ((!revokedAt.Valid && approval.Revision != revision+1) || (revokedAt.Valid && approval.Revision < revision)) {
 		return ErrExactTaskCommandUnavailable
 	}
 	if err != nil && approval.Revision != 1 {
@@ -150,6 +151,48 @@ func (r *Repository) RevokeExactTaskCommandApproval(ctx context.Context, approva
 		return ErrExactTaskCommandUnavailable
 	}
 	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_grants SET revoked_at = ? WHERE installation_id = ? AND workspace_id = ? AND capability_id = ? AND approval_revision = ? AND consumed_at IS NULL AND revoked_at IS NULL`), r.nowUTC(), approval.InstallationID, approval.WorkspaceID, approval.CapabilityID, approval.Revision); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RevokeExactTaskCommandInstallation closes every exact command approval for
+// an installation before its manifest review or uninstall changes the H6 row.
+func (r *Repository) RevokeExactTaskCommandInstallation(ctx context.Context, installationID string) error {
+	if !r.ExactTaskCommandAvailable() || installationID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := r.nowUTC()
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_approvals SET revision = revision + 1, revoked_at = ? WHERE installation_id = ? AND revoked_at IS NULL`), now, installationID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_grants SET revoked_at = ? WHERE installation_id = ? AND consumed_at IS NULL AND revoked_at IS NULL`), now, installationID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RevokeExactTaskCommandWorkspace closes old grants before a workspace
+// approval is replaced or narrowed, without affecting other workspaces.
+func (r *Repository) RevokeExactTaskCommandWorkspace(ctx context.Context, installationID, workspaceID string) error {
+	if !r.ExactTaskCommandAvailable() || installationID == "" || workspaceID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := r.nowUTC()
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_approvals SET revision = revision + 1, revoked_at = ? WHERE installation_id = ? AND workspace_id = ? AND revoked_at IS NULL`), now, installationID, workspaceID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_grants SET revoked_at = ? WHERE installation_id = ? AND workspace_id = ? AND consumed_at IS NULL AND revoked_at IS NULL`), now, installationID, workspaceID); err != nil {
 		return err
 	}
 	return tx.Commit()

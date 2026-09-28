@@ -31,11 +31,17 @@ func (s *Service) approvalGrant(installationID, workspaceID string, revision uin
 	if err := s.validateApprovalManifest(installationID, manifestDigest, canonical); err != nil {
 		return CapabilityApproval{}, err
 	}
+	bridge := s.exactTaskCommandApprovalBridge()
+	if bridge != nil {
+		if err := bridge.RevokeWorkspace(context.Background(), installationID, workspaceID); err != nil {
+			return CapabilityApproval{}, err
+		}
+	}
 	approval, err := ledger.grant(installationID, workspaceID, revision, manifestDigest, canonical, actor, reason, auditID, time.Now().UTC())
 	if err != nil {
 		return CapabilityApproval{}, err
 	}
-	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+	if bridge != nil {
 		if err := bridge.Grant(context.Background(), approval, auditID); err != nil {
 			return CapabilityApproval{}, err
 		}
@@ -94,6 +100,11 @@ func (s *Service) approvalTombstoneInstallation(installationID string) error {
 	ledger := s.approvalLedger()
 	if ledger == nil {
 		return nil
+	}
+	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+		if err := bridge.RevokeInstallation(context.Background(), installationID); err != nil {
+			return err
+		}
 	}
 	return ledger.tombstoneInstallation(installationID, time.Now().UTC())
 }

@@ -8,8 +8,18 @@ import (
 
 type recordingExactCommandBridge struct {
 	grants, revokes []CapabilityApproval
+	installations   []string
 	receipts        []ApprovalReceipt
 	err             error
+}
+
+func (b *recordingExactCommandBridge) RevokeInstallation(_ context.Context, installationID string) error {
+	b.installations = append(b.installations, installationID)
+	return b.err
+}
+func (b *recordingExactCommandBridge) RevokeWorkspace(_ context.Context, installationID, workspaceID string) error {
+	b.installations = append(b.installations, installationID+"/"+workspaceID)
+	return b.err
 }
 
 func (b *recordingExactCommandBridge) Grant(_ context.Context, a CapabilityApproval, _ string) error {

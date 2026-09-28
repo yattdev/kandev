@@ -177,6 +177,11 @@ func (s *Service) reviewInstalledApprovals(rec *store.Record) error {
 	if err != nil {
 		return err
 	}
+	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+		if err := bridge.RevokeInstallation(context.Background(), rec.InstallationID); err != nil {
+			return err
+		}
+	}
 	return ledger.reviewManifestChange(rec.InstallationID, ManifestCapabilityDigest(rec.Manifest), caps, time.Now().UTC(), true)
 }
 
