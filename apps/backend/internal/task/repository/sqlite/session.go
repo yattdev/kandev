@@ -2151,7 +2151,18 @@ func (r *Repository) UpdateTaskSessionStateIfCurrentIdentity(
 ) (bool, time.Time, error) {
 	now := time.Now().UTC()
 	completedAt := completedAtForTaskSessionState(status, now)
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, time.Time{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return false, time.Time{}, err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return false, time.Time{}, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_sessions
 		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
 		WHERE id = ? AND task_id = ? AND queue_incarnation_id = ? AND state = ?
@@ -2162,6 +2173,9 @@ func (r *Repository) UpdateTaskSessionStateIfCurrentIdentity(
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
+		return false, time.Time{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return false, time.Time{}, err
 	}
 	return rows > 0, now, nil

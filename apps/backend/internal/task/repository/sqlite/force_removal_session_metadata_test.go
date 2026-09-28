@@ -196,3 +196,26 @@ func TestClaimForceRemovalBlocksCurrentSessionStateTransition(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateRunning, foreignSession.State)
 }
+
+func TestClaimForceRemovalBlocksIdentitySessionStateTransition(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-identity-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-identity-held", "force-identity-foreign"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-identity-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID, QueueIncarnationID: "current", State: models.TaskSessionStateCreated}))
+	}
+	held, err := repo.GetTask(ctx, "force-identity-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "identity-state", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+	changed, _, err := repo.UpdateTaskSessionStateIfCurrentIdentity(ctx, held.ID, "force-identity-held-session", "current", models.TaskSessionStateCreated, models.TaskSessionStateRunning, "")
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, changed)
+	changed, _, err = repo.UpdateTaskSessionStateIfCurrentIdentity(ctx, "force-identity-foreign", "force-identity-foreign-session", "current", models.TaskSessionStateCreated, models.TaskSessionStateRunning, "")
+	require.NoError(t, err)
+	require.True(t, changed)
+	changed, _, err = repo.UpdateTaskSessionStateIfCurrentIdentity(ctx, "force-identity-foreign", "force-identity-foreign-session", "stale", models.TaskSessionStateRunning, models.TaskSessionStateCompleted, "")
+	require.NoError(t, err)
+	require.False(t, changed)
+}
