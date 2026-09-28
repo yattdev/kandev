@@ -482,6 +482,9 @@ func (r *Repository) DeleteSupersededTaskReviewFindings(ctx context.Context, tas
 		return nil, fmt.Errorf("failed to begin supersede tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureTaskReviewOwnerAvailableTx(ctx, tx, taskID); err != nil {
+		return nil, err
+	}
 
 	// RETURNING id rather than a bare row count: a connected client holds the
 	// old findings in memory and needs the exact ids to drop, otherwise a
