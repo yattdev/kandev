@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
+	"github.com/kandev/kandev/internal/office/models"
+	officesqlite "github.com/kandev/kandev/internal/office/repository/sqlite"
 	mq "github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	taskmodels "github.com/kandev/kandev/internal/task/models"
 	tasksqlite "github.com/kandev/kandev/internal/task/repository/sqlite"
@@ -18,6 +21,7 @@ type exactQueue interface {
 	mq.Repository
 	mq.ExactPendingTransitionReader
 	mq.ExactPendingTransitionTransactionReader
+	mq.ExactPendingTransitionAuthorityReader
 }
 
 func TestExactPendingTransitionUnavailableWithoutTaskBoundary(t *testing.T) {
@@ -66,6 +70,123 @@ func TestExactPendingTransitionSnapshotLifecycle(t *testing.T) {
 	}
 	if n, err := q.CleanupExpiredExactPendingTransitionSnapshots(ctx, 10); err != nil || n != 1 {
 		t.Fatalf("cleanup=%d,%v", n, err)
+	}
+}
+
+func TestExactSnapshotsRequireOneBootstrapAuthority(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlx.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	task, err := tasksqlite.NewWithDB(db, db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	office, err := officesqlite.NewWithDB(db, db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queueRepo, err := mq.NewSQLiteRepository(db, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue := queueRepo.(exactQueue)
+	seedExactPendingTask(t, task, "ws", "task", "session")
+	if err := queue.SetPendingMove(ctx, "session", &mq.PendingMove{TaskID: "task"}); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := exactsnapshotauthority.NewSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := office.BeginExactRelationSnapshotAuthorityTx(ctx, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	relations, err := office.OpenExactRelationSnapshotInAuthorityTx(ctx, authority, tx, models.ExactRelationSnapshotRequest{WorkspaceID: "ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := queue.OpenExactPendingTransitionSnapshotInAuthorityTx(ctx, authority, tx, mq.ExactPendingTransitionSnapshotRequest{WorkspaceID: "ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := office.PageExactRelationSnapshot(ctx, relations.Token, 0, 1); err != nil || len(rows) != 0 {
+		t.Fatalf("relations=%#v err=%v", rows, err)
+	}
+	if rows, err := queue.PageExactPendingTransitionSnapshot(ctx, pending.Token, 0, 1); err != nil || len(rows) != 1 {
+		t.Fatalf("pending=%#v err=%v", rows, err)
+	}
+
+	otherDB, err := sqlx.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = otherDB.Close() })
+	foreign, err := exactsnapshotauthority.NewSQLite(otherDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := office.BeginExactRelationSnapshotAuthorityTx(ctx, foreign); !errors.Is(err, officesqlite.ErrExactRelationSnapshotUnavailable) {
+		t.Fatalf("office foreign authority=%v", err)
+	}
+	if _, err := queue.BeginExactPendingTransitionSnapshotAuthorityTx(ctx, foreign); !errors.Is(err, mq.ErrExactPendingTransitionUnavailable) {
+		t.Fatalf("queue foreign authority=%v", err)
+	}
+}
+
+func TestExactSnapshotsAuthorityRollbackLeavesNoSnapshots(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlx.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	task, err := tasksqlite.NewWithDB(db, db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	office, err := officesqlite.NewWithDB(db, db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queueRepo, err := mq.NewSQLiteRepository(db, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue := queueRepo.(exactQueue)
+	seedExactPendingTask(t, task, "ws", "task", "session")
+	if err := queue.SetPendingMove(ctx, "session", &mq.PendingMove{TaskID: "task"}); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := exactsnapshotauthority.NewSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := queue.BeginExactPendingTransitionSnapshotAuthorityTx(ctx, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := queue.OpenExactPendingTransitionSnapshotInAuthorityTx(ctx, authority, tx, mq.ExactPendingTransitionSnapshotRequest{WorkspaceID: "ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.PageExactPendingTransitionSnapshot(ctx, pending.Token, 0, 1); !errors.Is(err, mq.ErrExactPendingTransitionUnavailable) {
+		t.Fatalf("rolled back=%v", err)
+	}
+	if _, err := office.OpenExactRelationSnapshotInAuthorityTx(ctx, authority, nil, models.ExactRelationSnapshotRequest{WorkspaceID: "ws"}); !errors.Is(err, officesqlite.ErrExactRelationSnapshotUnavailable) {
+		t.Fatalf("nil authority transaction=%v", err)
 	}
 }
 

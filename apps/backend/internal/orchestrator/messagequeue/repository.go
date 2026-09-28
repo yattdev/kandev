@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
 )
 
 // RepositorySnapshot is one identity-validated queue/state read. A policy-only
@@ -330,6 +331,13 @@ type ExactPendingTransitionReader interface {
 type ExactPendingTransitionTransactionReader interface {
 	BeginExactPendingTransitionSnapshotTx(context.Context) (*sqlx.Tx, error)
 	OpenExactPendingTransitionSnapshotInTx(context.Context, *sqlx.Tx, ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error)
+}
+
+// ExactPendingTransitionAuthorityReader materializes queue evidence only with
+// a provenance-checked transaction from the shared SQLite authority.
+type ExactPendingTransitionAuthorityReader interface {
+	BeginExactPendingTransitionSnapshotAuthorityTx(context.Context, *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error)
+	OpenExactPendingTransitionSnapshotInAuthorityTx(context.Context, *exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error)
 }
 
 // applyMetadataUpdates merges metadata key updates into current; a nil value removes the key.

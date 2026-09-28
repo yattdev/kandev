@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	internaldb "github.com/kandev/kandev/internal/db"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
 )
 
 const exactPendingTTL = 5 * time.Minute
@@ -75,6 +76,26 @@ func (r *sqliteRepository) BeginExactPendingTransitionSnapshotTx(ctx context.Con
 		return nil, ErrExactPendingTransitionUnavailable
 	}
 	return r.db.BeginTxx(ctx, nil)
+}
+
+func (r *sqliteRepository) BeginExactPendingTransitionSnapshotAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error) {
+	if !r.exactPendingTransitionsEnabled || r.db.DriverName() == postgresDriverName || !authority.Matches(r.db) {
+		return nil, ErrExactPendingTransitionUnavailable
+	}
+	tx, err := authority.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return tx, nil
+}
+
+// OpenExactPendingTransitionSnapshotInAuthorityTx only accepts a transaction
+// issued by the matching shared SQLite authority.
+func (r *sqliteRepository) OpenExactPendingTransitionSnapshotInAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, req ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error) {
+	if !r.exactPendingTransitionsEnabled || r.db.DriverName() == postgresDriverName || !authority.Matches(r.db) || !tx.Matches(authority) {
+		return nil, ErrExactPendingTransitionUnavailable
+	}
+	return r.OpenExactPendingTransitionSnapshotInTx(ctx, tx.SQLX(), req)
 }
 
 func (r *sqliteRepository) OpenExactPendingTransitionSnapshotInTx(ctx context.Context, tx *sqlx.Tx, req ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error) {

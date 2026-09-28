@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
 	"github.com/kandev/kandev/internal/office/models"
 )
 
@@ -24,4 +25,11 @@ type ExactRelationSnapshotReader interface {
 type ExactRelationSnapshotTransactionReader interface {
 	BeginExactRelationSnapshotTx(context.Context) (*sqlx.Tx, error)
 	OpenExactRelationSnapshotInTx(context.Context, *sqlx.Tx, models.ExactRelationSnapshotRequest) (*models.ExactRelationSnapshot, error)
+}
+
+// ExactRelationSnapshotAuthorityReader materializes relation evidence only with
+// a provenance-checked transaction from the shared SQLite authority.
+type ExactRelationSnapshotAuthorityReader interface {
+	BeginExactRelationSnapshotAuthorityTx(context.Context, *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error)
+	OpenExactRelationSnapshotInAuthorityTx(context.Context, *exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, models.ExactRelationSnapshotRequest) (*models.ExactRelationSnapshot, error)
 }

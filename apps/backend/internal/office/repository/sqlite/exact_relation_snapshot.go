@@ -12,6 +12,7 @@ import (
 
 	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/db/dialect"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
 	"github.com/kandev/kandev/internal/office/models"
 )
 
@@ -110,6 +111,26 @@ func (r *Repository) BeginExactRelationSnapshotTx(ctx context.Context) (*sqlx.Tx
 		return nil, ErrExactRelationSnapshotUnavailable
 	}
 	return r.db.BeginTxx(ctx, nil)
+}
+
+func (r *Repository) BeginExactRelationSnapshotAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error) {
+	if !r.exactRelationSnapshotsEnabled || dialect.IsPostgres(r.db.DriverName()) || !authority.Matches(r.db) {
+		return nil, ErrExactRelationSnapshotUnavailable
+	}
+	tx, err := authority.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return tx, nil
+}
+
+// OpenExactRelationSnapshotInAuthorityTx only accepts the sealed transaction
+// issued by the matching shared SQLite authority.
+func (r *Repository) OpenExactRelationSnapshotInAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, request models.ExactRelationSnapshotRequest) (*models.ExactRelationSnapshot, error) {
+	if !r.exactRelationSnapshotsEnabled || dialect.IsPostgres(r.db.DriverName()) || !authority.Matches(r.db) || !tx.Matches(authority) {
+		return nil, ErrExactRelationSnapshotUnavailable
+	}
+	return r.OpenExactRelationSnapshotInTx(ctx, tx.SQLX(), request)
 }
 
 // OpenExactRelationSnapshotInTx materializes one relation projection without
