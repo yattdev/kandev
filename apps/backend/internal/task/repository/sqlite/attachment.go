@@ -197,6 +197,9 @@ func (r *Repository) ClaimMessageAttachments(ctx context.Context, ids []string, 
 		if rows == 0 {
 			return fmt.Errorf("%w: %s", ErrTaskNotFound, taskID)
 		}
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+			return err
+		}
 	}
 	if sessionID != "" {
 		if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), sessionID); err != nil {
