@@ -345,6 +345,8 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 		messagequeue.Repository
 		messagequeue.ExactPendingTransitionReader
 	})
+	pendingTokens := map[string]string{}
+	pendingRows := map[string]messagequeue.ExactPendingTransition{}
 	for _, workspaceID := range []string{"exact-ws-a", "exact-ws-b"} {
 		taskID, sessionID := workspaceID+"-task", workspaceID+"-session"
 		if err = repos.Task.CreateWorkspace(ctx, &taskmodels.Workspace{ID: workspaceID, Name: workspaceID}); err != nil {
@@ -367,6 +369,7 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 		if pageErr != nil || len(rows) != 1 {
 			t.Fatalf("pending rows for %s = %#v, %v", workspaceID, rows, pageErr)
 		}
+		pendingTokens[workspaceID], pendingRows[workspaceID] = snapshot.Token, rows[0]
 	}
 	services.Plugins.SetRuntime(&exactHostRuntime{})
 	record, err := services.Plugins.Install(ctx, exactHostPackage(t, "exact-command-orchestrator"))
@@ -390,6 +393,26 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	}
 	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, exactDescriptionCommand(grant, "[marker]", task.ResourceVersion, 0)); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
 		t.Fatalf("missing pending evidence command = %v", err)
+	}
+	foreign := exactDescriptionCommand(grant, "[marker]", task.ResourceVersion, 0)
+	foreignRow := pendingRows["exact-ws-b"]
+	foreign.PendingSnapshotToken, foreign.PendingTransition = pendingTokens["exact-ws-b"], &foreignRow
+	if _, err = repos.Task.ApplyExactTaskDescriptionCommand(ctx, foreign); !errors.Is(err, tasksqlite.ErrExactTaskCommandUnavailable) {
+		t.Fatalf("foreign pending evidence command = %v", err)
+	}
+	stored, err := repos.Task.GetTask(ctx, task.ID)
+	if err != nil || stored.Description != "" || stored.ResourceVersion != task.ResourceVersion {
+		t.Fatalf("denied command changed task: %+v, %v", stored, err)
+	}
+	var consumed, audits int
+	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_grants WHERE id = ? AND consumed_at IS NOT NULL`, grant.ID).Scan(&consumed); err != nil {
+		t.Fatal(err)
+	}
+	if err = repos.Task.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM exact_task_command_audits WHERE idempotency_key = ?`, grant.IdempotencyKey).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if consumed != 0 || audits != 0 {
+		t.Fatalf("denied command effects: consumed=%d audits=%d", consumed, audits)
 	}
 }
 
