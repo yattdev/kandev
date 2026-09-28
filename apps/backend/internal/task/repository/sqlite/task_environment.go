@@ -1234,6 +1234,19 @@ func (r *Repository) DeleteTaskEnvironmentReposByEnv(ctx context.Context, envID 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_environments WHERE id = ?`), envID).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return tx.Commit()
+		}
+		return err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return err
+	}
 	if err := recoveryclaim.EnsureAvailableTx(ctx, r.db, tx, envID); err != nil {
 		return err
 	}
