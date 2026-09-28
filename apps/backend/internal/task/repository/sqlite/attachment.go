@@ -796,6 +796,9 @@ func (r *Repository) deleteClaimedMessageAttachments(
 		return nil, fmt.Errorf("begin claimed attachment release: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureTaskAttachmentAvailableTx(ctx, tx, taskID); err != nil {
+		return nil, err
+	}
 	if err := r.lockClaimedAttachmentReleaseTx(ctx, tx, sessionID, queueLockPresent); err != nil {
 		return nil, err
 	}
