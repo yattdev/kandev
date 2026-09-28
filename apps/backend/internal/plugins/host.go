@@ -85,7 +85,12 @@ type pluginHost struct {
 	// phase 2, capability api_write:tasks). Wired via SetDataSources like the
 	// readers — the task service is available at data-source wiring time. See
 	// host_write.go.
-	taskWriter taskWriter
+	taskWriter            taskWriter
+	exactDecisionEvidence exactDecisionEvidenceSource
+	// exactDecisionEvidenceDep resolves the composite reader at request time.
+	// Plugin hosts can be created before orchestration finishes wiring its
+	// SQLite-only composite reader.
+	exactDecisionEvidenceDep func() exactDecisionEvidenceSource
 
 	// writeDeps returns the live task messenger and task starter behind the
 	// SendMessage RPC (api_write:messages) and CreateTask's start_agent. Read

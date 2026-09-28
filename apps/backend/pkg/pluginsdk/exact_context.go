@@ -96,6 +96,7 @@ type ExactPageInfo struct {
 	NextCursor      string
 	HasMore         bool
 	SnapshotVersion string
+	AuditID         string
 }
 
 type ExactWorkflowQuery struct {
@@ -174,4 +175,40 @@ func capabilityContextFromProto(in *pluginv1.GetCapabilityContextResponse) (*Cap
 		})
 	}
 	return out, nil
+}
+
+// ExactTaskDecisionEvidenceHost exposes one atomic relation and pending-move
+// projection. It is separate from task reads because it requires the shared
+// SQLite authority boundary.
+type ExactTaskDecisionEvidenceHost interface {
+	ListTaskDecisionEvidenceExact(context.Context, ExactTaskDecisionEvidenceQuery) (*ExactTaskDecisionEvidencePage, *ExactPageInfo, error)
+}
+
+type ExactTaskRelation struct {
+	TaskID, BlockerTaskID, WorkspaceID                           string
+	TaskResourceVersion, BlockerResourceVersion, ResourceVersion int64
+}
+
+type ExactPendingTaskTransition struct {
+	SessionID, TaskID, WorkspaceID, SessionIncarnationID string
+	WorkflowID, WorkflowStepID                           string
+	StepPosition                                         int32
+	ResourceVersion, TaskResourceVersion                 int64
+	SessionResourceVersion, QueueGeneration              int64
+}
+
+type ExactTaskDecisionEvidenceQuery struct {
+	WorkspaceID        string
+	CapabilityRevision uint64
+	Page               ExactPage
+}
+
+type ExactTaskDecisionEvidencePage struct {
+	Relations          []ExactTaskRelation
+	PendingTransitions []ExactPendingTaskTransition
+}
+
+func ExactTaskDecisionEvidence(host Host) (ExactTaskDecisionEvidenceHost, bool) {
+	exact, ok := host.(ExactTaskDecisionEvidenceHost)
+	return exact, ok
 }

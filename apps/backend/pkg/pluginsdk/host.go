@@ -423,6 +423,14 @@ func (h *grpcHostClient) ListTasksExact(ctx context.Context, query ExactTaskQuer
 	return exactTasksFromProto(response.GetTasks()), exactPageInfoFromProto(response.GetPageInfo()), nil
 }
 
+func (h *grpcHostClient) ListTaskDecisionEvidenceExact(ctx context.Context, query ExactTaskDecisionEvidenceQuery) (*ExactTaskDecisionEvidencePage, *ExactPageInfo, error) {
+	response, err := h.client.ListTaskDecisionEvidenceExact(ctx, &pluginv1.ListTaskDecisionEvidenceExactRequest{WorkspaceId: query.WorkspaceID, CapabilityRevision: query.CapabilityRevision, Page: exactPageToProto(query.Page)})
+	if err != nil {
+		return nil, nil, err
+	}
+	return exactTaskDecisionEvidenceFromProto(response), exactPageInfoFromProto(response.GetPageInfo()), nil
+}
+
 func (h *grpcHostClient) GetTaskExact(ctx context.Context, query ExactTaskGetQuery) (*ExactTask, error) {
 	response, err := h.client.GetTaskExact(ctx, &pluginv1.GetTaskExactRequest{WorkspaceId: query.WorkspaceID, TaskId: query.TaskID, CapabilityRevision: query.CapabilityRevision, SnapshotVersion: query.SnapshotVersion})
 	if err != nil {
@@ -435,7 +443,7 @@ func exactPageToProto(page ExactPage) *pluginv1.ExactPage {
 	return &pluginv1.ExactPage{Limit: page.Limit, Cursor: page.Cursor, SnapshotVersion: page.SnapshotVersion}
 }
 func exactPageInfoFromProto(page *pluginv1.ExactPageInfo) *ExactPageInfo {
-	return &ExactPageInfo{NextCursor: page.GetNextCursor(), HasMore: page.GetHasMore(), SnapshotVersion: page.GetSnapshotVersion()}
+	return &ExactPageInfo{NextCursor: page.GetNextCursor(), HasMore: page.GetHasMore(), SnapshotVersion: page.GetSnapshotVersion(), AuditID: page.GetAuditId()}
 }
 
 func exactTaskFromProto(task *pluginv1.ExactTask) *ExactTask {
@@ -443,6 +451,32 @@ func exactTaskFromProto(task *pluginv1.ExactTask) *ExactTask {
 		return nil
 	}
 	return &ExactTask{ID: task.GetId(), WorkspaceID: task.GetWorkspaceId(), WorkflowID: task.GetWorkflowId(), WorkflowStepID: task.GetWorkflowStepId(), Title: task.GetTitle(), Description: task.GetDescription(), State: task.GetState(), Priority: task.GetPriority(), Position: task.GetPosition(), Archived: task.GetArchived(), ResourceVersion: task.GetResourceVersion()}
+}
+
+func exactTaskDecisionEvidenceFromProto(in *pluginv1.ListTaskDecisionEvidenceExactResponse) *ExactTaskDecisionEvidencePage {
+	out := &ExactTaskDecisionEvidencePage{Relations: make([]ExactTaskRelation, 0, len(in.GetRelations())), PendingTransitions: make([]ExactPendingTaskTransition, 0, len(in.GetPendingTransitions()))}
+	for _, relation := range in.GetRelations() {
+		out.Relations = append(out.Relations, ExactTaskRelation{TaskID: relation.GetTaskId(), BlockerTaskID: relation.GetBlockerTaskId(), WorkspaceID: relation.GetWorkspaceId(), TaskResourceVersion: relation.GetTaskResourceVersion(), BlockerResourceVersion: relation.GetBlockerResourceVersion(), ResourceVersion: relation.GetResourceVersion()})
+	}
+	for _, pending := range in.GetPendingTransitions() {
+		out.PendingTransitions = append(out.PendingTransitions, ExactPendingTaskTransition{SessionID: pending.GetSessionId(), TaskID: pending.GetTaskId(), WorkspaceID: pending.GetWorkspaceId(), SessionIncarnationID: pending.GetSessionIncarnationId(), WorkflowID: pending.GetWorkflowId(), WorkflowStepID: pending.GetWorkflowStepId(), StepPosition: pending.GetStepPosition(), ResourceVersion: pending.GetResourceVersion(), TaskResourceVersion: pending.GetTaskResourceVersion(), SessionResourceVersion: pending.GetSessionResourceVersion(), QueueGeneration: pending.GetQueueGeneration()})
+	}
+	return out
+}
+func exactTaskDecisionEvidenceToProto(in *ExactTaskDecisionEvidencePage) *pluginv1.ListTaskDecisionEvidenceExactResponse {
+	out := &pluginv1.ListTaskDecisionEvidenceExactResponse{}
+	if in == nil {
+		return out
+	}
+	out.Relations = make([]*pluginv1.ExactTaskRelation, 0, len(in.Relations))
+	for _, relation := range in.Relations {
+		out.Relations = append(out.Relations, &pluginv1.ExactTaskRelation{TaskId: relation.TaskID, BlockerTaskId: relation.BlockerTaskID, WorkspaceId: relation.WorkspaceID, TaskResourceVersion: relation.TaskResourceVersion, BlockerResourceVersion: relation.BlockerResourceVersion, ResourceVersion: relation.ResourceVersion})
+	}
+	out.PendingTransitions = make([]*pluginv1.ExactPendingTaskTransition, 0, len(in.PendingTransitions))
+	for _, pending := range in.PendingTransitions {
+		out.PendingTransitions = append(out.PendingTransitions, &pluginv1.ExactPendingTaskTransition{SessionId: pending.SessionID, TaskId: pending.TaskID, WorkspaceId: pending.WorkspaceID, SessionIncarnationId: pending.SessionIncarnationID, WorkflowId: pending.WorkflowID, WorkflowStepId: pending.WorkflowStepID, StepPosition: pending.StepPosition, ResourceVersion: pending.ResourceVersion, TaskResourceVersion: pending.TaskResourceVersion, SessionResourceVersion: pending.SessionResourceVersion, QueueGeneration: pending.QueueGeneration})
+	}
+	return out
 }
 
 func exactTasksFromProto(tasks []*pluginv1.ExactTask) []ExactTask {
@@ -901,6 +935,20 @@ func (s *grpcHostServer) ListWorkflowStepsExact(ctx context.Context, request *pl
 		return nil, err
 	}
 	return &pluginv1.ListWorkflowStepsExactResponse{Steps: workflowStepsToProto(items), PageInfo: exactPageInfoToProto(info)}, nil
+}
+
+func (s *grpcHostServer) ListTaskDecisionEvidenceExact(ctx context.Context, request *pluginv1.ListTaskDecisionEvidenceExactRequest) (*pluginv1.ListTaskDecisionEvidenceExactResponse, error) {
+	exact, ok := s.impl.(ExactTaskDecisionEvidenceHost)
+	if !ok {
+		return nil, errUnimplementedHostData("exact_task_decision_evidence")
+	}
+	page, info, err := exact.ListTaskDecisionEvidenceExact(ctx, ExactTaskDecisionEvidenceQuery{WorkspaceID: request.GetWorkspaceId(), CapabilityRevision: request.GetCapabilityRevision(), Page: exactPageFromProto(request.GetPage())})
+	if err != nil {
+		return nil, err
+	}
+	response := exactTaskDecisionEvidenceToProto(page)
+	response.PageInfo = exactPageInfoToProto(info)
+	return response, nil
 }
 
 func (s *grpcHostServer) ListTasksExact(ctx context.Context, request *pluginv1.ListTasksExactRequest) (*pluginv1.ListTasksExactResponse, error) {

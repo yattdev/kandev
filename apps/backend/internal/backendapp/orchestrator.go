@@ -24,6 +24,8 @@ import (
 	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/delivery"
 	"github.com/kandev/kandev/internal/events/bus"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
+	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
 	"github.com/kandev/kandev/internal/gitcredentials"
 	githubpkg "github.com/kandev/kandev/internal/github"
 	jirapkg "github.com/kandev/kandev/internal/jira"
@@ -33,6 +35,7 @@ import (
 	executorpkg "github.com/kandev/kandev/internal/orchestrator/executor"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/persistence/requiredstores"
+	"github.com/kandev/kandev/internal/plugins"
 	promptservice "github.com/kandev/kandev/internal/prompts/service"
 	"github.com/kandev/kandev/internal/repoclone"
 	"github.com/kandev/kandev/internal/secrets"
@@ -65,6 +68,8 @@ func provideOrchestrator(
 	pool *db.Pool,
 	eventBus bus.EventBus,
 	taskRepo *sqliterepo.Repository,
+	officeRepo *officesqlite.Repository,
+	pluginsSvc *plugins.Service,
 	taskSvc *taskservice.Service,
 	userSvc *userservice.Service,
 	lifecycleMgr *lifecycle.Manager,
@@ -122,6 +127,18 @@ func provideOrchestrator(
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("init message queue repo: %w", err)
+	}
+	if pluginsSvc != nil && officeRepo != nil {
+		authority, authorityErr := exactsnapshotauthority.NewSQLite(pool.Writer())
+		pending, pendingOK := queueRepo.(interface {
+			messagequeue.ExactPendingTransitionReader
+			messagequeue.ExactPendingTransitionAuthorityReader
+		})
+		if authorityErr == nil && pendingOK {
+			if composite, compositeErr := exactsnapshotcomposite.New(authority, officeRepo, pending); compositeErr == nil {
+				pluginsSvc.SetExactTaskDecisionEvidence(composite)
+			}
+		}
 	}
 	queueResolution := resolveQueueSettingsWithStore(settingsStore, pool, log, queueConfiguration(cfg))
 	queueSettings := queueResolution.Effective

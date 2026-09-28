@@ -88,6 +88,7 @@ service Host {
   rpc ListWorkflowStepsExact(ListWorkflowStepsExactRequest) returns (ListWorkflowStepsExactResponse);
   rpc ListTasksExact(ListTasksExactRequest) returns (ListTasksExactResponse);
   rpc GetTaskExact(GetTaskExactRequest) returns (GetTaskExactResponse);
+  rpc ListTaskDecisionEvidenceExact(ListTaskDecisionEvidenceExactRequest) returns (ListTaskDecisionEvidenceExactResponse);
 
   // Reads — capability api_read:<resource>
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
@@ -1147,6 +1148,7 @@ message ExactPageInfo {
   string next_cursor = 1;
   bool has_more = 2;
   string snapshot_version = 3;
+  string audit_id = 4;
 }
 message ListWorkspacesExactRequest {
   string workspace_id = 1;
@@ -1205,3 +1207,34 @@ message GetTaskExactRequest {
   string snapshot_version = 4;
 }
 message GetTaskExactResponse { ExactTask task = 1; }
+message ExactTaskRelation {
+  string task_id = 1;
+  string blocker_task_id = 2;
+  string workspace_id = 3;
+  int64 task_resource_version = 4;
+  int64 blocker_resource_version = 5;
+  int64 resource_version = 6;
+}
+message ExactPendingTaskTransition {
+  string session_id = 1;
+  string task_id = 2;
+  string workspace_id = 3;
+  string session_incarnation_id = 4;
+  string workflow_id = 5;
+  string workflow_step_id = 6;
+  int32 step_position = 7;
+  int64 resource_version = 8;
+  int64 task_resource_version = 9;
+  int64 session_resource_version = 10;
+  int64 queue_generation = 11;
+}
+message ListTaskDecisionEvidenceExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListTaskDecisionEvidenceExactResponse {
+  repeated ExactTaskRelation relations = 1;
+  repeated ExactPendingTaskTransition pending_transitions = 2;
+  ExactPageInfo page_info = 3;
+}

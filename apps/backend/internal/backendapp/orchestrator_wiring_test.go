@@ -68,3 +68,29 @@ func TestAgentFamilyResolverIsWired(t *testing.T) {
 		t.Errorf("SetAgentFamilyResolver is wired with %q, want the agent registry (agentRegistry)", resolverArg)
 	}
 }
+
+// TestProvideOrchestratorWiresExactTaskDecisionEvidence guards the only
+// production composition site for the SQLite-only composite projection. The
+// plugin service can start before the orchestrator, so omitting this wire
+// leaves every exact decision-evidence request fail-closed as unavailable.
+func TestProvideOrchestratorWiresExactTaskDecisionEvidence(t *testing.T) {
+	provideFn := findFuncDecl(t, "orchestrator.go", "provideOrchestrator")
+	wired := false
+	ast.Inspect(provideFn, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "SetExactTaskDecisionEvidence" {
+			return true
+		}
+		receiver, receiverOK := selector.X.(*ast.Ident)
+		argument, argumentOK := call.Args[0].(*ast.Ident)
+		wired = receiverOK && receiver.Name == "pluginsSvc" && argumentOK && argument.Name == "composite"
+		return true
+	})
+	if !wired {
+		t.Fatal("provideOrchestrator does not wire the composite exact decision evidence reader into plugins")
+	}
+}
