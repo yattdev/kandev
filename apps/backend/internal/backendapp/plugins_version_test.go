@@ -1,9 +1,12 @@
 package backendapp
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -11,8 +14,13 @@ import (
 	"github.com/kandev/kandev/internal/common/config"
 	"github.com/kandev/kandev/internal/events/bus"
 	"github.com/kandev/kandev/internal/persistence/requiredstores"
+	"github.com/kandev/kandev/internal/plugins"
+	"github.com/kandev/kandev/internal/plugins/pkgtar/pkgtartest"
+	"github.com/kandev/kandev/internal/plugins/store"
 	"github.com/kandev/kandev/internal/secrets"
 	"github.com/kandev/kandev/internal/startup"
+	taskmodels "github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/pkg/pluginsdk"
 )
 
 // TestProvideServicesWiresPluginsKandevVersion pins the production wiring of
@@ -34,6 +42,58 @@ func TestProvideServicesWiresPluginsKandevVersion(t *testing.T) {
 	if got := services.Plugins.KandevVersion(); got != wantVersion {
 		t.Fatalf("Plugins.KandevVersion() = %q, want %q — min_kandev_version is unenforced without it", got, wantVersion)
 	}
+}
+
+type exactHostRuntime struct{ host pluginsdk.Host }
+
+func (r *exactHostRuntime) Start(_ context.Context, rec *store.Record, f func(string) pluginsdk.Host) error {
+	r.host = f(rec.ID)
+	return nil
+}
+func (*exactHostRuntime) Stop(string)                                {}
+func (*exactHostRuntime) Get(string) (*pluginsdk.RemotePlugin, bool) { return nil, true }
+func (*exactHostRuntime) Ping(string) error                          { return nil }
+func (*exactHostRuntime) Running(string) bool                        { return false }
+func (*exactHostRuntime) RestartCount(string) int                    { return 0 }
+func (*exactHostRuntime) StopAll()                                   {}
+
+func TestProvideServicesInstalledHostRecordsExactReceipt(t *testing.T) {
+	ctx := context.Background()
+	services, _, repos := provideTestServices(t, "exact-host")
+	if err := repos.Task.CreateWorkspace(ctx, &taskmodels.Workspace{ID: "exact-ws", Name: "Exact"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repos.Task.CreateTask(ctx, &taskmodels.Task{ID: "exact-task", WorkspaceID: "exact-ws", Title: "Task"}); err != nil {
+		t.Fatal(err)
+	}
+	rt := &exactHostRuntime{}
+	services.Plugins.SetRuntime(rt)
+	rec, err := services.Plugins.Install(ctx, exactHostPackage(t, "exact-host"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = services.Plugins.GrantCapabilityApproval(rec.InstallationID, "exact-ws", 1, plugins.ManifestCapabilityDigest(rec.Manifest), []string{"host.v2.read:tasks"}, "human", "grant", "audit"); err != nil {
+		t.Fatal(err)
+	}
+	h, ok := rt.host.(pluginsdk.ExactTaskHost)
+	if !ok {
+		t.Fatal("runtime did not receive exact Host")
+	}
+	items, _, err := h.ListTasksExact(ctx, pluginsdk.ExactTaskQuery{WorkspaceID: "exact-ws", CapabilityRevision: 1})
+	if err != nil || len(items) != 1 || items[0].ID != "exact-task" {
+		t.Fatalf("exact read: items=%+v err=%v", items, err)
+	}
+}
+
+func exactHostPackage(t *testing.T, id string) *bytes.Buffer {
+	t.Helper()
+	var b bytes.Buffer
+	p := goruntime.GOOS + "-" + goruntime.GOARCH
+	manifest := fmt.Sprintf("id: %s\napi_version: 1\nversion: 1.0.0\nmin_kandev_version: 0.1.0\ndisplay_name: Exact\ncapabilities:\n  host_v2_read: [tasks]\nruntime:\n  type: binary\n  executables:\n    %s: server/plugin\n", id, p)
+	if err := pkgtartest.WritePackage(&b, map[string][]byte{"manifest.yaml": []byte(manifest), "server/plugin": []byte("#!/bin/sh\n")}); err != nil {
+		t.Fatal(err)
+	}
+	return &b
 }
 
 func TestProvideServicesWiresExactCommandAuthorityToTaskSQLite(t *testing.T) {

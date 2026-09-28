@@ -19,6 +19,19 @@ func (r *Repository) ExactTaskCommandAvailable() bool {
 	return r != nil && r.db != nil && !dialect.IsPostgres(r.db.DriverName())
 }
 
+// ExactTaskCommandWorkspaceFence returns the current task-writer fence for
+// an internal exact command precondition.
+func (r *Repository) ExactTaskCommandWorkspaceFence(ctx context.Context, workspaceID string) (int64, error) {
+	if !r.ExactTaskCommandAvailable() || workspaceID == "" {
+		return 0, ErrExactTaskCommandUnavailable
+	}
+	var revision int64
+	if err := r.db.QueryRowxContext(ctx, r.db.Rebind(`SELECT revision FROM exact_task_workspace_fences WHERE workspace_id = ?`), workspaceID).Scan(&revision); err != nil {
+		return 0, ErrExactTaskCommandUnavailable
+	}
+	return revision, nil
+}
+
 // ExactTaskCommandApproval is the SQLite-owned approval projection used only
 // by the future exact command path. Legacy approvals.json is deliberately not
 // consulted here: a command can be enabled only after a Host bridge makes the
