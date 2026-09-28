@@ -107,6 +107,55 @@ func (r *sqliteRepository) OpenExactPendingTransitionSnapshotInAuthorityTx(ctx c
 	return r.OpenExactPendingTransitionSnapshotInTx(ctx, tx.SQLX(), req)
 }
 
+// ValidateExactPendingTransitionInAuthorityTx proves that a pending
+// transition observed from an exact snapshot is still the same row while the
+// caller holds the matching shared SQLite transaction. It intentionally
+// returns only the closed unavailable result: a future command must not learn
+// whether a stale observation was deleted, replaced, or moved elsewhere.
+func (r *sqliteRepository) ValidateExactPendingTransitionInAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, snapshotToken string, observed ExactPendingTransition) error {
+	if !r.exactPendingTransitionsEnabled || r.db.DriverName() == postgresDriverName || !authority.Matches(r.db) || !tx.Matches(authority) || snapshotToken == "" || !validExactPendingTransition(observed) {
+		return ErrExactPendingTransitionUnavailable
+	}
+	commandTx := tx.SQLX()
+	var snapshotWorkspace string
+	var snapshotRevision, currentRevision int64
+	var expiresAt time.Time
+	err := commandTx.QueryRowxContext(ctx, r.db.Rebind(`SELECT s.workspace_id,s.workspace_revision,s.expires_at,f.revision FROM exact_pending_snapshots s JOIN exact_pending_fences f ON f.workspace_id=s.workspace_id WHERE s.token=?`), snapshotToken).Scan(&snapshotWorkspace, &snapshotRevision, &expiresAt, &currentRevision)
+	if err != nil || snapshotWorkspace != observed.WorkspaceID || !expiresAt.After(time.Now().UTC()) || snapshotRevision != currentRevision {
+		return ErrExactPendingTransitionUnavailable
+	}
+	var snap ExactPendingTransition
+	err = commandTx.GetContext(ctx, &snap, r.db.Rebind(`SELECT session_id,task_id,workspace_id,session_incarnation_id,workflow_id,workflow_step_id,step_position,queued_at,resource_version,task_resource_version,session_resource_version,queue_generation FROM exact_pending_snapshot_rows WHERE snapshot_token=? AND session_id=?`), snapshotToken, observed.SessionID)
+	if err != nil || !sameExactPendingTransition(snap, observed) {
+		return ErrExactPendingTransitionUnavailable
+	}
+	var current ExactPendingTransition
+	err = commandTx.GetContext(ctx, &current, r.db.Rebind(`SELECT p.session_id,p.task_id,t.workspace_id,p.session_incarnation_id,p.workflow_id,p.workflow_step_id,p.step_position,p.queued_at,p.resource_version,t.resource_version AS task_resource_version,s.resource_version AS session_resource_version,COALESCE(q.status_generation,0) AS queue_generation FROM pending_moves p JOIN tasks t ON t.id=p.task_id JOIN task_sessions s ON s.id=p.session_id AND s.task_id=p.task_id AND s.queue_incarnation_id=p.session_incarnation_id LEFT JOIN queue_session_state q ON q.session_id=p.session_id WHERE p.session_id=? AND t.workspace_id=?`), observed.SessionID, observed.WorkspaceID)
+	if err != nil || !sameExactPendingTransition(current, observed) {
+		return ErrExactPendingTransitionUnavailable
+	}
+	return nil
+}
+
+func validExactPendingTransition(observed ExactPendingTransition) bool {
+	return observed.SessionID != "" && observed.TaskID != "" && observed.WorkspaceID != "" && observed.SessionIncarnationID != "" && observed.WorkflowID != "" && observed.WorkflowStepID != "" && !observed.QueuedAt.IsZero() && observed.ResourceVersion > 0 && observed.TaskResourceVersion > 0 && observed.SessionResourceVersion > 0 && observed.QueueGeneration >= 0
+}
+
+func sameExactPendingTransition(left, right ExactPendingTransition) bool {
+	return left.SessionID == right.SessionID &&
+		left.TaskID == right.TaskID &&
+		left.WorkspaceID == right.WorkspaceID &&
+		left.SessionIncarnationID == right.SessionIncarnationID &&
+		left.WorkflowID == right.WorkflowID &&
+		left.WorkflowStepID == right.WorkflowStepID &&
+		left.Position == right.Position &&
+		left.QueuedAt.Equal(right.QueuedAt) &&
+		left.ResourceVersion == right.ResourceVersion &&
+		left.TaskResourceVersion == right.TaskResourceVersion &&
+		left.SessionResourceVersion == right.SessionResourceVersion &&
+		left.QueueGeneration == right.QueueGeneration
+}
+
 func (r *sqliteRepository) OpenExactPendingTransitionSnapshotInTx(ctx context.Context, tx *sqlx.Tx, req ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error) {
 	if !r.exactPendingTransitionsEnabled || tx == nil || r.db.DriverName() == postgresDriverName {
 		return nil, ErrExactPendingTransitionUnavailable

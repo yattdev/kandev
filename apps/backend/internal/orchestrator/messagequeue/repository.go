@@ -339,6 +339,7 @@ type ExactPendingTransitionAuthorityReader interface {
 	ValidateExactPendingTransitionSnapshotAuthority(*exactsnapshotauthority.Authority) error
 	BeginExactPendingTransitionSnapshotAuthorityTx(context.Context, *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error)
 	OpenExactPendingTransitionSnapshotInAuthorityTx(context.Context, *exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error)
+	ValidateExactPendingTransitionInAuthorityTx(context.Context, *exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, string, ExactPendingTransition) error
 }
 
 // applyMetadataUpdates merges metadata key updates into current; a nil value removes the key.

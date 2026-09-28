@@ -231,6 +231,80 @@ func TestExactPendingTransitionSnapshotSurvivesQueueRestart(t *testing.T) {
 	}
 }
 
+func TestExactPendingTransitionValidatorBindsObservedRowInsideAuthorityTransaction(t *testing.T) {
+	q, task, authority := newExactPendingQueueWithAuthority(t)
+	ctx := context.Background()
+	seedExactPendingTask(t, task, "ws", "task", "session")
+	if err := q.SetPendingMove(ctx, "session", &mq.PendingMove{TaskID: "task", WorkflowID: "wf", WorkflowStepID: "step"}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := q.OpenExactPendingTransitionSnapshot(ctx, mq.ExactPendingTransitionSnapshotRequest{WorkspaceID: "ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := q.GetExactPendingTransition(ctx, snapshot.Token, "session")
+	if err != nil || observed == nil {
+		t.Fatalf("GetExactPendingTransition = %#v, %v", observed, err)
+	}
+	tx, err := q.BeginExactPendingTransitionSnapshotAuthorityTx(ctx, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = q.ValidateExactPendingTransitionInAuthorityTx(ctx, authority, tx, snapshot.Token, *observed); err != nil {
+		t.Fatalf("valid observation = %v", err)
+	}
+	if _, err = tx.SQLX().ExecContext(ctx, `UPDATE exact_pending_fences SET revision = revision + 1 WHERE workspace_id = ?`, "ws"); err != nil {
+		t.Fatal(err)
+	}
+	if err = q.ValidateExactPendingTransitionInAuthorityTx(ctx, authority, tx, snapshot.Token, *observed); !errors.Is(err, mq.ErrExactPendingTransitionUnavailable) {
+		t.Fatalf("in-transaction mutation = %v", err)
+	}
+}
+
+func TestExactPendingTransitionValidatorRejectsExpiredAndForeignAuthority(t *testing.T) {
+	q, task, authority := newExactPendingQueueWithAuthority(t)
+	ctx := context.Background()
+	seedExactPendingTask(t, task, "ws", "task", "session")
+	if err := q.SetPendingMove(ctx, "session", &mq.PendingMove{TaskID: "task", WorkflowID: "wf", WorkflowStepID: "step"}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := q.OpenExactPendingTransitionSnapshot(ctx, mq.ExactPendingTransitionSnapshotRequest{WorkspaceID: "ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := q.GetExactPendingTransition(ctx, snapshot.Token, "session")
+	if err != nil || observed == nil {
+		t.Fatalf("GetExactPendingTransition = %#v, %v", observed, err)
+	}
+	if _, err = task.DB().ExecContext(ctx, `UPDATE exact_pending_snapshots SET expires_at = ? WHERE token = ?`, time.Now().UTC().Add(-time.Minute), snapshot.Token); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := q.BeginExactPendingTransitionSnapshotAuthorityTx(ctx, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = q.ValidateExactPendingTransitionInAuthorityTx(ctx, authority, tx, snapshot.Token, *observed); !errors.Is(err, mq.ErrExactPendingTransitionUnavailable) {
+		t.Fatalf("expired observation = %v", err)
+	}
+	if err = tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+
+	otherDB, err := sqlx.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = otherDB.Close() })
+	foreign, err := exactsnapshotauthority.NewSQLite(otherDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = q.BeginExactPendingTransitionSnapshotAuthorityTx(ctx, foreign); !errors.Is(err, mq.ErrExactPendingTransitionUnavailable) {
+		t.Fatalf("foreign authority transaction = %v", err)
+	}
+}
+
 func TestExactPendingTransitionConcurrentReadAndMutation(t *testing.T) {
 	q, task := newExactPendingQueue(t)
 	ctx := context.Background()
@@ -259,6 +333,12 @@ func TestExactPendingTransitionConcurrentReadAndMutation(t *testing.T) {
 
 func newExactPendingQueue(t *testing.T) (exactQueue, *tasksqlite.Repository) {
 	t.Helper()
+	repo, task, _ := newExactPendingQueueWithAuthority(t)
+	return repo, task
+}
+
+func newExactPendingQueueWithAuthority(t *testing.T) (exactQueue, *tasksqlite.Repository, *exactsnapshotauthority.Authority) {
+	t.Helper()
 	db, err := sqlx.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +353,11 @@ func newExactPendingQueue(t *testing.T) (exactQueue, *tasksqlite.Repository) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return repo.(exactQueue), task
+	authority, err := exactsnapshotauthority.NewSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repo.(exactQueue), task, authority
 }
 
 func newExactPendingQueueAt(t *testing.T, source string) (exactQueue, *tasksqlite.Repository) {
