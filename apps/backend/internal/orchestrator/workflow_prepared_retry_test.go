@@ -13,6 +13,16 @@ import (
 )
 
 func TestRetryPreparedWorkflowSessionUsesRecordedDestination(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		name := "created"
+		if failed {
+			name = "failed_before_turn"
+		}
+		t.Run(name, func(t *testing.T) { testRetryPreparedWorkflowSession(t, failed) })
+	}
+}
+
+func testRetryPreparedWorkflowSession(t *testing.T, failed bool) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
 	seedSession(t, repo, "task-retry", "source", "step-source")
@@ -22,6 +32,9 @@ func TestRetryPreparedWorkflowSessionUsesRecordedDestination(t *testing.T) {
 	}
 	task.WorkflowStepID = "step-destination"
 	task.State = v1.TaskStateScheduling
+	if failed {
+		task.State = v1.TaskStateFailed
+	}
 	if err := repo.UpdateTask(ctx, task); err != nil {
 		t.Fatal(err)
 	}
@@ -57,8 +70,14 @@ func TestRetryPreparedWorkflowSessionUsesRecordedDestination(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	destinationState := models.TaskSessionStateCreated
+	lastError := ""
+	if failed {
+		destinationState = models.TaskSessionStateFailed
+		lastError = workflowRetryAttachFailure
+	}
 	if err := repo.CreateTaskSession(ctx, &models.TaskSession{
-		ID: "destination", TaskID: task.ID, State: models.TaskSessionStateCreated,
+		ID: "destination", TaskID: task.ID, State: destinationState, ErrorMessage: lastError,
 		AgentProfileID: "profile-retry", ExecutorID: "exec-local",
 		TaskEnvironmentID: "environment-retry", StartedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}); err != nil {
@@ -73,7 +92,7 @@ func TestRetryPreparedWorkflowSessionUsesRecordedDestination(t *testing.T) {
 	}
 	taskRepo := newMockTaskRepo()
 	taskRepo.tasks[task.ID] = &v1.Task{ID: task.ID, WorkspaceID: "ws1", WorkflowID: "wf1",
-		Title: "Retry task", Description: "task brief", State: v1.TaskStateScheduling}
+		Title: "Retry task", Description: "task brief", State: task.State}
 	launches := 0
 	agentMgr := &mockAgentManager{repoForExecutionLookup: repo,
 		launchAgentFunc: func(context.Context, *executor.LaunchAgentRequest) (*executor.LaunchAgentResponse, error) {

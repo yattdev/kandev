@@ -215,9 +215,12 @@ func TestValidateReuseEnvironmentInventory_NonWorktreeLegacyToleranceRequiresRea
 // session must use the unchanged checkout identity from the task repository.
 func TestRepoInfosForWorkspaceReuse_PreservesCheckoutIdentityAfterPROpened(t *testing.T) {
 	prBase := &models.PRBase{}
+	qualified := &models.PRBase{}
+	contribution := &models.RemoteContribution{}
 	original := &repoInfo{
 		RepositoryID: "repo-1", BaseBranch: "main",
 		WorkspaceBaseBranch: "upstream/main", PRBase: prBase,
+		QualifiedPRBase: qualified, RemoteContribution: contribution,
 	}
 	reused := repoInfosForWorkspaceReuse([]*repoInfo{original})
 	if original.BaseBranch != "main" || reused[0].BaseBranch != "upstream/main" {
@@ -225,6 +228,10 @@ func TestRepoInfosForWorkspaceReuse_PreservesCheckoutIdentityAfterPROpened(t *te
 	}
 	if reused[0].PRBase != prBase {
 		t.Fatal("workspace reuse discarded the live PR base")
+	}
+	if reused[0].QualifiedPRBase != nil || reused[0].RemoteContribution != nil ||
+		original.QualifiedPRBase != qualified || original.RemoteContribution != contribution {
+		t.Fatal("workspace reuse retained fresh-checkout PR validation or changed the original")
 	}
 	row := &models.TaskEnvironmentRepo{
 		RepositoryID: "repo-1", BranchSlug: "upstream-main", WorktreeID: "wt-1",
