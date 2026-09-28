@@ -363,3 +363,33 @@ func TestClaimForceRemovalBlocksLastAgentErrorDismissal(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, dismissed)
 }
+
+func TestClaimForceRemovalBlocksACPSessionIDWithoutPersistingIt(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-acp-session-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-acp-session-held", "force-acp-session-foreign"} {
+		sessionID := taskID + "-session"
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-acp-session-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: sessionID, TaskID: taskID}))
+		require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{SessionID: sessionID, TaskID: taskID, AgentExecutionID: taskID + "-execution", ResumeToken: taskID + "-acp"}))
+	}
+	held, err := repo.GetTask(ctx, "force-acp-session-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "acp-session", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+
+	written, err := repo.SetSessionACPSessionID(ctx, "force-acp-session-held-session", "force-acp-session-held-acp")
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, written)
+	heldSession, err := repo.GetTaskSession(ctx, "force-acp-session-held-session")
+	require.NoError(t, err)
+	require.NotContains(t, heldSession.Metadata, "acp")
+
+	written, err = repo.SetSessionACPSessionID(ctx, "force-acp-session-foreign-session", "force-acp-session-foreign-acp")
+	require.NoError(t, err)
+	require.True(t, written)
+	written, err = repo.SetSessionACPSessionID(ctx, "force-acp-session-foreign-session", "force-acp-session-foreign-acp")
+	require.NoError(t, err)
+	require.False(t, written)
+}
