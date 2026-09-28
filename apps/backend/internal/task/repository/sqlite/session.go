@@ -2216,7 +2216,25 @@ func (r *Repository) UpdateTaskSessionDynamicRouteIfCurrent(
 // post-write read before scheduling teardown.
 func (r *Repository) CancelActiveTaskSession(ctx context.Context, id, reason string) (bool, time.Time, error) {
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, time.Time{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), id).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, now, nil
+		}
+		return false, time.Time{}, err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return false, time.Time{}, err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return false, time.Time{}, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_sessions
 		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
 		WHERE id = ?
@@ -2227,6 +2245,9 @@ func (r *Repository) CancelActiveTaskSession(ctx context.Context, id, reason str
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
+		return false, time.Time{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return false, time.Time{}, err
 	}
 	return rows > 0, now, nil

@@ -219,3 +219,30 @@ func TestClaimForceRemovalBlocksIdentitySessionStateTransition(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, changed)
 }
+
+func TestClaimForceRemovalBlocksActiveSessionCancellation(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-cancel-ws", Name: "Force"}))
+	for _, taskID := range []string{"force-cancel-held", "force-cancel-foreign", "force-cancel-stale"} {
+		state := models.TaskSessionStateRunning
+		if taskID == "force-cancel-stale" {
+			state = models.TaskSessionStateCompleted
+		}
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: "force-cancel-ws", Title: taskID}))
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: taskID + "-session", TaskID: taskID, State: state}))
+	}
+	held, err := repo.GetTask(ctx, "force-cancel-held")
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "admission", OperationID: "cancel", RequestDigest: "request", PreviewDigest: "preview"})
+	require.NoError(t, err)
+	changed, _, err := repo.CancelActiveTaskSession(ctx, "force-cancel-held-session", "held")
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	require.False(t, changed)
+	changed, _, err = repo.CancelActiveTaskSession(ctx, "force-cancel-foreign-session", "foreign")
+	require.NoError(t, err)
+	require.True(t, changed)
+	changed, _, err = repo.CancelActiveTaskSession(ctx, "force-cancel-stale-session", "stale")
+	require.NoError(t, err)
+	require.False(t, changed)
+}
