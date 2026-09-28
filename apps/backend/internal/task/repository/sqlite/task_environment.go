@@ -1195,11 +1195,22 @@ func (r *Repository) DeleteTaskEnvironmentRepo(ctx context.Context, id string) e
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var environmentID string
-	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_environment_id FROM task_environment_repos WHERE id = ?`), id).Scan(&environmentID); err != nil {
+	var environmentID, taskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT task_environment_id, task_id
+		FROM task_environment_repos
+		JOIN task_environments ON task_environments.id = task_environment_repos.task_environment_id
+		WHERE task_environment_repos.id = ?
+	`), id).Scan(&environmentID, &taskID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("task environment repo not found: %s", id)
 		}
+		return err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
 		return err
 	}
 	if err := recoveryclaim.EnsureAvailableTx(ctx, r.db, tx, environmentID); err != nil {
