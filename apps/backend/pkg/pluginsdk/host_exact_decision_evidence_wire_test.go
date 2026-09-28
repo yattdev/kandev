@@ -9,14 +9,32 @@ import (
 
 type decisionEvidenceRecordingHost struct {
 	*recordingHost
-	query ExactTaskDecisionEvidenceQuery
-	page  *ExactTaskDecisionEvidencePage
-	info  *ExactPageInfo
+	query  ExactTaskDecisionEvidenceQuery
+	page   *ExactTaskDecisionEvidencePage
+	info   *ExactPageInfo
+	update ExactTaskUpdateRequest
+}
+
+func (h *decisionEvidenceRecordingHost) UpdateTaskExact(_ context.Context, request ExactTaskUpdateRequest) (*ExactTaskUpdateReceipt, error) {
+	h.update = request
+	return &ExactTaskUpdateReceipt{AuditID: "audit-update", ResourceVersion: request.ExpectedResourceVersion + 1}, nil
 }
 
 func (h *decisionEvidenceRecordingHost) ListTaskDecisionEvidenceExact(_ context.Context, query ExactTaskDecisionEvidenceQuery) (*ExactTaskDecisionEvidencePage, *ExactPageInfo, error) {
 	h.query = query
 	return h.page, h.info, nil
+}
+
+func TestHost_UpdateTaskExactOverWire(t *testing.T) {
+	impl := &decisionEvidenceRecordingHost{recordingHost: &recordingHost{}}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := ExactTaskCommands(host)
+	require.True(t, ok)
+	request := ExactTaskUpdateRequest{WorkspaceID: "workspace-1", TaskID: "task-1", CapabilityRevision: 2, DecisionEvidenceSnapshotVersion: "snapshot-1", PendingTransition: ExactPendingTaskTransition{SessionID: "session-1", TaskID: "task-1", WorkspaceID: "workspace-1", SessionIncarnationID: "incarnation-1", WorkflowID: "workflow-1", WorkflowStepID: "step-1", ResourceVersion: 3, TaskResourceVersion: 4, SessionResourceVersion: 5, QueuedAt: "2026-09-28T10:00:00Z"}, Marker: "[marker]", IdempotencyKey: "key", ExpectedResourceVersion: 7}
+	receipt, err := exact.UpdateTaskExact(context.Background(), request)
+	require.NoError(t, err)
+	require.Equal(t, request, impl.update)
+	require.Equal(t, &ExactTaskUpdateReceipt{AuditID: "audit-update", ResourceVersion: 8}, receipt)
 }
 
 func TestHost_ListTaskDecisionEvidenceExactOverWire(t *testing.T) {
