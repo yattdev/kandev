@@ -2041,6 +2041,33 @@ type Turn struct {
 	UpdatedAt          time.Time              `json:"updated_at"`
 }
 
+// CoordinatorStopOperation is the durable, exact-incarnation receipt for a
+// parent-initiated halt. Fencing and runtime proof are separate phases: a
+// fencing receipt is intentionally not evidence that the process has stopped.
+type CoordinatorStopOperation struct {
+	ID          string `json:"operation_id"`
+	TaskID      string `json:"task_id"`
+	SessionID   string `json:"session_id"`
+	TurnID      string `json:"turn_id"`
+	ExecutionID string `json:"execution_id"`
+	// AgentctlGeneration identifies the agentctl process incarnation. It is
+	// distinct from queue_incarnation_id, which only identifies queue ownership.
+	AgentctlGeneration uint64    `json:"agentctl_generation"`
+	ExecutorStatus     string    `json:"executor_status"`
+	ExecutorUpdatedAt  time.Time `json:"executor_updated_at"`
+	AdmissionCutoff    time.Time `json:"admission_cutoff"`
+	Status             string    `json:"status"`
+	ReasonCode         string    `json:"reason_code,omitempty"`
+	ProofScope         string    `json:"proof_scope"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+const (
+	CoordinatorStopOperationStatusFencing = "fencing"
+	CoordinatorStopProofScopePending      = "pending_exact_runtime_proof"
+)
+
 // ReviewStatus represents the review state of a TaskSession. The zero value
 // (ReviewStatusNone, the empty string) means "no review needed" and serializes
 // out via omitempty, preserving the JSON shape of the legacy *string field.
@@ -2643,6 +2670,9 @@ type ExecutorRunning struct {
 	ResumeToken        string               `json:"resume_token,omitempty"`
 	LastMessageUUID    string               `json:"last_message_uuid,omitempty"`
 	AgentExecutionID   string               `json:"agent_execution_id,omitempty"`
+	// AgentctlGeneration changes whenever agentctl is replaced, even if a
+	// managed-runtime repair reuses AgentExecutionID.
+	AgentctlGeneration uint64 `json:"agentctl_generation,omitempty"`
 	// TransientAuthToken carries a decrypted agentctl token only between the
 	// lifecycle recovery inventory read and the matching remote runtime. It is
 	// excluded from JSON and database persistence.

@@ -107,6 +107,7 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 	}
 	r.migrate.Apply("executors_running.execution_profile_id", `ALTER TABLE executors_running ADD COLUMN execution_profile_id TEXT NOT NULL DEFAULT ''`)
 	r.migrate.Apply("executors_running.last_message_uuid", `ALTER TABLE executors_running ADD COLUMN last_message_uuid TEXT DEFAULT ''`)
+	_ = r.migrate.Apply("executors_running.agentctl_generation", `ALTER TABLE executors_running ADD COLUMN agentctl_generation BIGINT NOT NULL DEFAULT 0`)
 	r.migrate.Apply("executors_running.metadata", `ALTER TABLE executors_running ADD COLUMN metadata TEXT DEFAULT '{}'`)
 	// local_pid holds a host-local liveness handle (the standalone agentctl
 	// control-server PID Kandev spawns) for local/standalone rows. It is kept

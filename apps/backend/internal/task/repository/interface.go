@@ -548,6 +548,13 @@ type TurnRepository interface {
 	ListTurnsBySession(ctx context.Context, sessionID string) ([]*models.Turn, error)
 }
 
+// CoordinatorStopOperationRepository persists exact parent-stop receipts.
+// Runtime termination proof is intentionally not implied by the fencing phase.
+type CoordinatorStopOperationRepository interface {
+	CaptureCoordinatorStopOperation(ctx context.Context, operation models.CoordinatorStopOperation) (*models.CoordinatorStopOperation, bool, error)
+	GetCoordinatorStopOperation(ctx context.Context, operationID string) (*models.CoordinatorStopOperation, error)
+}
+
 // SessionRepository handles task session lifecycle and workflow-session relationships.
 type SessionRepository interface {
 	CreateTaskSession(ctx context.Context, session *models.TaskSession) error

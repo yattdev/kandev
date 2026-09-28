@@ -38,6 +38,7 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		r.initAttachmentsSchema,
 		r.initPreviewFeedbackSchema,
 		r.initTaskResourceCleanupSchema,
+		r.initCoordinatorStopOperationSchema,
 		r.initControlServerRecordSchema,
 		r.initGitSchema,
 		r.initReviewSchema,
@@ -83,6 +84,37 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (r *Repository) initCoordinatorStopOperationSchema() error {
+	if err := r.migrate.Apply("task_stop_operations.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_operations (
+			id TEXT PRIMARY KEY,
+			task_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			turn_id TEXT NOT NULL,
+			execution_id TEXT NOT NULL,
+			agentctl_generation BIGINT NOT NULL,
+			executor_status TEXT NOT NULL,
+			executor_updated_at TIMESTAMP NOT NULL,
+			admission_cutoff TIMESTAMP NOT NULL,
+			status TEXT NOT NULL,
+			reason_code TEXT NOT NULL DEFAULT '',
+			proof_scope TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL,
+			UNIQUE(task_id, session_id, execution_id, agentctl_generation),
+			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+			FOREIGN KEY (session_id) REFERENCES task_sessions(id) ON DELETE CASCADE,
+			FOREIGN KEY (turn_id) REFERENCES task_session_turns(id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop operations table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_operations.task_index", `
+		CREATE INDEX IF NOT EXISTS idx_task_stop_operations_task ON task_stop_operations(task_id, created_at)`); err != nil {
+		return fmt.Errorf("create task stop operations task index: %w", err)
+	}
+	return r.migrate.Err()
 }
 
 // ensureTaskEnvironmentRecoveryClaimsSchema creates the durable authority used
@@ -450,6 +482,7 @@ const infraSchemaDDL = `
 		resumable INTEGER NOT NULL DEFAULT 0,
 		resume_token TEXT DEFAULT '',
 		agent_execution_id TEXT DEFAULT '',
+		agentctl_generation BIGINT NOT NULL DEFAULT 0,
 		container_id TEXT DEFAULT '',
 		agentctl_url TEXT DEFAULT '',
 		agentctl_port INTEGER DEFAULT 0,

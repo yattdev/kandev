@@ -402,13 +402,13 @@ func insertPluginExecutorInventory(ctx context.Context, tx *sqlx.Tx, running *mo
 	_, err := tx.ExecContext(ctx, tx.Rebind(`
 		INSERT INTO executors_running (
 			id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`),
 		running.ID, running.SessionID, running.TaskID, running.ExecutionProfileID, running.ExecutorID,
 		running.Runtime, running.Status, dialect.BoolToInt(running.Resumable), running.ResumeToken,
-		running.LastMessageUUID, running.AgentExecutionID, running.ContainerID, running.AgentctlURL,
+		running.LastMessageUUID, running.AgentExecutionID, running.AgentctlGeneration, running.ContainerID, running.AgentctlURL,
 		running.AgentctlPort, running.PID, running.LocalPID, running.WorktreeID, running.WorktreePath,
 		running.WorktreeBranch, running.LastSeenAt, running.ErrorMessage, metadataJSON, running.CreatedAt, running.UpdatedAt,
 	)

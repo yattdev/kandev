@@ -228,10 +228,10 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO executors_running (
 			id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			id = excluded.id,
 			task_id = excluded.task_id,
@@ -243,6 +243,7 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 			resume_token = excluded.resume_token,
 			last_message_uuid = excluded.last_message_uuid,
 			agent_execution_id = excluded.agent_execution_id,
+			agentctl_generation = excluded.agentctl_generation,
 			container_id = excluded.container_id,
 			agentctl_url = excluded.agentctl_url,
 			agentctl_port = excluded.agentctl_port,
@@ -267,6 +268,7 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 		running.ResumeToken,
 		running.LastMessageUUID,
 		running.AgentExecutionID,
+		running.AgentctlGeneration,
 		running.ContainerID,
 		running.AgentctlURL,
 		running.AgentctlPort,
@@ -290,7 +292,7 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 func (r *Repository) ListExecutorsRunning(ctx context.Context) ([]*models.ExecutorRunning, error) {
 	rows, err := r.ro.QueryContext(ctx, `
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -310,7 +312,7 @@ func (r *Repository) ListExecutorsRunning(ctx context.Context) ([]*models.Execut
 func (r *Repository) ListExecutorsRunningIdle(ctx context.Context, cutoff time.Time) ([]*models.ExecutorRunning, error) {
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -332,7 +334,7 @@ func (r *Repository) ListExecutorsRunningIdle(ctx context.Context, cutoff time.T
 func (r *Repository) ListExecutorsRunningLiveStandalone(ctx context.Context) ([]*models.ExecutorRunning, error) {
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -354,7 +356,7 @@ func (r *Repository) ListExecutorsRunningLiveStandalone(ctx context.Context) ([]
 func (r *Repository) ListExecutorsRunningPluginRemote(ctx context.Context) ([]*models.ExecutorRunning, error) {
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -374,7 +376,7 @@ func (r *Repository) ListExecutorsRunningByTaskID(ctx context.Context, taskID st
 	}
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -408,7 +410,7 @@ func (r *Repository) GetExecutorRunningBySessionID(ctx context.Context, sessionI
 
 	err := r.ro.QueryRowContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, resumable, resume_token,
-		       last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+		       last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 		       worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 		       created_at, updated_at
 		FROM executors_running
@@ -425,6 +427,7 @@ func (r *Repository) GetExecutorRunningBySessionID(ctx context.Context, sessionI
 		&running.ResumeToken,
 		&running.LastMessageUUID,
 		&running.AgentExecutionID,
+		&running.AgentctlGeneration,
 		&running.ContainerID,
 		&running.AgentctlURL,
 		&running.AgentctlPort,
@@ -478,6 +481,7 @@ func scanExecutorRunningRows(rows *sql.Rows) ([]*models.ExecutorRunning, error) 
 			&running.ResumeToken,
 			&running.LastMessageUUID,
 			&running.AgentExecutionID,
+			&running.AgentctlGeneration,
 			&running.ContainerID,
 			&running.AgentctlURL,
 			&running.AgentctlPort,
