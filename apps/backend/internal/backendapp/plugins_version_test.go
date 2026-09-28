@@ -326,7 +326,8 @@ func TestProvideServicesWiresExactCommandAuthorityToTaskSQLite(t *testing.T) {
 
 func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing.T) {
 	ctx := context.Background()
-	services, cfg, repos := provideTestServices(t, "exact-command-orchestrator")
+	home := t.TempDir()
+	services, cfg, repos, closeServices := provideTestServicesWithCleanup(t, "exact-command-orchestrator", home)
 	agentRegistry, cleanup, err := registry.Provide(newTestLogger())
 	if err != nil {
 		t.Fatal(err)
@@ -506,6 +507,55 @@ func TestProvideOrchestratorInjectsQueueValidatorIntoExactTaskCommand(t *testing
 	other, err = repos.Task.GetTask(ctx, other.ID)
 	if err != nil || other.Description != "" {
 		t.Fatalf("foreign workspace public command changed workspace B = %+v, %v", other, err)
+	}
+	closeServices()
+
+	services, cfg, repos, closeServices = provideTestServicesWithCleanup(t, "exact-command-orchestrator", home)
+	t.Cleanup(closeServices)
+	sqliteDB = sqlx.NewDb(repos.Task.DB(), "sqlite3")
+	taskRepo, err = tasksqlite.NewWithDB(sqliteDB, sqliteDB, nil)
+	if err != nil {
+		t.Fatalf("reopened task repository: %v", err)
+	}
+	repos.Task = taskRepo
+	pool = db.NewPool(sqliteDB, sqliteDB)
+	officeRepo, err = officesqlite.NewWithDB(sqliteDB, sqliteDB, nil)
+	if err != nil {
+		t.Fatalf("reopened office repository: %v", err)
+	}
+	if _, _, err = provideOrchestrator(ctx, cfg, newTestLogger(), pool, bus.NewMemoryEventBus(newTestLogger()), repos.Task, officeRepo, services.Plugins, services.Task, services.User, lifecycleMgr, agentRegistry, services.Workflow, nil, nil, nil, nil, nil, nil, sessioncapacity.ReadEnvironment()); err != nil {
+		t.Fatalf("reopened orchestrator: %v", err)
+	}
+	runtime = &exactHostRuntime{}
+	services.Plugins.SetRuntime(runtime)
+	services.Plugins.StartActivePlugins(ctx)
+	commandHost, ok = runtime.host.(pluginsdk.ExactTaskCommandHost)
+	if !ok {
+		t.Fatal("reopened runtime did not receive exact command Host")
+	}
+	evidenceHost, ok = runtime.host.(pluginsdk.ExactTaskDecisionEvidenceHost)
+	if !ok {
+		t.Fatal("reopened runtime did not receive exact decision evidence Host")
+	}
+	task, err = repos.Task.GetTask(ctx, "exact-ws-a-task")
+	if err != nil || task.Description != "[public-marker]" || task.ResourceVersion != receipt.ResourceVersion {
+		t.Fatalf("reopened public marker = %+v, %v", task, err)
+	}
+	evidence, page, err = evidenceHost.ListTaskDecisionEvidenceExact(ctx, pluginsdk.ExactTaskDecisionEvidenceQuery{WorkspaceID: "exact-ws-a", CapabilityRevision: 1})
+	if err != nil || len(evidence.PendingTransitions) != 1 {
+		t.Fatalf("reopened decision evidence = %+v %+v %v", evidence, page, err)
+	}
+	_, err = commandHost.UpdateTaskExact(ctx, pluginsdk.ExactTaskUpdateRequest{WorkspaceID: task.WorkspaceID, TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[public-marker]", IdempotencyKey: "public-command", ExpectedResourceVersion: receipt.ResourceVersion - 1})
+	if err == nil {
+		t.Fatal("reopened public replay was inferred as a new command")
+	}
+	_, err = commandHost.UpdateTaskExact(ctx, pluginsdk.ExactTaskUpdateRequest{WorkspaceID: task.WorkspaceID, TaskID: task.ID, CapabilityRevision: 1, DecisionEvidenceSnapshotVersion: page.SnapshotVersion, PendingTransition: evidence.PendingTransitions[0], Marker: "[reopened-change]", IdempotencyKey: "public-command", ExpectedResourceVersion: task.ResourceVersion})
+	if err == nil {
+		t.Fatal("reopened changed replay succeeded")
+	}
+	task, err = repos.Task.GetTask(ctx, task.ID)
+	if err != nil || task.Description != "[public-marker]" || task.ResourceVersion != receipt.ResourceVersion {
+		t.Fatalf("reopened denial changed marker = %+v, %v", task, err)
 	}
 }
 
