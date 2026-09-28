@@ -52,7 +52,7 @@ func (h *pluginHost) ListTasksExact(ctx context.Context, query pluginsdk.ExactTa
 	if err != nil {
 		return nil, nil, status.Error(codes.Unavailable, "exact task snapshot is unavailable")
 	}
-	info := &pluginsdk.ExactPageInfo{SnapshotVersion: snapshotVersion, HasMore: len(rows) > len(items), AuditID: receipt.AuditID}
+	info := &pluginsdk.ExactPageInfo{SnapshotVersion: snapshotVersion, HasMore: len(rows) > len(items)}
 	if info.HasMore {
 		cursor, cursorErr := h.exactSnapshots.create(binding, offset+len(items))
 		if cursorErr != nil {
@@ -60,13 +60,24 @@ func (h *pluginHost) ListTasksExact(ctx context.Context, query pluginsdk.ExactTa
 		}
 		info.NextCursor = cursor
 	}
-	if h.exactReadReceipt == nil {
-		return nil, nil, status.Error(codes.FailedPrecondition, "exact read receipt is unavailable")
-	}
-	if err := h.exactReadReceipt(receipt); err != nil {
-		return nil, nil, status.Error(codes.Unavailable, "exact read receipt is unavailable")
+	if err := h.recordCompletedExactTaskRead(info, receipt); err != nil {
+		return nil, nil, err
 	}
 	return items, info, nil
+}
+
+func (h *pluginHost) recordCompletedExactTaskRead(info *pluginsdk.ExactPageInfo, receipt ApprovalReceipt) error {
+	if info.HasMore {
+		return nil
+	}
+	if h.exactReadReceipt == nil {
+		return status.Error(codes.FailedPrecondition, "exact read receipt is unavailable")
+	}
+	if err := h.exactReadReceipt(receipt); err != nil {
+		return status.Error(codes.Unavailable, "exact read receipt is unavailable")
+	}
+	info.AuditID = receipt.AuditID
+	return nil
 }
 
 func (h *pluginHost) GetTaskExact(ctx context.Context, query pluginsdk.ExactTaskGetQuery) (*pluginsdk.ExactTask, error) {

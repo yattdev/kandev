@@ -31,9 +31,10 @@ func TestPluginHostExactTasksUseApprovalBoundDurableSnapshot(t *testing.T) {
 	d.host.installationID = "installation-1"
 	d.host.exactSnapshots = newExactSnapshotStore([]byte("01234567890123456789012345678901"))
 	d.host.exactAuthorize = func(workspaceID string, revision uint64, capabilityID, _ string) ApprovalDecision {
-		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:tasks"}
+		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:tasks", Receipt: ApprovalReceipt{AuditID: "task-read-audit"}}
 	}
-	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
+	var receipts []ApprovalReceipt
+	d.host.exactReadReceipt = func(receipt ApprovalReceipt) error { receipts = append(receipts, receipt); return nil }
 	d.tasks.exactSnapshots = map[string][]taskmodels.ExactTaskSnapshotTask{
 		"snapshot-workspace-1": {
 			{ID: "task-1", WorkspaceID: "workspace-1", WorkflowID: "workflow-1", WorkflowStepID: "step-1", Title: "Blocked", State: "TODO", Priority: "high", ResourceVersion: 3},
@@ -45,6 +46,8 @@ func TestPluginHostExactTasksUseApprovalBoundDurableSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []pluginsdk.ExactTask{{ID: "task-1", WorkspaceID: "workspace-1", WorkflowID: "workflow-1", WorkflowStepID: "step-1", Title: "Blocked", State: "TODO", Priority: "high", ResourceVersion: 3}}, items)
 	require.True(t, page.HasMore)
+	require.Empty(t, page.AuditID)
+	require.Empty(t, receipts)
 	require.NotEmpty(t, page.SnapshotVersion)
 	require.NotContains(t, page.SnapshotVersion, "snapshot-workspace-1")
 	snapshotVersion := page.SnapshotVersion
@@ -53,6 +56,8 @@ func TestPluginHostExactTasksUseApprovalBoundDurableSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "task-2", items[0].ID)
 	require.False(t, page.HasMore)
+	require.NotEmpty(t, page.AuditID)
+	require.Len(t, receipts, 1)
 
 	task, err := d.host.GetTaskExact(context.Background(), pluginsdk.ExactTaskGetQuery{WorkspaceID: "workspace-1", TaskID: "task-2", CapabilityRevision: 2, SnapshotVersion: snapshotVersion})
 	require.NoError(t, err)
