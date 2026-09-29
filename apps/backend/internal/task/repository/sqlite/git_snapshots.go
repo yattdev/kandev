@@ -215,6 +215,26 @@ func (r *Repository) ensureGitSnapshotEnvironmentAvailableTx(ctx context.Context
 	return ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID)
 }
 
+func (r *Repository) ensureGitSnapshotSessionAvailableTx(ctx context.Context, tx *sqlx.Tx, sessionID string) error {
+	var taskID string
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT ts.task_id
+		FROM task_sessions ts
+		JOIN tasks t ON t.id = ts.task_id
+		WHERE ts.id = ?
+	`), sessionID).Scan(&taskID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	return ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID)
+}
+
 func serializeSnapshotJSON(snapshot *models.GitSnapshot) (string, string, error) {
 	filesJSON := "{}"
 	if snapshot.Files != nil {
@@ -239,11 +259,21 @@ func serializeSnapshotJSON(snapshot *models.GitSnapshot) (string, string, error)
 // session. Called after creating an agent_completed snapshot to prevent stale
 // live_monitor data from superseding the authoritative completion snapshot.
 func (r *Repository) DeleteLiveMonitorSnapshots(ctx context.Context, sessionID string) error {
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin live git snapshot delete tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureGitSnapshotSessionAvailableTx(ctx, tx, sessionID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, r.db.Rebind(`
 		DELETE FROM task_session_git_snapshots
 		WHERE session_id = ? AND triggered_by = ?
-	`), sessionID, TriggeredByLiveMonitor)
-	return err
+	`), sessionID, TriggeredByLiveMonitor); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeleteLiveMonitorSnapshotsByTaskEnvironmentID removes live snapshots for an
