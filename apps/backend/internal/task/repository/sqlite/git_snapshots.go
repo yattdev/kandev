@@ -288,26 +288,22 @@ func (r *Repository) CreateGitSnapshot(ctx context.Context, snapshot *models.Git
 		snapshot.Ahead, snapshot.Behind, filesJSON,
 	)
 
-	if snapshot.TriggeredBy != triggeredByAgentCompleted {
-		_, err = r.db.ExecContext(ctx, r.db.Rebind(`
-		INSERT INTO task_session_git_snapshots (
-			id, task_environment_id, session_id, snapshot_type, branch, remote_branch, head_commit, base_commit,
-			ahead, behind, files, triggered_by, metadata, created_at, content_digest
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`), snapshot.ID, snapshot.TaskEnvironmentID, nullableGitSnapshotSessionID(snapshot.SessionID), string(snapshot.SnapshotType), snapshot.Branch,
-			snapshot.RemoteBranch, snapshot.HeadCommit, snapshot.BaseCommit, snapshot.Ahead,
-			snapshot.Behind, filesJSON, snapshot.TriggeredBy, metadataJSON, snapshot.CreatedAt,
-			snapshot.ContentDigest)
-		return err
-	}
-
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin completion snapshot tx: %w", err)
+		return fmt.Errorf("begin git snapshot tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := r.lockGitSnapshotEnvironment(tx, snapshot.TaskEnvironmentID); err != nil {
 		return err
+	}
+	if err := r.ensureGitSnapshotEnvironmentAvailableTx(ctx, tx, snapshot.TaskEnvironmentID); err != nil {
+		return err
+	}
+	if snapshot.TriggeredBy != triggeredByAgentCompleted {
+		if _, err := insertGitSnapshot(ctx, tx, r.db, snapshot, filesJSON, metadataJSON); err != nil {
+			return err
+		}
+		return tx.Commit()
 	}
 	repositoryName := gitSnapshotRepositoryName(snapshot)
 	repositoryExpr := "COALESCE(" + dialect.JSONExtract(r.db.DriverName(), "metadata", "repository_name") + ", '')"
