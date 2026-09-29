@@ -12,7 +12,6 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/kandev/kandev/internal/agentruntime"
-	kandevdb "github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/recoveryclaim"
@@ -167,7 +166,7 @@ func (r *Repository) ListExecutors(ctx context.Context) ([]*models.Executor, err
 	return result, rows.Err()
 }
 
-// UpsertExecutorRunning takes the shared task-row lock (kandevdb.LockTaskRowInTx)
+// UpsertExecutorRunning takes the stored session owner task-row lock
 // before writing so a concurrent runner switch cannot land between this
 // write's mutability read and its own re-check — the two either fully
 // precede or fully follow each other. A row with no
@@ -207,18 +206,23 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if running.TaskID != "" {
-		if lockErr := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), running.TaskID); lockErr != nil &&
-			!errors.Is(lockErr, kandevdb.ErrTaskRowNotFound) {
-			return lockErr
-		}
-	}
 	if _, err := lockTaskSessionRow(ctx, tx, running.SessionID); err != nil {
 		return err
 	}
 	var environmentID sql.NullString
-	if queryErr := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT COALESCE(task_environment_id, '') FROM task_sessions WHERE id = ?`), running.SessionID).Scan(&environmentID); queryErr != nil && queryErr != sql.ErrNoRows {
+	var storedTaskID string
+	queryErr := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id, COALESCE(task_environment_id, '') FROM task_sessions WHERE id = ?`), running.SessionID).Scan(&storedTaskID, &environmentID)
+	if queryErr != nil && !errors.Is(queryErr, sql.ErrNoRows) {
 		return queryErr
+	}
+	if queryErr == nil {
+		if err := r.lockTaskRowInTx(ctx, tx, storedTaskID); err != nil {
+			return err
+		}
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, storedTaskID); err != nil {
+			return err
+		}
+		running.TaskID = storedTaskID
 	}
 	if environmentID.Valid {
 		if err := recoveryclaim.EnsureAvailableTx(ctx, r.db, tx, environmentID.String); err != nil {
