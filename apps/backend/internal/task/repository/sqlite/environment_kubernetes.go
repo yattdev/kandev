@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kandev/kandev/internal/db/dialect"
@@ -223,8 +224,59 @@ func (r *Repository) DeleteKubernetesEnvironment(ctx context.Context, record *mo
 // Call only at startup under exclusive runtime-state ownership, before launching
 // workers. Inventory remains intact for exact-resource reconciliation or cleanup.
 func (r *Repository) RecoverInterruptedKubernetesOperations(ctx context.Context) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE task_environment_kubernetes SET operation_id = '', revision = revision + 1 WHERE operation_id <> ''`)
-	return err
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	taskIDs, err := r.interruptedKubernetesOperationTaskIDs(ctx, tx)
+	if err != nil {
+		return err
+	}
+	for _, taskID := range taskIDs {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			if errors.Is(err, ErrTaskNotFound) {
+				continue
+			}
+			return err
+		}
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE task_environment_kubernetes SET operation_id = '', revision = revision + 1 WHERE operation_id <> ''`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) interruptedKubernetesOperationTaskIDs(ctx context.Context, tx *sqlx.Tx) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, r.db.Rebind(`SELECT k.task_id
+ FROM task_environment_kubernetes k
+ JOIN task_environments e ON e.id = k.environment_id
+  AND e.task_id = k.task_id AND e.ownership_generation = k.ownership_generation
+ WHERE k.operation_id <> ''`))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	taskIDSet := make(map[string]struct{})
+	for rows.Next() {
+		var taskID string
+		if err := rows.Scan(&taskID); err != nil {
+			return nil, err
+		}
+		taskIDSet[taskID] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	taskIDs := make([]string, 0, len(taskIDSet))
+	for taskID := range taskIDSet {
+		taskIDs = append(taskIDs, taskID)
+	}
+	sort.Strings(taskIDs)
+	return taskIDs, nil
 }
 
 func (r *Repository) ListKubernetesEnvironments(ctx context.Context) ([]*models.KubernetesEnvironment, error) {

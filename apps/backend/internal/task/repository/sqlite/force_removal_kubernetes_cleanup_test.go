@@ -193,3 +193,69 @@ func TestClaimForceRemovalBlocksKubernetesEnvironmentDeletion(t *testing.T) {
 	_, err = repo.GetKubernetesEnvironment(ctx, deletedEnvID)
 	require.ErrorIs(t, err, models.ErrKubernetesEnvironmentNotFound)
 }
+
+func TestClaimForceRemovalBlocksInterruptedKubernetesRecoveryWithoutPartialReset(t *testing.T) {
+	ctx := context.Background()
+	blocked := newRepoForEntityTests(t)
+	const (
+		heldTaskID    = "force-kubernetes-recovery-held"
+		heldEnvID     = "force-kubernetes-recovery-held-environment"
+		foreignTaskID = "force-kubernetes-recovery-foreign"
+		foreignEnvID  = "force-kubernetes-recovery-foreign-environment"
+		deletedTaskID = "force-kubernetes-recovery-deleted"
+		deletedEnvID  = "force-kubernetes-recovery-deleted-environment"
+	)
+	for taskID, environmentID := range map[string]string{
+		heldTaskID: heldEnvID, foreignTaskID: foreignEnvID, deletedTaskID: deletedEnvID,
+	} {
+		seedRecoveryClaimEnvironment(t, blocked, taskID, environmentID)
+	}
+	_, err := blocked.ClaimKubernetesEnvironment(ctx, heldEnvID, heldTaskID, 1, "held")
+	require.NoError(t, err)
+	_, err = blocked.ClaimKubernetesEnvironment(ctx, foreignEnvID, foreignTaskID, 1, "foreign")
+	require.NoError(t, err)
+	deleted, err := blocked.ClaimKubernetesEnvironment(ctx, deletedEnvID, deletedTaskID, 1, "deleted")
+	require.NoError(t, err)
+	require.NoError(t, blocked.SaveKubernetesEnvironment(ctx, deleted, true))
+	require.NoError(t, blocked.DeleteTask(ctx, deletedTaskID))
+	_, err = blocked.ClaimKubernetesEnvironmentCleanup(ctx, deletedEnvID, deletedTaskID, 1, "deleted-cleanup")
+	require.NoError(t, err)
+
+	heldTask, err := blocked.GetTask(ctx, heldTaskID)
+	require.NoError(t, err)
+	_, _, err = blocked.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
+		TaskID: heldTask.ID, WorkspaceID: heldTask.WorkspaceID, TaskGeneration: heldTask.UpdatedAt,
+		AdmissionGeneration: "admission", OperationID: "kubernetes-recovery", RequestDigest: "request", PreviewDigest: "preview",
+	})
+	require.NoError(t, err)
+
+	require.ErrorIs(t, blocked.RecoverInterruptedKubernetesOperations(ctx), ErrForceRemovalTaskHeld)
+	for environmentID, operationID := range map[string]string{
+		heldEnvID: "held", foreignEnvID: "foreign", deletedEnvID: "cleanup:deleted-cleanup",
+	} {
+		stored, getErr := blocked.GetKubernetesEnvironment(ctx, environmentID)
+		require.NoError(t, getErr)
+		require.Equal(t, operationID, stored.OperationID)
+	}
+
+	progress := newRepoForEntityTests(t)
+	seedRecoveryClaimEnvironment(t, progress, foreignTaskID, foreignEnvID)
+	seedRecoveryClaimEnvironment(t, progress, deletedTaskID, deletedEnvID)
+	foreign, err := progress.ClaimKubernetesEnvironment(ctx, foreignEnvID, foreignTaskID, 1, "foreign")
+	require.NoError(t, err)
+	staleForeign := *foreign
+	deleted, err = progress.ClaimKubernetesEnvironment(ctx, deletedEnvID, deletedTaskID, 1, "deleted")
+	require.NoError(t, err)
+	require.NoError(t, progress.SaveKubernetesEnvironment(ctx, deleted, true))
+	require.NoError(t, progress.DeleteTask(ctx, deletedTaskID))
+	_, err = progress.ClaimKubernetesEnvironmentCleanup(ctx, deletedEnvID, deletedTaskID, 1, "deleted-cleanup")
+	require.NoError(t, err)
+
+	require.NoError(t, progress.RecoverInterruptedKubernetesOperations(ctx))
+	for _, environmentID := range []string{foreignEnvID, deletedEnvID} {
+		stored, getErr := progress.GetKubernetesEnvironment(ctx, environmentID)
+		require.NoError(t, getErr)
+		require.Empty(t, stored.OperationID)
+	}
+	require.ErrorIs(t, progress.SaveKubernetesEnvironment(ctx, &staleForeign, true), models.ErrKubernetesEnvironmentConflict)
+}
