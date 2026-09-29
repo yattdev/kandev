@@ -741,6 +741,14 @@ func TestCanWrite_UndeclaredResourceDenied(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsMalformedExactHostCapability(t *testing.T) {
+	manifest := validManifest(t)
+	manifest.Capabilities.HostV2Read = []string{"*"}
+	if err := manifest.Validate(); err == nil {
+		t.Fatal("Validate() accepted a wildcard exact Host capability")
+	}
+}
+
 func TestValidate_RootRelativeBundleAndStylesPass(t *testing.T) {
 	m := validManifest(t)
 	m.UI.Bundle = "/ui/bundle.js"

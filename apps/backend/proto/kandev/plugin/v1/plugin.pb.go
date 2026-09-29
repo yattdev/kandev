@@ -22,6 +22,57 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ExactTaskUpdateOutcome int32
+
+const (
+	ExactTaskUpdateOutcome_EXACT_TASK_UPDATE_OUTCOME_UNSPECIFIED ExactTaskUpdateOutcome = 0
+	// The marker, audit, and task.updated outbox acknowledgement are durable.
+	ExactTaskUpdateOutcome_EXACT_TASK_UPDATE_OUTCOME_DURABLE ExactTaskUpdateOutcome = 1
+	// The marker and audit committed; task.updated delivery remains unresolved.
+	ExactTaskUpdateOutcome_EXACT_TASK_UPDATE_OUTCOME_PENDING ExactTaskUpdateOutcome = 2
+)
+
+// Enum value maps for ExactTaskUpdateOutcome.
+var (
+	ExactTaskUpdateOutcome_name = map[int32]string{
+		0: "EXACT_TASK_UPDATE_OUTCOME_UNSPECIFIED",
+		1: "EXACT_TASK_UPDATE_OUTCOME_DURABLE",
+		2: "EXACT_TASK_UPDATE_OUTCOME_PENDING",
+	}
+	ExactTaskUpdateOutcome_value = map[string]int32{
+		"EXACT_TASK_UPDATE_OUTCOME_UNSPECIFIED": 0,
+		"EXACT_TASK_UPDATE_OUTCOME_DURABLE":     1,
+		"EXACT_TASK_UPDATE_OUTCOME_PENDING":     2,
+	}
+)
+
+func (x ExactTaskUpdateOutcome) Enum() *ExactTaskUpdateOutcome {
+	p := new(ExactTaskUpdateOutcome)
+	*p = x
+	return p
+}
+
+func (x ExactTaskUpdateOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ExactTaskUpdateOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_kandev_plugin_v1_plugin_proto_enumTypes[0].Descriptor()
+}
+
+func (ExactTaskUpdateOutcome) Type() protoreflect.EnumType {
+	return &file_kandev_plugin_v1_plugin_proto_enumTypes[0]
+}
+
+func (x ExactTaskUpdateOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ExactTaskUpdateOutcome.Descriptor instead.
+func (ExactTaskUpdateOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{0}
+}
+
 type Event struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`             // fresh uuid per delivery
@@ -8594,6 +8645,2068 @@ func (x *AutomationWebhookResponse) GetData() []byte {
 	return nil
 }
 
+// An empty request deliberately carries no installation, workspace, or
+// approval identity. The Host derives all of those from the broker-bound
+// plugin installation.
+type GetCapabilityContextRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCapabilityContextRequest) Reset() {
+	*x = GetCapabilityContextRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[132]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCapabilityContextRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCapabilityContextRequest) ProtoMessage() {}
+
+func (x *GetCapabilityContextRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[132]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCapabilityContextRequest.ProtoReflect.Descriptor instead.
+func (*GetCapabilityContextRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{132}
+}
+
+type CapabilityApprovalContext struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalId    string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Revision      uint64                 `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"` // active | revoked
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapabilityApprovalContext) Reset() {
+	*x = CapabilityApprovalContext{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[133]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapabilityApprovalContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapabilityApprovalContext) ProtoMessage() {}
+
+func (x *CapabilityApprovalContext) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[133]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapabilityApprovalContext.ProtoReflect.Descriptor instead.
+func (*CapabilityApprovalContext) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{133}
+}
+
+func (x *CapabilityApprovalContext) GetApprovalId() string {
+	if x != nil {
+		return x.ApprovalId
+	}
+	return ""
+}
+
+func (x *CapabilityApprovalContext) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *CapabilityApprovalContext) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *CapabilityApprovalContext) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type GetCapabilityContextResponse struct {
+	state           protoimpl.MessageState       `protogen:"open.v1"`
+	ContractVersion string                       `protobuf:"bytes,1,opt,name=contract_version,json=contractVersion,proto3" json:"contract_version,omitempty"`
+	InstallationId  string                       `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	ManifestDigest  string                       `protobuf:"bytes,3,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	Approvals       []*CapabilityApprovalContext `protobuf:"bytes,4,rep,name=approvals,proto3" json:"approvals,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetCapabilityContextResponse) Reset() {
+	*x = GetCapabilityContextResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[134]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCapabilityContextResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCapabilityContextResponse) ProtoMessage() {}
+
+func (x *GetCapabilityContextResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[134]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCapabilityContextResponse.ProtoReflect.Descriptor instead.
+func (*GetCapabilityContextResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{134}
+}
+
+func (x *GetCapabilityContextResponse) GetContractVersion() string {
+	if x != nil {
+		return x.ContractVersion
+	}
+	return ""
+}
+
+func (x *GetCapabilityContextResponse) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *GetCapabilityContextResponse) GetManifestDigest() string {
+	if x != nil {
+		return x.ManifestDigest
+	}
+	return ""
+}
+
+func (x *GetCapabilityContextResponse) GetApprovals() []*CapabilityApprovalContext {
+	if x != nil {
+		return x.Approvals
+	}
+	return nil
+}
+
+type ExactPage struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Limit           int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Cursor          string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	SnapshotVersion string                 `protobuf:"bytes,3,opt,name=snapshot_version,json=snapshotVersion,proto3" json:"snapshot_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ExactPage) Reset() {
+	*x = ExactPage{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[135]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExactPage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExactPage) ProtoMessage() {}
+
+func (x *ExactPage) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[135]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExactPage.ProtoReflect.Descriptor instead.
+func (*ExactPage) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{135}
+}
+
+func (x *ExactPage) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ExactPage) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+func (x *ExactPage) GetSnapshotVersion() string {
+	if x != nil {
+		return x.SnapshotVersion
+	}
+	return ""
+}
+
+type ExactPageInfo struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	NextCursor      string                 `protobuf:"bytes,1,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	HasMore         bool                   `protobuf:"varint,2,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	SnapshotVersion string                 `protobuf:"bytes,3,opt,name=snapshot_version,json=snapshotVersion,proto3" json:"snapshot_version,omitempty"`
+	AuditId         string                 `protobuf:"bytes,4,opt,name=audit_id,json=auditId,proto3" json:"audit_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ExactPageInfo) Reset() {
+	*x = ExactPageInfo{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[136]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExactPageInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExactPageInfo) ProtoMessage() {}
+
+func (x *ExactPageInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[136]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExactPageInfo.ProtoReflect.Descriptor instead.
+func (*ExactPageInfo) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{136}
+}
+
+func (x *ExactPageInfo) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+func (x *ExactPageInfo) GetHasMore() bool {
+	if x != nil {
+		return x.HasMore
+	}
+	return false
+}
+
+func (x *ExactPageInfo) GetSnapshotVersion() string {
+	if x != nil {
+		return x.SnapshotVersion
+	}
+	return ""
+}
+
+func (x *ExactPageInfo) GetAuditId() string {
+	if x != nil {
+		return x.AuditId
+	}
+	return ""
+}
+
+type ListWorkspacesExactRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId        string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	CapabilityRevision uint64                 `protobuf:"varint,2,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	Page               *ExactPage             `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListWorkspacesExactRequest) Reset() {
+	*x = ListWorkspacesExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[137]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkspacesExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkspacesExactRequest) ProtoMessage() {}
+
+func (x *ListWorkspacesExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[137]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkspacesExactRequest.ProtoReflect.Descriptor instead.
+func (*ListWorkspacesExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{137}
+}
+
+func (x *ListWorkspacesExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ListWorkspacesExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *ListWorkspacesExactRequest) GetPage() *ExactPage {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListWorkspacesExactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Workspaces    []*Workspace           `protobuf:"bytes,1,rep,name=workspaces,proto3" json:"workspaces,omitempty"`
+	PageInfo      *ExactPageInfo         `protobuf:"bytes,2,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorkspacesExactResponse) Reset() {
+	*x = ListWorkspacesExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[138]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkspacesExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkspacesExactResponse) ProtoMessage() {}
+
+func (x *ListWorkspacesExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[138]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkspacesExactResponse.ProtoReflect.Descriptor instead.
+func (*ListWorkspacesExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{138}
+}
+
+func (x *ListWorkspacesExactResponse) GetWorkspaces() []*Workspace {
+	if x != nil {
+		return x.Workspaces
+	}
+	return nil
+}
+
+func (x *ListWorkspacesExactResponse) GetPageInfo() *ExactPageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
+type ListWorkflowsExactRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId        string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	CapabilityRevision uint64                 `protobuf:"varint,2,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	Page               *ExactPage             `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListWorkflowsExactRequest) Reset() {
+	*x = ListWorkflowsExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[139]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkflowsExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkflowsExactRequest) ProtoMessage() {}
+
+func (x *ListWorkflowsExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[139]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkflowsExactRequest.ProtoReflect.Descriptor instead.
+func (*ListWorkflowsExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{139}
+}
+
+func (x *ListWorkflowsExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ListWorkflowsExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *ListWorkflowsExactRequest) GetPage() *ExactPage {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListWorkflowsExactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Workflows     []*Workflow            `protobuf:"bytes,1,rep,name=workflows,proto3" json:"workflows,omitempty"`
+	PageInfo      *ExactPageInfo         `protobuf:"bytes,2,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorkflowsExactResponse) Reset() {
+	*x = ListWorkflowsExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[140]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkflowsExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkflowsExactResponse) ProtoMessage() {}
+
+func (x *ListWorkflowsExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[140]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkflowsExactResponse.ProtoReflect.Descriptor instead.
+func (*ListWorkflowsExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{140}
+}
+
+func (x *ListWorkflowsExactResponse) GetWorkflows() []*Workflow {
+	if x != nil {
+		return x.Workflows
+	}
+	return nil
+}
+
+func (x *ListWorkflowsExactResponse) GetPageInfo() *ExactPageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
+type ListWorkflowStepsExactRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId        string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	WorkflowId         string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
+	CapabilityRevision uint64                 `protobuf:"varint,3,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	Page               *ExactPage             `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListWorkflowStepsExactRequest) Reset() {
+	*x = ListWorkflowStepsExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[141]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkflowStepsExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkflowStepsExactRequest) ProtoMessage() {}
+
+func (x *ListWorkflowStepsExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[141]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkflowStepsExactRequest.ProtoReflect.Descriptor instead.
+func (*ListWorkflowStepsExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{141}
+}
+
+func (x *ListWorkflowStepsExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ListWorkflowStepsExactRequest) GetWorkflowId() string {
+	if x != nil {
+		return x.WorkflowId
+	}
+	return ""
+}
+
+func (x *ListWorkflowStepsExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *ListWorkflowStepsExactRequest) GetPage() *ExactPage {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListWorkflowStepsExactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Steps         []*WorkflowStep        `protobuf:"bytes,1,rep,name=steps,proto3" json:"steps,omitempty"`
+	PageInfo      *ExactPageInfo         `protobuf:"bytes,2,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorkflowStepsExactResponse) Reset() {
+	*x = ListWorkflowStepsExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[142]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkflowStepsExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkflowStepsExactResponse) ProtoMessage() {}
+
+func (x *ListWorkflowStepsExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[142]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkflowStepsExactResponse.ProtoReflect.Descriptor instead.
+func (*ListWorkflowStepsExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{142}
+}
+
+func (x *ListWorkflowStepsExactResponse) GetSteps() []*WorkflowStep {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
+}
+
+func (x *ListWorkflowStepsExactResponse) GetPageInfo() *ExactPageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
+type ExactTask struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId     string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	WorkflowId      string                 `protobuf:"bytes,3,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
+	WorkflowStepId  string                 `protobuf:"bytes,4,opt,name=workflow_step_id,json=workflowStepId,proto3" json:"workflow_step_id,omitempty"`
+	Title           string                 `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
+	Description     string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	State           string                 `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`
+	Priority        string                 `protobuf:"bytes,8,opt,name=priority,proto3" json:"priority,omitempty"`
+	Position        int32                  `protobuf:"varint,9,opt,name=position,proto3" json:"position,omitempty"`
+	Archived        bool                   `protobuf:"varint,10,opt,name=archived,proto3" json:"archived,omitempty"`
+	ResourceVersion int64                  `protobuf:"varint,11,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ExactTask) Reset() {
+	*x = ExactTask{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[143]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExactTask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExactTask) ProtoMessage() {}
+
+func (x *ExactTask) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[143]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExactTask.ProtoReflect.Descriptor instead.
+func (*ExactTask) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{143}
+}
+
+func (x *ExactTask) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ExactTask) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ExactTask) GetWorkflowId() string {
+	if x != nil {
+		return x.WorkflowId
+	}
+	return ""
+}
+
+func (x *ExactTask) GetWorkflowStepId() string {
+	if x != nil {
+		return x.WorkflowStepId
+	}
+	return ""
+}
+
+func (x *ExactTask) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *ExactTask) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ExactTask) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ExactTask) GetPriority() string {
+	if x != nil {
+		return x.Priority
+	}
+	return ""
+}
+
+func (x *ExactTask) GetPosition() int32 {
+	if x != nil {
+		return x.Position
+	}
+	return 0
+}
+
+func (x *ExactTask) GetArchived() bool {
+	if x != nil {
+		return x.Archived
+	}
+	return false
+}
+
+func (x *ExactTask) GetResourceVersion() int64 {
+	if x != nil {
+		return x.ResourceVersion
+	}
+	return 0
+}
+
+type ListTasksExactRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId        string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	CapabilityRevision uint64                 `protobuf:"varint,2,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	Page               *ExactPage             `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListTasksExactRequest) Reset() {
+	*x = ListTasksExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[144]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTasksExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTasksExactRequest) ProtoMessage() {}
+
+func (x *ListTasksExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[144]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTasksExactRequest.ProtoReflect.Descriptor instead.
+func (*ListTasksExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{144}
+}
+
+func (x *ListTasksExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ListTasksExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *ListTasksExactRequest) GetPage() *ExactPage {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListTasksExactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tasks         []*ExactTask           `protobuf:"bytes,1,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	PageInfo      *ExactPageInfo         `protobuf:"bytes,2,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTasksExactResponse) Reset() {
+	*x = ListTasksExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[145]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTasksExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTasksExactResponse) ProtoMessage() {}
+
+func (x *ListTasksExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[145]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTasksExactResponse.ProtoReflect.Descriptor instead.
+func (*ListTasksExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{145}
+}
+
+func (x *ListTasksExactResponse) GetTasks() []*ExactTask {
+	if x != nil {
+		return x.Tasks
+	}
+	return nil
+}
+
+func (x *ListTasksExactResponse) GetPageInfo() *ExactPageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
+type GetTaskExactRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId        string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	TaskId             string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	CapabilityRevision uint64                 `protobuf:"varint,3,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	SnapshotVersion    string                 `protobuf:"bytes,4,opt,name=snapshot_version,json=snapshotVersion,proto3" json:"snapshot_version,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *GetTaskExactRequest) Reset() {
+	*x = GetTaskExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[146]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTaskExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTaskExactRequest) ProtoMessage() {}
+
+func (x *GetTaskExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[146]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTaskExactRequest.ProtoReflect.Descriptor instead.
+func (*GetTaskExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{146}
+}
+
+func (x *GetTaskExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *GetTaskExactRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *GetTaskExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *GetTaskExactRequest) GetSnapshotVersion() string {
+	if x != nil {
+		return x.SnapshotVersion
+	}
+	return ""
+}
+
+type GetTaskExactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Task          *ExactTask             `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetTaskExactResponse) Reset() {
+	*x = GetTaskExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[147]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTaskExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTaskExactResponse) ProtoMessage() {}
+
+func (x *GetTaskExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[147]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTaskExactResponse.ProtoReflect.Descriptor instead.
+func (*GetTaskExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{147}
+}
+
+func (x *GetTaskExactResponse) GetTask() *ExactTask {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+type ExactSession struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TaskId             string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	WorkspaceId        string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	QueueIncarnationId string                 `protobuf:"bytes,4,opt,name=queue_incarnation_id,json=queueIncarnationId,proto3" json:"queue_incarnation_id,omitempty"`
+	State              string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
+	RouteGeneration    int64                  `protobuf:"varint,6,opt,name=route_generation,json=routeGeneration,proto3" json:"route_generation,omitempty"`
+	StartedAt          string                 `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	CompletedAt        string                 `protobuf:"bytes,8,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
+	UpdatedAt          string                 `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	IsPrimary          bool                   `protobuf:"varint,10,opt,name=is_primary,json=isPrimary,proto3" json:"is_primary,omitempty"`
+	ResourceVersion    int64                  `protobuf:"varint,11,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ExactSession) Reset() {
+	*x = ExactSession{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[148]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExactSession) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExactSession) ProtoMessage() {}
+
+func (x *ExactSession) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[148]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExactSession.ProtoReflect.Descriptor instead.
+func (*ExactSession) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{148}
+}
+
+func (x *ExactSession) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ExactSession) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *ExactSession) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ExactSession) GetQueueIncarnationId() string {
+	if x != nil {
+		return x.QueueIncarnationId
+	}
+	return ""
+}
+
+func (x *ExactSession) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ExactSession) GetRouteGeneration() int64 {
+	if x != nil {
+		return x.RouteGeneration
+	}
+	return 0
+}
+
+func (x *ExactSession) GetStartedAt() string {
+	if x != nil {
+		return x.StartedAt
+	}
+	return ""
+}
+
+func (x *ExactSession) GetCompletedAt() string {
+	if x != nil {
+		return x.CompletedAt
+	}
+	return ""
+}
+
+func (x *ExactSession) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+func (x *ExactSession) GetIsPrimary() bool {
+	if x != nil {
+		return x.IsPrimary
+	}
+	return false
+}
+
+func (x *ExactSession) GetResourceVersion() int64 {
+	if x != nil {
+		return x.ResourceVersion
+	}
+	return 0
+}
+
+type ListSessionsExactRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId        string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	CapabilityRevision uint64                 `protobuf:"varint,2,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	Page               *ExactPage             `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListSessionsExactRequest) Reset() {
+	*x = ListSessionsExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[149]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionsExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionsExactRequest) ProtoMessage() {}
+
+func (x *ListSessionsExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[149]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionsExactRequest.ProtoReflect.Descriptor instead.
+func (*ListSessionsExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{149}
+}
+
+func (x *ListSessionsExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ListSessionsExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *ListSessionsExactRequest) GetPage() *ExactPage {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListSessionsExactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sessions      []*ExactSession        `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	PageInfo      *ExactPageInfo         `protobuf:"bytes,2,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSessionsExactResponse) Reset() {
+	*x = ListSessionsExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[150]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionsExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionsExactResponse) ProtoMessage() {}
+
+func (x *ListSessionsExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[150]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionsExactResponse.ProtoReflect.Descriptor instead.
+func (*ListSessionsExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{150}
+}
+
+func (x *ListSessionsExactResponse) GetSessions() []*ExactSession {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+func (x *ListSessionsExactResponse) GetPageInfo() *ExactPageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
+type GetSessionExactRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId        string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	SessionId          string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	CapabilityRevision uint64                 `protobuf:"varint,3,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	SnapshotVersion    string                 `protobuf:"bytes,4,opt,name=snapshot_version,json=snapshotVersion,proto3" json:"snapshot_version,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *GetSessionExactRequest) Reset() {
+	*x = GetSessionExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[151]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionExactRequest) ProtoMessage() {}
+
+func (x *GetSessionExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[151]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionExactRequest.ProtoReflect.Descriptor instead.
+func (*GetSessionExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{151}
+}
+
+func (x *GetSessionExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *GetSessionExactRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *GetSessionExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *GetSessionExactRequest) GetSnapshotVersion() string {
+	if x != nil {
+		return x.SnapshotVersion
+	}
+	return ""
+}
+
+type GetSessionExactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Session       *ExactSession          `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSessionExactResponse) Reset() {
+	*x = GetSessionExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[152]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionExactResponse) ProtoMessage() {}
+
+func (x *GetSessionExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[152]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionExactResponse.ProtoReflect.Descriptor instead.
+func (*GetSessionExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{152}
+}
+
+func (x *GetSessionExactResponse) GetSession() *ExactSession {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+type ExactSessionMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	AuthorType    string                 `protobuf:"bytes,2,opt,name=author_type,json=authorType,proto3" json:"author_type,omitempty"`
+	Content       string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	Type          string                 `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	RequestsInput bool                   `protobuf:"varint,5,opt,name=requests_input,json=requestsInput,proto3" json:"requests_input,omitempty"`
+	CreatedAt     string                 `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     string                 `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExactSessionMessage) Reset() {
+	*x = ExactSessionMessage{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[153]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExactSessionMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExactSessionMessage) ProtoMessage() {}
+
+func (x *ExactSessionMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[153]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExactSessionMessage.ProtoReflect.Descriptor instead.
+func (*ExactSessionMessage) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{153}
+}
+
+func (x *ExactSessionMessage) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ExactSessionMessage) GetAuthorType() string {
+	if x != nil {
+		return x.AuthorType
+	}
+	return ""
+}
+
+func (x *ExactSessionMessage) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+func (x *ExactSessionMessage) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ExactSessionMessage) GetRequestsInput() bool {
+	if x != nil {
+		return x.RequestsInput
+	}
+	return false
+}
+
+func (x *ExactSessionMessage) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *ExactSessionMessage) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+type ListSessionMessagesExactRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId        string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	TaskId             string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId          string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	CapabilityRevision uint64                 `protobuf:"varint,4,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	Page               *ExactPage             `protobuf:"bytes,5,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListSessionMessagesExactRequest) Reset() {
+	*x = ListSessionMessagesExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[154]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionMessagesExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionMessagesExactRequest) ProtoMessage() {}
+
+func (x *ListSessionMessagesExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[154]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionMessagesExactRequest.ProtoReflect.Descriptor instead.
+func (*ListSessionMessagesExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{154}
+}
+
+func (x *ListSessionMessagesExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ListSessionMessagesExactRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *ListSessionMessagesExactRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ListSessionMessagesExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *ListSessionMessagesExactRequest) GetPage() *ExactPage {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListSessionMessagesExactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Messages      []*ExactSessionMessage `protobuf:"bytes,1,rep,name=messages,proto3" json:"messages,omitempty"`
+	PageInfo      *ExactPageInfo         `protobuf:"bytes,2,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSessionMessagesExactResponse) Reset() {
+	*x = ListSessionMessagesExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[155]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionMessagesExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionMessagesExactResponse) ProtoMessage() {}
+
+func (x *ListSessionMessagesExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[155]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionMessagesExactResponse.ProtoReflect.Descriptor instead.
+func (*ListSessionMessagesExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{155}
+}
+
+func (x *ListSessionMessagesExactResponse) GetMessages() []*ExactSessionMessage {
+	if x != nil {
+		return x.Messages
+	}
+	return nil
+}
+
+func (x *ListSessionMessagesExactResponse) GetPageInfo() *ExactPageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
+type ExactTaskRelation struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	TaskId                 string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	BlockerTaskId          string                 `protobuf:"bytes,2,opt,name=blocker_task_id,json=blockerTaskId,proto3" json:"blocker_task_id,omitempty"`
+	WorkspaceId            string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	TaskResourceVersion    int64                  `protobuf:"varint,4,opt,name=task_resource_version,json=taskResourceVersion,proto3" json:"task_resource_version,omitempty"`
+	BlockerResourceVersion int64                  `protobuf:"varint,5,opt,name=blocker_resource_version,json=blockerResourceVersion,proto3" json:"blocker_resource_version,omitempty"`
+	ResourceVersion        int64                  `protobuf:"varint,6,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ExactTaskRelation) Reset() {
+	*x = ExactTaskRelation{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[156]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExactTaskRelation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExactTaskRelation) ProtoMessage() {}
+
+func (x *ExactTaskRelation) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[156]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExactTaskRelation.ProtoReflect.Descriptor instead.
+func (*ExactTaskRelation) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{156}
+}
+
+func (x *ExactTaskRelation) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *ExactTaskRelation) GetBlockerTaskId() string {
+	if x != nil {
+		return x.BlockerTaskId
+	}
+	return ""
+}
+
+func (x *ExactTaskRelation) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ExactTaskRelation) GetTaskResourceVersion() int64 {
+	if x != nil {
+		return x.TaskResourceVersion
+	}
+	return 0
+}
+
+func (x *ExactTaskRelation) GetBlockerResourceVersion() int64 {
+	if x != nil {
+		return x.BlockerResourceVersion
+	}
+	return 0
+}
+
+func (x *ExactTaskRelation) GetResourceVersion() int64 {
+	if x != nil {
+		return x.ResourceVersion
+	}
+	return 0
+}
+
+type ExactPendingTaskTransition struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	SessionId              string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	TaskId                 string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	WorkspaceId            string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	SessionIncarnationId   string                 `protobuf:"bytes,4,opt,name=session_incarnation_id,json=sessionIncarnationId,proto3" json:"session_incarnation_id,omitempty"`
+	WorkflowId             string                 `protobuf:"bytes,5,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
+	WorkflowStepId         string                 `protobuf:"bytes,6,opt,name=workflow_step_id,json=workflowStepId,proto3" json:"workflow_step_id,omitempty"`
+	StepPosition           int32                  `protobuf:"varint,7,opt,name=step_position,json=stepPosition,proto3" json:"step_position,omitempty"`
+	ResourceVersion        int64                  `protobuf:"varint,8,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	TaskResourceVersion    int64                  `protobuf:"varint,9,opt,name=task_resource_version,json=taskResourceVersion,proto3" json:"task_resource_version,omitempty"`
+	SessionResourceVersion int64                  `protobuf:"varint,10,opt,name=session_resource_version,json=sessionResourceVersion,proto3" json:"session_resource_version,omitempty"`
+	QueueGeneration        int64                  `protobuf:"varint,11,opt,name=queue_generation,json=queueGeneration,proto3" json:"queue_generation,omitempty"`
+	QueuedAt               string                 `protobuf:"bytes,12,opt,name=queued_at,json=queuedAt,proto3" json:"queued_at,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ExactPendingTaskTransition) Reset() {
+	*x = ExactPendingTaskTransition{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[157]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExactPendingTaskTransition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExactPendingTaskTransition) ProtoMessage() {}
+
+func (x *ExactPendingTaskTransition) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[157]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExactPendingTaskTransition.ProtoReflect.Descriptor instead.
+func (*ExactPendingTaskTransition) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{157}
+}
+
+func (x *ExactPendingTaskTransition) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ExactPendingTaskTransition) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *ExactPendingTaskTransition) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ExactPendingTaskTransition) GetSessionIncarnationId() string {
+	if x != nil {
+		return x.SessionIncarnationId
+	}
+	return ""
+}
+
+func (x *ExactPendingTaskTransition) GetWorkflowId() string {
+	if x != nil {
+		return x.WorkflowId
+	}
+	return ""
+}
+
+func (x *ExactPendingTaskTransition) GetWorkflowStepId() string {
+	if x != nil {
+		return x.WorkflowStepId
+	}
+	return ""
+}
+
+func (x *ExactPendingTaskTransition) GetStepPosition() int32 {
+	if x != nil {
+		return x.StepPosition
+	}
+	return 0
+}
+
+func (x *ExactPendingTaskTransition) GetResourceVersion() int64 {
+	if x != nil {
+		return x.ResourceVersion
+	}
+	return 0
+}
+
+func (x *ExactPendingTaskTransition) GetTaskResourceVersion() int64 {
+	if x != nil {
+		return x.TaskResourceVersion
+	}
+	return 0
+}
+
+func (x *ExactPendingTaskTransition) GetSessionResourceVersion() int64 {
+	if x != nil {
+		return x.SessionResourceVersion
+	}
+	return 0
+}
+
+func (x *ExactPendingTaskTransition) GetQueueGeneration() int64 {
+	if x != nil {
+		return x.QueueGeneration
+	}
+	return 0
+}
+
+func (x *ExactPendingTaskTransition) GetQueuedAt() string {
+	if x != nil {
+		return x.QueuedAt
+	}
+	return ""
+}
+
+type ListTaskDecisionEvidenceExactRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId        string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	CapabilityRevision uint64                 `protobuf:"varint,2,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	Page               *ExactPage             `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListTaskDecisionEvidenceExactRequest) Reset() {
+	*x = ListTaskDecisionEvidenceExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[158]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTaskDecisionEvidenceExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTaskDecisionEvidenceExactRequest) ProtoMessage() {}
+
+func (x *ListTaskDecisionEvidenceExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[158]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTaskDecisionEvidenceExactRequest.ProtoReflect.Descriptor instead.
+func (*ListTaskDecisionEvidenceExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{158}
+}
+
+func (x *ListTaskDecisionEvidenceExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ListTaskDecisionEvidenceExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *ListTaskDecisionEvidenceExactRequest) GetPage() *ExactPage {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListTaskDecisionEvidenceExactResponse struct {
+	state              protoimpl.MessageState        `protogen:"open.v1"`
+	Relations          []*ExactTaskRelation          `protobuf:"bytes,1,rep,name=relations,proto3" json:"relations,omitempty"`
+	PendingTransitions []*ExactPendingTaskTransition `protobuf:"bytes,2,rep,name=pending_transitions,json=pendingTransitions,proto3" json:"pending_transitions,omitempty"`
+	PageInfo           *ExactPageInfo                `protobuf:"bytes,3,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListTaskDecisionEvidenceExactResponse) Reset() {
+	*x = ListTaskDecisionEvidenceExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[159]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTaskDecisionEvidenceExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTaskDecisionEvidenceExactResponse) ProtoMessage() {}
+
+func (x *ListTaskDecisionEvidenceExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[159]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTaskDecisionEvidenceExactResponse.ProtoReflect.Descriptor instead.
+func (*ListTaskDecisionEvidenceExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{159}
+}
+
+func (x *ListTaskDecisionEvidenceExactResponse) GetRelations() []*ExactTaskRelation {
+	if x != nil {
+		return x.Relations
+	}
+	return nil
+}
+
+func (x *ListTaskDecisionEvidenceExactResponse) GetPendingTransitions() []*ExactPendingTaskTransition {
+	if x != nil {
+		return x.PendingTransitions
+	}
+	return nil
+}
+
+func (x *ListTaskDecisionEvidenceExactResponse) GetPageInfo() *ExactPageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
+// UpdateTaskExact is the bounded exact marker command. The Host derives the
+// grant and workspace fence; the request carries only observed evidence and
+// the task version the plugin read.
+type UpdateTaskExactRequest struct {
+	state                           protoimpl.MessageState      `protogen:"open.v1"`
+	WorkspaceId                     string                      `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	TaskId                          string                      `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	CapabilityRevision              uint64                      `protobuf:"varint,3,opt,name=capability_revision,json=capabilityRevision,proto3" json:"capability_revision,omitempty"`
+	DecisionEvidenceSnapshotVersion string                      `protobuf:"bytes,4,opt,name=decision_evidence_snapshot_version,json=decisionEvidenceSnapshotVersion,proto3" json:"decision_evidence_snapshot_version,omitempty"`
+	PendingTransition               *ExactPendingTaskTransition `protobuf:"bytes,5,opt,name=pending_transition,json=pendingTransition,proto3" json:"pending_transition,omitempty"`
+	Marker                          string                      `protobuf:"bytes,6,opt,name=marker,proto3" json:"marker,omitempty"`
+	IdempotencyKey                  string                      `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	ExpectedResourceVersion         int64                       `protobuf:"varint,8,opt,name=expected_resource_version,json=expectedResourceVersion,proto3" json:"expected_resource_version,omitempty"`
+	unknownFields                   protoimpl.UnknownFields
+	sizeCache                       protoimpl.SizeCache
+}
+
+func (x *UpdateTaskExactRequest) Reset() {
+	*x = UpdateTaskExactRequest{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[160]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateTaskExactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTaskExactRequest) ProtoMessage() {}
+
+func (x *UpdateTaskExactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[160]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTaskExactRequest.ProtoReflect.Descriptor instead.
+func (*UpdateTaskExactRequest) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{160}
+}
+
+func (x *UpdateTaskExactRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *UpdateTaskExactRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *UpdateTaskExactRequest) GetCapabilityRevision() uint64 {
+	if x != nil {
+		return x.CapabilityRevision
+	}
+	return 0
+}
+
+func (x *UpdateTaskExactRequest) GetDecisionEvidenceSnapshotVersion() string {
+	if x != nil {
+		return x.DecisionEvidenceSnapshotVersion
+	}
+	return ""
+}
+
+func (x *UpdateTaskExactRequest) GetPendingTransition() *ExactPendingTaskTransition {
+	if x != nil {
+		return x.PendingTransition
+	}
+	return nil
+}
+
+func (x *UpdateTaskExactRequest) GetMarker() string {
+	if x != nil {
+		return x.Marker
+	}
+	return ""
+}
+
+func (x *UpdateTaskExactRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *UpdateTaskExactRequest) GetExpectedResourceVersion() int64 {
+	if x != nil {
+		return x.ExpectedResourceVersion
+	}
+	return 0
+}
+
+type UpdateTaskExactResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	AuditId         string                 `protobuf:"bytes,1,opt,name=audit_id,json=auditId,proto3" json:"audit_id,omitempty"`
+	ResourceVersion int64                  `protobuf:"varint,2,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	Outcome         ExactTaskUpdateOutcome `protobuf:"varint,3,opt,name=outcome,proto3,enum=kandev.plugin.v1.ExactTaskUpdateOutcome" json:"outcome,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *UpdateTaskExactResponse) Reset() {
+	*x = UpdateTaskExactResponse{}
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[161]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateTaskExactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTaskExactResponse) ProtoMessage() {}
+
+func (x *UpdateTaskExactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kandev_plugin_v1_plugin_proto_msgTypes[161]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTaskExactResponse.ProtoReflect.Descriptor instead.
+func (*UpdateTaskExactResponse) Descriptor() ([]byte, []int) {
+	return file_kandev_plugin_v1_plugin_proto_rawDescGZIP(), []int{161}
+}
+
+func (x *UpdateTaskExactResponse) GetAuditId() string {
+	if x != nil {
+		return x.AuditId
+	}
+	return ""
+}
+
+func (x *UpdateTaskExactResponse) GetResourceVersion() int64 {
+	if x != nil {
+		return x.ResourceVersion
+	}
+	return 0
+}
+
+func (x *UpdateTaskExactResponse) GetOutcome() ExactTaskUpdateOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return ExactTaskUpdateOutcome_EXACT_TASK_UPDATE_OUTCOME_UNSPECIFIED
+}
+
 var File_kandev_plugin_v1_plugin_proto protoreflect.FileDescriptor
 
 const file_kandev_plugin_v1_plugin_proto_rawDesc = "" +
@@ -9340,7 +11453,182 @@ const file_kandev_plugin_v1_plugin_proto_rawDesc = "" +
 	"\aoutcome\x18\x01 \x01(\tR\aoutcome\x12\x1d\n" +
 	"\n" +
 	"event_kind\x18\x02 \x01(\tR\teventKind\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\fR\x04data2\xc0\b\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\"\x1d\n" +
+	"\x1bGetCapabilityContextRequest\"\x93\x01\n" +
+	"\x19CapabilityApprovalContext\x12\x1f\n" +
+	"\vapproval_id\x18\x01 \x01(\tR\n" +
+	"approvalId\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x04R\brevision\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\"\xe6\x01\n" +
+	"\x1cGetCapabilityContextResponse\x12)\n" +
+	"\x10contract_version\x18\x01 \x01(\tR\x0fcontractVersion\x12'\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tR\x0einstallationId\x12'\n" +
+	"\x0fmanifest_digest\x18\x03 \x01(\tR\x0emanifestDigest\x12I\n" +
+	"\tapprovals\x18\x04 \x03(\v2+.kandev.plugin.v1.CapabilityApprovalContextR\tapprovals\"d\n" +
+	"\tExactPage\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12)\n" +
+	"\x10snapshot_version\x18\x03 \x01(\tR\x0fsnapshotVersion\"\x91\x01\n" +
+	"\rExactPageInfo\x12\x1f\n" +
+	"\vnext_cursor\x18\x01 \x01(\tR\n" +
+	"nextCursor\x12\x19\n" +
+	"\bhas_more\x18\x02 \x01(\bR\ahasMore\x12)\n" +
+	"\x10snapshot_version\x18\x03 \x01(\tR\x0fsnapshotVersion\x12\x19\n" +
+	"\baudit_id\x18\x04 \x01(\tR\aauditId\"\xa1\x01\n" +
+	"\x1aListWorkspacesExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12/\n" +
+	"\x13capability_revision\x18\x02 \x01(\x04R\x12capabilityRevision\x12/\n" +
+	"\x04page\x18\x03 \x01(\v2\x1b.kandev.plugin.v1.ExactPageR\x04page\"\x98\x01\n" +
+	"\x1bListWorkspacesExactResponse\x12;\n" +
+	"\n" +
+	"workspaces\x18\x01 \x03(\v2\x1b.kandev.plugin.v1.WorkspaceR\n" +
+	"workspaces\x12<\n" +
+	"\tpage_info\x18\x02 \x01(\v2\x1f.kandev.plugin.v1.ExactPageInfoR\bpageInfo\"\xa0\x01\n" +
+	"\x19ListWorkflowsExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12/\n" +
+	"\x13capability_revision\x18\x02 \x01(\x04R\x12capabilityRevision\x12/\n" +
+	"\x04page\x18\x03 \x01(\v2\x1b.kandev.plugin.v1.ExactPageR\x04page\"\x94\x01\n" +
+	"\x1aListWorkflowsExactResponse\x128\n" +
+	"\tworkflows\x18\x01 \x03(\v2\x1a.kandev.plugin.v1.WorkflowR\tworkflows\x12<\n" +
+	"\tpage_info\x18\x02 \x01(\v2\x1f.kandev.plugin.v1.ExactPageInfoR\bpageInfo\"\xc5\x01\n" +
+	"\x1dListWorkflowStepsExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x1f\n" +
+	"\vworkflow_id\x18\x02 \x01(\tR\n" +
+	"workflowId\x12/\n" +
+	"\x13capability_revision\x18\x03 \x01(\x04R\x12capabilityRevision\x12/\n" +
+	"\x04page\x18\x04 \x01(\v2\x1b.kandev.plugin.v1.ExactPageR\x04page\"\x94\x01\n" +
+	"\x1eListWorkflowStepsExactResponse\x124\n" +
+	"\x05steps\x18\x01 \x03(\v2\x1e.kandev.plugin.v1.WorkflowStepR\x05steps\x12<\n" +
+	"\tpage_info\x18\x02 \x01(\v2\x1f.kandev.plugin.v1.ExactPageInfoR\bpageInfo\"\xd6\x02\n" +
+	"\tExactTask\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x1f\n" +
+	"\vworkflow_id\x18\x03 \x01(\tR\n" +
+	"workflowId\x12(\n" +
+	"\x10workflow_step_id\x18\x04 \x01(\tR\x0eworkflowStepId\x12\x14\n" +
+	"\x05title\x18\x05 \x01(\tR\x05title\x12 \n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x12\x14\n" +
+	"\x05state\x18\a \x01(\tR\x05state\x12\x1a\n" +
+	"\bpriority\x18\b \x01(\tR\bpriority\x12\x1a\n" +
+	"\bposition\x18\t \x01(\x05R\bposition\x12\x1a\n" +
+	"\barchived\x18\n" +
+	" \x01(\bR\barchived\x12)\n" +
+	"\x10resource_version\x18\v \x01(\x03R\x0fresourceVersion\"\x9c\x01\n" +
+	"\x15ListTasksExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12/\n" +
+	"\x13capability_revision\x18\x02 \x01(\x04R\x12capabilityRevision\x12/\n" +
+	"\x04page\x18\x03 \x01(\v2\x1b.kandev.plugin.v1.ExactPageR\x04page\"\x89\x01\n" +
+	"\x16ListTasksExactResponse\x121\n" +
+	"\x05tasks\x18\x01 \x03(\v2\x1b.kandev.plugin.v1.ExactTaskR\x05tasks\x12<\n" +
+	"\tpage_info\x18\x02 \x01(\v2\x1f.kandev.plugin.v1.ExactPageInfoR\bpageInfo\"\xad\x01\n" +
+	"\x13GetTaskExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
+	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12/\n" +
+	"\x13capability_revision\x18\x03 \x01(\x04R\x12capabilityRevision\x12)\n" +
+	"\x10snapshot_version\x18\x04 \x01(\tR\x0fsnapshotVersion\"G\n" +
+	"\x14GetTaskExactResponse\x12/\n" +
+	"\x04task\x18\x01 \x01(\v2\x1b.kandev.plugin.v1.ExactTaskR\x04task\"\xf8\x02\n" +
+	"\fExactSession\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x120\n" +
+	"\x14queue_incarnation_id\x18\x04 \x01(\tR\x12queueIncarnationId\x12\x14\n" +
+	"\x05state\x18\x05 \x01(\tR\x05state\x12)\n" +
+	"\x10route_generation\x18\x06 \x01(\x03R\x0frouteGeneration\x12\x1d\n" +
+	"\n" +
+	"started_at\x18\a \x01(\tR\tstartedAt\x12!\n" +
+	"\fcompleted_at\x18\b \x01(\tR\vcompletedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\t \x01(\tR\tupdatedAt\x12\x1d\n" +
+	"\n" +
+	"is_primary\x18\n" +
+	" \x01(\bR\tisPrimary\x12)\n" +
+	"\x10resource_version\x18\v \x01(\x03R\x0fresourceVersion\"\x9f\x01\n" +
+	"\x18ListSessionsExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12/\n" +
+	"\x13capability_revision\x18\x02 \x01(\x04R\x12capabilityRevision\x12/\n" +
+	"\x04page\x18\x03 \x01(\v2\x1b.kandev.plugin.v1.ExactPageR\x04page\"\x95\x01\n" +
+	"\x19ListSessionsExactResponse\x12:\n" +
+	"\bsessions\x18\x01 \x03(\v2\x1e.kandev.plugin.v1.ExactSessionR\bsessions\x12<\n" +
+	"\tpage_info\x18\x02 \x01(\v2\x1f.kandev.plugin.v1.ExactPageInfoR\bpageInfo\"\xb6\x01\n" +
+	"\x16GetSessionExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12/\n" +
+	"\x13capability_revision\x18\x03 \x01(\x04R\x12capabilityRevision\x12)\n" +
+	"\x10snapshot_version\x18\x04 \x01(\tR\x0fsnapshotVersion\"S\n" +
+	"\x17GetSessionExactResponse\x128\n" +
+	"\asession\x18\x01 \x01(\v2\x1e.kandev.plugin.v1.ExactSessionR\asession\"\xd9\x01\n" +
+	"\x13ExactSessionMessage\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
+	"\vauthor_type\x18\x02 \x01(\tR\n" +
+	"authorType\x12\x18\n" +
+	"\acontent\x18\x03 \x01(\tR\acontent\x12\x12\n" +
+	"\x04type\x18\x04 \x01(\tR\x04type\x12%\n" +
+	"\x0erequests_input\x18\x05 \x01(\bR\rrequestsInput\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\a \x01(\tR\tupdatedAt\"\xde\x01\n" +
+	"\x1fListSessionMessagesExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
+	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12/\n" +
+	"\x13capability_revision\x18\x04 \x01(\x04R\x12capabilityRevision\x12/\n" +
+	"\x04page\x18\x05 \x01(\v2\x1b.kandev.plugin.v1.ExactPageR\x04page\"\xa3\x01\n" +
+	" ListSessionMessagesExactResponse\x12A\n" +
+	"\bmessages\x18\x01 \x03(\v2%.kandev.plugin.v1.ExactSessionMessageR\bmessages\x12<\n" +
+	"\tpage_info\x18\x02 \x01(\v2\x1f.kandev.plugin.v1.ExactPageInfoR\bpageInfo\"\x90\x02\n" +
+	"\x11ExactTaskRelation\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12&\n" +
+	"\x0fblocker_task_id\x18\x02 \x01(\tR\rblockerTaskId\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x122\n" +
+	"\x15task_resource_version\x18\x04 \x01(\x03R\x13taskResourceVersion\x128\n" +
+	"\x18blocker_resource_version\x18\x05 \x01(\x03R\x16blockerResourceVersion\x12)\n" +
+	"\x10resource_version\x18\x06 \x01(\x03R\x0fresourceVersion\"\xfe\x03\n" +
+	"\x1aExactPendingTaskTransition\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
+	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x124\n" +
+	"\x16session_incarnation_id\x18\x04 \x01(\tR\x14sessionIncarnationId\x12\x1f\n" +
+	"\vworkflow_id\x18\x05 \x01(\tR\n" +
+	"workflowId\x12(\n" +
+	"\x10workflow_step_id\x18\x06 \x01(\tR\x0eworkflowStepId\x12#\n" +
+	"\rstep_position\x18\a \x01(\x05R\fstepPosition\x12)\n" +
+	"\x10resource_version\x18\b \x01(\x03R\x0fresourceVersion\x122\n" +
+	"\x15task_resource_version\x18\t \x01(\x03R\x13taskResourceVersion\x128\n" +
+	"\x18session_resource_version\x18\n" +
+	" \x01(\x03R\x16sessionResourceVersion\x12)\n" +
+	"\x10queue_generation\x18\v \x01(\x03R\x0fqueueGeneration\x12\x1b\n" +
+	"\tqueued_at\x18\f \x01(\tR\bqueuedAt\"\xab\x01\n" +
+	"$ListTaskDecisionEvidenceExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12/\n" +
+	"\x13capability_revision\x18\x02 \x01(\x04R\x12capabilityRevision\x12/\n" +
+	"\x04page\x18\x03 \x01(\v2\x1b.kandev.plugin.v1.ExactPageR\x04page\"\x87\x02\n" +
+	"%ListTaskDecisionEvidenceExactResponse\x12A\n" +
+	"\trelations\x18\x01 \x03(\v2#.kandev.plugin.v1.ExactTaskRelationR\trelations\x12]\n" +
+	"\x13pending_transitions\x18\x02 \x03(\v2,.kandev.plugin.v1.ExactPendingTaskTransitionR\x12pendingTransitions\x12<\n" +
+	"\tpage_info\x18\x03 \x01(\v2\x1f.kandev.plugin.v1.ExactPageInfoR\bpageInfo\"\xac\x03\n" +
+	"\x16UpdateTaskExactRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
+	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12/\n" +
+	"\x13capability_revision\x18\x03 \x01(\x04R\x12capabilityRevision\x12K\n" +
+	"\"decision_evidence_snapshot_version\x18\x04 \x01(\tR\x1fdecisionEvidenceSnapshotVersion\x12[\n" +
+	"\x12pending_transition\x18\x05 \x01(\v2,.kandev.plugin.v1.ExactPendingTaskTransitionR\x11pendingTransition\x12\x16\n" +
+	"\x06marker\x18\x06 \x01(\tR\x06marker\x12'\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x12:\n" +
+	"\x19expected_resource_version\x18\b \x01(\x03R\x17expectedResourceVersion\"\xa3\x01\n" +
+	"\x17UpdateTaskExactResponse\x12\x19\n" +
+	"\baudit_id\x18\x01 \x01(\tR\aauditId\x12)\n" +
+	"\x10resource_version\x18\x02 \x01(\x03R\x0fresourceVersion\x12B\n" +
+	"\aoutcome\x18\x03 \x01(\x0e2(.kandev.plugin.v1.ExactTaskUpdateOutcomeR\aoutcome*\x91\x01\n" +
+	"\x16ExactTaskUpdateOutcome\x12)\n" +
+	"%EXACT_TASK_UPDATE_OUTCOME_UNSPECIFIED\x10\x00\x12%\n" +
+	"!EXACT_TASK_UPDATE_OUTCOME_DURABLE\x10\x01\x12%\n" +
+	"!EXACT_TASK_UPDATE_OUTCOME_PENDING\x10\x022\xc0\b\n" +
 	"\x06Plugin\x12C\n" +
 	"\fDeliverEvent\x12\x17.kandev.plugin.v1.Event\x1a\x1a.kandev.plugin.v1.EventAck\x12T\n" +
 	"\rHandleWebhook\x12 .kandev.plugin.v1.WebhookRequest\x1a!.kandev.plugin.v1.WebhookResponse\x12z\n" +
@@ -9351,7 +11639,7 @@ const file_kandev_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x18AuthorizeEntityReference\x121.kandev.plugin.v1.AuthorizeEntityReferenceRequest\x1a2.kandev.plugin.v1.AuthorizeEntityReferenceResponse\x12u\n" +
 	"\x14ResolveGitCredential\x12-.kandev.plugin.v1.ResolveGitCredentialRequest\x1a..kandev.plugin.v1.ResolveGitCredentialResponse\x12x\n" +
 	"\x17GetGitCredentialBinding\x12-.kandev.plugin.v1.GitCredentialBindingRequest\x1a..kandev.plugin.v1.GitCredentialBindingResponse\x12Z\n" +
-	"\x0fInvokeAgentTool\x12\".kandev.plugin.v1.AgentToolRequest\x1a#.kandev.plugin.v1.AgentToolResponse2\x97 \n" +
+	"\x0fInvokeAgentTool\x12\".kandev.plugin.v1.AgentToolRequest\x1a#.kandev.plugin.v1.AgentToolResponse2\x89*\n" +
 	"\x04Host\x12Q\n" +
 	"\bGetState\x12!.kandev.plugin.v1.GetStateRequest\x1a\".kandev.plugin.v1.GetStateResponse\x12Q\n" +
 	"\bSetState\x12!.kandev.plugin.v1.SetStateRequest\x1a\".kandev.plugin.v1.SetStateResponse\x12Z\n" +
@@ -9362,7 +11650,18 @@ const file_kandev_plugin_v1_plugin_proto_rawDesc = "" +
 	"\tGetSecret\x12\".kandev.plugin.v1.GetSecretRequest\x1a#.kandev.plugin.v1.GetSecretResponse\x12T\n" +
 	"\tSetSecret\x12\".kandev.plugin.v1.SetSecretRequest\x1a#.kandev.plugin.v1.SetSecretResponse\x12]\n" +
 	"\fDeleteSecret\x12%.kandev.plugin.v1.DeleteSecretRequest\x1a&.kandev.plugin.v1.DeleteSecretResponse\x12T\n" +
-	"\tGetConfig\x12\".kandev.plugin.v1.GetConfigRequest\x1a#.kandev.plugin.v1.GetConfigResponse\x12T\n" +
+	"\tGetConfig\x12\".kandev.plugin.v1.GetConfigRequest\x1a#.kandev.plugin.v1.GetConfigResponse\x12u\n" +
+	"\x14GetCapabilityContext\x12-.kandev.plugin.v1.GetCapabilityContextRequest\x1a..kandev.plugin.v1.GetCapabilityContextResponse\x12r\n" +
+	"\x13ListWorkspacesExact\x12,.kandev.plugin.v1.ListWorkspacesExactRequest\x1a-.kandev.plugin.v1.ListWorkspacesExactResponse\x12o\n" +
+	"\x12ListWorkflowsExact\x12+.kandev.plugin.v1.ListWorkflowsExactRequest\x1a,.kandev.plugin.v1.ListWorkflowsExactResponse\x12{\n" +
+	"\x16ListWorkflowStepsExact\x12/.kandev.plugin.v1.ListWorkflowStepsExactRequest\x1a0.kandev.plugin.v1.ListWorkflowStepsExactResponse\x12c\n" +
+	"\x0eListTasksExact\x12'.kandev.plugin.v1.ListTasksExactRequest\x1a(.kandev.plugin.v1.ListTasksExactResponse\x12]\n" +
+	"\fGetTaskExact\x12%.kandev.plugin.v1.GetTaskExactRequest\x1a&.kandev.plugin.v1.GetTaskExactResponse\x12l\n" +
+	"\x11ListSessionsExact\x12*.kandev.plugin.v1.ListSessionsExactRequest\x1a+.kandev.plugin.v1.ListSessionsExactResponse\x12f\n" +
+	"\x0fGetSessionExact\x12(.kandev.plugin.v1.GetSessionExactRequest\x1a).kandev.plugin.v1.GetSessionExactResponse\x12\x81\x01\n" +
+	"\x18ListSessionMessagesExact\x121.kandev.plugin.v1.ListSessionMessagesExactRequest\x1a2.kandev.plugin.v1.ListSessionMessagesExactResponse\x12\x90\x01\n" +
+	"\x1dListTaskDecisionEvidenceExact\x126.kandev.plugin.v1.ListTaskDecisionEvidenceExactRequest\x1a7.kandev.plugin.v1.ListTaskDecisionEvidenceExactResponse\x12f\n" +
+	"\x0fUpdateTaskExact\x12(.kandev.plugin.v1.UpdateTaskExactRequest\x1a).kandev.plugin.v1.UpdateTaskExactResponse\x12T\n" +
 	"\tListTasks\x12\".kandev.plugin.v1.ListTasksRequest\x1a#.kandev.plugin.v1.ListTasksResponse\x12N\n" +
 	"\aGetTask\x12 .kandev.plugin.v1.GetTaskRequest\x1a!.kandev.plugin.v1.GetTaskResponse\x12~\n" +
 	"\x17ListTaskStepTransitions\x120.kandev.plugin.v1.ListTaskStepTransitionsRequest\x1a1.kandev.plugin.v1.ListTaskStepTransitionsResponse\x12c\n" +
@@ -9407,335 +11706,416 @@ func file_kandev_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 	return file_kandev_plugin_v1_plugin_proto_rawDescData
 }
 
-var file_kandev_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 136)
+var file_kandev_plugin_v1_plugin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_kandev_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 166)
 var file_kandev_plugin_v1_plugin_proto_goTypes = []any{
-	(*Event)(nil),                                // 0: kandev.plugin.v1.Event
-	(*EventAck)(nil),                             // 1: kandev.plugin.v1.EventAck
-	(*AgentToolRequest)(nil),                     // 2: kandev.plugin.v1.AgentToolRequest
-	(*AgentToolContext)(nil),                     // 3: kandev.plugin.v1.AgentToolContext
-	(*AgentToolResponse)(nil),                    // 4: kandev.plugin.v1.AgentToolResponse
-	(*WebhookRequest)(nil),                       // 5: kandev.plugin.v1.WebhookRequest
-	(*WebhookResponse)(nil),                      // 6: kandev.plugin.v1.WebhookResponse
-	(*PluginActionRequest)(nil),                  // 7: kandev.plugin.v1.PluginActionRequest
-	(*VerifiedActionContext)(nil),                // 8: kandev.plugin.v1.VerifiedActionContext
-	(*PluginActionResponse)(nil),                 // 9: kandev.plugin.v1.PluginActionResponse
-	(*SearchEntityReferencesRequest)(nil),        // 10: kandev.plugin.v1.SearchEntityReferencesRequest
-	(*SearchEntityReferencesResponse)(nil),       // 11: kandev.plugin.v1.SearchEntityReferencesResponse
-	(*EntityReferenceCandidate)(nil),             // 12: kandev.plugin.v1.EntityReferenceCandidate
-	(*AuthorizeEntityReferenceRequest)(nil),      // 13: kandev.plugin.v1.AuthorizeEntityReferenceRequest
-	(*AuthorizeEntityReferenceResponse)(nil),     // 14: kandev.plugin.v1.AuthorizeEntityReferenceResponse
-	(*ResolveGitCredentialRequest)(nil),          // 15: kandev.plugin.v1.ResolveGitCredentialRequest
-	(*ResolveGitCredentialResponse)(nil),         // 16: kandev.plugin.v1.ResolveGitCredentialResponse
-	(*GitCredentialBindingRequest)(nil),          // 17: kandev.plugin.v1.GitCredentialBindingRequest
-	(*GitCredentialBindingResponse)(nil),         // 18: kandev.plugin.v1.GitCredentialBindingResponse
-	(*GetStateRequest)(nil),                      // 19: kandev.plugin.v1.GetStateRequest
-	(*GetStateResponse)(nil),                     // 20: kandev.plugin.v1.GetStateResponse
-	(*SetStateRequest)(nil),                      // 21: kandev.plugin.v1.SetStateRequest
-	(*SetStateResponse)(nil),                     // 22: kandev.plugin.v1.SetStateResponse
-	(*DeleteStateRequest)(nil),                   // 23: kandev.plugin.v1.DeleteStateRequest
-	(*DeleteStateResponse)(nil),                  // 24: kandev.plugin.v1.DeleteStateResponse
-	(*ListStateRequest)(nil),                     // 25: kandev.plugin.v1.ListStateRequest
-	(*ListStateResponse)(nil),                    // 26: kandev.plugin.v1.ListStateResponse
-	(*StateEntry)(nil),                           // 27: kandev.plugin.v1.StateEntry
-	(*GetConfigRequest)(nil),                     // 28: kandev.plugin.v1.GetConfigRequest
-	(*GetConfigResponse)(nil),                    // 29: kandev.plugin.v1.GetConfigResponse
-	(*GetSecretRequest)(nil),                     // 30: kandev.plugin.v1.GetSecretRequest
-	(*GetSecretResponse)(nil),                    // 31: kandev.plugin.v1.GetSecretResponse
-	(*SetSecretRequest)(nil),                     // 32: kandev.plugin.v1.SetSecretRequest
-	(*SetSecretResponse)(nil),                    // 33: kandev.plugin.v1.SetSecretResponse
-	(*DeleteSecretRequest)(nil),                  // 34: kandev.plugin.v1.DeleteSecretRequest
-	(*DeleteSecretResponse)(nil),                 // 35: kandev.plugin.v1.DeleteSecretResponse
-	(*RevealSecretRequest)(nil),                  // 36: kandev.plugin.v1.RevealSecretRequest
-	(*RevealSecretResponse)(nil),                 // 37: kandev.plugin.v1.RevealSecretResponse
-	(*EmitEventRequest)(nil),                     // 38: kandev.plugin.v1.EmitEventRequest
-	(*EmitEventResponse)(nil),                    // 39: kandev.plugin.v1.EmitEventResponse
-	(*Page)(nil),                                 // 40: kandev.plugin.v1.Page
-	(*PageInfo)(nil),                             // 41: kandev.plugin.v1.PageInfo
-	(*Task)(nil),                                 // 42: kandev.plugin.v1.Task
-	(*TaskRepository)(nil),                       // 43: kandev.plugin.v1.TaskRepository
-	(*TaskPullRequest)(nil),                      // 44: kandev.plugin.v1.TaskPullRequest
-	(*TaskDependencyRef)(nil),                    // 45: kandev.plugin.v1.TaskDependencyRef
-	(*TaskFilter)(nil),                           // 46: kandev.plugin.v1.TaskFilter
-	(*ListTasksRequest)(nil),                     // 47: kandev.plugin.v1.ListTasksRequest
-	(*ListTasksResponse)(nil),                    // 48: kandev.plugin.v1.ListTasksResponse
-	(*GetTaskRequest)(nil),                       // 49: kandev.plugin.v1.GetTaskRequest
-	(*GetTaskResponse)(nil),                      // 50: kandev.plugin.v1.GetTaskResponse
-	(*TaskStepTransition)(nil),                   // 51: kandev.plugin.v1.TaskStepTransition
-	(*ListTaskStepTransitionsRequest)(nil),       // 52: kandev.plugin.v1.ListTaskStepTransitionsRequest
-	(*ListTaskStepTransitionsResponse)(nil),      // 53: kandev.plugin.v1.ListTaskStepTransitionsResponse
-	(*Workspace)(nil),                            // 54: kandev.plugin.v1.Workspace
-	(*ListWorkspacesRequest)(nil),                // 55: kandev.plugin.v1.ListWorkspacesRequest
-	(*ListWorkspacesResponse)(nil),               // 56: kandev.plugin.v1.ListWorkspacesResponse
-	(*Workflow)(nil),                             // 57: kandev.plugin.v1.Workflow
-	(*ListWorkflowsRequest)(nil),                 // 58: kandev.plugin.v1.ListWorkflowsRequest
-	(*ListWorkflowsResponse)(nil),                // 59: kandev.plugin.v1.ListWorkflowsResponse
-	(*WorkflowTransitionGroup)(nil),              // 60: kandev.plugin.v1.WorkflowTransitionGroup
-	(*ListWorkflowTransitionGroupsRequest)(nil),  // 61: kandev.plugin.v1.ListWorkflowTransitionGroupsRequest
-	(*ListWorkflowTransitionGroupsResponse)(nil), // 62: kandev.plugin.v1.ListWorkflowTransitionGroupsResponse
-	(*WorkflowStep)(nil),                         // 63: kandev.plugin.v1.WorkflowStep
-	(*ListWorkflowStepsRequest)(nil),             // 64: kandev.plugin.v1.ListWorkflowStepsRequest
-	(*ListWorkflowStepsResponse)(nil),            // 65: kandev.plugin.v1.ListWorkflowStepsResponse
-	(*AgentProfile)(nil),                         // 66: kandev.plugin.v1.AgentProfile
-	(*ListAgentProfilesRequest)(nil),             // 67: kandev.plugin.v1.ListAgentProfilesRequest
-	(*ListAgentProfilesResponse)(nil),            // 68: kandev.plugin.v1.ListAgentProfilesResponse
-	(*ExecutorProfile)(nil),                      // 69: kandev.plugin.v1.ExecutorProfile
-	(*ListExecutorProfilesRequest)(nil),          // 70: kandev.plugin.v1.ListExecutorProfilesRequest
-	(*ListExecutorProfilesResponse)(nil),         // 71: kandev.plugin.v1.ListExecutorProfilesResponse
-	(*Repository)(nil),                           // 72: kandev.plugin.v1.Repository
-	(*ListRepositoriesRequest)(nil),              // 73: kandev.plugin.v1.ListRepositoriesRequest
-	(*ListRepositoriesResponse)(nil),             // 74: kandev.plugin.v1.ListRepositoriesResponse
-	(*Session)(nil),                              // 75: kandev.plugin.v1.Session
-	(*SessionFilter)(nil),                        // 76: kandev.plugin.v1.SessionFilter
-	(*ListSessionsRequest)(nil),                  // 77: kandev.plugin.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),                 // 78: kandev.plugin.v1.ListSessionsResponse
-	(*SessionCodeStats)(nil),                     // 79: kandev.plugin.v1.SessionCodeStats
-	(*ListSessionCodeStatsRequest)(nil),          // 80: kandev.plugin.v1.ListSessionCodeStatsRequest
-	(*ListSessionCodeStatsResponse)(nil),         // 81: kandev.plugin.v1.ListSessionCodeStatsResponse
-	(*Message)(nil),                              // 82: kandev.plugin.v1.Message
-	(*MessageFilter)(nil),                        // 83: kandev.plugin.v1.MessageFilter
-	(*ListMessagesRequest)(nil),                  // 84: kandev.plugin.v1.ListMessagesRequest
-	(*ListMessagesResponse)(nil),                 // 85: kandev.plugin.v1.ListMessagesResponse
-	(*InteractionOption)(nil),                    // 86: kandev.plugin.v1.InteractionOption
-	(*InteractionQuestion)(nil),                  // 87: kandev.plugin.v1.InteractionQuestion
-	(*Interaction)(nil),                          // 88: kandev.plugin.v1.Interaction
-	(*InteractionFilter)(nil),                    // 89: kandev.plugin.v1.InteractionFilter
-	(*ListPendingInteractionsRequest)(nil),       // 90: kandev.plugin.v1.ListPendingInteractionsRequest
-	(*ListPendingInteractionsResponse)(nil),      // 91: kandev.plugin.v1.ListPendingInteractionsResponse
-	(*GetInteractionRequest)(nil),                // 92: kandev.plugin.v1.GetInteractionRequest
-	(*GetInteractionResponse)(nil),               // 93: kandev.plugin.v1.GetInteractionResponse
-	(*RespondToPermissionRequest)(nil),           // 94: kandev.plugin.v1.RespondToPermissionRequest
-	(*RespondToPermissionResponse)(nil),          // 95: kandev.plugin.v1.RespondToPermissionResponse
-	(*ClarificationAnswer)(nil),                  // 96: kandev.plugin.v1.ClarificationAnswer
-	(*AnswerClarificationRequest)(nil),           // 97: kandev.plugin.v1.AnswerClarificationRequest
-	(*AnswerClarificationResponse)(nil),          // 98: kandev.plugin.v1.AnswerClarificationResponse
-	(*CancelClarificationRequest)(nil),           // 99: kandev.plugin.v1.CancelClarificationRequest
-	(*CancelClarificationResponse)(nil),          // 100: kandev.plugin.v1.CancelClarificationResponse
-	(*InvokeUtilityAgentRequest)(nil),            // 101: kandev.plugin.v1.InvokeUtilityAgentRequest
-	(*InvokeUtilityAgentWithOptionsRequest)(nil), // 102: kandev.plugin.v1.InvokeUtilityAgentWithOptionsRequest
-	(*InvokeUtilityAgentResponse)(nil),           // 103: kandev.plugin.v1.InvokeUtilityAgentResponse
-	(*CreateTaskRequest)(nil),                    // 104: kandev.plugin.v1.CreateTaskRequest
-	(*PluginTaskRepository)(nil),                 // 105: kandev.plugin.v1.PluginTaskRepository
-	(*RemoteRepositoryDescriptor)(nil),           // 106: kandev.plugin.v1.RemoteRepositoryDescriptor
-	(*PluginTaskLaunchOptions)(nil),              // 107: kandev.plugin.v1.PluginTaskLaunchOptions
-	(*CreateTaskResponse)(nil),                   // 108: kandev.plugin.v1.CreateTaskResponse
-	(*UpdateTaskRequest)(nil),                    // 109: kandev.plugin.v1.UpdateTaskRequest
-	(*UpdateTaskResponse)(nil),                   // 110: kandev.plugin.v1.UpdateTaskResponse
-	(*MoveTaskRequest)(nil),                      // 111: kandev.plugin.v1.MoveTaskRequest
-	(*MoveTaskResponse)(nil),                     // 112: kandev.plugin.v1.MoveTaskResponse
-	(*SendMessageRequest)(nil),                   // 113: kandev.plugin.v1.SendMessageRequest
-	(*SendMessageResponse)(nil),                  // 114: kandev.plugin.v1.SendMessageResponse
-	(*PreviewPluginOwnedTaskTreeRequest)(nil),    // 115: kandev.plugin.v1.PreviewPluginOwnedTaskTreeRequest
-	(*PreviewPluginOwnedTaskTreeResponse)(nil),   // 116: kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse
-	(*DeletePluginOwnedTaskTreeRequest)(nil),     // 117: kandev.plugin.v1.DeletePluginOwnedTaskTreeRequest
-	(*DeletePluginOwnedTaskTreeResponse)(nil),    // 118: kandev.plugin.v1.DeletePluginOwnedTaskTreeResponse
-	(*DeletePluginOwnedTaskTreeProgress)(nil),    // 119: kandev.plugin.v1.DeletePluginOwnedTaskTreeProgress
-	(*AgentConversationDescriptor)(nil),          // 120: kandev.plugin.v1.AgentConversationDescriptor
-	(*AgentConversationSpec)(nil),                // 121: kandev.plugin.v1.AgentConversationSpec
-	(*EnsureAgentConversationRequest)(nil),       // 122: kandev.plugin.v1.EnsureAgentConversationRequest
-	(*EnsureAgentConversationResponse)(nil),      // 123: kandev.plugin.v1.EnsureAgentConversationResponse
-	(*DispatchAgentConversationRequest)(nil),     // 124: kandev.plugin.v1.DispatchAgentConversationRequest
-	(*DispatchAgentConversationResponse)(nil),    // 125: kandev.plugin.v1.DispatchAgentConversationResponse
-	(*DeleteAgentConversationRequest)(nil),       // 126: kandev.plugin.v1.DeleteAgentConversationRequest
-	(*DeleteAgentConversationResponse)(nil),      // 127: kandev.plugin.v1.DeleteAgentConversationResponse
-	(*AutomationConditionRequest)(nil),           // 128: kandev.plugin.v1.AutomationConditionRequest
-	(*AutomationConditionResponse)(nil),          // 129: kandev.plugin.v1.AutomationConditionResponse
-	(*AutomationWebhookRequest)(nil),             // 130: kandev.plugin.v1.AutomationWebhookRequest
-	(*AutomationWebhookResponse)(nil),            // 131: kandev.plugin.v1.AutomationWebhookResponse
-	nil,                                          // 132: kandev.plugin.v1.WebhookRequest.HeadersEntry
-	nil,                                          // 133: kandev.plugin.v1.WebhookResponse.HeadersEntry
-	nil,                                          // 134: kandev.plugin.v1.PluginActionResponse.HeadersEntry
-	nil,                                          // 135: kandev.plugin.v1.AutomationWebhookRequest.HeadersEntry
-	(*structpb.Struct)(nil),                      // 136: google.protobuf.Struct
+	(ExactTaskUpdateOutcome)(0),                   // 0: kandev.plugin.v1.ExactTaskUpdateOutcome
+	(*Event)(nil),                                 // 1: kandev.plugin.v1.Event
+	(*EventAck)(nil),                              // 2: kandev.plugin.v1.EventAck
+	(*AgentToolRequest)(nil),                      // 3: kandev.plugin.v1.AgentToolRequest
+	(*AgentToolContext)(nil),                      // 4: kandev.plugin.v1.AgentToolContext
+	(*AgentToolResponse)(nil),                     // 5: kandev.plugin.v1.AgentToolResponse
+	(*WebhookRequest)(nil),                        // 6: kandev.plugin.v1.WebhookRequest
+	(*WebhookResponse)(nil),                       // 7: kandev.plugin.v1.WebhookResponse
+	(*PluginActionRequest)(nil),                   // 8: kandev.plugin.v1.PluginActionRequest
+	(*VerifiedActionContext)(nil),                 // 9: kandev.plugin.v1.VerifiedActionContext
+	(*PluginActionResponse)(nil),                  // 10: kandev.plugin.v1.PluginActionResponse
+	(*SearchEntityReferencesRequest)(nil),         // 11: kandev.plugin.v1.SearchEntityReferencesRequest
+	(*SearchEntityReferencesResponse)(nil),        // 12: kandev.plugin.v1.SearchEntityReferencesResponse
+	(*EntityReferenceCandidate)(nil),              // 13: kandev.plugin.v1.EntityReferenceCandidate
+	(*AuthorizeEntityReferenceRequest)(nil),       // 14: kandev.plugin.v1.AuthorizeEntityReferenceRequest
+	(*AuthorizeEntityReferenceResponse)(nil),      // 15: kandev.plugin.v1.AuthorizeEntityReferenceResponse
+	(*ResolveGitCredentialRequest)(nil),           // 16: kandev.plugin.v1.ResolveGitCredentialRequest
+	(*ResolveGitCredentialResponse)(nil),          // 17: kandev.plugin.v1.ResolveGitCredentialResponse
+	(*GitCredentialBindingRequest)(nil),           // 18: kandev.plugin.v1.GitCredentialBindingRequest
+	(*GitCredentialBindingResponse)(nil),          // 19: kandev.plugin.v1.GitCredentialBindingResponse
+	(*GetStateRequest)(nil),                       // 20: kandev.plugin.v1.GetStateRequest
+	(*GetStateResponse)(nil),                      // 21: kandev.plugin.v1.GetStateResponse
+	(*SetStateRequest)(nil),                       // 22: kandev.plugin.v1.SetStateRequest
+	(*SetStateResponse)(nil),                      // 23: kandev.plugin.v1.SetStateResponse
+	(*DeleteStateRequest)(nil),                    // 24: kandev.plugin.v1.DeleteStateRequest
+	(*DeleteStateResponse)(nil),                   // 25: kandev.plugin.v1.DeleteStateResponse
+	(*ListStateRequest)(nil),                      // 26: kandev.plugin.v1.ListStateRequest
+	(*ListStateResponse)(nil),                     // 27: kandev.plugin.v1.ListStateResponse
+	(*StateEntry)(nil),                            // 28: kandev.plugin.v1.StateEntry
+	(*GetConfigRequest)(nil),                      // 29: kandev.plugin.v1.GetConfigRequest
+	(*GetConfigResponse)(nil),                     // 30: kandev.plugin.v1.GetConfigResponse
+	(*GetSecretRequest)(nil),                      // 31: kandev.plugin.v1.GetSecretRequest
+	(*GetSecretResponse)(nil),                     // 32: kandev.plugin.v1.GetSecretResponse
+	(*SetSecretRequest)(nil),                      // 33: kandev.plugin.v1.SetSecretRequest
+	(*SetSecretResponse)(nil),                     // 34: kandev.plugin.v1.SetSecretResponse
+	(*DeleteSecretRequest)(nil),                   // 35: kandev.plugin.v1.DeleteSecretRequest
+	(*DeleteSecretResponse)(nil),                  // 36: kandev.plugin.v1.DeleteSecretResponse
+	(*RevealSecretRequest)(nil),                   // 37: kandev.plugin.v1.RevealSecretRequest
+	(*RevealSecretResponse)(nil),                  // 38: kandev.plugin.v1.RevealSecretResponse
+	(*EmitEventRequest)(nil),                      // 39: kandev.plugin.v1.EmitEventRequest
+	(*EmitEventResponse)(nil),                     // 40: kandev.plugin.v1.EmitEventResponse
+	(*Page)(nil),                                  // 41: kandev.plugin.v1.Page
+	(*PageInfo)(nil),                              // 42: kandev.plugin.v1.PageInfo
+	(*Task)(nil),                                  // 43: kandev.plugin.v1.Task
+	(*TaskRepository)(nil),                        // 44: kandev.plugin.v1.TaskRepository
+	(*TaskPullRequest)(nil),                       // 45: kandev.plugin.v1.TaskPullRequest
+	(*TaskDependencyRef)(nil),                     // 46: kandev.plugin.v1.TaskDependencyRef
+	(*TaskFilter)(nil),                            // 47: kandev.plugin.v1.TaskFilter
+	(*ListTasksRequest)(nil),                      // 48: kandev.plugin.v1.ListTasksRequest
+	(*ListTasksResponse)(nil),                     // 49: kandev.plugin.v1.ListTasksResponse
+	(*GetTaskRequest)(nil),                        // 50: kandev.plugin.v1.GetTaskRequest
+	(*GetTaskResponse)(nil),                       // 51: kandev.plugin.v1.GetTaskResponse
+	(*TaskStepTransition)(nil),                    // 52: kandev.plugin.v1.TaskStepTransition
+	(*ListTaskStepTransitionsRequest)(nil),        // 53: kandev.plugin.v1.ListTaskStepTransitionsRequest
+	(*ListTaskStepTransitionsResponse)(nil),       // 54: kandev.plugin.v1.ListTaskStepTransitionsResponse
+	(*Workspace)(nil),                             // 55: kandev.plugin.v1.Workspace
+	(*ListWorkspacesRequest)(nil),                 // 56: kandev.plugin.v1.ListWorkspacesRequest
+	(*ListWorkspacesResponse)(nil),                // 57: kandev.plugin.v1.ListWorkspacesResponse
+	(*Workflow)(nil),                              // 58: kandev.plugin.v1.Workflow
+	(*ListWorkflowsRequest)(nil),                  // 59: kandev.plugin.v1.ListWorkflowsRequest
+	(*ListWorkflowsResponse)(nil),                 // 60: kandev.plugin.v1.ListWorkflowsResponse
+	(*WorkflowTransitionGroup)(nil),               // 61: kandev.plugin.v1.WorkflowTransitionGroup
+	(*ListWorkflowTransitionGroupsRequest)(nil),   // 62: kandev.plugin.v1.ListWorkflowTransitionGroupsRequest
+	(*ListWorkflowTransitionGroupsResponse)(nil),  // 63: kandev.plugin.v1.ListWorkflowTransitionGroupsResponse
+	(*WorkflowStep)(nil),                          // 64: kandev.plugin.v1.WorkflowStep
+	(*ListWorkflowStepsRequest)(nil),              // 65: kandev.plugin.v1.ListWorkflowStepsRequest
+	(*ListWorkflowStepsResponse)(nil),             // 66: kandev.plugin.v1.ListWorkflowStepsResponse
+	(*AgentProfile)(nil),                          // 67: kandev.plugin.v1.AgentProfile
+	(*ListAgentProfilesRequest)(nil),              // 68: kandev.plugin.v1.ListAgentProfilesRequest
+	(*ListAgentProfilesResponse)(nil),             // 69: kandev.plugin.v1.ListAgentProfilesResponse
+	(*ExecutorProfile)(nil),                       // 70: kandev.plugin.v1.ExecutorProfile
+	(*ListExecutorProfilesRequest)(nil),           // 71: kandev.plugin.v1.ListExecutorProfilesRequest
+	(*ListExecutorProfilesResponse)(nil),          // 72: kandev.plugin.v1.ListExecutorProfilesResponse
+	(*Repository)(nil),                            // 73: kandev.plugin.v1.Repository
+	(*ListRepositoriesRequest)(nil),               // 74: kandev.plugin.v1.ListRepositoriesRequest
+	(*ListRepositoriesResponse)(nil),              // 75: kandev.plugin.v1.ListRepositoriesResponse
+	(*Session)(nil),                               // 76: kandev.plugin.v1.Session
+	(*SessionFilter)(nil),                         // 77: kandev.plugin.v1.SessionFilter
+	(*ListSessionsRequest)(nil),                   // 78: kandev.plugin.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),                  // 79: kandev.plugin.v1.ListSessionsResponse
+	(*SessionCodeStats)(nil),                      // 80: kandev.plugin.v1.SessionCodeStats
+	(*ListSessionCodeStatsRequest)(nil),           // 81: kandev.plugin.v1.ListSessionCodeStatsRequest
+	(*ListSessionCodeStatsResponse)(nil),          // 82: kandev.plugin.v1.ListSessionCodeStatsResponse
+	(*Message)(nil),                               // 83: kandev.plugin.v1.Message
+	(*MessageFilter)(nil),                         // 84: kandev.plugin.v1.MessageFilter
+	(*ListMessagesRequest)(nil),                   // 85: kandev.plugin.v1.ListMessagesRequest
+	(*ListMessagesResponse)(nil),                  // 86: kandev.plugin.v1.ListMessagesResponse
+	(*InteractionOption)(nil),                     // 87: kandev.plugin.v1.InteractionOption
+	(*InteractionQuestion)(nil),                   // 88: kandev.plugin.v1.InteractionQuestion
+	(*Interaction)(nil),                           // 89: kandev.plugin.v1.Interaction
+	(*InteractionFilter)(nil),                     // 90: kandev.plugin.v1.InteractionFilter
+	(*ListPendingInteractionsRequest)(nil),        // 91: kandev.plugin.v1.ListPendingInteractionsRequest
+	(*ListPendingInteractionsResponse)(nil),       // 92: kandev.plugin.v1.ListPendingInteractionsResponse
+	(*GetInteractionRequest)(nil),                 // 93: kandev.plugin.v1.GetInteractionRequest
+	(*GetInteractionResponse)(nil),                // 94: kandev.plugin.v1.GetInteractionResponse
+	(*RespondToPermissionRequest)(nil),            // 95: kandev.plugin.v1.RespondToPermissionRequest
+	(*RespondToPermissionResponse)(nil),           // 96: kandev.plugin.v1.RespondToPermissionResponse
+	(*ClarificationAnswer)(nil),                   // 97: kandev.plugin.v1.ClarificationAnswer
+	(*AnswerClarificationRequest)(nil),            // 98: kandev.plugin.v1.AnswerClarificationRequest
+	(*AnswerClarificationResponse)(nil),           // 99: kandev.plugin.v1.AnswerClarificationResponse
+	(*CancelClarificationRequest)(nil),            // 100: kandev.plugin.v1.CancelClarificationRequest
+	(*CancelClarificationResponse)(nil),           // 101: kandev.plugin.v1.CancelClarificationResponse
+	(*InvokeUtilityAgentRequest)(nil),             // 102: kandev.plugin.v1.InvokeUtilityAgentRequest
+	(*InvokeUtilityAgentWithOptionsRequest)(nil),  // 103: kandev.plugin.v1.InvokeUtilityAgentWithOptionsRequest
+	(*InvokeUtilityAgentResponse)(nil),            // 104: kandev.plugin.v1.InvokeUtilityAgentResponse
+	(*CreateTaskRequest)(nil),                     // 105: kandev.plugin.v1.CreateTaskRequest
+	(*PluginTaskRepository)(nil),                  // 106: kandev.plugin.v1.PluginTaskRepository
+	(*RemoteRepositoryDescriptor)(nil),            // 107: kandev.plugin.v1.RemoteRepositoryDescriptor
+	(*PluginTaskLaunchOptions)(nil),               // 108: kandev.plugin.v1.PluginTaskLaunchOptions
+	(*CreateTaskResponse)(nil),                    // 109: kandev.plugin.v1.CreateTaskResponse
+	(*UpdateTaskRequest)(nil),                     // 110: kandev.plugin.v1.UpdateTaskRequest
+	(*UpdateTaskResponse)(nil),                    // 111: kandev.plugin.v1.UpdateTaskResponse
+	(*MoveTaskRequest)(nil),                       // 112: kandev.plugin.v1.MoveTaskRequest
+	(*MoveTaskResponse)(nil),                      // 113: kandev.plugin.v1.MoveTaskResponse
+	(*SendMessageRequest)(nil),                    // 114: kandev.plugin.v1.SendMessageRequest
+	(*SendMessageResponse)(nil),                   // 115: kandev.plugin.v1.SendMessageResponse
+	(*PreviewPluginOwnedTaskTreeRequest)(nil),     // 116: kandev.plugin.v1.PreviewPluginOwnedTaskTreeRequest
+	(*PreviewPluginOwnedTaskTreeResponse)(nil),    // 117: kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse
+	(*DeletePluginOwnedTaskTreeRequest)(nil),      // 118: kandev.plugin.v1.DeletePluginOwnedTaskTreeRequest
+	(*DeletePluginOwnedTaskTreeResponse)(nil),     // 119: kandev.plugin.v1.DeletePluginOwnedTaskTreeResponse
+	(*DeletePluginOwnedTaskTreeProgress)(nil),     // 120: kandev.plugin.v1.DeletePluginOwnedTaskTreeProgress
+	(*AgentConversationDescriptor)(nil),           // 121: kandev.plugin.v1.AgentConversationDescriptor
+	(*AgentConversationSpec)(nil),                 // 122: kandev.plugin.v1.AgentConversationSpec
+	(*EnsureAgentConversationRequest)(nil),        // 123: kandev.plugin.v1.EnsureAgentConversationRequest
+	(*EnsureAgentConversationResponse)(nil),       // 124: kandev.plugin.v1.EnsureAgentConversationResponse
+	(*DispatchAgentConversationRequest)(nil),      // 125: kandev.plugin.v1.DispatchAgentConversationRequest
+	(*DispatchAgentConversationResponse)(nil),     // 126: kandev.plugin.v1.DispatchAgentConversationResponse
+	(*DeleteAgentConversationRequest)(nil),        // 127: kandev.plugin.v1.DeleteAgentConversationRequest
+	(*DeleteAgentConversationResponse)(nil),       // 128: kandev.plugin.v1.DeleteAgentConversationResponse
+	(*AutomationConditionRequest)(nil),            // 129: kandev.plugin.v1.AutomationConditionRequest
+	(*AutomationConditionResponse)(nil),           // 130: kandev.plugin.v1.AutomationConditionResponse
+	(*AutomationWebhookRequest)(nil),              // 131: kandev.plugin.v1.AutomationWebhookRequest
+	(*AutomationWebhookResponse)(nil),             // 132: kandev.plugin.v1.AutomationWebhookResponse
+	(*GetCapabilityContextRequest)(nil),           // 133: kandev.plugin.v1.GetCapabilityContextRequest
+	(*CapabilityApprovalContext)(nil),             // 134: kandev.plugin.v1.CapabilityApprovalContext
+	(*GetCapabilityContextResponse)(nil),          // 135: kandev.plugin.v1.GetCapabilityContextResponse
+	(*ExactPage)(nil),                             // 136: kandev.plugin.v1.ExactPage
+	(*ExactPageInfo)(nil),                         // 137: kandev.plugin.v1.ExactPageInfo
+	(*ListWorkspacesExactRequest)(nil),            // 138: kandev.plugin.v1.ListWorkspacesExactRequest
+	(*ListWorkspacesExactResponse)(nil),           // 139: kandev.plugin.v1.ListWorkspacesExactResponse
+	(*ListWorkflowsExactRequest)(nil),             // 140: kandev.plugin.v1.ListWorkflowsExactRequest
+	(*ListWorkflowsExactResponse)(nil),            // 141: kandev.plugin.v1.ListWorkflowsExactResponse
+	(*ListWorkflowStepsExactRequest)(nil),         // 142: kandev.plugin.v1.ListWorkflowStepsExactRequest
+	(*ListWorkflowStepsExactResponse)(nil),        // 143: kandev.plugin.v1.ListWorkflowStepsExactResponse
+	(*ExactTask)(nil),                             // 144: kandev.plugin.v1.ExactTask
+	(*ListTasksExactRequest)(nil),                 // 145: kandev.plugin.v1.ListTasksExactRequest
+	(*ListTasksExactResponse)(nil),                // 146: kandev.plugin.v1.ListTasksExactResponse
+	(*GetTaskExactRequest)(nil),                   // 147: kandev.plugin.v1.GetTaskExactRequest
+	(*GetTaskExactResponse)(nil),                  // 148: kandev.plugin.v1.GetTaskExactResponse
+	(*ExactSession)(nil),                          // 149: kandev.plugin.v1.ExactSession
+	(*ListSessionsExactRequest)(nil),              // 150: kandev.plugin.v1.ListSessionsExactRequest
+	(*ListSessionsExactResponse)(nil),             // 151: kandev.plugin.v1.ListSessionsExactResponse
+	(*GetSessionExactRequest)(nil),                // 152: kandev.plugin.v1.GetSessionExactRequest
+	(*GetSessionExactResponse)(nil),               // 153: kandev.plugin.v1.GetSessionExactResponse
+	(*ExactSessionMessage)(nil),                   // 154: kandev.plugin.v1.ExactSessionMessage
+	(*ListSessionMessagesExactRequest)(nil),       // 155: kandev.plugin.v1.ListSessionMessagesExactRequest
+	(*ListSessionMessagesExactResponse)(nil),      // 156: kandev.plugin.v1.ListSessionMessagesExactResponse
+	(*ExactTaskRelation)(nil),                     // 157: kandev.plugin.v1.ExactTaskRelation
+	(*ExactPendingTaskTransition)(nil),            // 158: kandev.plugin.v1.ExactPendingTaskTransition
+	(*ListTaskDecisionEvidenceExactRequest)(nil),  // 159: kandev.plugin.v1.ListTaskDecisionEvidenceExactRequest
+	(*ListTaskDecisionEvidenceExactResponse)(nil), // 160: kandev.plugin.v1.ListTaskDecisionEvidenceExactResponse
+	(*UpdateTaskExactRequest)(nil),                // 161: kandev.plugin.v1.UpdateTaskExactRequest
+	(*UpdateTaskExactResponse)(nil),               // 162: kandev.plugin.v1.UpdateTaskExactResponse
+	nil,                                           // 163: kandev.plugin.v1.WebhookRequest.HeadersEntry
+	nil,                                           // 164: kandev.plugin.v1.WebhookResponse.HeadersEntry
+	nil,                                           // 165: kandev.plugin.v1.PluginActionResponse.HeadersEntry
+	nil,                                           // 166: kandev.plugin.v1.AutomationWebhookRequest.HeadersEntry
+	(*structpb.Struct)(nil),                       // 167: google.protobuf.Struct
 }
 var file_kandev_plugin_v1_plugin_proto_depIdxs = []int32{
-	136, // 0: kandev.plugin.v1.Event.payload:type_name -> google.protobuf.Struct
-	136, // 1: kandev.plugin.v1.AgentToolRequest.arguments:type_name -> google.protobuf.Struct
-	3,   // 2: kandev.plugin.v1.AgentToolRequest.context:type_name -> kandev.plugin.v1.AgentToolContext
-	136, // 3: kandev.plugin.v1.AgentToolResponse.structured_content:type_name -> google.protobuf.Struct
-	132, // 4: kandev.plugin.v1.WebhookRequest.headers:type_name -> kandev.plugin.v1.WebhookRequest.HeadersEntry
-	133, // 5: kandev.plugin.v1.WebhookResponse.headers:type_name -> kandev.plugin.v1.WebhookResponse.HeadersEntry
-	8,   // 6: kandev.plugin.v1.PluginActionRequest.context:type_name -> kandev.plugin.v1.VerifiedActionContext
-	134, // 7: kandev.plugin.v1.PluginActionResponse.headers:type_name -> kandev.plugin.v1.PluginActionResponse.HeadersEntry
-	12,  // 8: kandev.plugin.v1.SearchEntityReferencesResponse.candidates:type_name -> kandev.plugin.v1.EntityReferenceCandidate
-	136, // 9: kandev.plugin.v1.EntityReferenceCandidate.attributes:type_name -> google.protobuf.Struct
-	136, // 10: kandev.plugin.v1.AuthorizeEntityReferenceRequest.reference:type_name -> google.protobuf.Struct
-	136, // 11: kandev.plugin.v1.GetStateResponse.value:type_name -> google.protobuf.Struct
-	136, // 12: kandev.plugin.v1.SetStateRequest.value:type_name -> google.protobuf.Struct
-	27,  // 13: kandev.plugin.v1.ListStateResponse.entries:type_name -> kandev.plugin.v1.StateEntry
-	136, // 14: kandev.plugin.v1.StateEntry.value:type_name -> google.protobuf.Struct
-	136, // 15: kandev.plugin.v1.GetConfigResponse.config:type_name -> google.protobuf.Struct
-	136, // 16: kandev.plugin.v1.EmitEventRequest.payload:type_name -> google.protobuf.Struct
-	43,  // 17: kandev.plugin.v1.Task.repositories:type_name -> kandev.plugin.v1.TaskRepository
-	136, // 18: kandev.plugin.v1.Task.metadata:type_name -> google.protobuf.Struct
-	44,  // 19: kandev.plugin.v1.Task.pull_requests:type_name -> kandev.plugin.v1.TaskPullRequest
-	45,  // 20: kandev.plugin.v1.Task.depends_on:type_name -> kandev.plugin.v1.TaskDependencyRef
-	45,  // 21: kandev.plugin.v1.Task.blocks:type_name -> kandev.plugin.v1.TaskDependencyRef
-	46,  // 22: kandev.plugin.v1.ListTasksRequest.filter:type_name -> kandev.plugin.v1.TaskFilter
-	40,  // 23: kandev.plugin.v1.ListTasksRequest.page:type_name -> kandev.plugin.v1.Page
-	42,  // 24: kandev.plugin.v1.ListTasksResponse.tasks:type_name -> kandev.plugin.v1.Task
-	41,  // 25: kandev.plugin.v1.ListTasksResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	42,  // 26: kandev.plugin.v1.GetTaskResponse.task:type_name -> kandev.plugin.v1.Task
-	40,  // 27: kandev.plugin.v1.ListTaskStepTransitionsRequest.page:type_name -> kandev.plugin.v1.Page
-	51,  // 28: kandev.plugin.v1.ListTaskStepTransitionsResponse.items:type_name -> kandev.plugin.v1.TaskStepTransition
-	41,  // 29: kandev.plugin.v1.ListTaskStepTransitionsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	40,  // 30: kandev.plugin.v1.ListWorkspacesRequest.page:type_name -> kandev.plugin.v1.Page
-	54,  // 31: kandev.plugin.v1.ListWorkspacesResponse.workspaces:type_name -> kandev.plugin.v1.Workspace
-	41,  // 32: kandev.plugin.v1.ListWorkspacesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	40,  // 33: kandev.plugin.v1.ListWorkflowsRequest.page:type_name -> kandev.plugin.v1.Page
-	57,  // 34: kandev.plugin.v1.ListWorkflowsResponse.workflows:type_name -> kandev.plugin.v1.Workflow
-	41,  // 35: kandev.plugin.v1.ListWorkflowsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	40,  // 36: kandev.plugin.v1.ListWorkflowTransitionGroupsRequest.page:type_name -> kandev.plugin.v1.Page
-	60,  // 37: kandev.plugin.v1.ListWorkflowTransitionGroupsResponse.items:type_name -> kandev.plugin.v1.WorkflowTransitionGroup
-	41,  // 38: kandev.plugin.v1.ListWorkflowTransitionGroupsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	63,  // 39: kandev.plugin.v1.ListWorkflowStepsResponse.steps:type_name -> kandev.plugin.v1.WorkflowStep
-	40,  // 40: kandev.plugin.v1.ListAgentProfilesRequest.page:type_name -> kandev.plugin.v1.Page
-	66,  // 41: kandev.plugin.v1.ListAgentProfilesResponse.profiles:type_name -> kandev.plugin.v1.AgentProfile
-	41,  // 42: kandev.plugin.v1.ListAgentProfilesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	40,  // 43: kandev.plugin.v1.ListExecutorProfilesRequest.page:type_name -> kandev.plugin.v1.Page
-	69,  // 44: kandev.plugin.v1.ListExecutorProfilesResponse.profiles:type_name -> kandev.plugin.v1.ExecutorProfile
-	41,  // 45: kandev.plugin.v1.ListExecutorProfilesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	40,  // 46: kandev.plugin.v1.ListRepositoriesRequest.page:type_name -> kandev.plugin.v1.Page
-	72,  // 47: kandev.plugin.v1.ListRepositoriesResponse.repositories:type_name -> kandev.plugin.v1.Repository
-	41,  // 48: kandev.plugin.v1.ListRepositoriesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	76,  // 49: kandev.plugin.v1.ListSessionsRequest.filter:type_name -> kandev.plugin.v1.SessionFilter
-	40,  // 50: kandev.plugin.v1.ListSessionsRequest.page:type_name -> kandev.plugin.v1.Page
-	75,  // 51: kandev.plugin.v1.ListSessionsResponse.sessions:type_name -> kandev.plugin.v1.Session
-	41,  // 52: kandev.plugin.v1.ListSessionsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	76,  // 53: kandev.plugin.v1.ListSessionCodeStatsRequest.filter:type_name -> kandev.plugin.v1.SessionFilter
-	40,  // 54: kandev.plugin.v1.ListSessionCodeStatsRequest.page:type_name -> kandev.plugin.v1.Page
-	79,  // 55: kandev.plugin.v1.ListSessionCodeStatsResponse.stats:type_name -> kandev.plugin.v1.SessionCodeStats
-	41,  // 56: kandev.plugin.v1.ListSessionCodeStatsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	83,  // 57: kandev.plugin.v1.ListMessagesRequest.filter:type_name -> kandev.plugin.v1.MessageFilter
-	40,  // 58: kandev.plugin.v1.ListMessagesRequest.page:type_name -> kandev.plugin.v1.Page
-	82,  // 59: kandev.plugin.v1.ListMessagesResponse.messages:type_name -> kandev.plugin.v1.Message
-	41,  // 60: kandev.plugin.v1.ListMessagesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	86,  // 61: kandev.plugin.v1.InteractionQuestion.options:type_name -> kandev.plugin.v1.InteractionOption
-	86,  // 62: kandev.plugin.v1.Interaction.options:type_name -> kandev.plugin.v1.InteractionOption
-	87,  // 63: kandev.plugin.v1.Interaction.questions:type_name -> kandev.plugin.v1.InteractionQuestion
-	89,  // 64: kandev.plugin.v1.ListPendingInteractionsRequest.filter:type_name -> kandev.plugin.v1.InteractionFilter
-	40,  // 65: kandev.plugin.v1.ListPendingInteractionsRequest.page:type_name -> kandev.plugin.v1.Page
-	88,  // 66: kandev.plugin.v1.ListPendingInteractionsResponse.interactions:type_name -> kandev.plugin.v1.Interaction
-	41,  // 67: kandev.plugin.v1.ListPendingInteractionsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
-	88,  // 68: kandev.plugin.v1.GetInteractionResponse.interaction:type_name -> kandev.plugin.v1.Interaction
-	88,  // 69: kandev.plugin.v1.RespondToPermissionResponse.interaction:type_name -> kandev.plugin.v1.Interaction
-	96,  // 70: kandev.plugin.v1.AnswerClarificationRequest.answers:type_name -> kandev.plugin.v1.ClarificationAnswer
-	88,  // 71: kandev.plugin.v1.AnswerClarificationResponse.interaction:type_name -> kandev.plugin.v1.Interaction
-	88,  // 72: kandev.plugin.v1.CancelClarificationResponse.interaction:type_name -> kandev.plugin.v1.Interaction
-	105, // 73: kandev.plugin.v1.CreateTaskRequest.repositories:type_name -> kandev.plugin.v1.PluginTaskRepository
-	107, // 74: kandev.plugin.v1.CreateTaskRequest.launch:type_name -> kandev.plugin.v1.PluginTaskLaunchOptions
-	136, // 75: kandev.plugin.v1.CreateTaskRequest.metadata:type_name -> google.protobuf.Struct
-	106, // 76: kandev.plugin.v1.PluginTaskRepository.remote:type_name -> kandev.plugin.v1.RemoteRepositoryDescriptor
-	42,  // 77: kandev.plugin.v1.CreateTaskResponse.task:type_name -> kandev.plugin.v1.Task
-	42,  // 78: kandev.plugin.v1.UpdateTaskResponse.task:type_name -> kandev.plugin.v1.Task
-	42,  // 79: kandev.plugin.v1.MoveTaskResponse.task:type_name -> kandev.plugin.v1.Task
-	42,  // 80: kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse.tasks:type_name -> kandev.plugin.v1.Task
-	121, // 81: kandev.plugin.v1.EnsureAgentConversationRequest.spec:type_name -> kandev.plugin.v1.AgentConversationSpec
-	120, // 82: kandev.plugin.v1.EnsureAgentConversationResponse.conv_descriptor:type_name -> kandev.plugin.v1.AgentConversationDescriptor
-	120, // 83: kandev.plugin.v1.DispatchAgentConversationResponse.conv_descriptor:type_name -> kandev.plugin.v1.AgentConversationDescriptor
-	135, // 84: kandev.plugin.v1.AutomationWebhookRequest.headers:type_name -> kandev.plugin.v1.AutomationWebhookRequest.HeadersEntry
-	0,   // 85: kandev.plugin.v1.Plugin.DeliverEvent:input_type -> kandev.plugin.v1.Event
-	5,   // 86: kandev.plugin.v1.Plugin.HandleWebhook:input_type -> kandev.plugin.v1.WebhookRequest
-	128, // 87: kandev.plugin.v1.Plugin.DescribeAutomationCondition:input_type -> kandev.plugin.v1.AutomationConditionRequest
-	130, // 88: kandev.plugin.v1.Plugin.VerifyAutomationWebhook:input_type -> kandev.plugin.v1.AutomationWebhookRequest
-	7,   // 89: kandev.plugin.v1.Plugin.HandleAction:input_type -> kandev.plugin.v1.PluginActionRequest
-	10,  // 90: kandev.plugin.v1.Plugin.SearchEntityReferences:input_type -> kandev.plugin.v1.SearchEntityReferencesRequest
-	13,  // 91: kandev.plugin.v1.Plugin.AuthorizeEntityReference:input_type -> kandev.plugin.v1.AuthorizeEntityReferenceRequest
-	15,  // 92: kandev.plugin.v1.Plugin.ResolveGitCredential:input_type -> kandev.plugin.v1.ResolveGitCredentialRequest
-	17,  // 93: kandev.plugin.v1.Plugin.GetGitCredentialBinding:input_type -> kandev.plugin.v1.GitCredentialBindingRequest
-	2,   // 94: kandev.plugin.v1.Plugin.InvokeAgentTool:input_type -> kandev.plugin.v1.AgentToolRequest
-	19,  // 95: kandev.plugin.v1.Host.GetState:input_type -> kandev.plugin.v1.GetStateRequest
-	21,  // 96: kandev.plugin.v1.Host.SetState:input_type -> kandev.plugin.v1.SetStateRequest
-	23,  // 97: kandev.plugin.v1.Host.DeleteState:input_type -> kandev.plugin.v1.DeleteStateRequest
-	25,  // 98: kandev.plugin.v1.Host.ListState:input_type -> kandev.plugin.v1.ListStateRequest
-	36,  // 99: kandev.plugin.v1.Host.RevealSecret:input_type -> kandev.plugin.v1.RevealSecretRequest
-	38,  // 100: kandev.plugin.v1.Host.EmitEvent:input_type -> kandev.plugin.v1.EmitEventRequest
-	30,  // 101: kandev.plugin.v1.Host.GetSecret:input_type -> kandev.plugin.v1.GetSecretRequest
-	32,  // 102: kandev.plugin.v1.Host.SetSecret:input_type -> kandev.plugin.v1.SetSecretRequest
-	34,  // 103: kandev.plugin.v1.Host.DeleteSecret:input_type -> kandev.plugin.v1.DeleteSecretRequest
-	28,  // 104: kandev.plugin.v1.Host.GetConfig:input_type -> kandev.plugin.v1.GetConfigRequest
-	47,  // 105: kandev.plugin.v1.Host.ListTasks:input_type -> kandev.plugin.v1.ListTasksRequest
-	49,  // 106: kandev.plugin.v1.Host.GetTask:input_type -> kandev.plugin.v1.GetTaskRequest
-	52,  // 107: kandev.plugin.v1.Host.ListTaskStepTransitions:input_type -> kandev.plugin.v1.ListTaskStepTransitionsRequest
-	55,  // 108: kandev.plugin.v1.Host.ListWorkspaces:input_type -> kandev.plugin.v1.ListWorkspacesRequest
-	58,  // 109: kandev.plugin.v1.Host.ListWorkflows:input_type -> kandev.plugin.v1.ListWorkflowsRequest
-	64,  // 110: kandev.plugin.v1.Host.ListWorkflowSteps:input_type -> kandev.plugin.v1.ListWorkflowStepsRequest
-	61,  // 111: kandev.plugin.v1.Host.ListWorkflowTransitionGroups:input_type -> kandev.plugin.v1.ListWorkflowTransitionGroupsRequest
-	67,  // 112: kandev.plugin.v1.Host.ListAgentProfiles:input_type -> kandev.plugin.v1.ListAgentProfilesRequest
-	70,  // 113: kandev.plugin.v1.Host.ListExecutorProfiles:input_type -> kandev.plugin.v1.ListExecutorProfilesRequest
-	73,  // 114: kandev.plugin.v1.Host.ListRepositories:input_type -> kandev.plugin.v1.ListRepositoriesRequest
-	77,  // 115: kandev.plugin.v1.Host.ListSessions:input_type -> kandev.plugin.v1.ListSessionsRequest
-	80,  // 116: kandev.plugin.v1.Host.ListSessionCodeStats:input_type -> kandev.plugin.v1.ListSessionCodeStatsRequest
-	84,  // 117: kandev.plugin.v1.Host.ListMessages:input_type -> kandev.plugin.v1.ListMessagesRequest
-	90,  // 118: kandev.plugin.v1.Host.ListPendingInteractions:input_type -> kandev.plugin.v1.ListPendingInteractionsRequest
-	92,  // 119: kandev.plugin.v1.Host.GetInteraction:input_type -> kandev.plugin.v1.GetInteractionRequest
-	101, // 120: kandev.plugin.v1.Host.InvokeUtilityAgent:input_type -> kandev.plugin.v1.InvokeUtilityAgentRequest
-	102, // 121: kandev.plugin.v1.Host.InvokeUtilityAgentWithOptions:input_type -> kandev.plugin.v1.InvokeUtilityAgentWithOptionsRequest
-	104, // 122: kandev.plugin.v1.Host.CreateTask:input_type -> kandev.plugin.v1.CreateTaskRequest
-	109, // 123: kandev.plugin.v1.Host.UpdateTask:input_type -> kandev.plugin.v1.UpdateTaskRequest
-	111, // 124: kandev.plugin.v1.Host.MoveTask:input_type -> kandev.plugin.v1.MoveTaskRequest
-	113, // 125: kandev.plugin.v1.Host.SendMessage:input_type -> kandev.plugin.v1.SendMessageRequest
-	115, // 126: kandev.plugin.v1.Host.PreviewPluginOwnedTaskTree:input_type -> kandev.plugin.v1.PreviewPluginOwnedTaskTreeRequest
-	117, // 127: kandev.plugin.v1.Host.DeletePluginOwnedTaskTree:input_type -> kandev.plugin.v1.DeletePluginOwnedTaskTreeRequest
-	122, // 128: kandev.plugin.v1.Host.EnsureAgentConversation:input_type -> kandev.plugin.v1.EnsureAgentConversationRequest
-	124, // 129: kandev.plugin.v1.Host.DispatchAgentConversation:input_type -> kandev.plugin.v1.DispatchAgentConversationRequest
-	126, // 130: kandev.plugin.v1.Host.DeleteAgentConversation:input_type -> kandev.plugin.v1.DeleteAgentConversationRequest
-	94,  // 131: kandev.plugin.v1.Host.RespondToPermission:input_type -> kandev.plugin.v1.RespondToPermissionRequest
-	97,  // 132: kandev.plugin.v1.Host.AnswerClarification:input_type -> kandev.plugin.v1.AnswerClarificationRequest
-	99,  // 133: kandev.plugin.v1.Host.CancelClarification:input_type -> kandev.plugin.v1.CancelClarificationRequest
-	1,   // 134: kandev.plugin.v1.Plugin.DeliverEvent:output_type -> kandev.plugin.v1.EventAck
-	6,   // 135: kandev.plugin.v1.Plugin.HandleWebhook:output_type -> kandev.plugin.v1.WebhookResponse
-	129, // 136: kandev.plugin.v1.Plugin.DescribeAutomationCondition:output_type -> kandev.plugin.v1.AutomationConditionResponse
-	131, // 137: kandev.plugin.v1.Plugin.VerifyAutomationWebhook:output_type -> kandev.plugin.v1.AutomationWebhookResponse
-	9,   // 138: kandev.plugin.v1.Plugin.HandleAction:output_type -> kandev.plugin.v1.PluginActionResponse
-	11,  // 139: kandev.plugin.v1.Plugin.SearchEntityReferences:output_type -> kandev.plugin.v1.SearchEntityReferencesResponse
-	14,  // 140: kandev.plugin.v1.Plugin.AuthorizeEntityReference:output_type -> kandev.plugin.v1.AuthorizeEntityReferenceResponse
-	16,  // 141: kandev.plugin.v1.Plugin.ResolveGitCredential:output_type -> kandev.plugin.v1.ResolveGitCredentialResponse
-	18,  // 142: kandev.plugin.v1.Plugin.GetGitCredentialBinding:output_type -> kandev.plugin.v1.GitCredentialBindingResponse
-	4,   // 143: kandev.plugin.v1.Plugin.InvokeAgentTool:output_type -> kandev.plugin.v1.AgentToolResponse
-	20,  // 144: kandev.plugin.v1.Host.GetState:output_type -> kandev.plugin.v1.GetStateResponse
-	22,  // 145: kandev.plugin.v1.Host.SetState:output_type -> kandev.plugin.v1.SetStateResponse
-	24,  // 146: kandev.plugin.v1.Host.DeleteState:output_type -> kandev.plugin.v1.DeleteStateResponse
-	26,  // 147: kandev.plugin.v1.Host.ListState:output_type -> kandev.plugin.v1.ListStateResponse
-	37,  // 148: kandev.plugin.v1.Host.RevealSecret:output_type -> kandev.plugin.v1.RevealSecretResponse
-	39,  // 149: kandev.plugin.v1.Host.EmitEvent:output_type -> kandev.plugin.v1.EmitEventResponse
-	31,  // 150: kandev.plugin.v1.Host.GetSecret:output_type -> kandev.plugin.v1.GetSecretResponse
-	33,  // 151: kandev.plugin.v1.Host.SetSecret:output_type -> kandev.plugin.v1.SetSecretResponse
-	35,  // 152: kandev.plugin.v1.Host.DeleteSecret:output_type -> kandev.plugin.v1.DeleteSecretResponse
-	29,  // 153: kandev.plugin.v1.Host.GetConfig:output_type -> kandev.plugin.v1.GetConfigResponse
-	48,  // 154: kandev.plugin.v1.Host.ListTasks:output_type -> kandev.plugin.v1.ListTasksResponse
-	50,  // 155: kandev.plugin.v1.Host.GetTask:output_type -> kandev.plugin.v1.GetTaskResponse
-	53,  // 156: kandev.plugin.v1.Host.ListTaskStepTransitions:output_type -> kandev.plugin.v1.ListTaskStepTransitionsResponse
-	56,  // 157: kandev.plugin.v1.Host.ListWorkspaces:output_type -> kandev.plugin.v1.ListWorkspacesResponse
-	59,  // 158: kandev.plugin.v1.Host.ListWorkflows:output_type -> kandev.plugin.v1.ListWorkflowsResponse
-	65,  // 159: kandev.plugin.v1.Host.ListWorkflowSteps:output_type -> kandev.plugin.v1.ListWorkflowStepsResponse
-	62,  // 160: kandev.plugin.v1.Host.ListWorkflowTransitionGroups:output_type -> kandev.plugin.v1.ListWorkflowTransitionGroupsResponse
-	68,  // 161: kandev.plugin.v1.Host.ListAgentProfiles:output_type -> kandev.plugin.v1.ListAgentProfilesResponse
-	71,  // 162: kandev.plugin.v1.Host.ListExecutorProfiles:output_type -> kandev.plugin.v1.ListExecutorProfilesResponse
-	74,  // 163: kandev.plugin.v1.Host.ListRepositories:output_type -> kandev.plugin.v1.ListRepositoriesResponse
-	78,  // 164: kandev.plugin.v1.Host.ListSessions:output_type -> kandev.plugin.v1.ListSessionsResponse
-	81,  // 165: kandev.plugin.v1.Host.ListSessionCodeStats:output_type -> kandev.plugin.v1.ListSessionCodeStatsResponse
-	85,  // 166: kandev.plugin.v1.Host.ListMessages:output_type -> kandev.plugin.v1.ListMessagesResponse
-	91,  // 167: kandev.plugin.v1.Host.ListPendingInteractions:output_type -> kandev.plugin.v1.ListPendingInteractionsResponse
-	93,  // 168: kandev.plugin.v1.Host.GetInteraction:output_type -> kandev.plugin.v1.GetInteractionResponse
-	103, // 169: kandev.plugin.v1.Host.InvokeUtilityAgent:output_type -> kandev.plugin.v1.InvokeUtilityAgentResponse
-	103, // 170: kandev.plugin.v1.Host.InvokeUtilityAgentWithOptions:output_type -> kandev.plugin.v1.InvokeUtilityAgentResponse
-	108, // 171: kandev.plugin.v1.Host.CreateTask:output_type -> kandev.plugin.v1.CreateTaskResponse
-	110, // 172: kandev.plugin.v1.Host.UpdateTask:output_type -> kandev.plugin.v1.UpdateTaskResponse
-	112, // 173: kandev.plugin.v1.Host.MoveTask:output_type -> kandev.plugin.v1.MoveTaskResponse
-	114, // 174: kandev.plugin.v1.Host.SendMessage:output_type -> kandev.plugin.v1.SendMessageResponse
-	116, // 175: kandev.plugin.v1.Host.PreviewPluginOwnedTaskTree:output_type -> kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse
-	118, // 176: kandev.plugin.v1.Host.DeletePluginOwnedTaskTree:output_type -> kandev.plugin.v1.DeletePluginOwnedTaskTreeResponse
-	123, // 177: kandev.plugin.v1.Host.EnsureAgentConversation:output_type -> kandev.plugin.v1.EnsureAgentConversationResponse
-	125, // 178: kandev.plugin.v1.Host.DispatchAgentConversation:output_type -> kandev.plugin.v1.DispatchAgentConversationResponse
-	127, // 179: kandev.plugin.v1.Host.DeleteAgentConversation:output_type -> kandev.plugin.v1.DeleteAgentConversationResponse
-	95,  // 180: kandev.plugin.v1.Host.RespondToPermission:output_type -> kandev.plugin.v1.RespondToPermissionResponse
-	98,  // 181: kandev.plugin.v1.Host.AnswerClarification:output_type -> kandev.plugin.v1.AnswerClarificationResponse
-	100, // 182: kandev.plugin.v1.Host.CancelClarification:output_type -> kandev.plugin.v1.CancelClarificationResponse
-	134, // [134:183] is the sub-list for method output_type
-	85,  // [85:134] is the sub-list for method input_type
-	85,  // [85:85] is the sub-list for extension type_name
-	85,  // [85:85] is the sub-list for extension extendee
-	0,   // [0:85] is the sub-list for field type_name
+	167, // 0: kandev.plugin.v1.Event.payload:type_name -> google.protobuf.Struct
+	167, // 1: kandev.plugin.v1.AgentToolRequest.arguments:type_name -> google.protobuf.Struct
+	4,   // 2: kandev.plugin.v1.AgentToolRequest.context:type_name -> kandev.plugin.v1.AgentToolContext
+	167, // 3: kandev.plugin.v1.AgentToolResponse.structured_content:type_name -> google.protobuf.Struct
+	163, // 4: kandev.plugin.v1.WebhookRequest.headers:type_name -> kandev.plugin.v1.WebhookRequest.HeadersEntry
+	164, // 5: kandev.plugin.v1.WebhookResponse.headers:type_name -> kandev.plugin.v1.WebhookResponse.HeadersEntry
+	9,   // 6: kandev.plugin.v1.PluginActionRequest.context:type_name -> kandev.plugin.v1.VerifiedActionContext
+	165, // 7: kandev.plugin.v1.PluginActionResponse.headers:type_name -> kandev.plugin.v1.PluginActionResponse.HeadersEntry
+	13,  // 8: kandev.plugin.v1.SearchEntityReferencesResponse.candidates:type_name -> kandev.plugin.v1.EntityReferenceCandidate
+	167, // 9: kandev.plugin.v1.EntityReferenceCandidate.attributes:type_name -> google.protobuf.Struct
+	167, // 10: kandev.plugin.v1.AuthorizeEntityReferenceRequest.reference:type_name -> google.protobuf.Struct
+	167, // 11: kandev.plugin.v1.GetStateResponse.value:type_name -> google.protobuf.Struct
+	167, // 12: kandev.plugin.v1.SetStateRequest.value:type_name -> google.protobuf.Struct
+	28,  // 13: kandev.plugin.v1.ListStateResponse.entries:type_name -> kandev.plugin.v1.StateEntry
+	167, // 14: kandev.plugin.v1.StateEntry.value:type_name -> google.protobuf.Struct
+	167, // 15: kandev.plugin.v1.GetConfigResponse.config:type_name -> google.protobuf.Struct
+	167, // 16: kandev.plugin.v1.EmitEventRequest.payload:type_name -> google.protobuf.Struct
+	44,  // 17: kandev.plugin.v1.Task.repositories:type_name -> kandev.plugin.v1.TaskRepository
+	167, // 18: kandev.plugin.v1.Task.metadata:type_name -> google.protobuf.Struct
+	45,  // 19: kandev.plugin.v1.Task.pull_requests:type_name -> kandev.plugin.v1.TaskPullRequest
+	46,  // 20: kandev.plugin.v1.Task.depends_on:type_name -> kandev.plugin.v1.TaskDependencyRef
+	46,  // 21: kandev.plugin.v1.Task.blocks:type_name -> kandev.plugin.v1.TaskDependencyRef
+	47,  // 22: kandev.plugin.v1.ListTasksRequest.filter:type_name -> kandev.plugin.v1.TaskFilter
+	41,  // 23: kandev.plugin.v1.ListTasksRequest.page:type_name -> kandev.plugin.v1.Page
+	43,  // 24: kandev.plugin.v1.ListTasksResponse.tasks:type_name -> kandev.plugin.v1.Task
+	42,  // 25: kandev.plugin.v1.ListTasksResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	43,  // 26: kandev.plugin.v1.GetTaskResponse.task:type_name -> kandev.plugin.v1.Task
+	41,  // 27: kandev.plugin.v1.ListTaskStepTransitionsRequest.page:type_name -> kandev.plugin.v1.Page
+	52,  // 28: kandev.plugin.v1.ListTaskStepTransitionsResponse.items:type_name -> kandev.plugin.v1.TaskStepTransition
+	42,  // 29: kandev.plugin.v1.ListTaskStepTransitionsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	41,  // 30: kandev.plugin.v1.ListWorkspacesRequest.page:type_name -> kandev.plugin.v1.Page
+	55,  // 31: kandev.plugin.v1.ListWorkspacesResponse.workspaces:type_name -> kandev.plugin.v1.Workspace
+	42,  // 32: kandev.plugin.v1.ListWorkspacesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	41,  // 33: kandev.plugin.v1.ListWorkflowsRequest.page:type_name -> kandev.plugin.v1.Page
+	58,  // 34: kandev.plugin.v1.ListWorkflowsResponse.workflows:type_name -> kandev.plugin.v1.Workflow
+	42,  // 35: kandev.plugin.v1.ListWorkflowsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	41,  // 36: kandev.plugin.v1.ListWorkflowTransitionGroupsRequest.page:type_name -> kandev.plugin.v1.Page
+	61,  // 37: kandev.plugin.v1.ListWorkflowTransitionGroupsResponse.items:type_name -> kandev.plugin.v1.WorkflowTransitionGroup
+	42,  // 38: kandev.plugin.v1.ListWorkflowTransitionGroupsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	64,  // 39: kandev.plugin.v1.ListWorkflowStepsResponse.steps:type_name -> kandev.plugin.v1.WorkflowStep
+	41,  // 40: kandev.plugin.v1.ListAgentProfilesRequest.page:type_name -> kandev.plugin.v1.Page
+	67,  // 41: kandev.plugin.v1.ListAgentProfilesResponse.profiles:type_name -> kandev.plugin.v1.AgentProfile
+	42,  // 42: kandev.plugin.v1.ListAgentProfilesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	41,  // 43: kandev.plugin.v1.ListExecutorProfilesRequest.page:type_name -> kandev.plugin.v1.Page
+	70,  // 44: kandev.plugin.v1.ListExecutorProfilesResponse.profiles:type_name -> kandev.plugin.v1.ExecutorProfile
+	42,  // 45: kandev.plugin.v1.ListExecutorProfilesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	41,  // 46: kandev.plugin.v1.ListRepositoriesRequest.page:type_name -> kandev.plugin.v1.Page
+	73,  // 47: kandev.plugin.v1.ListRepositoriesResponse.repositories:type_name -> kandev.plugin.v1.Repository
+	42,  // 48: kandev.plugin.v1.ListRepositoriesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	77,  // 49: kandev.plugin.v1.ListSessionsRequest.filter:type_name -> kandev.plugin.v1.SessionFilter
+	41,  // 50: kandev.plugin.v1.ListSessionsRequest.page:type_name -> kandev.plugin.v1.Page
+	76,  // 51: kandev.plugin.v1.ListSessionsResponse.sessions:type_name -> kandev.plugin.v1.Session
+	42,  // 52: kandev.plugin.v1.ListSessionsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	77,  // 53: kandev.plugin.v1.ListSessionCodeStatsRequest.filter:type_name -> kandev.plugin.v1.SessionFilter
+	41,  // 54: kandev.plugin.v1.ListSessionCodeStatsRequest.page:type_name -> kandev.plugin.v1.Page
+	80,  // 55: kandev.plugin.v1.ListSessionCodeStatsResponse.stats:type_name -> kandev.plugin.v1.SessionCodeStats
+	42,  // 56: kandev.plugin.v1.ListSessionCodeStatsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	84,  // 57: kandev.plugin.v1.ListMessagesRequest.filter:type_name -> kandev.plugin.v1.MessageFilter
+	41,  // 58: kandev.plugin.v1.ListMessagesRequest.page:type_name -> kandev.plugin.v1.Page
+	83,  // 59: kandev.plugin.v1.ListMessagesResponse.messages:type_name -> kandev.plugin.v1.Message
+	42,  // 60: kandev.plugin.v1.ListMessagesResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	87,  // 61: kandev.plugin.v1.InteractionQuestion.options:type_name -> kandev.plugin.v1.InteractionOption
+	87,  // 62: kandev.plugin.v1.Interaction.options:type_name -> kandev.plugin.v1.InteractionOption
+	88,  // 63: kandev.plugin.v1.Interaction.questions:type_name -> kandev.plugin.v1.InteractionQuestion
+	90,  // 64: kandev.plugin.v1.ListPendingInteractionsRequest.filter:type_name -> kandev.plugin.v1.InteractionFilter
+	41,  // 65: kandev.plugin.v1.ListPendingInteractionsRequest.page:type_name -> kandev.plugin.v1.Page
+	89,  // 66: kandev.plugin.v1.ListPendingInteractionsResponse.interactions:type_name -> kandev.plugin.v1.Interaction
+	42,  // 67: kandev.plugin.v1.ListPendingInteractionsResponse.page_info:type_name -> kandev.plugin.v1.PageInfo
+	89,  // 68: kandev.plugin.v1.GetInteractionResponse.interaction:type_name -> kandev.plugin.v1.Interaction
+	89,  // 69: kandev.plugin.v1.RespondToPermissionResponse.interaction:type_name -> kandev.plugin.v1.Interaction
+	97,  // 70: kandev.plugin.v1.AnswerClarificationRequest.answers:type_name -> kandev.plugin.v1.ClarificationAnswer
+	89,  // 71: kandev.plugin.v1.AnswerClarificationResponse.interaction:type_name -> kandev.plugin.v1.Interaction
+	89,  // 72: kandev.plugin.v1.CancelClarificationResponse.interaction:type_name -> kandev.plugin.v1.Interaction
+	106, // 73: kandev.plugin.v1.CreateTaskRequest.repositories:type_name -> kandev.plugin.v1.PluginTaskRepository
+	108, // 74: kandev.plugin.v1.CreateTaskRequest.launch:type_name -> kandev.plugin.v1.PluginTaskLaunchOptions
+	167, // 75: kandev.plugin.v1.CreateTaskRequest.metadata:type_name -> google.protobuf.Struct
+	107, // 76: kandev.plugin.v1.PluginTaskRepository.remote:type_name -> kandev.plugin.v1.RemoteRepositoryDescriptor
+	43,  // 77: kandev.plugin.v1.CreateTaskResponse.task:type_name -> kandev.plugin.v1.Task
+	43,  // 78: kandev.plugin.v1.UpdateTaskResponse.task:type_name -> kandev.plugin.v1.Task
+	43,  // 79: kandev.plugin.v1.MoveTaskResponse.task:type_name -> kandev.plugin.v1.Task
+	43,  // 80: kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse.tasks:type_name -> kandev.plugin.v1.Task
+	122, // 81: kandev.plugin.v1.EnsureAgentConversationRequest.spec:type_name -> kandev.plugin.v1.AgentConversationSpec
+	121, // 82: kandev.plugin.v1.EnsureAgentConversationResponse.conv_descriptor:type_name -> kandev.plugin.v1.AgentConversationDescriptor
+	121, // 83: kandev.plugin.v1.DispatchAgentConversationResponse.conv_descriptor:type_name -> kandev.plugin.v1.AgentConversationDescriptor
+	166, // 84: kandev.plugin.v1.AutomationWebhookRequest.headers:type_name -> kandev.plugin.v1.AutomationWebhookRequest.HeadersEntry
+	134, // 85: kandev.plugin.v1.GetCapabilityContextResponse.approvals:type_name -> kandev.plugin.v1.CapabilityApprovalContext
+	136, // 86: kandev.plugin.v1.ListWorkspacesExactRequest.page:type_name -> kandev.plugin.v1.ExactPage
+	55,  // 87: kandev.plugin.v1.ListWorkspacesExactResponse.workspaces:type_name -> kandev.plugin.v1.Workspace
+	137, // 88: kandev.plugin.v1.ListWorkspacesExactResponse.page_info:type_name -> kandev.plugin.v1.ExactPageInfo
+	136, // 89: kandev.plugin.v1.ListWorkflowsExactRequest.page:type_name -> kandev.plugin.v1.ExactPage
+	58,  // 90: kandev.plugin.v1.ListWorkflowsExactResponse.workflows:type_name -> kandev.plugin.v1.Workflow
+	137, // 91: kandev.plugin.v1.ListWorkflowsExactResponse.page_info:type_name -> kandev.plugin.v1.ExactPageInfo
+	136, // 92: kandev.plugin.v1.ListWorkflowStepsExactRequest.page:type_name -> kandev.plugin.v1.ExactPage
+	64,  // 93: kandev.plugin.v1.ListWorkflowStepsExactResponse.steps:type_name -> kandev.plugin.v1.WorkflowStep
+	137, // 94: kandev.plugin.v1.ListWorkflowStepsExactResponse.page_info:type_name -> kandev.plugin.v1.ExactPageInfo
+	136, // 95: kandev.plugin.v1.ListTasksExactRequest.page:type_name -> kandev.plugin.v1.ExactPage
+	144, // 96: kandev.plugin.v1.ListTasksExactResponse.tasks:type_name -> kandev.plugin.v1.ExactTask
+	137, // 97: kandev.plugin.v1.ListTasksExactResponse.page_info:type_name -> kandev.plugin.v1.ExactPageInfo
+	144, // 98: kandev.plugin.v1.GetTaskExactResponse.task:type_name -> kandev.plugin.v1.ExactTask
+	136, // 99: kandev.plugin.v1.ListSessionsExactRequest.page:type_name -> kandev.plugin.v1.ExactPage
+	149, // 100: kandev.plugin.v1.ListSessionsExactResponse.sessions:type_name -> kandev.plugin.v1.ExactSession
+	137, // 101: kandev.plugin.v1.ListSessionsExactResponse.page_info:type_name -> kandev.plugin.v1.ExactPageInfo
+	149, // 102: kandev.plugin.v1.GetSessionExactResponse.session:type_name -> kandev.plugin.v1.ExactSession
+	136, // 103: kandev.plugin.v1.ListSessionMessagesExactRequest.page:type_name -> kandev.plugin.v1.ExactPage
+	154, // 104: kandev.plugin.v1.ListSessionMessagesExactResponse.messages:type_name -> kandev.plugin.v1.ExactSessionMessage
+	137, // 105: kandev.plugin.v1.ListSessionMessagesExactResponse.page_info:type_name -> kandev.plugin.v1.ExactPageInfo
+	136, // 106: kandev.plugin.v1.ListTaskDecisionEvidenceExactRequest.page:type_name -> kandev.plugin.v1.ExactPage
+	157, // 107: kandev.plugin.v1.ListTaskDecisionEvidenceExactResponse.relations:type_name -> kandev.plugin.v1.ExactTaskRelation
+	158, // 108: kandev.plugin.v1.ListTaskDecisionEvidenceExactResponse.pending_transitions:type_name -> kandev.plugin.v1.ExactPendingTaskTransition
+	137, // 109: kandev.plugin.v1.ListTaskDecisionEvidenceExactResponse.page_info:type_name -> kandev.plugin.v1.ExactPageInfo
+	158, // 110: kandev.plugin.v1.UpdateTaskExactRequest.pending_transition:type_name -> kandev.plugin.v1.ExactPendingTaskTransition
+	0,   // 111: kandev.plugin.v1.UpdateTaskExactResponse.outcome:type_name -> kandev.plugin.v1.ExactTaskUpdateOutcome
+	1,   // 112: kandev.plugin.v1.Plugin.DeliverEvent:input_type -> kandev.plugin.v1.Event
+	6,   // 113: kandev.plugin.v1.Plugin.HandleWebhook:input_type -> kandev.plugin.v1.WebhookRequest
+	129, // 114: kandev.plugin.v1.Plugin.DescribeAutomationCondition:input_type -> kandev.plugin.v1.AutomationConditionRequest
+	131, // 115: kandev.plugin.v1.Plugin.VerifyAutomationWebhook:input_type -> kandev.plugin.v1.AutomationWebhookRequest
+	8,   // 116: kandev.plugin.v1.Plugin.HandleAction:input_type -> kandev.plugin.v1.PluginActionRequest
+	11,  // 117: kandev.plugin.v1.Plugin.SearchEntityReferences:input_type -> kandev.plugin.v1.SearchEntityReferencesRequest
+	14,  // 118: kandev.plugin.v1.Plugin.AuthorizeEntityReference:input_type -> kandev.plugin.v1.AuthorizeEntityReferenceRequest
+	16,  // 119: kandev.plugin.v1.Plugin.ResolveGitCredential:input_type -> kandev.plugin.v1.ResolveGitCredentialRequest
+	18,  // 120: kandev.plugin.v1.Plugin.GetGitCredentialBinding:input_type -> kandev.plugin.v1.GitCredentialBindingRequest
+	3,   // 121: kandev.plugin.v1.Plugin.InvokeAgentTool:input_type -> kandev.plugin.v1.AgentToolRequest
+	20,  // 122: kandev.plugin.v1.Host.GetState:input_type -> kandev.plugin.v1.GetStateRequest
+	22,  // 123: kandev.plugin.v1.Host.SetState:input_type -> kandev.plugin.v1.SetStateRequest
+	24,  // 124: kandev.plugin.v1.Host.DeleteState:input_type -> kandev.plugin.v1.DeleteStateRequest
+	26,  // 125: kandev.plugin.v1.Host.ListState:input_type -> kandev.plugin.v1.ListStateRequest
+	37,  // 126: kandev.plugin.v1.Host.RevealSecret:input_type -> kandev.plugin.v1.RevealSecretRequest
+	39,  // 127: kandev.plugin.v1.Host.EmitEvent:input_type -> kandev.plugin.v1.EmitEventRequest
+	31,  // 128: kandev.plugin.v1.Host.GetSecret:input_type -> kandev.plugin.v1.GetSecretRequest
+	33,  // 129: kandev.plugin.v1.Host.SetSecret:input_type -> kandev.plugin.v1.SetSecretRequest
+	35,  // 130: kandev.plugin.v1.Host.DeleteSecret:input_type -> kandev.plugin.v1.DeleteSecretRequest
+	29,  // 131: kandev.plugin.v1.Host.GetConfig:input_type -> kandev.plugin.v1.GetConfigRequest
+	133, // 132: kandev.plugin.v1.Host.GetCapabilityContext:input_type -> kandev.plugin.v1.GetCapabilityContextRequest
+	138, // 133: kandev.plugin.v1.Host.ListWorkspacesExact:input_type -> kandev.plugin.v1.ListWorkspacesExactRequest
+	140, // 134: kandev.plugin.v1.Host.ListWorkflowsExact:input_type -> kandev.plugin.v1.ListWorkflowsExactRequest
+	142, // 135: kandev.plugin.v1.Host.ListWorkflowStepsExact:input_type -> kandev.plugin.v1.ListWorkflowStepsExactRequest
+	145, // 136: kandev.plugin.v1.Host.ListTasksExact:input_type -> kandev.plugin.v1.ListTasksExactRequest
+	147, // 137: kandev.plugin.v1.Host.GetTaskExact:input_type -> kandev.plugin.v1.GetTaskExactRequest
+	150, // 138: kandev.plugin.v1.Host.ListSessionsExact:input_type -> kandev.plugin.v1.ListSessionsExactRequest
+	152, // 139: kandev.plugin.v1.Host.GetSessionExact:input_type -> kandev.plugin.v1.GetSessionExactRequest
+	155, // 140: kandev.plugin.v1.Host.ListSessionMessagesExact:input_type -> kandev.plugin.v1.ListSessionMessagesExactRequest
+	159, // 141: kandev.plugin.v1.Host.ListTaskDecisionEvidenceExact:input_type -> kandev.plugin.v1.ListTaskDecisionEvidenceExactRequest
+	161, // 142: kandev.plugin.v1.Host.UpdateTaskExact:input_type -> kandev.plugin.v1.UpdateTaskExactRequest
+	48,  // 143: kandev.plugin.v1.Host.ListTasks:input_type -> kandev.plugin.v1.ListTasksRequest
+	50,  // 144: kandev.plugin.v1.Host.GetTask:input_type -> kandev.plugin.v1.GetTaskRequest
+	53,  // 145: kandev.plugin.v1.Host.ListTaskStepTransitions:input_type -> kandev.plugin.v1.ListTaskStepTransitionsRequest
+	56,  // 146: kandev.plugin.v1.Host.ListWorkspaces:input_type -> kandev.plugin.v1.ListWorkspacesRequest
+	59,  // 147: kandev.plugin.v1.Host.ListWorkflows:input_type -> kandev.plugin.v1.ListWorkflowsRequest
+	65,  // 148: kandev.plugin.v1.Host.ListWorkflowSteps:input_type -> kandev.plugin.v1.ListWorkflowStepsRequest
+	62,  // 149: kandev.plugin.v1.Host.ListWorkflowTransitionGroups:input_type -> kandev.plugin.v1.ListWorkflowTransitionGroupsRequest
+	68,  // 150: kandev.plugin.v1.Host.ListAgentProfiles:input_type -> kandev.plugin.v1.ListAgentProfilesRequest
+	71,  // 151: kandev.plugin.v1.Host.ListExecutorProfiles:input_type -> kandev.plugin.v1.ListExecutorProfilesRequest
+	74,  // 152: kandev.plugin.v1.Host.ListRepositories:input_type -> kandev.plugin.v1.ListRepositoriesRequest
+	78,  // 153: kandev.plugin.v1.Host.ListSessions:input_type -> kandev.plugin.v1.ListSessionsRequest
+	81,  // 154: kandev.plugin.v1.Host.ListSessionCodeStats:input_type -> kandev.plugin.v1.ListSessionCodeStatsRequest
+	85,  // 155: kandev.plugin.v1.Host.ListMessages:input_type -> kandev.plugin.v1.ListMessagesRequest
+	91,  // 156: kandev.plugin.v1.Host.ListPendingInteractions:input_type -> kandev.plugin.v1.ListPendingInteractionsRequest
+	93,  // 157: kandev.plugin.v1.Host.GetInteraction:input_type -> kandev.plugin.v1.GetInteractionRequest
+	102, // 158: kandev.plugin.v1.Host.InvokeUtilityAgent:input_type -> kandev.plugin.v1.InvokeUtilityAgentRequest
+	103, // 159: kandev.plugin.v1.Host.InvokeUtilityAgentWithOptions:input_type -> kandev.plugin.v1.InvokeUtilityAgentWithOptionsRequest
+	105, // 160: kandev.plugin.v1.Host.CreateTask:input_type -> kandev.plugin.v1.CreateTaskRequest
+	110, // 161: kandev.plugin.v1.Host.UpdateTask:input_type -> kandev.plugin.v1.UpdateTaskRequest
+	112, // 162: kandev.plugin.v1.Host.MoveTask:input_type -> kandev.plugin.v1.MoveTaskRequest
+	114, // 163: kandev.plugin.v1.Host.SendMessage:input_type -> kandev.plugin.v1.SendMessageRequest
+	116, // 164: kandev.plugin.v1.Host.PreviewPluginOwnedTaskTree:input_type -> kandev.plugin.v1.PreviewPluginOwnedTaskTreeRequest
+	118, // 165: kandev.plugin.v1.Host.DeletePluginOwnedTaskTree:input_type -> kandev.plugin.v1.DeletePluginOwnedTaskTreeRequest
+	123, // 166: kandev.plugin.v1.Host.EnsureAgentConversation:input_type -> kandev.plugin.v1.EnsureAgentConversationRequest
+	125, // 167: kandev.plugin.v1.Host.DispatchAgentConversation:input_type -> kandev.plugin.v1.DispatchAgentConversationRequest
+	127, // 168: kandev.plugin.v1.Host.DeleteAgentConversation:input_type -> kandev.plugin.v1.DeleteAgentConversationRequest
+	95,  // 169: kandev.plugin.v1.Host.RespondToPermission:input_type -> kandev.plugin.v1.RespondToPermissionRequest
+	98,  // 170: kandev.plugin.v1.Host.AnswerClarification:input_type -> kandev.plugin.v1.AnswerClarificationRequest
+	100, // 171: kandev.plugin.v1.Host.CancelClarification:input_type -> kandev.plugin.v1.CancelClarificationRequest
+	2,   // 172: kandev.plugin.v1.Plugin.DeliverEvent:output_type -> kandev.plugin.v1.EventAck
+	7,   // 173: kandev.plugin.v1.Plugin.HandleWebhook:output_type -> kandev.plugin.v1.WebhookResponse
+	130, // 174: kandev.plugin.v1.Plugin.DescribeAutomationCondition:output_type -> kandev.plugin.v1.AutomationConditionResponse
+	132, // 175: kandev.plugin.v1.Plugin.VerifyAutomationWebhook:output_type -> kandev.plugin.v1.AutomationWebhookResponse
+	10,  // 176: kandev.plugin.v1.Plugin.HandleAction:output_type -> kandev.plugin.v1.PluginActionResponse
+	12,  // 177: kandev.plugin.v1.Plugin.SearchEntityReferences:output_type -> kandev.plugin.v1.SearchEntityReferencesResponse
+	15,  // 178: kandev.plugin.v1.Plugin.AuthorizeEntityReference:output_type -> kandev.plugin.v1.AuthorizeEntityReferenceResponse
+	17,  // 179: kandev.plugin.v1.Plugin.ResolveGitCredential:output_type -> kandev.plugin.v1.ResolveGitCredentialResponse
+	19,  // 180: kandev.plugin.v1.Plugin.GetGitCredentialBinding:output_type -> kandev.plugin.v1.GitCredentialBindingResponse
+	5,   // 181: kandev.plugin.v1.Plugin.InvokeAgentTool:output_type -> kandev.plugin.v1.AgentToolResponse
+	21,  // 182: kandev.plugin.v1.Host.GetState:output_type -> kandev.plugin.v1.GetStateResponse
+	23,  // 183: kandev.plugin.v1.Host.SetState:output_type -> kandev.plugin.v1.SetStateResponse
+	25,  // 184: kandev.plugin.v1.Host.DeleteState:output_type -> kandev.plugin.v1.DeleteStateResponse
+	27,  // 185: kandev.plugin.v1.Host.ListState:output_type -> kandev.plugin.v1.ListStateResponse
+	38,  // 186: kandev.plugin.v1.Host.RevealSecret:output_type -> kandev.plugin.v1.RevealSecretResponse
+	40,  // 187: kandev.plugin.v1.Host.EmitEvent:output_type -> kandev.plugin.v1.EmitEventResponse
+	32,  // 188: kandev.plugin.v1.Host.GetSecret:output_type -> kandev.plugin.v1.GetSecretResponse
+	34,  // 189: kandev.plugin.v1.Host.SetSecret:output_type -> kandev.plugin.v1.SetSecretResponse
+	36,  // 190: kandev.plugin.v1.Host.DeleteSecret:output_type -> kandev.plugin.v1.DeleteSecretResponse
+	30,  // 191: kandev.plugin.v1.Host.GetConfig:output_type -> kandev.plugin.v1.GetConfigResponse
+	135, // 192: kandev.plugin.v1.Host.GetCapabilityContext:output_type -> kandev.plugin.v1.GetCapabilityContextResponse
+	139, // 193: kandev.plugin.v1.Host.ListWorkspacesExact:output_type -> kandev.plugin.v1.ListWorkspacesExactResponse
+	141, // 194: kandev.plugin.v1.Host.ListWorkflowsExact:output_type -> kandev.plugin.v1.ListWorkflowsExactResponse
+	143, // 195: kandev.plugin.v1.Host.ListWorkflowStepsExact:output_type -> kandev.plugin.v1.ListWorkflowStepsExactResponse
+	146, // 196: kandev.plugin.v1.Host.ListTasksExact:output_type -> kandev.plugin.v1.ListTasksExactResponse
+	148, // 197: kandev.plugin.v1.Host.GetTaskExact:output_type -> kandev.plugin.v1.GetTaskExactResponse
+	151, // 198: kandev.plugin.v1.Host.ListSessionsExact:output_type -> kandev.plugin.v1.ListSessionsExactResponse
+	153, // 199: kandev.plugin.v1.Host.GetSessionExact:output_type -> kandev.plugin.v1.GetSessionExactResponse
+	156, // 200: kandev.plugin.v1.Host.ListSessionMessagesExact:output_type -> kandev.plugin.v1.ListSessionMessagesExactResponse
+	160, // 201: kandev.plugin.v1.Host.ListTaskDecisionEvidenceExact:output_type -> kandev.plugin.v1.ListTaskDecisionEvidenceExactResponse
+	162, // 202: kandev.plugin.v1.Host.UpdateTaskExact:output_type -> kandev.plugin.v1.UpdateTaskExactResponse
+	49,  // 203: kandev.plugin.v1.Host.ListTasks:output_type -> kandev.plugin.v1.ListTasksResponse
+	51,  // 204: kandev.plugin.v1.Host.GetTask:output_type -> kandev.plugin.v1.GetTaskResponse
+	54,  // 205: kandev.plugin.v1.Host.ListTaskStepTransitions:output_type -> kandev.plugin.v1.ListTaskStepTransitionsResponse
+	57,  // 206: kandev.plugin.v1.Host.ListWorkspaces:output_type -> kandev.plugin.v1.ListWorkspacesResponse
+	60,  // 207: kandev.plugin.v1.Host.ListWorkflows:output_type -> kandev.plugin.v1.ListWorkflowsResponse
+	66,  // 208: kandev.plugin.v1.Host.ListWorkflowSteps:output_type -> kandev.plugin.v1.ListWorkflowStepsResponse
+	63,  // 209: kandev.plugin.v1.Host.ListWorkflowTransitionGroups:output_type -> kandev.plugin.v1.ListWorkflowTransitionGroupsResponse
+	69,  // 210: kandev.plugin.v1.Host.ListAgentProfiles:output_type -> kandev.plugin.v1.ListAgentProfilesResponse
+	72,  // 211: kandev.plugin.v1.Host.ListExecutorProfiles:output_type -> kandev.plugin.v1.ListExecutorProfilesResponse
+	75,  // 212: kandev.plugin.v1.Host.ListRepositories:output_type -> kandev.plugin.v1.ListRepositoriesResponse
+	79,  // 213: kandev.plugin.v1.Host.ListSessions:output_type -> kandev.plugin.v1.ListSessionsResponse
+	82,  // 214: kandev.plugin.v1.Host.ListSessionCodeStats:output_type -> kandev.plugin.v1.ListSessionCodeStatsResponse
+	86,  // 215: kandev.plugin.v1.Host.ListMessages:output_type -> kandev.plugin.v1.ListMessagesResponse
+	92,  // 216: kandev.plugin.v1.Host.ListPendingInteractions:output_type -> kandev.plugin.v1.ListPendingInteractionsResponse
+	94,  // 217: kandev.plugin.v1.Host.GetInteraction:output_type -> kandev.plugin.v1.GetInteractionResponse
+	104, // 218: kandev.plugin.v1.Host.InvokeUtilityAgent:output_type -> kandev.plugin.v1.InvokeUtilityAgentResponse
+	104, // 219: kandev.plugin.v1.Host.InvokeUtilityAgentWithOptions:output_type -> kandev.plugin.v1.InvokeUtilityAgentResponse
+	109, // 220: kandev.plugin.v1.Host.CreateTask:output_type -> kandev.plugin.v1.CreateTaskResponse
+	111, // 221: kandev.plugin.v1.Host.UpdateTask:output_type -> kandev.plugin.v1.UpdateTaskResponse
+	113, // 222: kandev.plugin.v1.Host.MoveTask:output_type -> kandev.plugin.v1.MoveTaskResponse
+	115, // 223: kandev.plugin.v1.Host.SendMessage:output_type -> kandev.plugin.v1.SendMessageResponse
+	117, // 224: kandev.plugin.v1.Host.PreviewPluginOwnedTaskTree:output_type -> kandev.plugin.v1.PreviewPluginOwnedTaskTreeResponse
+	119, // 225: kandev.plugin.v1.Host.DeletePluginOwnedTaskTree:output_type -> kandev.plugin.v1.DeletePluginOwnedTaskTreeResponse
+	124, // 226: kandev.plugin.v1.Host.EnsureAgentConversation:output_type -> kandev.plugin.v1.EnsureAgentConversationResponse
+	126, // 227: kandev.plugin.v1.Host.DispatchAgentConversation:output_type -> kandev.plugin.v1.DispatchAgentConversationResponse
+	128, // 228: kandev.plugin.v1.Host.DeleteAgentConversation:output_type -> kandev.plugin.v1.DeleteAgentConversationResponse
+	96,  // 229: kandev.plugin.v1.Host.RespondToPermission:output_type -> kandev.plugin.v1.RespondToPermissionResponse
+	99,  // 230: kandev.plugin.v1.Host.AnswerClarification:output_type -> kandev.plugin.v1.AnswerClarificationResponse
+	101, // 231: kandev.plugin.v1.Host.CancelClarification:output_type -> kandev.plugin.v1.CancelClarificationResponse
+	172, // [172:232] is the sub-list for method output_type
+	112, // [112:172] is the sub-list for method input_type
+	112, // [112:112] is the sub-list for extension type_name
+	112, // [112:112] is the sub-list for extension extendee
+	0,   // [0:112] is the sub-list for field type_name
 }
 
 func init() { file_kandev_plugin_v1_plugin_proto_init() }
@@ -9765,13 +12145,14 @@ func file_kandev_plugin_v1_plugin_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_kandev_plugin_v1_plugin_proto_rawDesc), len(file_kandev_plugin_v1_plugin_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   136,
+			NumEnums:      1,
+			NumMessages:   166,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
 		GoTypes:           file_kandev_plugin_v1_plugin_proto_goTypes,
 		DependencyIndexes: file_kandev_plugin_v1_plugin_proto_depIdxs,
+		EnumInfos:         file_kandev_plugin_v1_plugin_proto_enumTypes,
 		MessageInfos:      file_kandev_plugin_v1_plugin_proto_msgTypes,
 	}.Build()
 	File_kandev_plugin_v1_plugin_proto = out.File

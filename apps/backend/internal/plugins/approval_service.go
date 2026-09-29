@@ -1,8 +1,10 @@
 package plugins
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -29,7 +31,22 @@ func (s *Service) approvalGrant(installationID, workspaceID string, revision uin
 	if err := s.validateApprovalManifest(installationID, manifestDigest, canonical); err != nil {
 		return CapabilityApproval{}, err
 	}
-	return ledger.grant(installationID, workspaceID, revision, manifestDigest, canonical, actor, reason, auditID, time.Now().UTC())
+	bridge := s.exactTaskCommandApprovalBridge()
+	if bridge != nil {
+		if err := bridge.RevokeWorkspace(context.Background(), installationID, workspaceID); err != nil {
+			return CapabilityApproval{}, err
+		}
+	}
+	approval, err := ledger.grant(installationID, workspaceID, revision, manifestDigest, canonical, actor, reason, auditID, time.Now().UTC())
+	if err != nil {
+		return CapabilityApproval{}, err
+	}
+	if bridge != nil {
+		if err := bridge.Grant(context.Background(), approval, auditID); err != nil {
+			return CapabilityApproval{}, err
+		}
+	}
+	return approval, nil
 }
 
 func (s *Service) validateApprovalManifest(installationID, manifestDigest string, capabilityIDs []string) error {
@@ -71,6 +88,11 @@ func (s *Service) approvalRevoke(installationID, workspaceID, actor, reason, aud
 		}
 		return CapabilityApproval{}, fmt.Errorf("plugins: approval not found")
 	}
+	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+		if err := bridge.Revoke(context.Background(), current, auditID); err != nil {
+			return CapabilityApproval{}, err
+		}
+	}
 	return ledger.revokeIfRevision(installationID, workspaceID, current.Revision, actor, reason, auditID, time.Now().UTC(), true)
 }
 
@@ -78,6 +100,11 @@ func (s *Service) approvalTombstoneInstallation(installationID string) error {
 	ledger := s.approvalLedger()
 	if ledger == nil {
 		return nil
+	}
+	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+		if err := bridge.RevokeInstallation(context.Background(), installationID); err != nil {
+			return err
+		}
 	}
 	return ledger.tombstoneInstallation(installationID, time.Now().UTC())
 }
@@ -149,13 +176,26 @@ func (s *Service) authorizePluginCapability(installationID, workspaceID, capabil
 		if allowed == capabilityID {
 			decision.Allowed = true
 			decision.Reason = ""
-			decision.Receipt.Result = "allowed"
+			decision.Receipt.Result = approvalReceiptAllowed
 			decision.AuditID = decision.Receipt.AuditID
 			return decision
 		}
 	}
 	decision.Reason = ApprovalDenyUndeclaredCapability
 	return decision
+}
+
+func (s *Service) recordExactReadReceipt(receipt ApprovalReceipt) error {
+	if s.approvals == nil {
+		return errors.New("plugins: approval ledger not configured")
+	}
+	if err := s.approvals.recordReadReceipt(receipt); err != nil {
+		return err
+	}
+	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+		return bridge.RecordReceipt(context.Background(), receipt)
+	}
+	return nil
 }
 
 // malformedAuthorizationRequestReason validates the structural shape of an
@@ -205,12 +245,12 @@ func (s *Service) installedRecordByInstallationID(installationID string) *store.
 }
 
 func manifestDeclaresCapability(record *store.Record, capabilityID string) bool {
-	for _, resource := range record.Capabilities.APIRead {
+	for _, resource := range record.Capabilities.HostV2Read {
 		if capabilityID == "host.v2.read:"+resource {
 			return true
 		}
 	}
-	for _, resource := range record.Capabilities.APIWrite {
+	for _, resource := range record.Capabilities.HostV2Write {
 		if capabilityID == "host.v2.write:"+resource {
 			return true
 		}

@@ -15,6 +15,9 @@ import (
 var ErrWorkspaceNameMismatch = repoerrors.ErrWorkspaceNameMismatch
 var ErrWorkspaceNotFound = repoerrors.ErrWorkspaceNotFound
 var ErrTaskNotFound = repoerrors.ErrTaskNotFound
+var ErrExactTaskSnapshotUnavailable = repoerrors.ErrExactTaskSnapshotUnavailable
+var ErrExactSessionSnapshotUnavailable = repoerrors.ErrExactSessionSnapshotUnavailable
+var ErrExactSessionMessageSnapshotUnavailable = repoerrors.ErrExactSessionMessageSnapshotUnavailable
 var ErrNoPrimarySession = repoerrors.ErrNoPrimarySession
 var ErrTaskParentMismatch = repoerrors.ErrTaskParentMismatch
 var ErrTaskPlanNotFound = repoerrors.ErrTaskPlanNotFound
@@ -224,6 +227,34 @@ type TaskRepository interface {
 	// for a failed read, a stale compatibility snapshot, a failed lock, a
 	// failed write, or a failed commit.
 	SwitchTaskRunner(ctx context.Context, req models.RunnerSwitchRequest) (*models.RunnerSwitchResult, error)
+}
+
+// ExactTaskSnapshotReader is an opt-in, bounded read capability for callers
+// that need a stable task projection. It intentionally stays separate from
+// TaskRepository so existing task consumers and fakes do not gain this
+// authority merely by implementing ordinary CRUD.
+type ExactTaskSnapshotReader interface {
+	OpenExactTaskSnapshot(ctx context.Context, request models.ExactTaskSnapshotRequest) (*models.ExactTaskSnapshot, error)
+	PageExactTaskSnapshot(ctx context.Context, token string, offset, limit int) ([]models.ExactTaskSnapshotTask, error)
+	GetExactTaskSnapshotTask(ctx context.Context, token, taskID string) (*models.ExactTaskSnapshotTask, error)
+	CleanupExpiredExactTaskSnapshots(ctx context.Context, limit int) (int, error)
+}
+
+// ExactSessionSnapshotReader is the opt-in counterpart for complete session
+// reads scoped to a single workspace.
+type ExactSessionSnapshotReader interface {
+	OpenExactSessionSnapshot(ctx context.Context, request models.ExactSessionSnapshotRequest) (*models.ExactSessionSnapshot, error)
+	PageExactSessionSnapshot(ctx context.Context, token string, offset, limit int) ([]models.ExactSessionSnapshotSession, error)
+	GetExactSessionSnapshotSession(ctx context.Context, token, sessionID string) (*models.ExactSessionSnapshotSession, error)
+	CleanupExpiredExactSessionSnapshots(ctx context.Context, limit int) (int, error)
+}
+
+// ExactSessionMessageSnapshotReader is the private, opt-in counterpart for a
+// sanitized transcript projection bound to one exact session generation.
+type ExactSessionMessageSnapshotReader interface {
+	OpenExactSessionMessageSnapshot(ctx context.Context, request models.ExactSessionMessageSnapshotRequest) (*models.ExactSessionMessageSnapshot, error)
+	PageExactSessionMessageSnapshot(ctx context.Context, request models.ExactSessionMessageSnapshotPageRequest) ([]models.ExactSessionMessageSnapshotMessage, error)
+	CleanupExpiredExactSessionMessageSnapshots(ctx context.Context, limit int) (int, error)
 }
 
 // TaskPriorityRepository updates a task's priority without replacing the

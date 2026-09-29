@@ -33,9 +33,10 @@ type sqliteRepository struct {
 	// OUTSIDE any transaction because a failed statement on PostgreSQL aborts
 	// the whole transaction — the guard must never issue its UPDATE against a
 	// missing table inside a tx.
-	tasksTablePresent          bool
-	taskSessionsTablePresent   bool
-	taskStepTransitionsPresent bool
+	tasksTablePresent              bool
+	taskSessionsTablePresent       bool
+	taskStepTransitionsPresent     bool
+	exactPendingTransitionsEnabled bool
 }
 
 // NewSQLiteRepository creates a SQLite-backed Repository. The supplied writer
@@ -90,6 +91,9 @@ func NewSQLiteRepository(writer, reader *sqlx.DB) (Repository, error) {
 				return nil, fmt.Errorf("messagequeue: migrate pending move identities: %w", err)
 			}
 		}
+	}
+	if err := r.initExactPendingTransitionSchema(); err != nil {
+		return nil, fmt.Errorf("messagequeue: init exact pending transitions: %w", err)
 	}
 	return r, nil
 }
@@ -523,6 +527,7 @@ func (r *sqliteRepository) initSchema() error {
 		actor            TEXT NOT NULL DEFAULT '',
 		sender_session_id TEXT NOT NULL DEFAULT '',
 		entry_options_json TEXT NOT NULL DEFAULT '{}'
+		,resource_version BIGINT NOT NULL DEFAULT 1
 	);
 
 	-- Per-session cross-process mutex. Every queue mutation takes this row
@@ -567,6 +572,9 @@ func (r *sqliteRepository) initSchema() error {
 		return alterErr
 	}
 	if _, alterErr := r.db.Exec(`ALTER TABLE pending_moves ADD COLUMN session_incarnation_id TEXT NOT NULL DEFAULT ''`); alterErr != nil && !internaldb.IsDuplicateColumnError(alterErr) {
+		return alterErr
+	}
+	if _, alterErr := r.db.Exec(`ALTER TABLE pending_moves ADD COLUMN resource_version BIGINT NOT NULL DEFAULT 1`); alterErr != nil && !internaldb.IsDuplicateColumnError(alterErr) {
 		return alterErr
 	}
 	for _, migration := range []struct {

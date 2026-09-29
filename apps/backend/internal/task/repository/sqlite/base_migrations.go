@@ -79,6 +79,21 @@ func (r *Repository) migrateSessionsAddCostColumns() {
 //
 //nolint:cyclop,funlen,maintidx // Legacy flat list of ~60 independent idempotent migration steps predating startup-step instrumentation; splitting it is out of scope here.
 func (r *Repository) runMigrations(ctx context.Context) error {
+	if err := r.migrate.Apply("tasks.resource_version", `ALTER TABLE tasks ADD COLUMN resource_version INTEGER NOT NULL DEFAULT 1`); err != nil {
+		return err
+	}
+	if dialect.IsPostgres(r.db.DriverName()) {
+		if err := r.migrate.Apply("tasks.resource_version_function", `CREATE OR REPLACE FUNCTION kandev_task_resource_version() RETURNS trigger AS $$ BEGIN NEW.resource_version := OLD.resource_version + 1; RETURN NEW; END; $$ LANGUAGE plpgsql`); err != nil {
+			return err
+		}
+		if err := r.migrate.Apply("tasks.resource_version_trigger", `CREATE TRIGGER tasks_resource_version_trigger BEFORE UPDATE ON tasks FOR EACH ROW WHEN (NEW.resource_version = OLD.resource_version) EXECUTE FUNCTION kandev_task_resource_version()`); err != nil {
+			return err
+		}
+	} else {
+		if err := r.migrate.Apply("tasks.resource_version_trigger", `CREATE TRIGGER tasks_resource_version_trigger AFTER UPDATE ON tasks FOR EACH ROW WHEN NEW.resource_version = OLD.resource_version BEGIN UPDATE tasks SET resource_version = OLD.resource_version + 1 WHERE id = OLD.id; END`); err != nil {
+			return err
+		}
+	}
 	if err := r.migrateTaskPriorityToTextPostgres(); err != nil {
 		return err
 	}

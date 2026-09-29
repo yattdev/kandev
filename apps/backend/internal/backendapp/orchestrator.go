@@ -24,6 +24,8 @@ import (
 	"github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/delivery"
 	"github.com/kandev/kandev/internal/events/bus"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
+	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
 	"github.com/kandev/kandev/internal/gitcredentials"
 	githubpkg "github.com/kandev/kandev/internal/github"
 	jirapkg "github.com/kandev/kandev/internal/jira"
@@ -33,6 +35,7 @@ import (
 	executorpkg "github.com/kandev/kandev/internal/orchestrator/executor"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/persistence/requiredstores"
+	"github.com/kandev/kandev/internal/plugins"
 	promptservice "github.com/kandev/kandev/internal/prompts/service"
 	"github.com/kandev/kandev/internal/repoclone"
 	"github.com/kandev/kandev/internal/secrets"
@@ -65,6 +68,8 @@ func provideOrchestrator(
 	pool *db.Pool,
 	eventBus bus.EventBus,
 	taskRepo *sqliterepo.Repository,
+	officeRepo *officesqlite.Repository,
+	pluginsSvc *plugins.Service,
 	taskSvc *taskservice.Service,
 	userSvc *userservice.Service,
 	lifecycleMgr *lifecycle.Manager,
@@ -123,6 +128,10 @@ func provideOrchestrator(
 	if err != nil {
 		return nil, nil, fmt.Errorf("init message queue repo: %w", err)
 	}
+	if validator, ok := queueRepo.(messagequeue.ExactPendingTransitionAuthorityReader); ok {
+		taskRepo.SetExactTaskCommandPendingValidator(validator)
+	}
+	wireExactPluginEvidence(pool, taskRepo, officeRepo, pluginsSvc, taskSvc, queueRepo)
 	queueResolution := resolveQueueSettingsWithStore(settingsStore, pool, log, queueConfiguration(cfg))
 	queueSettings := queueResolution.Effective
 	maxPerSession := queueSettings.MaxPerSession
@@ -326,6 +335,33 @@ func provideOrchestrator(
 	orchestratorSvc.SetTaskRepositoryBaseBranchUpdater(&repoLocalPathUpdater{svc: taskSvc})
 
 	return orchestratorSvc, msgCreator, nil
+}
+
+func wireExactPluginEvidence(pool *db.Pool, taskRepo *sqliterepo.Repository, officeRepo *officesqlite.Repository, pluginsSvc *plugins.Service, taskSvc *taskservice.Service, queueRepo messagequeue.Repository) {
+	if pool == nil || taskRepo == nil || officeRepo == nil || pluginsSvc == nil || taskSvc == nil {
+		return
+	}
+	authority, err := exactsnapshotauthority.NewSQLite(pool.Writer())
+	if err != nil {
+		return
+	}
+	pending, ok := queueRepo.(interface {
+		messagequeue.ExactPendingTransitionReader
+		messagequeue.ExactPendingTransitionAuthorityReader
+	})
+	if !ok {
+		return
+	}
+	composite, err := exactsnapshotcomposite.New(authority, officeRepo, pending)
+	if err != nil {
+		return
+	}
+	pluginsSvc.SetExactTaskDecisionEvidence(composite)
+	taskRepo.SetExactTaskCommandCompositeValidator(composite)
+	issuer, err := plugins.NewSQLiteExactTaskCommandGrantIssuerWithTaskUpdatePublisher(taskRepo, composite, taskSvc)
+	if err == nil {
+		pluginsSvc.SetExactTaskCommandGrantIssuer(issuer)
+	}
 }
 
 type githubCredentialPolicyService interface {

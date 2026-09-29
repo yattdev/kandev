@@ -133,8 +133,13 @@ type Capabilities struct {
 	Events   []string `yaml:"events,omitempty" json:"events,omitempty"`
 	APIRead  []string `yaml:"api_read,omitempty" json:"api_read,omitempty"`
 	APIWrite []string `yaml:"api_write,omitempty" json:"api_write,omitempty"`
-	State    bool     `yaml:"state,omitempty" json:"state,omitempty"`
-	Secrets  bool     `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+	// HostV2Read and HostV2Write declare the approval-bound exact Host
+	// capabilities. They are deliberately separate from APIRead/APIWrite,
+	// whose authority and wire semantics remain frozen for v1 plugins.
+	HostV2Read  []string `yaml:"host_v2_read,omitempty" json:"host_v2_read,omitempty"`
+	HostV2Write []string `yaml:"host_v2_write,omitempty" json:"host_v2_write,omitempty"`
+	State       bool     `yaml:"state,omitempty" json:"state,omitempty"`
+	Secrets     bool     `yaml:"secrets,omitempty" json:"secrets,omitempty"`
 	// AgentInvoke gates Host.InvokeUtilityAgent: a one-shot, non-interactive
 	// completion run by the platform default or an explicitly selected profile.
 	AgentInvoke bool `yaml:"agent_invoke,omitempty" json:"agent_invoke,omitempty"`

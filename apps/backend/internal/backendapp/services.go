@@ -622,6 +622,9 @@ func initPluginsWiring(
 		// build passes "dev", which the service treats as "don't enforce".
 		pluginsSvc.SetKandevVersion(version)
 		pluginsSvc.SetDataSources(taskSvc, taskSvc, workflowSvc, agentSettingsController, analyticsservice.New(repos.Analytics), taskSvc, taskSvc, pluginsTaskWriterAdapter{svc: taskSvc})
+		if bridge, err := plugins.NewSQLiteExactTaskCommandApprovalBridge(repos.Task); err == nil {
+			pluginsSvc.SetExactTaskCommandApprovalBridge(bridge)
+		}
 		// Wire the managed agent conversation service for the agent_conversation
 		// Host capability. Wired here (not at boot time in main.go) because the
 		// task service, shared repository, agent settings repository, and

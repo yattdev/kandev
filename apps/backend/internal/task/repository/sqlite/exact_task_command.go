@@ -1,0 +1,697 @@
+package sqlite
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/db/dialect"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
+	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
+)
+
+// ErrExactTaskCommandUnavailable is the fail-closed result for an exact
+// command whose approval, grant, task version, or workspace fence changed.
+var ErrExactTaskCommandUnavailable = errors.New("exact task command unavailable")
+
+const exactTaskDescriptionCommandCapability = "host.v2.write:tasks"
+
+func (r *Repository) ExactTaskCommandAvailable() bool {
+	return r != nil && r.db != nil && !dialect.IsPostgres(r.db.DriverName())
+}
+
+// ExactTaskCommandWorkspaceFence returns the current task-writer fence for
+// an internal exact command precondition.
+func (r *Repository) ExactTaskCommandWorkspaceFence(ctx context.Context, workspaceID string) (int64, error) {
+	if !r.ExactTaskCommandAvailable() || workspaceID == "" {
+		return 0, ErrExactTaskCommandUnavailable
+	}
+	var revision int64
+	if err := r.db.QueryRowxContext(ctx, r.db.Rebind(`SELECT revision FROM exact_task_workspace_fences WHERE workspace_id = ?`), workspaceID).Scan(&revision); err != nil {
+		return 0, ErrExactTaskCommandUnavailable
+	}
+	return revision, nil
+}
+
+// ExactTaskCommandApproval is the SQLite-owned approval projection used only
+// by the future exact command path. Legacy approvals.json is deliberately not
+// consulted here: a command can be enabled only after a Host bridge makes the
+// approval and its revocation durable on this writer.
+type ExactTaskCommandApproval struct {
+	InstallationID, WorkspaceID, CapabilityID, ReceiptAuditID string
+	Revision                                                  uint64
+}
+
+// ExactTaskCommandGrant is a server-owned, one-shot authorization record.
+type ExactTaskCommandGrant struct {
+	ID, InstallationID, WorkspaceID, TaskID, CapabilityID string
+	ReceiptAuditID, ActionDigest, IdempotencyKey          string
+	ApprovalRevision                                      uint64
+	ExpiresAt                                             time.Time
+}
+
+// ExactTaskDescriptionCommand is intentionally repository-internal plumbing;
+// it is not exposed through the plugin Host or SDK.
+type ExactTaskDescriptionCommand struct {
+	GrantID, InstallationID, WorkspaceID, TaskID string
+	CapabilityID, ReceiptAuditID                 string
+	ApprovalRevision                             uint64
+	ActionDigest, IdempotencyKey, Marker         string
+	RequestIdentity                              string
+	ExpectedResourceVersion, ExpectedFence       int64
+	PendingSnapshotToken                         string
+	PendingTransition                            *messagequeue.ExactPendingTransition
+}
+
+type ExactTaskDescriptionReceipt struct {
+	AuditID         string
+	ResourceVersion int64
+	Pending         bool
+}
+
+// FindExactTaskCommandReplay reads only an already committed public command.
+// A changed request sharing an idempotency key is denied before another grant
+// can be issued, including after the evidence snapshot has expired.
+func (r *Repository) FindExactTaskCommandReplay(ctx context.Context, installationID, workspaceID, taskID, idempotencyKey, requestIdentity string, approvalRevision uint64) (*ExactTaskDescriptionReceipt, error) {
+	if !r.ExactTaskCommandAvailable() || installationID == "" || workspaceID == "" || taskID == "" || idempotencyKey == "" || requestIdentity == "" {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	var storedTaskID, storedIdentity string
+	var storedRevision uint64
+	var version int64
+	var publishedAt sql.NullTime
+	err := r.db.QueryRowxContext(ctx, r.db.Rebind(`SELECT a.task_id, a.request_identity, g.approval_revision, a.resource_version, o.published_at FROM exact_task_command_audits a JOIN exact_task_command_grants g ON g.installation_id = a.installation_id AND g.workspace_id = a.workspace_id AND g.idempotency_key = a.idempotency_key JOIN exact_task_command_outbox o ON o.audit_id = a.audit_id WHERE a.installation_id = ? AND a.workspace_id = ? AND a.idempotency_key = ?`), installationID, workspaceID, idempotencyKey).Scan(&storedTaskID, &storedIdentity, &storedRevision, &version, &publishedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil || storedTaskID != taskID || storedIdentity != requestIdentity || storedRevision != approvalRevision {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	return &ExactTaskDescriptionReceipt{AuditID: idempotencyKey, ResourceVersion: version, Pending: !publishedAt.Valid}, nil
+}
+
+type ExactTaskCommandOutboxRecord struct {
+	AuditID, TaskID, WorkspaceID string
+	ResourceVersion              int64
+	Delivered, DeliveryStarted   bool
+}
+
+const exactTaskCommandOutboxClaimLease = time.Minute
+
+func (r *Repository) ClaimExactTaskCommandOutbox(ctx context.Context, auditID string) (*ExactTaskCommandOutboxRecord, error) {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	row := &ExactTaskCommandOutboxRecord{AuditID: auditID}
+	now := r.nowUTC()
+	var deliveredAt, deliveryStartedAt sql.NullTime
+	err := r.db.QueryRowxContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET claimed_at = ? WHERE audit_id = ? AND published_at IS NULL AND (claimed_at IS NULL OR claimed_at <= ? OR delivered_at IS NOT NULL) RETURNING task_id, workspace_id, resource_version, delivered_at, delivery_started_at`), now, auditID, now.Add(-exactTaskCommandOutboxClaimLease)).Scan(&row.TaskID, &row.WorkspaceID, &row.ResourceVersion, &deliveredAt, &deliveryStartedAt)
+	if err == nil {
+		row.Delivered = deliveredAt.Valid
+		row.DeliveryStarted = deliveryStartedAt.Valid
+		return row, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	var publishedAt sql.NullTime
+	if err = r.db.QueryRowxContext(ctx, r.db.Rebind(`SELECT published_at FROM exact_task_command_outbox WHERE audit_id = ?`), auditID).Scan(&publishedAt); err != nil {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	if publishedAt.Valid {
+		return nil, nil
+	}
+	return nil, ErrExactTaskCommandUnavailable
+}
+
+// BeginExactTaskCommandOutboxDelivery persists the at-most-once delivery
+// intent before calling the event bus. An ambiguous publish outcome remains
+// pending after a crash instead of being emitted a second time.
+func (r *Repository) BeginExactTaskCommandOutboxDelivery(ctx context.Context, auditID string) error {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET delivery_started_at = ? WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL AND delivery_started_at IS NULL`), r.nowUTC(), auditID)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
+// ResetExactTaskCommandOutboxDelivery clears an intent only when Publish
+// returned an error, which is the event bus's definitive failed-delivery path.
+func (r *Repository) ResetExactTaskCommandOutboxDelivery(ctx context.Context, auditID string) error {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET delivery_started_at = NULL WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL AND delivery_started_at IS NOT NULL`), auditID)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
+// RecordExactTaskCommandOutboxDelivery durably records a successful event
+// delivery before the final acknowledgement. A restarted publisher can then
+// finish acknowledgement without emitting a duplicate task.updated event.
+func (r *Repository) RecordExactTaskCommandOutboxDelivery(ctx context.Context, auditID string) error {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET delivered_at = ? WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL AND delivery_started_at IS NOT NULL`), r.nowUTC(), auditID)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
+// AcknowledgeExactTaskCommandOutbox records a completed task.updated
+// publication. A claim remains durable until this acknowledgement so a
+// database commit can never be mistaken for a delivered event.
+func (r *Repository) AcknowledgeExactTaskCommandOutbox(ctx context.Context, auditID string) error {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET published_at = ? WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NOT NULL`), r.nowUTC(), auditID)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
+// ReleaseExactTaskCommandOutboxClaim makes an unpublished row available for
+// a later authoritative retry when reading or publishing its task fails.
+func (r *Repository) ReleaseExactTaskCommandOutboxClaim(ctx context.Context, auditID string) error {
+	if !r.ExactTaskCommandAvailable() || auditID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_outbox SET claimed_at = NULL WHERE audit_id = ? AND claimed_at IS NOT NULL AND published_at IS NULL AND delivered_at IS NULL AND delivery_started_at IS NULL`), auditID)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
+type exactTaskCommandTransaction struct {
+	tx               *sqlx.Tx
+	commit, rollback func() error
+	validator        messagequeue.ExactPendingTransitionAuthorityReader
+	composite        *exactsnapshotcomposite.Repository
+	authority        *exactsnapshotauthority.Authority
+	authorityTx      *exactsnapshotauthority.Transaction
+}
+
+// SetExactTaskCommandPendingValidator installs the SQLite queue validator
+// used only by the unadvertised exact command path.
+func (r *Repository) SetExactTaskCommandPendingValidator(validator messagequeue.ExactPendingTransitionAuthorityReader) {
+	r.exactTaskCommandPendingValidator = validator
+}
+
+// SetExactTaskCommandCompositeValidator accepts the Host's complete evidence
+// token at commit time. The queue-only validator remains for older private
+// command tests; production composition installs both.
+func (r *Repository) SetExactTaskCommandCompositeValidator(validator *exactsnapshotcomposite.Repository) {
+	r.exactTaskCommandCompositeValidator = validator
+}
+
+func (r *Repository) initExactTaskCommandSchema() error {
+	if err := r.migrate.Apply("exact_task_commands.tables", `
+		CREATE TABLE IF NOT EXISTS exact_task_command_approvals (
+			installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+			capability_id TEXT NOT NULL, receipt_audit_id TEXT NOT NULL,
+			revision BIGINT NOT NULL, revoked_at TIMESTAMP,
+			PRIMARY KEY (installation_id, workspace_id, capability_id)
+		);
+		CREATE TABLE IF NOT EXISTS exact_task_command_grants (
+			id TEXT PRIMARY KEY, installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+			task_id TEXT NOT NULL, capability_id TEXT NOT NULL, receipt_audit_id TEXT NOT NULL,
+			approval_revision BIGINT NOT NULL, action_digest TEXT NOT NULL,
+			idempotency_key TEXT NOT NULL, expires_at TIMESTAMP NOT NULL, consumed_at TIMESTAMP,
+			revoked_at TIMESTAMP, UNIQUE (installation_id, workspace_id, idempotency_key)
+		);
+		CREATE TABLE IF NOT EXISTS exact_task_command_audits (
+			audit_id TEXT PRIMARY KEY, installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+			task_id TEXT NOT NULL, action_digest TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+			resource_version BIGINT NOT NULL, created_at TIMESTAMP NOT NULL,
+		UNIQUE (installation_id, workspace_id, idempotency_key)
+		);
+		CREATE TABLE IF NOT EXISTS exact_task_command_outbox (
+			audit_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+			resource_version BIGINT NOT NULL, published_at TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS exact_task_command_receipts (
+			audit_id TEXT PRIMARY KEY, installation_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+			capability_id TEXT NOT NULL, approval_revision BIGINT NOT NULL, observed_at TIMESTAMP NOT NULL,
+		UNIQUE (installation_id, workspace_id, capability_id, audit_id)
+		);`); err != nil {
+		return err
+	}
+	if err := r.migrate.Apply("exact_task_commands.audit_identity", `ALTER TABLE exact_task_command_audits ADD COLUMN command_identity TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := r.migrate.Apply("exact_task_commands.outbox_claim", `ALTER TABLE exact_task_command_outbox ADD COLUMN claimed_at TIMESTAMP`); err != nil {
+		return err
+	}
+	if err := r.migrate.Apply("exact_task_commands.outbox_delivery", `ALTER TABLE exact_task_command_outbox ADD COLUMN delivered_at TIMESTAMP`); err != nil {
+		return err
+	}
+	if err := r.migrate.Apply("exact_task_commands.request_identity", `ALTER TABLE exact_task_command_audits ADD COLUMN request_identity TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	return r.migrate.Apply("exact_task_commands.outbox_delivery_intent", `ALTER TABLE exact_task_command_outbox ADD COLUMN delivery_started_at TIMESTAMP`)
+}
+
+// RecordExactTaskCommandReceipt binds an H6 decision receipt to the active
+// SQLite approval projection. A missing projection is denied rather than
+// falling back to approvals.json.
+func (r *Repository) RecordExactTaskCommandReceipt(ctx context.Context, approval ExactTaskCommandApproval, observedAt time.Time) error {
+	if !validExactCommandApproval(approval) || observedAt.IsZero() {
+		return ErrExactTaskCommandUnavailable
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = requireExactCommandApproval(ctx, r, tx, approval.InstallationID, approval.WorkspaceID, approval.CapabilityID, approval.Revision); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_receipts(audit_id, installation_id, workspace_id, capability_id, approval_revision, observed_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(audit_id) DO NOTHING`), approval.ReceiptAuditID, approval.InstallationID, approval.WorkspaceID, approval.CapabilityID, approval.Revision, observedAt.UTC())
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// UpsertExactTaskCommandApproval is the narrow future bridge from an H6
+// receipt. It accepts only monotonic revisions and performs no JSON fallback.
+func (r *Repository) UpsertExactTaskCommandApproval(ctx context.Context, approval ExactTaskCommandApproval) error {
+	if !validExactCommandApproval(approval) {
+		return ErrExactTaskCommandUnavailable
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var revision uint64
+	var revokedAt sql.NullTime
+	err = tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT revision, revoked_at FROM exact_task_command_approvals WHERE installation_id = ? AND workspace_id = ? AND capability_id = ?`), approval.InstallationID, approval.WorkspaceID, approval.CapabilityID).Scan(&revision, &revokedAt)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil && ((!revokedAt.Valid && approval.Revision != revision+1) || (revokedAt.Valid && approval.Revision < revision)) {
+		return ErrExactTaskCommandUnavailable
+	}
+	if err != nil && approval.Revision != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_approvals(installation_id, workspace_id, capability_id, receipt_audit_id, revision, revoked_at) VALUES (?, ?, ?, ?, ?, NULL) ON CONFLICT(installation_id, workspace_id, capability_id) DO UPDATE SET receipt_audit_id = excluded.receipt_audit_id, revision = excluded.revision, revoked_at = NULL`), approval.InstallationID, approval.WorkspaceID, approval.CapabilityID, approval.ReceiptAuditID, approval.Revision)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RevokeExactTaskCommandApproval revokes the exact projection and every live
+// matching grant in the same writer transaction.
+func (r *Repository) RevokeExactTaskCommandApproval(ctx context.Context, approval ExactTaskCommandApproval) error {
+	if !validExactCommandApproval(approval) {
+		return ErrExactTaskCommandUnavailable
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_approvals SET revision = ?, receipt_audit_id = ?, revoked_at = ? WHERE installation_id = ? AND workspace_id = ? AND capability_id = ? AND revision = ? AND revoked_at IS NULL`), approval.Revision+1, approval.ReceiptAuditID, r.nowUTC(), approval.InstallationID, approval.WorkspaceID, approval.CapabilityID, approval.Revision)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_grants SET revoked_at = ? WHERE installation_id = ? AND workspace_id = ? AND capability_id = ? AND approval_revision = ? AND consumed_at IS NULL AND revoked_at IS NULL`), r.nowUTC(), approval.InstallationID, approval.WorkspaceID, approval.CapabilityID, approval.Revision); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RevokeExactTaskCommandInstallation closes every exact command approval for
+// an installation before its manifest review or uninstall changes the H6 row.
+func (r *Repository) RevokeExactTaskCommandInstallation(ctx context.Context, installationID string) error {
+	if !r.ExactTaskCommandAvailable() || installationID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := r.nowUTC()
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_approvals SET revision = revision + 1, revoked_at = ? WHERE installation_id = ? AND revoked_at IS NULL`), now, installationID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_grants SET revoked_at = ? WHERE installation_id = ? AND consumed_at IS NULL AND revoked_at IS NULL`), now, installationID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RevokeExactTaskCommandWorkspace closes old grants before a workspace
+// approval is replaced or narrowed, without affecting other workspaces.
+func (r *Repository) RevokeExactTaskCommandWorkspace(ctx context.Context, installationID, workspaceID string) error {
+	if !r.ExactTaskCommandAvailable() || installationID == "" || workspaceID == "" {
+		return ErrExactTaskCommandUnavailable
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := r.nowUTC()
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_approvals SET revision = revision + 1, revoked_at = ? WHERE installation_id = ? AND workspace_id = ? AND revoked_at IS NULL`), now, installationID, workspaceID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_grants SET revoked_at = ? WHERE installation_id = ? AND workspace_id = ? AND consumed_at IS NULL AND revoked_at IS NULL`), now, installationID, workspaceID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) IssueExactTaskCommandGrant(ctx context.Context, grant ExactTaskCommandGrant) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = r.issueExactTaskCommandGrantInTx(ctx, tx, grant); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// issueExactTaskCommandGrantInAuthorityTx creates a grant only after the
+// queue-owned evidence validator has accepted its observed pending row in the
+// same sealed SQLite transaction. It intentionally leaves resolution of that
+// transaction to the authority owner.
+func (r *Repository) issueExactTaskCommandGrantInAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, grant ExactTaskCommandGrant, snapshotToken string, observed messagequeue.ExactPendingTransition) error {
+	if !r.ExactTaskCommandAvailable() || r.exactTaskCommandPendingValidator == nil || authority == nil || !authority.Matches(r.db) || tx == nil || !tx.Matches(authority) || snapshotToken == "" || observed.WorkspaceID != grant.WorkspaceID || observed.TaskID != grant.TaskID {
+		return ErrExactTaskCommandUnavailable
+	}
+	if err := r.exactTaskCommandPendingValidator.ValidateExactPendingTransitionInAuthorityTx(ctx, authority, tx, snapshotToken, observed); err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	return r.issueExactTaskCommandGrantInTx(ctx, tx.SQLX(), grant)
+}
+
+// IssueExactTaskCommandGrantInAuthorityTx is the unadvertised composition
+// seam for a Host-owned grant issuer. The transaction and authority can only
+// come from the matching SQLite queue evidence reader; callers cannot use it
+// to create a grant outside the observed pending-transition fence.
+func (r *Repository) IssueExactTaskCommandGrantInAuthorityTx(ctx context.Context, authority *exactsnapshotauthority.Authority, tx *exactsnapshotauthority.Transaction, grant ExactTaskCommandGrant, snapshotToken string, observed messagequeue.ExactPendingTransition) error {
+	return r.issueExactTaskCommandGrantInAuthorityTx(ctx, authority, tx, grant, snapshotToken, observed)
+}
+
+// ExecuteExactTaskDescriptionCommandWithCompositeEvidence resolves the first
+// exact command attempt in one composite-authority transaction. The Host owns
+// grant construction; callers never supply an authority token or workspace
+// fence that can be used outside this transaction.
+func (r *Repository) ExecuteExactTaskDescriptionCommandWithCompositeEvidence(ctx context.Context, evidence *exactsnapshotcomposite.Repository, compositeSnapshotToken string, observed messagequeue.ExactPendingTransition, grant ExactTaskCommandGrant, command ExactTaskDescriptionCommand) (ExactTaskDescriptionReceipt, error) {
+	if !r.exactTaskDescriptionCommandAvailable(command) || evidence == nil || compositeSnapshotToken == "" || !exactTaskCommandMatchesGrant(command, grant) {
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	authority, authorityTx, err := evidence.BeginPendingTransitionAuthorityTx(ctx)
+	if err != nil || authority == nil || authorityTx == nil || !authority.Matches(r.db) {
+		if authorityTx != nil {
+			_ = authorityTx.Rollback()
+		}
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	defer func() { _ = authorityTx.Rollback() }()
+	tx := authorityTx.SQLX()
+	if receipt, replayed, replayErr := exactTaskCommandReplay(ctx, r, tx, command); replayed {
+		if replayErr != nil {
+			return ExactTaskDescriptionReceipt{}, replayErr
+		}
+		return receipt, authorityTx.Commit()
+	}
+	if err = evidence.ValidatePendingTransitionInAuthorityTx(ctx, authority, authorityTx, compositeSnapshotToken, observed); err != nil {
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	if err = r.issueExactTaskCommandGrantInTx(ctx, tx, grant); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	return r.applyExactTaskDescriptionCommandInTx(ctx, tx, command, authorityTx.Commit)
+}
+
+func exactTaskCommandMatchesGrant(command ExactTaskDescriptionCommand, grant ExactTaskCommandGrant) bool {
+	return command.GrantID == grant.ID &&
+		command.InstallationID == grant.InstallationID &&
+		command.WorkspaceID == grant.WorkspaceID &&
+		command.TaskID == grant.TaskID &&
+		command.CapabilityID == grant.CapabilityID &&
+		command.ReceiptAuditID == grant.ReceiptAuditID &&
+		command.ApprovalRevision == grant.ApprovalRevision &&
+		command.ActionDigest == grant.ActionDigest &&
+		command.IdempotencyKey == grant.IdempotencyKey
+}
+
+func (r *Repository) issueExactTaskCommandGrantInTx(ctx context.Context, tx *sqlx.Tx, grant ExactTaskCommandGrant) error {
+	if !r.ExactTaskCommandAvailable() || tx == nil || !validExactCommandGrant(grant) || grant.CapabilityID != exactTaskDescriptionCommandCapability || !grant.ExpiresAt.After(r.nowUTC()) {
+		return ErrExactTaskCommandUnavailable
+	}
+	if err := requireExactCommandApproval(ctx, r, tx, grant.InstallationID, grant.WorkspaceID, grant.CapabilityID, grant.ApprovalRevision); err != nil {
+		return err
+	}
+	if err := requireExactCommandReceipt(ctx, r, tx, grant.InstallationID, grant.WorkspaceID, grant.CapabilityID, grant.ReceiptAuditID, grant.ApprovalRevision); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_grants(id, installation_id, workspace_id, task_id, capability_id, receipt_audit_id, approval_revision, action_digest, idempotency_key, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), grant.ID, grant.InstallationID, grant.WorkspaceID, grant.TaskID, grant.CapabilityID, grant.ReceiptAuditID, grant.ApprovalRevision, grant.ActionDigest, grant.IdempotencyKey, grant.ExpiresAt.UTC())
+	if err != nil {
+		return fmt.Errorf("issue exact task command grant: %w", err)
+	}
+	return nil
+}
+
+// ApplyExactTaskDescriptionCommand is intentionally unadvertised. It proves
+// the one-transaction prerequisite only; wiring it to UpdateTaskExact waits
+// for the Host approval bridge and independent contract gates.
+func (r *Repository) ApplyExactTaskDescriptionCommand(ctx context.Context, command ExactTaskDescriptionCommand) (ExactTaskDescriptionReceipt, error) {
+	if !r.exactTaskDescriptionCommandAvailable(command) {
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	commandTx, err := r.beginExactTaskCommandTransaction(ctx, command)
+	if err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	defer func() { _ = commandTx.rollback() }()
+	if receipt, replayed, replayErr := exactTaskCommandReplay(ctx, r, commandTx.tx, command); replayed {
+		if replayErr != nil {
+			return ExactTaskDescriptionReceipt{}, replayErr
+		}
+		return receipt, commandTx.commit()
+	}
+	if err = commandTx.validatePending(ctx, command); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	return r.applyExactTaskDescriptionCommandInTx(ctx, commandTx.tx, command, commandTx.commit)
+}
+
+func (r *Repository) applyExactTaskDescriptionCommandInTx(ctx context.Context, tx *sqlx.Tx, command ExactTaskDescriptionCommand, commit func() error) (ExactTaskDescriptionReceipt, error) {
+	if tx == nil || commit == nil {
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	var err error
+	if err = requireExactCommandApproval(ctx, r, tx, command.InstallationID, command.WorkspaceID, command.CapabilityID, command.ApprovalRevision); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	if err = requireExactCommandReceipt(ctx, r, tx, command.InstallationID, command.WorkspaceID, command.CapabilityID, command.ReceiptAuditID, command.ApprovalRevision); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	now := r.nowUTC()
+	if err = r.consumeExactTaskCommandGrant(ctx, tx, command, now); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET description = CASE WHEN description = '' THEN ? ELSE description || ? END, updated_at = ? WHERE id = ? AND workspace_id = ? AND resource_version = ? AND (SELECT revision FROM exact_task_workspace_fences WHERE workspace_id = ?) = ?`), command.Marker, "\n\n"+command.Marker, now, command.TaskID, command.WorkspaceID, command.ExpectedResourceVersion, command.WorkspaceID, command.ExpectedFence)
+	if err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ExactTaskDescriptionReceipt{}, ErrExactTaskCommandUnavailable
+	}
+	var version int64
+	if err = tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT resource_version FROM tasks WHERE id = ?`), command.TaskID).Scan(&version); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	if err = r.afterExactTaskCommandCAS(); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_audits(audit_id, installation_id, workspace_id, task_id, action_digest, idempotency_key, resource_version, command_identity, request_identity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), command.IdempotencyKey, command.InstallationID, command.WorkspaceID, command.TaskID, command.ActionDigest, command.IdempotencyKey, version, exactTaskCommandIdentity(command), command.RequestIdentity, now); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	if _, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO exact_task_command_outbox(audit_id, task_id, workspace_id, resource_version) VALUES (?, ?, ?, ?)`), command.IdempotencyKey, command.TaskID, command.WorkspaceID, version); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	if err = commit(); err != nil {
+		return ExactTaskDescriptionReceipt{}, err
+	}
+	return ExactTaskDescriptionReceipt{AuditID: command.IdempotencyKey, ResourceVersion: version}, nil
+}
+
+func (r *Repository) exactTaskDescriptionCommandAvailable(command ExactTaskDescriptionCommand) bool {
+	return r.ExactTaskCommandAvailable() && validExactCommand(command)
+}
+
+func (r *Repository) afterExactTaskCommandCAS() error {
+	if r.exactTaskCommandBeforeAudit == nil {
+		return nil
+	}
+	return r.exactTaskCommandBeforeAudit()
+}
+
+func (r *Repository) beginExactTaskCommandTransaction(ctx context.Context, command ExactTaskDescriptionCommand) (*exactTaskCommandTransaction, error) {
+	if r.exactTaskCommandCompositeValidator != nil {
+		authority, authorityTx, err := r.exactTaskCommandCompositeValidator.BeginPendingTransitionAuthorityTx(ctx)
+		if err != nil || !authority.Matches(r.db) {
+			if authorityTx != nil {
+				_ = authorityTx.Rollback()
+			}
+			return nil, ErrExactTaskCommandUnavailable
+		}
+		return &exactTaskCommandTransaction{tx: authorityTx.SQLX(), commit: authorityTx.Commit, rollback: authorityTx.Rollback, composite: r.exactTaskCommandCompositeValidator, authority: authority, authorityTx: authorityTx}, nil
+	}
+	if r.exactTaskCommandPendingValidator == nil {
+		tx, err := r.db.BeginTxx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &exactTaskCommandTransaction{tx: tx, commit: tx.Commit, rollback: tx.Rollback}, nil
+	}
+	if command.PendingTransition == nil || command.PendingSnapshotToken == "" {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	authority, err := exactsnapshotauthority.NewSQLite(r.db)
+	if err != nil {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	authorityTx, err := r.exactTaskCommandPendingValidator.BeginExactPendingTransitionSnapshotAuthorityTx(ctx, authority)
+	if err != nil {
+		return nil, ErrExactTaskCommandUnavailable
+	}
+	return &exactTaskCommandTransaction{tx: authorityTx.SQLX(), commit: authorityTx.Commit, rollback: authorityTx.Rollback, validator: r.exactTaskCommandPendingValidator, authority: authority, authorityTx: authorityTx}, nil
+}
+
+func (t *exactTaskCommandTransaction) validatePending(ctx context.Context, command ExactTaskDescriptionCommand) error {
+	if t.composite != nil {
+		if command.PendingTransition == nil || command.PendingSnapshotToken == "" || command.PendingTransition.WorkspaceID != command.WorkspaceID || command.PendingTransition.TaskID != command.TaskID || t.composite.ValidatePendingTransitionInAuthorityTx(ctx, t.authority, t.authorityTx, command.PendingSnapshotToken, *command.PendingTransition) != nil {
+			return ErrExactTaskCommandUnavailable
+		}
+		return nil
+	}
+	if t.validator == nil {
+		return nil
+	}
+	if command.PendingTransition.WorkspaceID != command.WorkspaceID || command.PendingTransition.TaskID != command.TaskID || t.validator.ValidateExactPendingTransitionInAuthorityTx(ctx, t.authority, t.authorityTx, command.PendingSnapshotToken, *command.PendingTransition) != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
+func (r *Repository) consumeExactTaskCommandGrant(ctx context.Context, tx *sqlx.Tx, command ExactTaskDescriptionCommand, now time.Time) error {
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE exact_task_command_grants SET consumed_at = ? WHERE id = ? AND installation_id = ? AND workspace_id = ? AND task_id = ? AND capability_id = ? AND receipt_audit_id = ? AND approval_revision = ? AND action_digest = ? AND idempotency_key = ? AND expires_at > ? AND consumed_at IS NULL AND revoked_at IS NULL`), now, command.GrantID, command.InstallationID, command.WorkspaceID, command.TaskID, command.CapabilityID, command.ReceiptAuditID, command.ApprovalRevision, command.ActionDigest, command.IdempotencyKey, now)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+
+func exactTaskCommandReplay(ctx context.Context, r *Repository, tx *sqlx.Tx, command ExactTaskDescriptionCommand) (ExactTaskDescriptionReceipt, bool, error) {
+	var digest, identity string
+	var version int64
+	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT action_digest, command_identity, resource_version FROM exact_task_command_audits WHERE installation_id = ? AND workspace_id = ? AND idempotency_key = ?`), command.InstallationID, command.WorkspaceID, command.IdempotencyKey).Scan(&digest, &identity, &version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ExactTaskDescriptionReceipt{}, false, nil
+	}
+	if err != nil {
+		return ExactTaskDescriptionReceipt{}, true, err
+	}
+	if digest != command.ActionDigest || identity != exactTaskCommandIdentity(command) {
+		return ExactTaskDescriptionReceipt{}, true, ErrExactTaskCommandUnavailable
+	}
+	return ExactTaskDescriptionReceipt{AuditID: command.IdempotencyKey, ResourceVersion: version}, true, nil
+}
+
+func exactTaskCommandIdentity(c ExactTaskDescriptionCommand) string {
+	identity := c.GrantID + "\x00" + c.InstallationID + "\x00" + c.WorkspaceID + "\x00" + c.TaskID + "\x00" + c.CapabilityID + "\x00" + c.ReceiptAuditID + "\x00" + fmt.Sprint(c.ApprovalRevision) + "\x00" + c.ActionDigest + "\x00" + c.IdempotencyKey + "\x00" + c.Marker + "\x00" + fmt.Sprint(c.ExpectedResourceVersion) + "\x00" + fmt.Sprint(c.ExpectedFence) + "\x00" + c.RequestIdentity
+	if c.PendingTransition != nil || c.PendingSnapshotToken != "" {
+		identity += "\x00" + c.PendingSnapshotToken + "\x00" + exactPendingTransitionIdentity(c.PendingTransition)
+	}
+	s := sha256.Sum256([]byte(identity))
+	return hex.EncodeToString(s[:])
+}
+
+func exactPendingTransitionIdentity(transition *messagequeue.ExactPendingTransition) string {
+	if transition == nil {
+		return ""
+	}
+	return transition.SessionID + "\x00" + transition.TaskID + "\x00" + transition.WorkspaceID + "\x00" + transition.SessionIncarnationID + "\x00" + transition.WorkflowID + "\x00" + transition.WorkflowStepID + "\x00" + fmt.Sprint(transition.Position) + "\x00" + transition.QueuedAt.UTC().Format(time.RFC3339Nano) + "\x00" + fmt.Sprint(transition.ResourceVersion) + "\x00" + fmt.Sprint(transition.TaskResourceVersion) + "\x00" + fmt.Sprint(transition.SessionResourceVersion) + "\x00" + fmt.Sprint(transition.QueueGeneration)
+}
+
+func requireExactCommandApproval(ctx context.Context, r *Repository, tx *sqlx.Tx, installationID, workspaceID, capabilityID string, revision uint64) error {
+	var value int
+	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT 1 FROM exact_task_command_approvals WHERE installation_id = ? AND workspace_id = ? AND capability_id = ? AND revision = ? AND revoked_at IS NULL`), installationID, workspaceID, capabilityID, revision).Scan(&value)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+func requireExactCommandReceipt(ctx context.Context, r *Repository, tx *sqlx.Tx, installationID, workspaceID, capabilityID, auditID string, revision uint64) error {
+	var value int
+	err := tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT 1 FROM exact_task_command_receipts WHERE audit_id = ? AND installation_id = ? AND workspace_id = ? AND capability_id = ? AND approval_revision = ?`), auditID, installationID, workspaceID, capabilityID, revision).Scan(&value)
+	if err != nil {
+		return ErrExactTaskCommandUnavailable
+	}
+	return nil
+}
+func validExactCommandApproval(a ExactTaskCommandApproval) bool {
+	return a.InstallationID != "" && a.WorkspaceID != "" && a.CapabilityID != "" && a.ReceiptAuditID != "" && a.Revision > 0
+}
+func validExactCommandGrant(g ExactTaskCommandGrant) bool {
+	return g.ID != "" && g.TaskID != "" && g.ActionDigest != "" && g.IdempotencyKey != "" && validExactCommandApproval(ExactTaskCommandApproval{InstallationID: g.InstallationID, WorkspaceID: g.WorkspaceID, CapabilityID: g.CapabilityID, ReceiptAuditID: g.ReceiptAuditID, Revision: g.ApprovalRevision})
+}
+func validExactCommand(c ExactTaskDescriptionCommand) bool {
+	return c.GrantID != "" && c.TaskID != "" && c.Marker != "" && c.ActionDigest != "" && c.IdempotencyKey != "" && c.ExpectedResourceVersion > 0 && c.ExpectedFence >= 0 && c.CapabilityID == exactTaskDescriptionCommandCapability && validExactCommandApproval(ExactTaskCommandApproval{InstallationID: c.InstallationID, WorkspaceID: c.WorkspaceID, CapabilityID: c.CapabilityID, ReceiptAuditID: c.ReceiptAuditID, Revision: c.ApprovalRevision})
+}
