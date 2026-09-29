@@ -15,6 +15,7 @@ import (
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/orchestrator/watcher"
 	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/task/repository/sqlite"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	"github.com/stretchr/testify/require"
 )
@@ -126,6 +127,45 @@ func TestStopTaskForCoordinatorOperation_RetryResumesOnlyBoundReceipt(t *testing
 	require.NoError(t, err)
 	require.Len(t, lookup.Receipts, 1)
 	require.Equal(t, first.Receipts[0].ID, lookup.Receipts[0].ID)
+}
+
+// @covers AC-STOP-FENCE-005
+func TestStopTaskForCoordinatorOperation_RetryCapturesSecondLiveSession(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	const taskID, parentID = "task-retry-second", "parent-retry-second"
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: parentID, Title: "parent"}))
+	seedStopRetrySession(t, repo, taskID, "first-session", "first-turn", "first-execution")
+	manager := &mockAgentManager{repoForExecutionLookup: repo}
+	manager.closeExecutionAdmissionFunc = func(_ context.Context, executionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true}, nil
+	}
+	manager.stopAgentWithReasonFunc = func(context.Context, string, string, bool) error { return nil }
+	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), manager)
+
+	first, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "same-request")
+	require.NoError(t, err)
+	require.Len(t, first.Receipts, 1)
+	seedStopRetrySession(t, repo, taskID, "second-session", "second-turn", "second-execution")
+
+	retry, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "same-request")
+	require.NoError(t, err)
+	require.Len(t, retry.Receipts, 2)
+	require.Equal(t, models.TaskSessionStateCancelled, mustGetSession(t, repo, "second-session").State)
+}
+
+func seedStopRetrySession(t *testing.T, repo *sqlite.Repository, taskID, sessionID, turnID, executionID string) {
+	t.Helper()
+	ctx := context.Background()
+	if task, err := repo.GetTask(ctx, taskID); err != nil || task == nil {
+		seedTaskAndSession(t, repo, taskID, sessionID, models.TaskSessionStateRunning)
+	} else {
+		now := time.Now().UTC()
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: sessionID, TaskID: taskID, State: models.TaskSessionStateRunning, StartedAt: now, UpdatedAt: now}))
+	}
+	now := time.Now().UTC()
+	require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: turnID, TaskID: taskID, TaskSessionID: sessionID, StartedAt: now, CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{ID: sessionID, SessionID: sessionID, TaskID: taskID, ExecutorID: "executor", Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: executionID, AgentctlGeneration: 1, Status: models.ExecutorRunningStatusRunning}))
 }
 
 // @covers AC-STOP-FENCE-005, AC-STOP-FENCE-006

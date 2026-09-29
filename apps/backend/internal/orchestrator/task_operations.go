@@ -101,10 +101,19 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 		}
 		receipts = result.Receipts
 	} else {
-		receipts, err = s.resumeCoordinatorStopRequestReceipts(ctx, receipts)
+		_, err = s.resumeCoordinatorStopRequestReceipts(ctx, receipts)
 		if err != nil {
 			return CoordinatorTaskStopResult{}, err
 		}
+		// A prior candidate can have reached terminal proof while a later
+		// observed session remained active after its capture failed. Resume the
+		// bound receipts, then continue capture for every still-active session.
+		// The repository binds any newly captured exact receipt to this request.
+		result, err = s.captureCoordinatorStopRequest(ctx, repo, taskID, parentTaskID, operationID)
+		if err != nil {
+			return CoordinatorTaskStopResult{}, err
+		}
+		receipts = result.Receipts
 	}
 	result.Receipts = receipts
 	result.SessionFences, err = s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
