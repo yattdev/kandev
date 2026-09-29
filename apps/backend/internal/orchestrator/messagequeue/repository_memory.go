@@ -775,6 +775,52 @@ func (r *memoryRepository) insertOrReplaceByCoalesceKeyLocked(
 	}
 	return cloneQueuedMessage(msg), false, nil
 }
+
+func (r *memoryRepository) AdmitRoutineWakeForSession(
+	_ context.Context,
+	identity QueueSessionIdentity,
+	msg *QueuedMessage,
+	receipt RoutineWakeReceipt,
+	maxPerSession int,
+) (RoutineWakeAdmissionResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if msg == nil || msg.SessionID != identity.SessionID || msg.TaskID != identity.TaskID {
+		return RoutineWakeAdmissionResult{}, ErrSessionIdentityMismatch
+	}
+	if err := r.bindIdentityLocked(identity); err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	key := receipt.CanonicalKey
+	var reserved *QueuedMessage
+	for _, existing := range r.entries[identity.SessionID] {
+		if !isRoutineWake(existing, key) {
+			continue
+		}
+		if existing.IsReservedInFlight() {
+			reserved = existing
+			continue
+		}
+		existing.Metadata = appendRoutineWakeReceipt(existing.Metadata, receipt)
+		existing.Content = msg.Content
+		existing.QueuedAt = time.Now().UTC()
+		return RoutineWakeAdmissionResult{Message: cloneQueuedMessage(existing), Coalesced: true}, nil
+	}
+	if reserved != nil {
+		msg.Metadata = appendRoutineWakeReceipt(msg.Metadata, receipt)
+		msg.Metadata[metadataRoutineWakeLeaderEntry] = reserved.ID
+		msg.Metadata[metadataRoutineWakeDirty] = true
+		if err := r.insertLocked(msg, 0); err != nil {
+			return RoutineWakeAdmissionResult{}, err
+		}
+		return RoutineWakeAdmissionResult{Message: cloneQueuedMessage(msg), DirtySuccessor: true}, nil
+	}
+	if err := r.insertLocked(msg, maxPerSession); err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	msg.Metadata[metadataRoutineWakeLeaderEntry] = msg.ID
+	return RoutineWakeAdmissionResult{Message: cloneQueuedMessage(msg)}, nil
+}
 func (r *memoryRepository) InsertOrReplaceLifecycleByCoalesceKey(
 	_ context.Context,
 	msg *QueuedMessage,

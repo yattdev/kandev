@@ -1744,6 +1744,105 @@ func (r *sqliteRepository) InsertOrReplaceLifecycleByCoalesceKeyForSession(
 	return r.insertOrReplaceLifecycleByCoalesceKey(ctx, &identity, msg, coalesceKey, maxPerSession, allowInsert)
 }
 
+// AdmitRoutineWakeForSession is the routine-only durable admission path. It
+// does not alter generic coalescing: only rows marked by this method can merge.
+func (r *sqliteRepository) AdmitRoutineWakeForSession(
+	ctx context.Context,
+	identity QueueSessionIdentity,
+	msg *QueuedMessage,
+	receipt RoutineWakeReceipt,
+	maxPerSession int,
+) (RoutineWakeAdmissionResult, error) {
+	if msg == nil || msg.SessionID != identity.SessionID || msg.TaskID != identity.TaskID {
+		return RoutineWakeAdmissionResult{}, ErrSessionIdentityMismatch
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return RoutineWakeAdmissionResult{}, fmt.Errorf("begin routine wake admission: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.guardActiveTaskTx(ctx, tx, identity.TaskID); err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	if err := r.lockSessionTx(ctx, tx, identity.SessionID); err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	if err := r.validateSessionIdentityTx(ctx, tx, identity); err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	visible, reserved, err := r.findRoutineWakeTx(ctx, tx, identity.SessionID, receipt.CanonicalKey)
+	if err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	result, err := r.settleRoutineWakeAdmissionTx(ctx, tx, msg, receipt, visible, reserved, maxPerSession)
+	if err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	return result, nil
+}
+
+func (r *sqliteRepository) findRoutineWakeTx(ctx context.Context, tx *sqlx.Tx, sessionID, key string) (*QueuedMessage, *QueuedMessage, error) {
+	rows, err := tx.QueryxContext(ctx, r.db.Rebind(`
+		SELECT id, session_id, task_id, position, content, model, plan_mode,
+		       attachments_json, metadata_json, queued_at, queued_by
+		FROM queued_messages WHERE session_id = ? ORDER BY position ASC
+	`), sessionID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var visible, reserved *QueuedMessage
+	for rows.Next() {
+		entry, scanErr := scanQueuedRow(rows)
+		if scanErr != nil {
+			_ = rows.Close()
+			return nil, nil, scanErr
+		}
+		if !isRoutineWake(entry, key) {
+			continue
+		}
+		if entry.IsReservedInFlight() {
+			reserved = entry
+		} else {
+			visible = entry
+			break
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, err
+	}
+	return visible, reserved, nil
+}
+
+func (r *sqliteRepository) settleRoutineWakeAdmissionTx(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	msg *QueuedMessage,
+	receipt RoutineWakeReceipt,
+	visible, reserved *QueuedMessage,
+	maxPerSession int,
+) (RoutineWakeAdmissionResult, error) {
+	if visible != nil {
+		msg.Metadata = appendRoutineWakeReceipt(visible.Metadata, receipt)
+		updated, err := r.replaceCoalesced(ctx, tx, visible, msg)
+		if err != nil {
+			return RoutineWakeAdmissionResult{}, err
+		}
+		return RoutineWakeAdmissionResult{Message: updated, Coalesced: true}, nil
+	}
+	if reserved != nil {
+		msg.Metadata[metadataRoutineWakeLeaderEntry] = reserved.ID
+		msg.Metadata[metadataRoutineWakeDirty] = true
+		maxPerSession = 0
+	}
+	if err := r.insertCoalesced(ctx, tx, msg, maxPerSession); err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	return RoutineWakeAdmissionResult{Message: msg, DirtySuccessor: reserved != nil}, nil
+}
+
 func (r *sqliteRepository) insertOrReplaceLifecycleByCoalesceKey(
 	ctx context.Context,
 	identity *QueueSessionIdentity,

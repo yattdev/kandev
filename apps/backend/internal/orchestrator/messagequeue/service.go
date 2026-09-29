@@ -3071,6 +3071,55 @@ type claimedEntryRemovalRepository interface {
 	DeleteByIDForSessionWithClaim(context.Context, QueueSessionIdentity, string, string) (*QueueRemovalResult, error)
 }
 
+type routineWakeAdmissionRepository interface {
+	AdmitRoutineWakeForSession(
+		ctx context.Context,
+		identity QueueSessionIdentity,
+		msg *QueuedMessage,
+		receipt RoutineWakeReceipt,
+		maxPerSession int,
+	) (RoutineWakeAdmissionResult, error)
+}
+
+// AdmitRoutineWakeForSession is the Host-internal scheduler seam for a
+// trusted routine envelope. External MCP callers must never construct this
+// envelope from arbitrary payload fields.
+func (s *Service) AdmitRoutineWakeForSession(
+	ctx context.Context,
+	identity QueueSessionIdentity,
+	envelope RoutineWakeEnvelope,
+	content string,
+) (RoutineWakeAdmissionResult, error) {
+	receipt, err := envelope.Receipt()
+	if err != nil {
+		return RoutineWakeAdmissionResult{}, err
+	}
+	repository, ok := s.repo.(routineWakeAdmissionRepository)
+	if !ok {
+		return RoutineWakeAdmissionResult{}, errors.New("routine wake admission is unsupported")
+	}
+	msg := &QueuedMessage{
+		ID:        uuid.NewString(),
+		SessionID: identity.SessionID,
+		TaskID:    identity.TaskID,
+		Content:   content,
+		Metadata:  routineWakeMetadata(receipt),
+		QueuedBy:  QueuedByWorkflow,
+	}
+	msg.Metadata[metadataRoutineWakeLeaderEntry] = msg.ID
+	var result RoutineWakeAdmissionResult
+	err = s.WithSessionAdmission(ctx, identity.SessionID, func(admittedCtx context.Context) error {
+		if err := s.validateSessionIdentity(admittedCtx, identity); err != nil {
+			return err
+		}
+		result, err = repository.AdmitRoutineWakeForSession(
+			admittedCtx, identity, msg, receipt, s.MaxPerSession(),
+		)
+		return err
+	})
+	return result, err
+}
+
 // RemoveEntryForSessionWithClaim deletes an entry only if its exact snapshot
 // still matches the caller's census claim.
 func (s *Service) RemoveEntryForSessionWithClaim(ctx context.Context, identity QueueSessionIdentity, entryID, claim string) (*QueueRemovalResult, error) {

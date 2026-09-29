@@ -3,11 +3,19 @@ package messagequeue
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 )
 
 const routineWakeKeyVersion = "routine-wake-v1"
+
+const (
+	metadataRoutineWake            = "routine_wake"
+	metadataRoutineWakeReceipts    = "routine_wake_receipts"
+	metadataRoutineWakeLeaderEntry = "routine_wake_leader_entry_id"
+	metadataRoutineWakeDirty       = "routine_wake_dirty_successor"
+)
 
 // RoutineWakeEnvelope is the scheduler-authenticated identity of one routine
 // wake. Carrier task, session, and message IDs are deliberately absent so
@@ -29,6 +37,15 @@ type RoutineWakeReceipt struct {
 	RoutineName      string `json:"routine_name"`
 	PolicyGeneration string `json:"policy_generation"`
 	ScopeGeneration  string `json:"scope_generation"`
+}
+
+// RoutineWakeAdmissionResult describes the single row that represents this
+// admission. DirtySuccessor is true only when a retained leader already owns
+// delivery and this row is its one post-run successor.
+type RoutineWakeAdmissionResult struct {
+	Message        *QueuedMessage
+	Coalesced      bool
+	DirtySuccessor bool
 }
 
 // CanonicalKey derives the cross-carrier routine identity from scheduler-owned
@@ -78,4 +95,48 @@ func (e RoutineWakeEnvelope) validateIdentity() error {
 		}
 	}
 	return nil
+}
+
+func routineWakeMetadata(receipt RoutineWakeReceipt) map[string]interface{} {
+	return map[string]interface{}{
+		MetadataCoalesceKey:         receipt.CanonicalKey,
+		MetadataLifecycleDurable:    true,
+		metadataRoutineWake:         true,
+		metadataRoutineWakeReceipts: []RoutineWakeReceipt{receipt},
+	}
+}
+
+func isRoutineWake(msg *QueuedMessage, key string) bool {
+	if msg == nil || metadataString(msg.Metadata, MetadataCoalesceKey) != key {
+		return false
+	}
+	routine, _ := msg.Metadata[metadataRoutineWake].(bool)
+	return routine
+}
+
+func routineWakeReceipts(metadata map[string]interface{}) []RoutineWakeReceipt {
+	if metadata == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(metadata[metadataRoutineWakeReceipts])
+	if err != nil {
+		return nil
+	}
+	var receipts []RoutineWakeReceipt
+	if err := json.Unmarshal(encoded, &receipts); err != nil {
+		return nil
+	}
+	return receipts
+}
+
+func appendRoutineWakeReceipt(metadata map[string]interface{}, receipt RoutineWakeReceipt) map[string]interface{} {
+	updated := copyMessageMetadata(metadata, 1)
+	receipts := routineWakeReceipts(updated)
+	for _, existing := range receipts {
+		if existing.SourceID == receipt.SourceID {
+			return updated
+		}
+	}
+	updated[metadataRoutineWakeReceipts] = append(receipts, receipt)
+	return updated
 }
