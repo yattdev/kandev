@@ -395,6 +395,12 @@ func (s *Server) handleWSPermissionResolve(msg *ws.Message) *ws.Message {
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "request_id, pending_id, and option_id are required", nil)
 		return resp
 	}
+	release, err := s.procMgr.BeginAdapterOperation()
+	if err != nil {
+		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "agent execution is stopping", nil)
+		return resp
+	}
+	defer release()
 
 	result, err := s.procMgr.ResolvePermission(req.RequestID, req.PendingID, req.OptionID)
 	if err == nil {

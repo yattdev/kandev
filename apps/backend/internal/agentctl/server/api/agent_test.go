@@ -916,6 +916,25 @@ func TestHandleWSPermissionResolveReturnsStableNotFoundCode(t *testing.T) {
 	}
 }
 
+func TestHandleWSPermissionResolveRejectsAfterAdmissionFence(t *testing.T) {
+	s := newTestServer(t)
+	s.procMgr.CloseAdmissionGracefully()
+	msg, _ := ws.NewRequest("req-resolve-fenced", "agent.permissions.resolve", map[string]string{
+		"request_id": "request", "pending_id": "pending", "option_id": "allow-once",
+	})
+	resp := s.handleAgentStreamRequest(context.Background(), msg)
+	if resp.Type != ws.MessageTypeError {
+		t.Fatalf("post-cutoff resolve response = %+v, want error", resp)
+	}
+	var payload ws.ErrorPayload
+	if err := resp.ParsePayload(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != ws.ErrorCodeConflict {
+		t.Fatalf("post-cutoff resolve code = %q, want %q", payload.Code, ws.ErrorCodeConflict)
+	}
+}
+
 func TestHandleWSInitialize_BadPayload(t *testing.T) {
 	s := newTestServer(t)
 	ctx := context.Background()
