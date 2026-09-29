@@ -312,7 +312,10 @@ func (r *Repository) WriteDocumentRevision(
 	insert := func(ctx context.Context, tx *sqlx.Tx, now time.Time) error {
 		return insertNewDocRevisionInTx(ctx, tx, r.db, rev, now)
 	}
-	return r.runRevisionTx(ctx, "document", coalesceLatestID, upsertHead, merge, insert)
+	admit := func(ctx context.Context, tx *sqlx.Tx) error {
+		return r.ensureDocumentTaskAvailableTx(ctx, tx, head.TaskID)
+	}
+	return r.runRevisionTx(ctx, "document", coalesceLatestID, admit, upsertHead, merge, insert)
 }
 
 // runRevisionTx runs the shared begin/upsertHead/coalesce-or-insert/commit transaction
@@ -321,6 +324,7 @@ func (r *Repository) runRevisionTx(
 	ctx context.Context,
 	label string,
 	coalesceLatestID *string,
+	admit func(context.Context, *sqlx.Tx) error,
 	upsertHead func(context.Context, *sqlx.Tx, time.Time) error,
 	merge func(context.Context, *sqlx.Tx, string, time.Time) error,
 	insert func(context.Context, *sqlx.Tx, time.Time) error,
@@ -332,6 +336,11 @@ func (r *Repository) runRevisionTx(
 	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now().UTC()
+	if admit != nil {
+		if err := admit(ctx, tx); err != nil {
+			return err
+		}
+	}
 	if err := upsertHead(ctx, tx, now); err != nil {
 		return err
 	}
