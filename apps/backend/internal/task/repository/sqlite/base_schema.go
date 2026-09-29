@@ -236,7 +236,21 @@ func (r *Repository) initForceRemovalClaimSchema() error {
 			FOREIGN KEY (operation_id) REFERENCES task_force_removal_claims(operation_id)
 		);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_task_force_removal_receipts_operation_predicate
-			ON task_force_removal_receipts(operation_id, predicate)`)
+			ON task_force_removal_receipts(operation_id, predicate);
+		CREATE TABLE IF NOT EXISTS task_force_removal_grants (
+			id TEXT PRIMARY KEY,
+			task_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			task_generation TIMESTAMP NOT NULL,
+			caller_task_id TEXT NOT NULL,
+			caller_session_id TEXT NOT NULL,
+			issued_by_user_id TEXT NOT NULL,
+			expires_at TIMESTAMP NOT NULL,
+			consumed_at TIMESTAMP,
+			created_at TIMESTAMP NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_task_force_removal_grants_target
+			ON task_force_removal_grants(task_id, workspace_id, task_generation)`)
 	return err
 }
 
