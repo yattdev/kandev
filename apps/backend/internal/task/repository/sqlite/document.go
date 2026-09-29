@@ -24,7 +24,15 @@ func (r *Repository) CreateDocument(ctx context.Context, doc *models.TaskDocumen
 	doc.CreatedAt = now
 	doc.UpdatedAt = now
 
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin document create: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureDocumentTaskAvailableTx(ctx, tx, doc.TaskID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, tx.Rebind(`
 		INSERT INTO task_documents
 			(id, task_id, key, type, title, content, author_kind, author_name,
 			 filename, mime_type, size_bytes, disk_path, created_at, updated_at)
@@ -35,7 +43,24 @@ func (r *Repository) CreateDocument(ctx context.Context, doc *models.TaskDocumen
 	if err != nil {
 		return fmt.Errorf("create document: %w", err)
 	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit document create: %w", err)
+	}
 	return nil
+}
+
+func (r *Repository) ensureDocumentTaskAvailableTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return err
+	}
+	if !taskExists {
+		return nil
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	return ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID)
 }
 
 // GetDocument retrieves a document HEAD by task ID and key. Returns nil, nil when not found.
