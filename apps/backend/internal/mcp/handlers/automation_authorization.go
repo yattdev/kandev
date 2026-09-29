@@ -44,6 +44,8 @@ var automationSurfaceActions = map[string]struct{}{
 	ws.ActionMCPListRelatedTasks:            {},
 	ws.ActionMCPGetTaskConversation:         {},
 	ws.ActionMCPListTaskSessions:            {},
+	ws.ActionMCPGetMessageQueueCensus:       {},
+	ws.ActionMCPRemoveMessageQueueEntry:     {},
 	ws.ActionMCPCreateTask:                  {},
 	ws.ActionMCPUpdateTask:                  {},
 	ws.ActionMCPMoveTask:                    {},
@@ -103,6 +105,9 @@ func (h *Handlers) authorizeAutomationRequest(ctx context.Context, msg *ws.Messa
 			"Invalid payload: "+err.Error(), nil)
 		return response, nil, responseErr
 	}
+	if isCallingSessionQueueAction(msg.Action) && !isCallingSessionQueuePayload(principal, fields) {
+		return automationNotFound(msg)
+	}
 	if !h.authorizeAutomationScalarFields(ctx, principal, msg.Action, fields) ||
 		!h.authorizeAutomationReferenceFields(ctx, principal, msg.Action, fields) {
 		return automationNotFound(msg)
@@ -118,6 +123,15 @@ func (h *Handlers) authorizeAutomationRequest(ctx context.Context, msg *ws.Messa
 	replacement := *msg
 	replacement.Payload = payload
 	return nil, &replacement, nil
+}
+
+func isCallingSessionQueueAction(action string) bool {
+	return action == ws.ActionMCPGetMessageQueueCensus || action == ws.ActionMCPRemoveMessageQueueEntry
+}
+
+func isCallingSessionQueuePayload(principal mcpscope.Principal, fields map[string]json.RawMessage) bool {
+	return jsonStringField(fields, "task_id") == principal.CallerTaskID &&
+		jsonStringField(fields, "session_id") == principal.CallerSessionID
 }
 
 func automationPayloadFields(payload json.RawMessage) (map[string]json.RawMessage, error) {

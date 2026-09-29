@@ -182,3 +182,32 @@ func TestAuthorizeAutomationRequest_NonAutomationPrincipalUnaffected(t *testing.
 		require.Same(t, msg, replacement)
 	})
 }
+
+func TestAuthorizeAutomationRequest_QueueActionsRequireCallingTaskAndSession(t *testing.T) {
+	svc, repo := newTestTaskService(t)
+	ctx := context.Background()
+	workspaces, err := svc.ListWorkspaces(ctx)
+	require.NoError(t, err)
+	require.Len(t, workspaces, 1)
+	workspaceID := workspaces[0].ID
+	now := time.Now().UTC()
+	selfTask := &models.Task{ID: "queue-self", WorkspaceID: workspaceID, Title: "Self", State: v1.TaskStateInProgress, CreatedAt: now, UpdatedAt: now}
+	foreignTask := &models.Task{ID: "queue-foreign", WorkspaceID: workspaceID, Title: "Foreign", State: v1.TaskStateInProgress, CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, repo.CreateTask(ctx, selfTask))
+	require.NoError(t, repo.CreateTask(ctx, foreignTask))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "queue-self-session", TaskID: selfTask.ID, State: models.TaskSessionStateRunning, StartedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "queue-foreign-session", TaskID: foreignTask.ID, State: models.TaskSessionStateRunning, StartedAt: now, UpdatedAt: now}))
+	h := &Handlers{taskSvc: svc, logger: testLogger(t).WithFields()}
+	ctx = mcpscope.WithPrincipal(ctx, mcpscope.Principal{AutomationID: "automation", WorkspaceID: workspaceID, CallerTaskID: selfTask.ID, CallerSessionID: "queue-self-session", Surface: mcpprofile.SurfaceAutomation})
+	for _, action := range []string{ws.ActionMCPGetMessageQueueCensus, ws.ActionMCPRemoveMessageQueueEntry} {
+		t.Run(action, func(t *testing.T) {
+			guarded, replacement, guardErr := h.authorizeAutomationRequest(ctx, makeWSMessage(t, action, map[string]string{"task_id": selfTask.ID, "session_id": "queue-self-session"}))
+			require.NoError(t, guardErr)
+			require.Nil(t, guarded)
+			require.NotNil(t, replacement)
+			guarded, _, guardErr = h.authorizeAutomationRequest(ctx, makeWSMessage(t, action, map[string]string{"task_id": foreignTask.ID, "session_id": "queue-foreign-session"}))
+			require.NoError(t, guardErr)
+			assertWSError(t, guarded, ws.ErrorCodeNotFound)
+		})
+	}
+}
