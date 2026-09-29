@@ -77,6 +77,7 @@ func TestHandleSpawnSession_SameTask_DefaultsToSenderProfile(t *testing.T) {
 	assert.Equal(t, target.ID, launched.TaskID)
 	assert.Equal(t, orchestrator.IntentStart, launched.Intent)
 	assert.Equal(t, "agent-profile-1", launched.AgentProfileID)
+	assert.True(t, launched.ProfileExplicit, "spawn must bypass workflow session reuse")
 	// The prompt travels unwrapped; spawner attribution rides along as
 	// structured origin so the launch site can build a trusted system block
 	// that survives first-turn canonicalization.

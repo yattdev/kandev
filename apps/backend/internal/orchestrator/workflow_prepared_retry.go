@@ -172,12 +172,12 @@ func (s *Service) retryPreparedWorkflowSession(ctx context.Context, req *LaunchS
 		s.resolveStepProfileSessionEndPolicy(sourceStep), &route); err != nil {
 		return nil, fmt.Errorf("commit prepared workflow route: %w", err)
 	}
-	prompt, referenceContext, err := s.buildWorkflowEntryPrompt(ctx, task.Description, step, req.TaskID, destination.ID, false)
+	prompt, err := s.buildWorkflowEntryPrompt(ctx, task.Description, step, req.TaskID, destination.ID, false)
 	if err != nil {
 		return nil, fmt.Errorf("compose prepared workflow prompt: %w", err)
 	}
-	if err := s.autoStartStepPromptWithPromptContext(ctx, req.TaskID, destination, step, prompt, false, true,
-		newStepHandoffOnce(), referenceContext); err != nil {
+	if err := s.autoStartStepPrompt(ctx, req.TaskID, destination, step, prompt, false, true,
+		newStepHandoffOnce()); err != nil {
 		return nil, fmt.Errorf("start prepared workflow prompt: %w", err)
 	}
 	return &LaunchSessionResponse{

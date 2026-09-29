@@ -47,6 +47,9 @@ func (h *Handlers) handleSpawnSession(ctx context.Context, msg *ws.Message) (*ws
 		TaskID:         req.TaskID,
 		Intent:         orchestrator.IntentStart,
 		AgentProfileID: profileID,
+		// A spawn asks for another session. Do not let the target step's
+		// session routing policy select an existing primary session.
+		ProfileExplicit: profileID != "",
 		Prompt:         req.Prompt,
 		SpawnOrigin:    spawnOriginFromSession(spawner),
 	})
