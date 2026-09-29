@@ -171,11 +171,52 @@ func (r *Repository) DeleteKubernetesEnvironment(ctx context.Context, record *mo
 	if record == nil || record.OperationID == "" {
 		return models.ErrKubernetesEnvironmentConflict
 	}
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_environment_kubernetes
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var storedTaskID, storedOperation string
+	var storedGeneration, storedRevision int64
+	err = tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id, ownership_generation, revision, operation_id
+ FROM task_environment_kubernetes WHERE environment_id = ?`), record.EnvironmentID).Scan(
+		&storedTaskID, &storedGeneration, &storedRevision, &storedOperation,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.ErrKubernetesEnvironmentConflict
+	}
+	if err != nil {
+		return err
+	}
+	if storedTaskID != record.TaskID || storedGeneration != record.OwnershipGeneration ||
+		storedRevision != record.Revision || storedOperation != record.OperationID {
+		return models.ErrKubernetesEnvironmentConflict
+	}
+
+	var liveOwner bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (
+ SELECT 1 FROM task_environments WHERE id = ? AND task_id = ? AND ownership_generation = ?
+)`), record.EnvironmentID, storedTaskID, storedGeneration).Scan(&liveOwner); err != nil {
+		return err
+	}
+	if liveOwner {
+		if err := r.lockTaskRowInTx(ctx, tx, storedTaskID); err != nil {
+			return err
+		}
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, storedTaskID); err != nil {
+			return err
+		}
+	}
+
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_environment_kubernetes
  WHERE environment_id = ? AND task_id = ? AND ownership_generation = ? AND revision = ? AND operation_id = ?
  AND (`+kubernetesEnvironmentWritable+`)`),
 		record.EnvironmentID, record.TaskID, record.OwnershipGeneration, record.Revision, record.OperationID)
-	return requireKubernetesEnvironmentWrite(result, err)
+	if err := requireKubernetesEnvironmentWrite(result, err); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // RecoverInterruptedKubernetesOperations fences claims from a terminated backend.
