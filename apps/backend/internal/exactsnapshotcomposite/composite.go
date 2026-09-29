@@ -143,7 +143,7 @@ func (r *Repository) OpenInAuthorityTx(ctx context.Context, tx *exactsnapshotaut
 		return nil, err
 	}
 	snapshot := &Snapshot{Token: uuid.NewString(), WorkspaceID: request.WorkspaceID, Version: version, ExpiresAt: expiresAt}
-	_, err = tx.SQLX().ExecContext(ctx, `INSERT INTO exact_composite_snapshots(token,workspace_id,version,relation_snapshot_token,pending_snapshot_token,expires_at) VALUES(?,?,?,?,?,?)`, snapshot.Token, snapshot.WorkspaceID, snapshot.Version, relationSnapshot.Token, pendingSnapshot.Token, snapshot.ExpiresAt)
+	_, err = tx.SQLX().ExecContext(ctx, tx.SQLX().Rebind(`INSERT INTO exact_composite_snapshots(token,workspace_id,version,relation_snapshot_token,pending_snapshot_token,expires_at) VALUES(?,?,?,?,?,?)`), snapshot.Token, snapshot.WorkspaceID, snapshot.Version, relationSnapshot.Token, pendingSnapshot.Token, snapshot.ExpiresAt)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +306,7 @@ func (r *Repository) CleanupExpired(ctx context.Context, limit int) (int, error)
 	if err := initSchema(ctx, tx.SQLX()); err != nil {
 		return 0, err
 	}
-	result, err := tx.SQLX().ExecContext(ctx, `DELETE FROM exact_composite_snapshots WHERE token IN (SELECT token FROM exact_composite_snapshots WHERE expires_at<=? ORDER BY expires_at,token LIMIT ?)`, time.Now().UTC(), limit)
+	result, err := tx.SQLX().ExecContext(ctx, tx.SQLX().Rebind(`DELETE FROM exact_composite_snapshots WHERE token IN (SELECT token FROM exact_composite_snapshots WHERE expires_at<=? ORDER BY expires_at,token LIMIT ?)`), time.Now().UTC(), limit)
 	if err != nil {
 		return 0, err
 	}
