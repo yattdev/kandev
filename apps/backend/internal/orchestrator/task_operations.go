@@ -66,6 +66,20 @@ type CoordinatorTaskStopResult struct {
 	SessionFences []models.CoordinatorStopSessionFenceReceipt `json:"session_fences,omitempty"`
 }
 
+// StopTaskForCoordinatorOperation captures a parent-bound caller key before
+// any future request-scoped stop work. It deliberately does not fall through
+// to StopTaskForCoordinator: that legacy method resumes every task receipt.
+func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, parentTaskID, operationID string) (CoordinatorTaskStopResult, error) {
+	repo, ok := s.repo.(taskrepo.CoordinatorStopRequestRepository)
+	if !ok {
+		return CoordinatorTaskStopResult{}, errors.New("coordinator stop request repository is unavailable")
+	}
+	if _, _, err := repo.CaptureCoordinatorStopRequest(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentTaskID, OperationID: operationID}); err != nil {
+		return CoordinatorTaskStopResult{}, err
+	}
+	return CoordinatorTaskStopResult{}, errors.New("request-scoped coordinator stop receipt capture is not yet wired")
+}
+
 // resumeReasonErrorRecovery is the resume reason returned when a session is in
 // error-recovery state (WAITING_FOR_INPUT with a non-empty ErrorMessage).
 const resumeReasonErrorRecovery = "error_recovery"

@@ -566,6 +566,13 @@ type CoordinatorStopOperationLister interface {
 	ListCoordinatorStopOperations(ctx context.Context, taskID string) ([]*models.CoordinatorStopOperation, error)
 }
 
+// CoordinatorStopRequestRepository persists a caller operation independently
+// from the exact per-session receipts it captures.
+type CoordinatorStopRequestRepository interface {
+	CaptureCoordinatorStopRequest(ctx context.Context, request models.CoordinatorStopRequest) (*models.CoordinatorStopRequest, bool, error)
+	BindCoordinatorStopRequestReceipt(ctx context.Context, taskID, operationID, receiptID string) error
+}
+
 type CoordinatorStopSessionFencer interface {
 	FenceCoordinatorStopSession(ctx context.Context, taskID, sessionID string) (bool, error)
 	ListCoordinatorStopSessionFences(ctx context.Context, taskID string) ([]models.CoordinatorStopSessionFenceReceipt, error)
