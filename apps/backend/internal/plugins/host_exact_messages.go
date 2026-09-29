@@ -18,7 +18,7 @@ const exactSessionMessagePageLimit int32 = 100
 // ListSessionMessagesExact reads the private materialized transcript through
 // an approval-bound, connection-scoped snapshot cursor.
 func (h *pluginHost) ListSessionMessagesExact(ctx context.Context, query pluginsdk.ExactSessionMessageQuery) ([]pluginsdk.ExactSessionMessage, *pluginsdk.ExactPageInfo, error) {
-	receipt, err := h.authorizeExactReadReceipt(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("session-messages", query.WorkspaceID, query.TaskID, query.SessionID, query.Page.SnapshotVersion))
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("session-messages", query.WorkspaceID, query.TaskID, query.SessionID, query.Page.SnapshotVersion))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -53,12 +53,15 @@ func (h *pluginHost) ListSessionMessagesExact(ctx context.Context, query plugins
 	if err != nil {
 		return nil, nil, status.Error(codes.Unavailable, "exact session message snapshot is unavailable")
 	}
-	info := &pluginsdk.ExactPageInfo{SnapshotVersion: version, HasMore: len(rows) > len(items), AuditID: receipt.AuditID}
+	info := &pluginsdk.ExactPageInfo{SnapshotVersion: version, HasMore: len(rows) > len(items)}
 	if info.HasMore {
 		info.NextCursor, err = h.exactSnapshots.create(binding, offset+len(items))
 		if err != nil {
 			return nil, nil, status.Error(codes.Unavailable, "exact session message cursor is unavailable")
 		}
+	}
+	if err := h.recordExactPageRead(info, receipt); err != nil {
+		return nil, nil, err
 	}
 	return items, info, nil
 }

@@ -21,7 +21,8 @@ func TestPluginHostExactSessionMessagesBindApprovalSnapshotAndContinuation(t *te
 	d.host.exactAuthorize = func(workspace string, revision uint64, capability, _ string) ApprovalDecision {
 		return ApprovalDecision{Allowed: workspace == "workspace-1" && revision == 2 && capability == "host.v2.read:tasks", Receipt: ApprovalReceipt{AuditID: "audit"}}
 	}
-	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
+	var receipts []ApprovalReceipt
+	d.host.exactReadReceipt = func(receipt ApprovalReceipt) error { receipts = append(receipts, receipt); return nil }
 	d.tasks.exactMessages = map[string][]taskmodels.ExactSessionMessageSnapshotMessage{"messages-workspace-1-task-1-session-1": {{ID: "one", Content: "safe", CreatedAt: time.Now().UTC()}, {ID: "two", Content: "safe-two", CreatedAt: time.Now().UTC()}}}
 	query := pluginsdk.ExactSessionMessageQuery{WorkspaceID: "workspace-1", TaskID: "task-1", SessionID: "session-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1}}
 	items, page, err := d.host.ListSessionMessagesExact(context.Background(), query)
@@ -33,10 +34,13 @@ func TestPluginHostExactSessionMessagesBindApprovalSnapshotAndContinuation(t *te
 	require.NoError(t, err)
 	require.Equal(t, "two", items[0].ID)
 	require.False(t, page2.HasMore)
+	require.Len(t, receipts, 2)
 	_, _, err = d.host.ListSessionMessagesExact(context.Background(), pluginsdk.ExactSessionMessageQuery{WorkspaceID: "workspace-1", TaskID: "task-2", SessionID: "session-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{SnapshotVersion: page.SnapshotVersion}})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Len(t, receipts, 2)
 	_, _, err = d.host.ListSessionMessagesExact(context.Background(), pluginsdk.ExactSessionMessageQuery{WorkspaceID: "workspace-2", TaskID: "task-1", SessionID: "session-1", CapabilityRevision: 2})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Len(t, receipts, 2)
 }
 
 func TestPluginHostExactSessionMessagesFailsClosedOnSnapshotExpiry(t *testing.T) {

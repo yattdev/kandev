@@ -54,6 +54,9 @@ func TestPluginHostExactSessionsUseApprovalBoundDurableSnapshot(t *testing.T) {
 
 	_, _, err = d.host.ListSessionsExact(context.Background(), pluginsdk.ExactSessionQuery{WorkspaceID: "workspace-2", CapabilityRevision: 2})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	_, _, err = d.host.ListSessionsExact(context.Background(), pluginsdk.ExactSessionQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{SnapshotVersion: page.SnapshotVersion, Cursor: page.NextCursor + "invalid"}})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Len(t, receipts, 3)
 }
 
 // @covers AC-2

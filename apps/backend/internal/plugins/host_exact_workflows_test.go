@@ -21,16 +21,17 @@ func TestPluginHost_ListWorkflowsExactBindsAuthorityAndCursor(t *testing.T) {
 	d.host.installationID = "installation-1"
 	d.host.exactSnapshots = newExactSnapshotStore([]byte("01234567890123456789012345678901"))
 	d.host.exactAuthorize = func(workspaceID string, revision uint64, capabilityID, _ string) ApprovalDecision {
-		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:workflows"}
+		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:workflows", Receipt: ApprovalReceipt{AuditID: "workflow-read-audit"}}
 	}
-	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
+	var receipts []ApprovalReceipt
+	d.host.exactReadReceipt = func(receipt ApprovalReceipt) error { receipts = append(receipts, receipt); return nil }
 
 	items, page, err := d.host.ListWorkflowsExact(context.Background(), pluginsdk.ExactWorkflowQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1}})
-	if err != nil || len(items) != 1 || items[0].ID != "workflow-1" || !page.HasMore || page.NextCursor == "" {
+	if err != nil || len(items) != 1 || items[0].ID != "workflow-1" || !page.HasMore || page.NextCursor == "" || page.AuditID != "workflow-read-audit" {
 		t.Fatalf("first exact workflows = %#v %#v, %v", items, page, err)
 	}
 	items, page, err = d.host.ListWorkflowsExact(context.Background(), pluginsdk.ExactWorkflowQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1, Cursor: page.NextCursor, SnapshotVersion: page.SnapshotVersion}})
-	if err != nil || len(items) != 1 || items[0].ID != "workflow-2" || page.HasMore {
+	if err != nil || len(items) != 1 || items[0].ID != "workflow-2" || page.HasMore || page.AuditID != "workflow-read-audit" {
 		t.Fatalf("second exact workflows = %#v %#v, %v", items, page, err)
 	}
 
@@ -40,14 +41,20 @@ func TestPluginHost_ListWorkflowsExactBindsAuthorityAndCursor(t *testing.T) {
 			t.Fatalf("denial error = %v", err)
 		}
 	}
+	if len(receipts) != 2 {
+		t.Fatalf("invalid workflow requests recorded receipts = %#v", receipts)
+	}
 
 	steps, stepPage, err := d.host.ListWorkflowStepsExact(context.Background(), pluginsdk.ExactWorkflowStepsQuery{WorkspaceID: "workspace-1", WorkflowID: "workflow-1", CapabilityRevision: 2})
-	if err != nil || len(steps) != 1 || stepPage.SnapshotVersion == "" {
+	if err != nil || len(steps) != 1 || stepPage.SnapshotVersion == "" || stepPage.AuditID != "workflow-read-audit" {
 		t.Fatalf("exact workflow steps = %#v %#v, %v", steps, stepPage, err)
 	}
 	_, _, err = d.host.ListWorkflowStepsExact(context.Background(), pluginsdk.ExactWorkflowStepsQuery{WorkspaceID: "workspace-1", WorkflowID: "unknown", CapabilityRevision: 2})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("unknown workflow error = %v", err)
+	}
+	if len(receipts) != 3 {
+		t.Fatalf("invalid workflow step request recorded receipts = %#v", receipts)
 	}
 }
 

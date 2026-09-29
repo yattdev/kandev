@@ -17,7 +17,7 @@ const exactSessionPageLimit int32 = 99
 // ListSessionsExact returns the bounded lifecycle projection pinned by the
 // task repository's durable workspace snapshot.
 func (h *pluginHost) ListSessionsExact(ctx context.Context, query pluginsdk.ExactSessionQuery) ([]pluginsdk.ExactSession, *pluginsdk.ExactPageInfo, error) {
-	receipt, err := h.authorizeExactReadReceipt(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("sessions", query.WorkspaceID, query.Page.SnapshotVersion))
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("sessions", query.WorkspaceID, query.Page.SnapshotVersion))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -48,12 +48,15 @@ func (h *pluginHost) ListSessionsExact(ctx context.Context, query pluginsdk.Exac
 	if err != nil {
 		return nil, nil, status.Error(codes.Unavailable, "exact session snapshot is unavailable")
 	}
-	info := &pluginsdk.ExactPageInfo{SnapshotVersion: snapshotVersion, HasMore: len(rows) > len(items), AuditID: receipt.AuditID}
+	info := &pluginsdk.ExactPageInfo{SnapshotVersion: snapshotVersion, HasMore: len(rows) > len(items)}
 	if info.HasMore {
 		info.NextCursor, err = h.exactSnapshots.create(binding, offset+len(items))
 		if err != nil {
 			return nil, nil, status.Error(codes.Unavailable, "exact session cursor is unavailable")
 		}
+	}
+	if err := h.recordExactPageRead(info, receipt); err != nil {
+		return nil, nil, err
 	}
 	return items, info, nil
 }

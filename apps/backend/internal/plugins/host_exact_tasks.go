@@ -61,13 +61,13 @@ func (h *pluginHost) ListTasksExact(ctx context.Context, query pluginsdk.ExactTa
 		}
 		info.NextCursor = cursor
 	}
-	if err := h.recordExactTaskRead(info, receipt); err != nil {
+	if err := h.recordExactPageRead(info, receipt); err != nil {
 		return nil, nil, err
 	}
 	return items, info, nil
 }
 
-func (h *pluginHost) recordExactTaskRead(info *pluginsdk.ExactPageInfo, receipt ApprovalReceipt) error {
+func (h *pluginHost) recordExactPageRead(info *pluginsdk.ExactPageInfo, receipt ApprovalReceipt) error {
 	if h.exactReadReceipt == nil {
 		return status.Error(codes.FailedPrecondition, "exact read receipt is unavailable")
 	}

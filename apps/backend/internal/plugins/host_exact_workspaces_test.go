@@ -21,7 +21,8 @@ func TestPluginHost_ListWorkspacesExactAuthorizesAndBindsSnapshot(t *testing.T) 
 	d.host.exactAuthorize = func(workspaceID string, revision uint64, capabilityID, _ string) ApprovalDecision {
 		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:workspaces", Receipt: ApprovalReceipt{AuditID: "workspace-read-audit"}}
 	}
-	d.host.exactReadReceipt = func(ApprovalReceipt) error { return nil }
+	var receipts []ApprovalReceipt
+	d.host.exactReadReceipt = func(receipt ApprovalReceipt) error { receipts = append(receipts, receipt); return nil }
 
 	query := pluginsdk.ExactWorkspaceQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1}}
 	workspaces, page, err := d.host.ListWorkspacesExact(context.Background(), query)
@@ -30,6 +31,9 @@ func TestPluginHost_ListWorkspacesExactAuthorizesAndBindsSnapshot(t *testing.T) 
 	}
 	if len(workspaces) != 1 || workspaces[0].ID != "workspace-1" || page.SnapshotVersion == "" || page.HasMore || page.NextCursor != "" || page.AuditID != "workspace-read-audit" {
 		t.Fatalf("ListWorkspacesExact() = %#v, %#v", workspaces, page)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("workspace read receipts = %#v, want one", receipts)
 	}
 
 	binding := exactSnapshotBinding{InstallationID: "installation-1", WorkspaceID: "workspace-1", FilterDigest: "workspaces", ApprovalRevision: 2, ProjectionVersion: page.SnapshotVersion}
@@ -40,6 +44,9 @@ func TestPluginHost_ListWorkspacesExactAuthorizesAndBindsSnapshot(t *testing.T) 
 	_, _, err = d.host.ListWorkspacesExact(context.Background(), pluginsdk.ExactWorkspaceQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Cursor: cursor, SnapshotVersion: page.SnapshotVersion}})
 	if err != nil {
 		t.Fatalf("ListWorkspacesExact() cursor error = %v", err)
+	}
+	if len(receipts) != 2 {
+		t.Fatalf("workspace continuation receipts = %#v, want two", receipts)
 	}
 	tamperedCursor := cursor[:len(cursor)-2] + "A" + cursor[len(cursor)-1:]
 	if tamperedCursor == cursor {
@@ -62,6 +69,9 @@ func TestPluginHost_ListWorkspacesExactAuthorizesAndBindsSnapshot(t *testing.T) 
 				t.Fatalf("ListWorkspacesExact() error = %v, want %s", err, denial.code)
 			}
 		})
+	}
+	if len(receipts) != 2 {
+		t.Fatalf("invalid workspace requests recorded receipts = %#v", receipts)
 	}
 }
 

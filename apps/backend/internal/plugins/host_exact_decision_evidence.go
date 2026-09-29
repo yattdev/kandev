@@ -18,7 +18,7 @@ type exactDecisionEvidenceSource interface {
 }
 
 func (h *pluginHost) ListTaskDecisionEvidenceExact(ctx context.Context, query pluginsdk.ExactTaskDecisionEvidenceQuery) (*pluginsdk.ExactTaskDecisionEvidencePage, *pluginsdk.ExactPageInfo, error) {
-	receipt, err := h.authorizeExactReadReceipt(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("task-decision-evidence", query.WorkspaceID, query.Page.SnapshotVersion))
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("task-decision-evidence", query.WorkspaceID, query.Page.SnapshotVersion))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -50,13 +50,16 @@ func (h *pluginHost) ListTaskDecisionEvidenceExact(ctx context.Context, query pl
 	if err != nil {
 		return nil, nil, status.Error(codes.Unavailable, "exact task decision evidence is unavailable")
 	}
-	info := &pluginsdk.ExactPageInfo{SnapshotVersion: snapshotVersion, HasMore: len(page.Relations) > len(result.Relations) || len(page.PendingTransitions) > len(result.PendingTransitions), AuditID: receipt.AuditID}
+	info := &pluginsdk.ExactPageInfo{SnapshotVersion: snapshotVersion, HasMore: len(page.Relations) > len(result.Relations) || len(page.PendingTransitions) > len(result.PendingTransitions)}
 	if info.HasMore {
 		cursor, err := h.exactSnapshots.create(binding, offset+int(limit))
 		if err != nil {
 			return nil, nil, status.Error(codes.Unavailable, "exact task decision evidence cursor is unavailable")
 		}
 		info.NextCursor = cursor
+	}
+	if err := h.recordExactPageRead(info, receipt); err != nil {
+		return nil, nil, err
 	}
 	return result, info, nil
 }

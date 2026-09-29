@@ -14,7 +14,7 @@ func (h *pluginHost) ListWorkspacesExact(ctx context.Context, query pluginsdk.Ex
 	if query.Page.Limit < 0 || query.Page.Limit > exactWorkspacePageLimit {
 		return nil, nil, status.Error(codes.InvalidArgument, "exact workspace page limit is invalid")
 	}
-	receipt, err := h.authorizeExactReadReceipt(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workspaces", CanonicalApprovalDigest("workspaces", query.WorkspaceID, query.Page.SnapshotVersion))
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workspaces", CanonicalApprovalDigest("workspaces", query.WorkspaceID, query.Page.SnapshotVersion))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -41,7 +41,11 @@ func (h *pluginHost) ListWorkspacesExact(ctx context.Context, query pluginsdk.Ex
 		if err := h.validateExactWorkspacePage(binding, query.Page); err != nil {
 			return nil, nil, err
 		}
-		return []pluginsdk.Workspace{item}, &pluginsdk.ExactPageInfo{SnapshotVersion: version, AuditID: receipt.AuditID}, nil
+		info := &pluginsdk.ExactPageInfo{SnapshotVersion: version}
+		if err := h.recordExactPageRead(info, receipt); err != nil {
+			return nil, nil, err
+		}
+		return []pluginsdk.Workspace{item}, info, nil
 	}
 	return nil, nil, status.Error(codes.NotFound, "workspace not found")
 }

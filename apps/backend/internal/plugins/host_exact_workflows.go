@@ -15,7 +15,8 @@ import (
 const exactWorkflowPageLimit int32 = 100
 
 func (h *pluginHost) ListWorkflowsExact(ctx context.Context, query pluginsdk.ExactWorkflowQuery) ([]pluginsdk.Workflow, *pluginsdk.ExactPageInfo, error) {
-	if err := h.authorizeExactRead(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflows", query.WorkspaceID, query.Page.SnapshotVersion)); err != nil {
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflows", query.WorkspaceID, query.Page.SnapshotVersion))
+	if err != nil {
 		return nil, nil, err
 	}
 	if h.workflows == nil || h.exactSnapshots == nil {
@@ -36,11 +37,19 @@ func (h *pluginHost) ListWorkflowsExact(ctx context.Context, query pluginsdk.Exa
 	if err != nil {
 		return nil, nil, status.Error(codes.FailedPrecondition, "exact workflow projection is incomplete")
 	}
-	return h.pageExactWorkflows(query.WorkspaceID, query.CapabilityRevision, "workflows", version, query.Page, items)
+	items, info, err := h.pageExactWorkflows(query.WorkspaceID, query.CapabilityRevision, "workflows", version, query.Page, items)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := h.recordExactPageRead(info, receipt); err != nil {
+		return nil, nil, err
+	}
+	return items, info, nil
 }
 
 func (h *pluginHost) ListWorkflowStepsExact(ctx context.Context, query pluginsdk.ExactWorkflowStepsQuery) ([]pluginsdk.WorkflowStep, *pluginsdk.ExactPageInfo, error) {
-	if err := h.authorizeExactRead(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflow-steps", query.WorkspaceID, query.WorkflowID, query.Page.SnapshotVersion)); err != nil {
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflow-steps", query.WorkspaceID, query.WorkflowID, query.Page.SnapshotVersion))
+	if err != nil {
 		return nil, nil, err
 	}
 	if h.workflows == nil || h.workflowSteps == nil || h.exactSnapshots == nil {
@@ -68,7 +77,14 @@ func (h *pluginHost) ListWorkflowStepsExact(ctx context.Context, query pluginsdk
 	if err != nil {
 		return nil, nil, err
 	}
-	return h.pageExactWorkflowSteps(query.WorkspaceID, query.CapabilityRevision, "workflow-steps:"+query.WorkflowID, version, query.Page, items)
+	items, info, err := h.pageExactWorkflowSteps(query.WorkspaceID, query.CapabilityRevision, "workflow-steps:"+query.WorkflowID, version, query.Page, items)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := h.recordExactPageRead(info, receipt); err != nil {
+		return nil, nil, err
+	}
+	return items, info, nil
 }
 
 func exactWorkflowStepProjection(rows []*wfmodels.WorkflowStep, workflowID string) ([]pluginsdk.WorkflowStep, string, error) {

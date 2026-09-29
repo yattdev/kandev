@@ -192,6 +192,7 @@ func TestPluginHostExactDecisionEvidenceUsesReceiptAndCursor(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, second.PendingTransitions, 1)
 	require.False(t, secondInfo.HasMore)
+	require.Len(t, receipts, 2)
 	tamperedBytes, err := base64.RawURLEncoding.DecodeString(info.NextCursor)
 	require.NoError(t, err)
 	require.NotEmpty(t, tamperedBytes)
@@ -199,6 +200,7 @@ func TestPluginHostExactDecisionEvidenceUsesReceiptAndCursor(t *testing.T) {
 	tampered := base64.RawURLEncoding.EncodeToString(tamperedBytes)
 	_, _, err = d.host.ListTaskDecisionEvidenceExact(context.Background(), pluginsdk.ExactTaskDecisionEvidenceQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1, SnapshotVersion: info.SnapshotVersion, Cursor: tampered}})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Len(t, receipts, 2)
 	_, _, err = d.host.ListTaskDecisionEvidenceExact(context.Background(), pluginsdk.ExactTaskDecisionEvidenceQuery{WorkspaceID: "workspace-2", CapabilityRevision: 2})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
