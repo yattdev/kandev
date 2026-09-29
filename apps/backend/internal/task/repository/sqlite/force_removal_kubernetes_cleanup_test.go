@@ -80,3 +80,59 @@ func TestClaimForceRemovalBlocksKubernetesEnvironmentAdmission(t *testing.T) {
 	_, err = repo.ClaimKubernetesEnvironment(ctx, heldEnvID, heldTaskID, 2, "stale")
 	require.ErrorIs(t, err, models.ErrKubernetesEnvironmentConflict)
 }
+
+func TestClaimForceRemovalBlocksKubernetesEnvironmentCheckpoint(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForEntityTests(t)
+	const (
+		heldTaskID    = "force-kubernetes-checkpoint-held"
+		heldEnvID     = "force-kubernetes-checkpoint-held-environment"
+		foreignTaskID = "force-kubernetes-checkpoint-foreign"
+		foreignEnvID  = "force-kubernetes-checkpoint-foreign-environment"
+		deletedTaskID = "force-kubernetes-checkpoint-deleted"
+		deletedEnvID  = "force-kubernetes-checkpoint-deleted-environment"
+	)
+	for taskID, environmentID := range map[string]string{
+		heldTaskID: heldEnvID, foreignTaskID: foreignEnvID, deletedTaskID: deletedEnvID,
+	} {
+		seedRecoveryClaimEnvironment(t, repo, taskID, environmentID)
+	}
+	held, err := repo.ClaimKubernetesEnvironment(ctx, heldEnvID, heldTaskID, 1, "held")
+	require.NoError(t, err)
+	foreign, err := repo.ClaimKubernetesEnvironment(ctx, foreignEnvID, foreignTaskID, 1, "foreign")
+	require.NoError(t, err)
+	staleForeign := *foreign
+	deleted, err := repo.ClaimKubernetesEnvironment(ctx, deletedEnvID, deletedTaskID, 1, "deleted")
+	require.NoError(t, err)
+
+	heldTask, err := repo.GetTask(ctx, heldTaskID)
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
+		TaskID: heldTask.ID, WorkspaceID: heldTask.WorkspaceID, TaskGeneration: heldTask.UpdatedAt,
+		AdmissionGeneration: "admission", OperationID: "kubernetes-checkpoint", RequestDigest: "request", PreviewDigest: "preview",
+	})
+	require.NoError(t, err)
+
+	held.Metadata = map[string]interface{}{"checkpoint": "blocked"}
+	require.ErrorIs(t, repo.SaveKubernetesEnvironment(ctx, held, true), ErrForceRemovalTaskHeld)
+	storedHeld, err := repo.GetKubernetesEnvironment(ctx, heldEnvID)
+	require.NoError(t, err)
+	require.Equal(t, "held", storedHeld.OperationID)
+	require.Empty(t, storedHeld.Metadata)
+	require.Equal(t, int64(2), storedHeld.Revision)
+
+	foreign.Metadata = map[string]interface{}{"checkpoint": "foreign"}
+	require.NoError(t, repo.SaveKubernetesEnvironment(ctx, foreign, false))
+	require.ErrorIs(t, repo.SaveKubernetesEnvironment(ctx, &staleForeign, true), models.ErrKubernetesEnvironmentConflict)
+
+	require.NoError(t, repo.SaveKubernetesEnvironment(ctx, deleted, true))
+	require.NoError(t, repo.DeleteTask(ctx, deletedTaskID))
+	deleted, err = repo.ClaimKubernetesEnvironmentCleanup(ctx, deletedEnvID, deletedTaskID, 1, "deleted-cleanup")
+	require.NoError(t, err)
+	deleted.Metadata = map[string]interface{}{"checkpoint": "durable-cleanup"}
+	require.NoError(t, repo.SaveKubernetesEnvironment(ctx, deleted, true))
+	storedDeleted, err := repo.GetKubernetesEnvironment(ctx, deletedEnvID)
+	require.NoError(t, err)
+	require.Empty(t, storedDeleted.OperationID)
+	require.Equal(t, "durable-cleanup", storedDeleted.Metadata["checkpoint"])
+}
