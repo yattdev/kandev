@@ -742,6 +742,19 @@ func (r *Repository) DeleteExecutorRunningIfCurrent(
 	if err := r.ensureExecutorRunningAvailableTx(ctx, tx, sessionID); err != nil {
 		return err
 	}
+	var taskID string
+	err = tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), sessionID).Scan(&taskID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return err
+		}
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+			return err
+		}
+	}
 	query := `DELETE FROM executors_running WHERE session_id = ? AND agent_execution_id = ?`
 	args := []interface{}{sessionID, expectedExecID}
 	if !expectedUpdatedAt.IsZero() {
