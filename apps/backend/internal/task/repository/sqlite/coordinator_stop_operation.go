@@ -269,7 +269,7 @@ func (r *Repository) fenceCoordinatorStopSession(ctx context.Context, taskID, se
 		return false, err
 	}
 	if changed == 1 {
-		if err := bindCoordinatorStopRequestFenceTx(ctx, tx, r.db, taskID, sessionID, operationID); err != nil {
+		if err := bindCoordinatorStopRequestFenceTx(ctx, tx, r.db, taskID, sessionID, operationID, now); err != nil {
 			return false, err
 		}
 	}
@@ -279,7 +279,7 @@ func (r *Repository) fenceCoordinatorStopSession(ctx context.Context, taskID, se
 	return changed == 1, nil
 }
 
-func bindCoordinatorStopRequestFenceTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, taskID, sessionID, operationID string) error {
+func bindCoordinatorStopRequestFenceTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, taskID, sessionID, operationID string, createdAt time.Time) error {
 	if operationID == "" {
 		return nil
 	}
@@ -291,21 +291,21 @@ func bindCoordinatorStopRequestFenceTx(ctx context.Context, tx *sqlx.Tx, db *sql
 	if err != nil {
 		return err
 	}
-	if bound == 1 {
-		return nil
+	if bound == 0 {
+		var exists bool
+		if err := tx.GetContext(ctx, &exists, db.Rebind(`SELECT EXISTS (SELECT 1 FROM task_stop_request_fences WHERE task_id = ? AND operation_id = ? AND session_id = ?)`), taskID, operationID, sessionID); err != nil {
+			return err
+		}
+		if !exists {
+			return errors.New("coordinator stop request is not bound to task")
+		}
 	}
-	var exists bool
-	if err := tx.GetContext(ctx, &exists, db.Rebind(`SELECT EXISTS (SELECT 1 FROM task_stop_request_fences WHERE task_id = ? AND operation_id = ? AND session_id = ?)`), taskID, operationID, sessionID); err != nil {
-		return err
-	}
-	if !exists {
-		return errors.New("coordinator stop request is not bound to task")
-	}
-	return nil
+	_, err = tx.ExecContext(ctx, db.Rebind(`INSERT INTO task_stop_request_fence_receipts(task_id, operation_id, session_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(task_id, operation_id, session_id) DO NOTHING`), taskID, operationID, sessionID, createdAt)
+	return err
 }
 
 func (r *Repository) ListCoordinatorStopRequestSessionFences(ctx context.Context, taskID, operationID string) ([]models.CoordinatorStopSessionFenceReceipt, error) {
-	rows, err := r.ro.QueryxContext(ctx, r.ro.Rebind(`SELECT f.task_id, f.session_id, f.created_at FROM task_stop_session_fences f JOIN task_stop_request_fences b ON b.task_id = f.task_id AND b.session_id = f.session_id WHERE b.task_id = ? AND b.operation_id = ? ORDER BY f.created_at ASC, f.session_id ASC`), taskID, operationID)
+	rows, err := r.ro.QueryxContext(ctx, r.ro.Rebind(`SELECT task_id, session_id, created_at FROM task_stop_request_fence_receipts WHERE task_id = ? AND operation_id = ? ORDER BY created_at ASC, session_id ASC`), taskID, operationID)
 	if err != nil {
 		return nil, err
 	}

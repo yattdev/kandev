@@ -129,8 +129,8 @@ func TestStopTaskForCoordinatorOperation_RetryResumesOnlyBoundReceipt(t *testing
 	require.Equal(t, first.Receipts[0].ID, lookup.Receipts[0].ID)
 }
 
-// @covers AC-STOP-FENCE-005
-func TestStopTaskForCoordinatorOperation_RetryCapturesSecondLiveSession(t *testing.T) {
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-007
+func TestStopTaskForCoordinatorOperation_RetryDoesNotCaptureLaterLiveSession(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
 	const taskID, parentID = "task-retry-second", "parent-retry-second"
@@ -150,8 +150,8 @@ func TestStopTaskForCoordinatorOperation_RetryCapturesSecondLiveSession(t *testi
 
 	retry, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "same-request")
 	require.NoError(t, err)
-	require.Len(t, retry.Receipts, 2)
-	require.Equal(t, models.TaskSessionStateCancelled, mustGetSession(t, repo, "second-session").State)
+	require.Len(t, retry.Receipts, 1)
+	require.Equal(t, models.TaskSessionStateRunning, mustGetSession(t, repo, "second-session").State)
 }
 
 func seedStopRetrySession(t *testing.T, repo *sqlite.Repository, taskID, sessionID, turnID, executionID string) {
@@ -253,6 +253,31 @@ func TestStopTaskForCoordinatorOperation_BindsLaunchFenceToExactRequest(t *testi
 	require.NoError(t, err, "lookup must find the atomically linked launch fence before request completion")
 	require.Equal(t, CoordinatorTaskStopStatusIncomplete, pendingLookup.Status)
 	require.Len(t, pendingLookup.SessionFences, 1)
+}
+
+// @covers AC-STOP-FENCE-006
+func TestStopTaskForCoordinatorOperation_LookupRetainsLaunchFenceAfterAuthorizedRestart(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	const taskID, parentID, sessionID = "task-restarted-launch-fence", "parent-restarted-launch-fence", "session-restarted-launch-fence"
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: parentID, Title: "parent"}))
+	seedTaskAndSession(t, repo, taskID, sessionID, models.TaskSessionStateStarting)
+	task, err := repo.GetTask(ctx, taskID)
+	require.NoError(t, err)
+	task.ParentID = parentID
+	require.NoError(t, repo.UpdateTask(ctx, task))
+	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), &mockAgentManager{repoForExecutionLookup: repo})
+
+	first, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "launch-fence-restart")
+	require.NoError(t, err)
+	require.Len(t, first.SessionFences, 1)
+
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, sessionID, models.TaskSessionStateRunning, ""))
+	lookup, err := svc.GetCoordinatorStopReceipt(ctx, taskID, parentID, "launch-fence-restart")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, lookup.Status)
+	require.Len(t, lookup.SessionFences, 1)
+	require.Equal(t, sessionID, lookup.SessionFences[0].SessionID)
 }
 
 // @covers AC-STOP-FENCE-005, AC-STOP-FENCE-006

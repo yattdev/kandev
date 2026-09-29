@@ -3,10 +3,59 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
+	kandevdb "github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/task/models"
 )
+
+// CaptureCoordinatorStopRequestCandidates records the first request snapshot
+// before any candidate is stopped. Retries always return that original set.
+func (r *Repository) CaptureCoordinatorStopRequestCandidates(ctx context.Context, taskID, operationID, parentTaskID string, sessionIDs []string) ([]string, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), taskID); err != nil {
+		return nil, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_stop_requests SET candidates_captured = TRUE, updated_at = ? WHERE task_id = ? AND operation_id = ? AND parent_task_id = ? AND candidates_captured = FALSE`), time.Now().UTC(), taskID, operationID, parentTaskID)
+	if err != nil {
+		return nil, err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if changed == 1 {
+		seen := make(map[string]struct{}, len(sessionIDs))
+		for _, sessionID := range sessionIDs {
+			if sessionID == "" {
+				return nil, fmt.Errorf("coordinator stop request candidate session ID is required")
+			}
+			if _, ok := seen[sessionID]; ok {
+				continue
+			}
+			seen[sessionID] = struct{}{}
+			if _, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_request_candidates(task_id, operation_id, session_id) VALUES (?, ?, ?)`), taskID, operationID, sessionID); err != nil {
+				return nil, err
+			}
+		}
+	} else if changed != 0 {
+		return nil, fmt.Errorf("unexpected coordinator stop request candidate capture result")
+	}
+	var candidates []string
+	if err := tx.SelectContext(ctx, &candidates, r.db.Rebind(`SELECT session_id FROM task_stop_request_candidates WHERE task_id = ? AND operation_id = ? ORDER BY session_id`), taskID, operationID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	sort.Strings(candidates)
+	return candidates, nil
+}
 
 // CaptureCoordinatorStopRequest creates one parent-bound caller operation ID.
 // A repeated key is accepted only for the same task and parent.

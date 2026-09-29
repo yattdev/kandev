@@ -125,6 +125,10 @@ func (r *Repository) initCoordinatorStopOperationSchema() error {
 		CREATE INDEX IF NOT EXISTS idx_task_stop_operations_task ON task_stop_operations(task_id, created_at)`); err != nil {
 		return fmt.Errorf("create task stop operations task index: %w", err)
 	}
+	return r.initCoordinatorStopRequestSchema()
+}
+
+func (r *Repository) initCoordinatorStopRequestSchema() error {
 	if err := r.migrate.Apply("task_stop_requests.table", `
 		CREATE TABLE IF NOT EXISTS task_stop_requests (
 			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, parent_task_id TEXT NOT NULL,
@@ -153,11 +157,32 @@ func (r *Repository) initCoordinatorStopOperationSchema() error {
 		)`); err != nil {
 		return fmt.Errorf("create task stop request fences table: %w", err)
 	}
+	if err := r.migrate.Apply("task_stop_request_candidates.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_request_candidates (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, session_id TEXT NOT NULL,
+			PRIMARY KEY(task_id, operation_id, session_id),
+			FOREIGN KEY (task_id, operation_id) REFERENCES task_stop_requests(task_id, operation_id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop request candidates table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_request_fence_receipts.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_request_fence_receipts (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, session_id TEXT NOT NULL, created_at TIMESTAMP NOT NULL,
+			PRIMARY KEY(task_id, operation_id, session_id),
+			FOREIGN KEY (task_id, operation_id) REFERENCES task_stop_requests(task_id, operation_id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop request fence receipts table: %w", err)
+	}
 	if err := r.migrate.Apply("task_stop_requests.outcome", `
 		ALTER TABLE task_stop_requests ADD COLUMN complete BOOLEAN NOT NULL DEFAULT FALSE;
 		ALTER TABLE task_stop_requests ADD COLUMN result_status TEXT NOT NULL DEFAULT '';
 	`); err != nil {
 		return fmt.Errorf("add task stop request outcome: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_requests.candidates_captured", `
+		ALTER TABLE task_stop_requests ADD COLUMN candidates_captured BOOLEAN NOT NULL DEFAULT FALSE;
+	`); err != nil {
+		return fmt.Errorf("add task stop request candidate capture: %w", err)
 	}
 	return r.migrate.Err()
 }

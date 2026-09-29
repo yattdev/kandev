@@ -577,6 +577,12 @@ type CoordinatorStopRequestRepository interface {
 	ListCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID, parentTaskID string) ([]models.CoordinatorStopOperation, error)
 }
 
+// CoordinatorStopRequestCandidateRepository preserves the immutable session
+// inventory selected by a caller-supplied stop operation.
+type CoordinatorStopRequestCandidateRepository interface {
+	CaptureCoordinatorStopRequestCandidates(ctx context.Context, taskID, operationID, parentTaskID string, sessionIDs []string) ([]string, error)
+}
+
 type CoordinatorStopSessionFencer interface {
 	FenceCoordinatorStopSession(ctx context.Context, taskID, sessionID string) (bool, error)
 	ListCoordinatorStopSessionFences(ctx context.Context, taskID string) ([]models.CoordinatorStopSessionFenceReceipt, error)

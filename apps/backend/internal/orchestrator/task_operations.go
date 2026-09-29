@@ -82,6 +82,10 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
+	candidates, err := s.captureCoordinatorStopRequestCandidates(ctx, taskID, parentTaskID, operationID)
+	if err != nil {
+		return CoordinatorTaskStopResult{}, err
+	}
 	receipts, err := repo.ListCoordinatorStopRequestReceipts(ctx, taskID, operationID, parentTaskID)
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
@@ -95,7 +99,7 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	}
 	result := CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatusIncomplete}
 	if len(receipts) == 0 {
-		result, err = s.captureCoordinatorStopRequest(ctx, repo, taskID, parentTaskID, operationID)
+		result, err = s.captureCoordinatorStopRequest(ctx, repo, taskID, parentTaskID, operationID, candidates)
 		if err != nil {
 			return CoordinatorTaskStopResult{}, err
 		}
@@ -105,11 +109,10 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 		if err != nil {
 			return CoordinatorTaskStopResult{}, err
 		}
-		// A prior candidate can have reached terminal proof while a later
-		// observed session remained active after its capture failed. Resume the
-		// bound receipts, then continue capture for every still-active session.
-		// The repository binds any newly captured exact receipt to this request.
-		result, err = s.captureCoordinatorStopRequest(ctx, repo, taskID, parentTaskID, operationID)
+		// A prior candidate can have reached terminal proof while another member
+		// of the original snapshot remained unprocessed after a partial failure.
+		// Never extend that snapshot on retry.
+		result, err = s.captureCoordinatorStopRequest(ctx, repo, taskID, parentTaskID, operationID, candidates)
 		if err != nil {
 			return CoordinatorTaskStopResult{}, err
 		}
@@ -166,15 +169,12 @@ func (s *Service) captureCoordinatorStopRequest(
 	ctx context.Context,
 	repo taskrepo.CoordinatorStopRequestRepository,
 	taskID, parentTaskID, operationID string,
+	sessions []*models.TaskSession,
 ) (CoordinatorTaskStopResult, error) {
 	if s.executor == nil {
 		return CoordinatorTaskStopResult{}, errors.New("coordinator stop: executor is not configured")
 	}
 	result := CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatusNotRunning}
-	sessions, err := s.repo.ListActiveTaskSessionsByTaskID(ctx, taskID)
-	if err != nil {
-		return CoordinatorTaskStopResult{}, err
-	}
 	sort.SliceStable(sessions, func(i, j int) bool {
 		return coordinatorStopSessionID(sessions[i]) < coordinatorStopSessionID(sessions[j])
 	})
@@ -195,6 +195,37 @@ func (s *Service) captureCoordinatorStopRequest(
 	}
 	result.Receipts = receipts
 	return result, nil
+}
+
+func (s *Service) captureCoordinatorStopRequestCandidates(ctx context.Context, taskID, parentTaskID, operationID string) ([]*models.TaskSession, error) {
+	capturer, ok := s.repo.(taskrepo.CoordinatorStopRequestCandidateRepository)
+	if !ok {
+		return nil, errors.New("coordinator stop request candidate repository is unavailable")
+	}
+	active, err := s.repo.ListActiveTaskSessionsByTaskID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(active))
+	for _, session := range active {
+		if session == nil || session.ID == "" {
+			return nil, errors.New("coordinator stop: active session candidate is nil or has an empty ID")
+		}
+		ids = append(ids, session.ID)
+	}
+	ids, err = capturer.CaptureCoordinatorStopRequestCandidates(ctx, taskID, operationID, parentTaskID, ids)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]*models.TaskSession, 0, len(ids))
+	for _, id := range ids {
+		session, getErr := s.repo.GetTaskSession(ctx, id)
+		if getErr != nil {
+			return nil, getErr
+		}
+		candidates = append(candidates, session)
+	}
+	return candidates, nil
 }
 
 func (s *Service) captureCoordinatorStopRequestSessions(ctx context.Context, result *CoordinatorTaskStopResult, taskID, operationID string, sessions []*models.TaskSession) (int, bool, error) {
