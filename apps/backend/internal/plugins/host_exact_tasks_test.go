@@ -49,6 +49,7 @@ func TestPluginHostExactTasksUseApprovalBoundDurableSnapshotAndPageReceipts(t *t
 		"snapshot-workspace-1": {
 			{ID: "task-1", WorkspaceID: "workspace-1", WorkflowID: "workflow-1", WorkflowStepID: "step-1", Title: "Blocked", State: "TODO", Priority: "high", ResourceVersion: 3},
 			{ID: "task-2", WorkspaceID: "workspace-1", WorkflowID: "workflow-1", WorkflowStepID: "step-2", Title: "Done", State: "COMPLETED", Priority: "low", Archived: true, ResourceVersion: 4},
+			{ID: "task-3", WorkspaceID: "workspace-1", WorkflowID: "workflow-1", WorkflowStepID: "step-3", Title: "Ready", State: "TODO", Priority: "medium", ResourceVersion: 5},
 		},
 	}
 
@@ -63,21 +64,35 @@ func TestPluginHostExactTasksUseApprovalBoundDurableSnapshotAndPageReceipts(t *t
 	require.NotEmpty(t, page.SnapshotVersion)
 	require.NotContains(t, page.SnapshotVersion, "snapshot-workspace-1")
 	snapshotVersion := page.SnapshotVersion
+	firstPage := page
 	d.host.exactReadReceipt = newApprovalLedger(ledgerDir).recordReadReceipt
 
-	items, page, err = d.host.ListTasksExact(context.Background(), pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1, Cursor: page.NextCursor, SnapshotVersion: page.SnapshotVersion}})
+	items, page, err = d.host.ListTasksExact(context.Background(), pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1, Cursor: firstPage.NextCursor, SnapshotVersion: firstPage.SnapshotVersion}})
 	require.NoError(t, err)
 	require.Equal(t, "task-2", items[0].ID)
-	require.False(t, page.HasMore)
+	require.True(t, page.HasMore)
 	require.NotEmpty(t, page.AuditID)
+	require.NotEqual(t, firstPage.AuditID, page.AuditID)
+	secondPage := page
 	file, err = newApprovalLedger(ledgerDir).load()
 	require.NoError(t, err)
 	require.Len(t, file.ReadReceipts, 2)
 	require.Equal(t, page.AuditID, file.ReadReceipts[1].AuditID)
 
-	task, err := d.host.GetTaskExact(context.Background(), pluginsdk.ExactTaskGetQuery{WorkspaceID: "workspace-1", TaskID: "task-2", CapabilityRevision: 2, SnapshotVersion: snapshotVersion})
+	items, page, err = d.host.ListTasksExact(context.Background(), pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1, Cursor: secondPage.NextCursor, SnapshotVersion: snapshotVersion}})
 	require.NoError(t, err)
-	require.Equal(t, int64(4), task.ResourceVersion)
+	require.Equal(t, "task-3", items[0].ID)
+	require.False(t, page.HasMore)
+	require.NotEmpty(t, page.AuditID)
+	require.NotEqual(t, secondPage.AuditID, page.AuditID)
+	file, err = newApprovalLedger(ledgerDir).load()
+	require.NoError(t, err)
+	require.Len(t, file.ReadReceipts, 3)
+	require.Equal(t, page.AuditID, file.ReadReceipts[2].AuditID)
+
+	task, err := d.host.GetTaskExact(context.Background(), pluginsdk.ExactTaskGetQuery{WorkspaceID: "workspace-1", TaskID: "task-3", CapabilityRevision: 2, SnapshotVersion: snapshotVersion})
+	require.NoError(t, err)
+	require.Equal(t, int64(5), task.ResourceVersion)
 
 	_, _, err = d.host.ListTasksExact(context.Background(), pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-2", CapabilityRevision: 2})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))

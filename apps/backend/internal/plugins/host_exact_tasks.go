@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	taskmodels "github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
@@ -18,7 +19,11 @@ const exactTaskPageLimit int32 = 99
 // approval revision, and task filter; a token therefore cannot cross either
 // a Host connection or a workspace boundary.
 func (h *pluginHost) ListTasksExact(ctx context.Context, query pluginsdk.ExactTaskQuery) ([]pluginsdk.ExactTask, *pluginsdk.ExactPageInfo, error) {
-	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("tasks", query.WorkspaceID, query.Page.SnapshotVersion))
+	limit := exactTaskPageLimit
+	if query.Page.Limit > 0 {
+		limit = query.Page.Limit
+	}
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("tasks", query.WorkspaceID, query.Page.SnapshotVersion, query.Page.Cursor, strconv.FormatInt(int64(limit), 10)))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -32,10 +37,6 @@ func (h *pluginHost) ListTasksExact(ctx context.Context, query pluginsdk.ExactTa
 	offset, err := h.exactTaskOffset(binding, query.Page)
 	if err != nil {
 		return nil, nil, err
-	}
-	limit := exactTaskPageLimit
-	if query.Page.Limit > 0 {
-		limit = query.Page.Limit
 	}
 	rows, err := h.taskData.PageExactTaskSnapshot(ctx, binding.ProjectionVersion, offset, int(limit)+1)
 	if err != nil {
