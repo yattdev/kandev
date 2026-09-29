@@ -49,3 +49,33 @@ func TestVerifyLiveCallerReadsPersistedSessionState(t *testing.T) {
 		})
 	}
 }
+
+// @covers AC-FR-03
+func TestVerifyLiveCallerRejectsArchivedOwningTask(t *testing.T) {
+	ctx := context.Background()
+	svc, repo := newTestTaskService(t)
+	workspaces, err := svc.ListWorkspaces(ctx)
+	require.NoError(t, err)
+	workflow, err := svc.CreateWorkflow(ctx, &service.CreateWorkflowRequest{
+		WorkspaceID: workspaces[0].ID,
+		Name:        "Archived live caller verification",
+	})
+	require.NoError(t, err)
+	created, err := svc.CreateTask(ctx, &service.CreateTaskRequest{
+		WorkspaceID: workspaces[0].ID,
+		WorkflowID:  workflow.ID,
+		Title:       "Archived live caller",
+	})
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{
+		ID: "archived-live-caller-session", TaskID: created.Task.ID, IsPrimary: true,
+		State: models.TaskSessionStateRunning,
+	}))
+	resolver := mcpscope.NewResolver(repo, nil, func() bool { return false }, testLogger(t))
+	principalCtx, err := resolver.ScopePrincipal(ctx, created.Task.ID, "archived-live-caller-session")
+	require.NoError(t, err)
+
+	require.NoError(t, repo.ArchiveTask(ctx, created.Task.ID))
+	_, err = resolver.VerifyLiveCaller(principalCtx)
+	require.Error(t, err)
+}

@@ -54,6 +54,9 @@ func (r *Resolver) VerifyLiveCaller(ctx context.Context) (Principal, error) {
 	if err != nil {
 		return Principal{}, fmt.Errorf("verify live MCP caller: %w", err)
 	}
+	if task.ArchivedAt != nil {
+		return Principal{}, fmt.Errorf("verify live MCP caller: task %s is archived", task.ID)
+	}
 	workspaceID, err := r.resolvePrincipalWorkspace(ctx, task)
 	if err != nil {
 		return Principal{}, fmt.Errorf("verify live MCP caller: %w", err)
