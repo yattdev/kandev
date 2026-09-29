@@ -14,8 +14,11 @@ var ErrForceRemovalAdmissionStale = errors.New("force removal admission is stale
 var ErrForceRemovalPreviewInvalid = errors.New("force removal preview is invalid")
 
 type ForceRemovalPreview struct {
-	TaskID, WorkspaceID, Generation, Digest string
-	Receipts                                []models.ExactRetirementPredicateReceipt
+	TaskID      string                                   `json:"task_id"`
+	WorkspaceID string                                   `json:"workspace_id"`
+	Generation  string                                   `json:"generation"`
+	Digest      string                                   `json:"digest"`
+	Receipts    []models.ExactRetirementPredicateReceipt `json:"receipts"`
 }
 
 type ForceRemovalAdmissionRequest struct {
