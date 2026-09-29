@@ -37,6 +37,50 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	return principal, ok && principal.CallerTaskID != "" && principal.CallerSessionID != ""
 }
 
+// VerifyLiveCaller rechecks the server-derived principal against the durable
+// task and session rows before an operation that requires a live agent caller.
+// ScopePrincipal remains compatible with callers whose session reader is not
+// available; this stricter verifier fails closed when it cannot read a session.
+func (r *Resolver) VerifyLiveCaller(ctx context.Context) (Principal, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return Principal{}, fmt.Errorf("verify live MCP caller: principal is required")
+	}
+	if r == nil || r.tasks == nil {
+		return Principal{}, fmt.Errorf("verify live MCP caller: task lookup is required")
+	}
+
+	task, err := r.resolvePrincipalTask(ctx, principal.CallerTaskID)
+	if err != nil {
+		return Principal{}, fmt.Errorf("verify live MCP caller: %w", err)
+	}
+	workspaceID, err := r.resolvePrincipalWorkspace(ctx, task)
+	if err != nil {
+		return Principal{}, fmt.Errorf("verify live MCP caller: %w", err)
+	}
+	if workspaceID != principal.WorkspaceID {
+		return Principal{}, fmt.Errorf("verify live MCP caller: task %s does not belong to workspace %s", task.ID, principal.WorkspaceID)
+	}
+
+	lookup, ok := r.tasks.(interface {
+		GetTaskSession(context.Context, string) (*models.TaskSession, error)
+	})
+	if !ok {
+		return Principal{}, fmt.Errorf("verify live MCP caller: task session lookup is required")
+	}
+	session, err := lookup.GetTaskSession(ctx, principal.CallerSessionID)
+	if err != nil {
+		return Principal{}, fmt.Errorf("verify live MCP caller session %s: %w", principal.CallerSessionID, err)
+	}
+	if session == nil || session.TaskID != task.ID {
+		return Principal{}, fmt.Errorf("verify live MCP caller: session %s does not belong to task %s", principal.CallerSessionID, task.ID)
+	}
+	if !models.IsAdmittedSessionState(session.State) {
+		return Principal{}, fmt.Errorf("verify live MCP caller: session %s is not live", principal.CallerSessionID)
+	}
+	return principal, nil
+}
+
 // ScopePrincipal derives the MCP principal from the execution's own task and
 // session. It intentionally does not read any identity or surface fields from
 // an agent payload. Non-automation tasks still receive their normal surface so

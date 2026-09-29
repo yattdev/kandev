@@ -36,7 +36,9 @@ func TestScopePrincipalDerivesAutomationIdentityFromExecution(t *testing.T) {
 			Metadata:    map[string]interface{}{"automation_id": "automation-1"},
 		},
 		workspace: &models.Workspace{ID: "workspace-1"},
-		session:   &models.TaskSession{ID: "session-1", TaskID: "automation-task"},
+		session: &models.TaskSession{
+			ID: "session-1", TaskID: "automation-task", State: models.TaskSessionStateRunning,
+		},
 	}}
 
 	ctx, err := resolver.ScopePrincipal(context.Background(), "automation-task", "session-1")
@@ -62,5 +64,68 @@ func TestScopePrincipalRejectsSessionFromAnotherTask(t *testing.T) {
 	}}
 
 	_, err := resolver.ScopePrincipal(context.Background(), "automation-task", "session-1")
+	require.Error(t, err)
+}
+
+// @covers AC-FR-03
+func TestVerifyLiveCallerAcceptsOnlyLiveTaskSessions(t *testing.T) {
+	for _, state := range models.AllTaskSessionStates {
+		t.Run(string(state), func(t *testing.T) {
+			resolver := &Resolver{tasks: principalLookup{
+				task:      &models.Task{ID: "caller-task", WorkspaceID: "workspace-1"},
+				workspace: &models.Workspace{ID: "workspace-1"},
+				session: &models.TaskSession{
+					ID: "caller-session", TaskID: "caller-task", State: state,
+				},
+			}}
+			ctx := WithPrincipal(context.Background(), Principal{
+				WorkspaceID: "workspace-1", CallerTaskID: "caller-task", CallerSessionID: "caller-session",
+			})
+
+			principal, err := resolver.VerifyLiveCaller(ctx)
+			if state == models.TaskSessionStateStarting || state == models.TaskSessionStateRunning {
+				require.NoError(t, err)
+				require.Equal(t, "caller-task", principal.CallerTaskID)
+				return
+			}
+			require.Error(t, err)
+		})
+	}
+}
+
+// @covers AC-FR-03
+func TestVerifyLiveCallerRejectsMismatchedOrUnreadablePrincipal(t *testing.T) {
+	resolver := &Resolver{tasks: principalLookup{
+		task:      &models.Task{ID: "caller-task", WorkspaceID: "workspace-1"},
+		workspace: &models.Workspace{ID: "workspace-1"},
+		session: &models.TaskSession{
+			ID: "caller-session", TaskID: "other-task", State: models.TaskSessionStateRunning,
+		},
+	}}
+
+	ctx := WithPrincipal(context.Background(), Principal{
+		WorkspaceID: "workspace-1", CallerTaskID: "caller-task", CallerSessionID: "caller-session",
+	})
+	_, err := resolver.VerifyLiveCaller(ctx)
+	require.Error(t, err)
+
+	_, err = resolver.VerifyLiveCaller(context.Background())
+	require.Error(t, err)
+}
+
+// @covers AC-FR-03
+func TestVerifyLiveCallerRejectsPrincipalFromAnotherWorkspace(t *testing.T) {
+	resolver := &Resolver{tasks: principalLookup{
+		task:      &models.Task{ID: "caller-task", WorkspaceID: "workspace-1"},
+		workspace: &models.Workspace{ID: "workspace-1"},
+		session: &models.TaskSession{
+			ID: "caller-session", TaskID: "caller-task", State: models.TaskSessionStateRunning,
+		},
+	}}
+	ctx := WithPrincipal(context.Background(), Principal{
+		WorkspaceID: "workspace-2", CallerTaskID: "caller-task", CallerSessionID: "caller-session",
+	})
+
+	_, err := resolver.VerifyLiveCaller(ctx)
 	require.Error(t, err)
 }
