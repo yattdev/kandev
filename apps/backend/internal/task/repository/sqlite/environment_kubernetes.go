@@ -194,8 +194,34 @@ func (r *Repository) ClaimKubernetesEnvironmentCleanup(ctx context.Context, envi
 		return nil, models.ErrKubernetesEnvironmentConflict
 	}
 	operationID = "cleanup:" + operationID
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// A live environment owner must be admitted before cleanup acquires the
+	// physical inventory. Deleted owners remain eligible for durable cleanup.
+	var liveOwner bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (
+ SELECT 1 FROM task_environment_kubernetes k
+ JOIN task_environments e ON e.id = k.environment_id
+  AND e.task_id = k.task_id AND e.ownership_generation = k.ownership_generation
+ WHERE k.environment_id = ? AND k.task_id = ? AND k.ownership_generation = ? AND k.operation_id = ''
+)`), environmentID, taskID, generation).Scan(&liveOwner); err != nil {
+		return nil, err
+	}
+	if liveOwner {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return nil, err
+		}
+		if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+			return nil, err
+		}
+	}
+
 	// An existing record is mandatory: deletion never creates resource authority.
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE task_environment_kubernetes
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_environment_kubernetes
  SET operation_id = ?, revision = revision + 1
  WHERE environment_id = ? AND task_id = ? AND ownership_generation = ? AND operation_id = ''
  AND (EXISTS (SELECT 1 FROM task_environments e WHERE e.id = task_environment_kubernetes.environment_id
@@ -205,7 +231,14 @@ func (r *Repository) ClaimKubernetesEnvironmentCleanup(ctx context.Context, envi
 	if err := requireKubernetesEnvironmentWrite(result, err); err != nil {
 		return nil, err
 	}
-	return r.GetKubernetesEnvironment(ctx, environmentID)
+	record, err := scanKubernetesEnvironment(tx.QueryRowContext(ctx, r.db.Rebind(kubernetesEnvironmentSelect+` WHERE environment_id = ?`), environmentID))
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return record, nil
 }
 
 func (r *Repository) ensureKubernetesInventoryAbsent(ctx context.Context, tx *sqlx.Tx, environmentID string) error {
