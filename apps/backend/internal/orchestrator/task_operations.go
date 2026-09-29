@@ -78,11 +78,11 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	if taskID == "" || parentTaskID == "" || operationID == "" {
 		return CoordinatorTaskStopResult{}, errors.New("coordinator stop request requires task, parent, and operation IDs")
 	}
-	request, _, err := repo.CaptureCoordinatorStopRequest(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentTaskID, OperationID: operationID})
+	request, candidateIDs, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentTaskID, OperationID: operationID})
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
-	candidates, err := s.captureCoordinatorStopRequestCandidates(ctx, taskID, parentTaskID, operationID)
+	candidates, err := s.loadCoordinatorStopRequestCandidates(ctx, candidateIDs)
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
@@ -197,26 +197,7 @@ func (s *Service) captureCoordinatorStopRequest(
 	return result, nil
 }
 
-func (s *Service) captureCoordinatorStopRequestCandidates(ctx context.Context, taskID, parentTaskID, operationID string) ([]*models.TaskSession, error) {
-	capturer, ok := s.repo.(taskrepo.CoordinatorStopRequestCandidateRepository)
-	if !ok {
-		return nil, errors.New("coordinator stop request candidate repository is unavailable")
-	}
-	active, err := s.repo.ListActiveTaskSessionsByTaskID(ctx, taskID)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(active))
-	for _, session := range active {
-		if session == nil || session.ID == "" {
-			return nil, errors.New("coordinator stop: active session candidate is nil or has an empty ID")
-		}
-		ids = append(ids, session.ID)
-	}
-	ids, err = capturer.CaptureCoordinatorStopRequestCandidates(ctx, taskID, operationID, parentTaskID, ids)
-	if err != nil {
-		return nil, err
-	}
+func (s *Service) loadCoordinatorStopRequestCandidates(ctx context.Context, ids []string) ([]*models.TaskSession, error) {
 	candidates := make([]*models.TaskSession, 0, len(ids))
 	for _, id := range ids {
 		session, getErr := s.repo.GetTaskSession(ctx, id)

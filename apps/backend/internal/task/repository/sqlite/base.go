@@ -127,6 +127,10 @@ type Repository struct {
 	// step rather than the stale one it read. Nil in production and in
 	// every test but the one that sets it.
 	taskStepLockBeforeAcquireHook func(candidateStepID string)
+	// coordinatorStopRequestBeforeCandidateSnapshot is a test-only failpoint
+	// inside the request-and-inventory transaction. It proves a crash cannot
+	// leave an old caller operation without its immutable candidate scope.
+	coordinatorStopRequestBeforeCandidateSnapshot func() error
 	// taskRowReconfirmHook is a test-only synchronization seam, called (if
 	// set) inside lockTaskRowIfStepless right before it re-locks a task's
 	// own row to confirm the task still has no step - the exact gap a

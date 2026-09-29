@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -129,6 +130,55 @@ func TestCaptureCoordinatorStopOperationBindsCallerRequestAtomically(t *testing.
 	require.NoError(t, err)
 	require.Len(t, bound, 1, "receipt binding must commit with session and turn settlement")
 	require.Equal(t, op.ID, bound[0].ID)
+}
+
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-007
+func TestCaptureCoordinatorStopRequestWithCandidatesRollsBackPreSnapshotFailure(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForSessionTests(t)
+	now := time.Now().UTC()
+	const taskID, parentID, operationID = "task-atomic-request", "parent-atomic-request", "atomic-request"
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, Title: "child", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: parentID, Title: "parent", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "original-session", TaskID: taskID, State: models.TaskSessionStateRunning, StartedAt: now, UpdatedAt: now}))
+
+	repo.coordinatorStopRequestBeforeCandidateSnapshot = func() error { return errors.New("simulated crash before candidate snapshot") }
+	_, _, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentID, OperationID: operationID})
+	require.Error(t, err)
+	repo.coordinatorStopRequestBeforeCandidateSnapshot = nil
+
+	// A retry after a process restart must not find a persisted request without
+	// its immutable inventory. The failed transaction leaves neither behind.
+	_, err = repo.GetCoordinatorStopRequest(ctx, taskID, operationID, parentID)
+	require.Error(t, err)
+	var candidateCount int
+	require.NoError(t, repo.db.GetContext(ctx, &candidateCount, repo.db.Rebind(`SELECT COUNT(*) FROM task_stop_request_candidates WHERE task_id = ? AND operation_id = ?`), taskID, operationID))
+	require.Zero(t, candidateCount)
+}
+
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-007
+func TestCaptureCoordinatorStopRequestWithCandidatesRetainsOriginalPartialInventory(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForSessionTests(t)
+	now := time.Now().UTC()
+	const taskID, parentID, operationID = "task-partial-inventory", "parent-partial-inventory", "partial-inventory"
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, Title: "child", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: parentID, Title: "parent", CreatedAt: now, UpdatedAt: now}))
+	for _, sessionID := range []string{"original-a", "original-b"} {
+		require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: sessionID, TaskID: taskID, State: models.TaskSessionStateRunning, StartedAt: now, UpdatedAt: now}))
+	}
+
+	_, candidates, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentID, OperationID: operationID})
+	require.NoError(t, err)
+	require.Equal(t, []string{"original-a", "original-b"}, candidates)
+	// Model a partial attempt that terminalizes only one original candidate.
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "original-a", models.TaskSessionStateCancelled, "partial stop"))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "later-successor", TaskID: taskID, State: models.TaskSessionStateRunning, StartedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)}))
+
+	_, retryCandidates, created, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentID, OperationID: operationID})
+	require.NoError(t, err)
+	require.False(t, created)
+	require.Equal(t, []string{"original-a", "original-b"}, retryCandidates, "retry keeps unprocessed original candidates and excludes a later successor")
 }
 
 // @covers AC-STOP-FENCE-005, AC-STOP-FENCE-006

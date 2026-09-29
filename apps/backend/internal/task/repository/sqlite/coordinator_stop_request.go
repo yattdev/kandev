@@ -3,85 +3,85 @@ package sqlite
 import (
 	"context"
 	"fmt"
-	"sort"
 	"time"
 
 	kandevdb "github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/task/models"
 )
 
-// CaptureCoordinatorStopRequestCandidates records the first request snapshot
-// before any candidate is stopped. Retries always return that original set.
-func (r *Repository) CaptureCoordinatorStopRequestCandidates(ctx context.Context, taskID, operationID, parentTaskID string, sessionIDs []string) ([]string, error) {
-	tx, err := r.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), taskID); err != nil {
-		return nil, err
-	}
-	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_stop_requests SET candidates_captured = TRUE, updated_at = ? WHERE task_id = ? AND operation_id = ? AND parent_task_id = ? AND candidates_captured = FALSE`), time.Now().UTC(), taskID, operationID, parentTaskID)
-	if err != nil {
-		return nil, err
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return nil, err
-	}
-	if changed == 1 {
-		seen := make(map[string]struct{}, len(sessionIDs))
-		for _, sessionID := range sessionIDs {
-			if sessionID == "" {
-				return nil, fmt.Errorf("coordinator stop request candidate session ID is required")
-			}
-			if _, ok := seen[sessionID]; ok {
-				continue
-			}
-			seen[sessionID] = struct{}{}
-			if _, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_request_candidates(task_id, operation_id, session_id) VALUES (?, ?, ?)`), taskID, operationID, sessionID); err != nil {
-				return nil, err
-			}
-		}
-	} else if changed != 0 {
-		return nil, fmt.Errorf("unexpected coordinator stop request candidate capture result")
-	}
-	var candidates []string
-	if err := tx.SelectContext(ctx, &candidates, r.db.Rebind(`SELECT session_id FROM task_stop_request_candidates WHERE task_id = ? AND operation_id = ? ORDER BY session_id`), taskID, operationID); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	sort.Strings(candidates)
-	return candidates, nil
-}
-
 // CaptureCoordinatorStopRequest creates one parent-bound caller operation ID.
 // A repeated key is accepted only for the same task and parent.
 func (r *Repository) CaptureCoordinatorStopRequest(ctx context.Context, request models.CoordinatorStopRequest) (*models.CoordinatorStopRequest, bool, error) {
+	got, _, created, err := r.CaptureCoordinatorStopRequestWithCandidates(ctx, request)
+	return got, created, err
+}
+
+// CaptureCoordinatorStopRequestWithCandidates creates a caller operation and
+// its immutable active-session inventory under the same task lock. A retry
+// returns the original inventory, including a durable empty inventory.
+//
+//nolint:cyclop,nestif // The single transaction is the atomicity boundary for request and inventory.
+func (r *Repository) CaptureCoordinatorStopRequestWithCandidates(ctx context.Context, request models.CoordinatorStopRequest) (*models.CoordinatorStopRequest, []string, bool, error) {
 	if request.TaskID == "" || request.OperationID == "" || request.ParentTaskID == "" {
-		return nil, false, fmt.Errorf("coordinator stop request requires task, operation, and parent")
+		return nil, nil, false, fmt.Errorf("coordinator stop request requires task, operation, and parent")
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), request.TaskID); err != nil {
+		return nil, nil, false, err
 	}
 	now := time.Now().UTC()
 	request.CreatedAt, request.UpdatedAt = now, now
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_requests (task_id, operation_id, parent_task_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(task_id, operation_id) DO NOTHING`), request.TaskID, request.OperationID, request.ParentTaskID, now, now)
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_requests (task_id, operation_id, parent_task_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(task_id, operation_id) DO NOTHING`), request.TaskID, request.OperationID, request.ParentTaskID, now, now)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	created, err := result.RowsAffected()
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	var got models.CoordinatorStopRequest
-	err = r.db.GetContext(ctx, &got, r.db.Rebind(`SELECT task_id, operation_id, parent_task_id, complete, result_status, created_at, updated_at FROM task_stop_requests WHERE task_id = ? AND operation_id = ?`), request.TaskID, request.OperationID)
+	err = tx.GetContext(ctx, &got, r.db.Rebind(`SELECT task_id, operation_id, parent_task_id, complete, result_status, created_at, updated_at FROM task_stop_requests WHERE task_id = ? AND operation_id = ?`), request.TaskID, request.OperationID)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if got.ParentTaskID != request.ParentTaskID {
-		return nil, false, fmt.Errorf("coordinator stop request ID is bound to a different parent")
+		return nil, nil, false, fmt.Errorf("coordinator stop request ID is bound to a different parent")
 	}
-	return &got, created == 1, nil
+	var captured bool
+	if err := tx.GetContext(ctx, &captured, r.db.Rebind(`SELECT candidates_captured FROM task_stop_requests WHERE task_id = ? AND operation_id = ?`), request.TaskID, request.OperationID); err != nil {
+		return nil, nil, false, err
+	}
+	if !captured {
+		if r.coordinatorStopRequestBeforeCandidateSnapshot != nil {
+			if err := r.coordinatorStopRequestBeforeCandidateSnapshot(); err != nil {
+				return nil, nil, false, err
+			}
+		}
+		var sessionIDs []string
+		if err := tx.SelectContext(ctx, &sessionIDs, r.db.Rebind(`SELECT id FROM task_sessions WHERE task_id = ? AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT') ORDER BY started_at DESC`), request.TaskID); err != nil {
+			return nil, nil, false, err
+		}
+		for _, sessionID := range sessionIDs {
+			if _, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_request_candidates(task_id, operation_id, session_id) VALUES (?, ?, ?)`), request.TaskID, request.OperationID, sessionID); err != nil {
+				return nil, nil, false, err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_stop_requests SET candidates_captured = TRUE, updated_at = ? WHERE task_id = ? AND operation_id = ?`), now, request.TaskID, request.OperationID); err != nil {
+			return nil, nil, false, err
+		}
+	}
+	var candidates []string
+	if err := tx.SelectContext(ctx, &candidates, r.db.Rebind(`SELECT session_id FROM task_stop_request_candidates WHERE task_id = ? AND operation_id = ? ORDER BY session_id`), request.TaskID, request.OperationID); err != nil {
+		return nil, nil, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, false, err
+	}
+	return &got, candidates, created == 1, nil
 }
 
 func (r *Repository) CompleteCoordinatorStopRequest(ctx context.Context, taskID, operationID, parentTaskID, status string) error {
