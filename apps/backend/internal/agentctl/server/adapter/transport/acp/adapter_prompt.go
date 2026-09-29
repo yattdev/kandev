@@ -493,12 +493,24 @@ func (a *Adapter) fireWakeup(sessionID, prompt string) {
 			zap.String("current", currentSession))
 		return
 	}
+	var release func()
+	if a.cfg.AcquireAdmission != nil {
+		var err error
+		release, err = a.cfg.AcquireAdmission()
+		if err != nil {
+			a.logger.Info("skipping wakeup fire: execution admission closed", zap.String("session_id", sessionID))
+			return
+		}
+	}
 
 	a.logger.Info("injecting synthetic wakeup prompt",
 		zap.String("session_id", sessionID),
 		zap.Int("prompt_len", len(prompt)))
 
 	go func() {
+		if release != nil {
+			defer release()
+		}
 		// Derive from lifetimeCtx so a concurrent Close aborts the in-flight
 		// prompt instead of letting it run against a dead subprocess.
 		ctx, cancel := context.WithTimeout(a.lifetimeCtx, wakeupPromptTimeout)

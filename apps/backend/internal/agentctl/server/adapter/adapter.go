@@ -327,6 +327,10 @@ type Config struct {
 	// ProviderGatewayAuth authenticates the ACP agent against an
 	// OpenAI-compatible gateway right after initialize.
 	ProviderGatewayAuth *acpprovider.GatewayAuth
+
+	// AcquireAdmission binds adapter-originated work, such as a scheduled
+	// wakeup, to the owning process manager's execution fence.
+	AcquireAdmission func() (func(), error)
 }
 
 // ToSharedConfig converts this Config to the shared.Config used by transport adapters.
@@ -360,6 +364,7 @@ func (c *Config) ToSharedConfig() *shared.Config {
 		NotificationQueueCapacity: c.NotificationQueueCapacity,
 		PromptCancelJoinTimeout:   c.PromptCancelJoinTimeout,
 		ProviderGatewayAuth:       c.ProviderGatewayAuth,
+		AcquireAdmission:          c.AcquireAdmission,
 	}
 }
 

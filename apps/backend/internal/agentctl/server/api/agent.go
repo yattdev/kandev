@@ -432,11 +432,18 @@ func (s *Server) handleWSInitialize(ctx context.Context, msg *ws.Message) *ws.Me
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
 
+	release, err := s.procMgr.BeginAdapterOperation()
+	if err != nil {
+		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent execution is stopping", nil)
+		return resp
+	}
 	adapter := s.procMgr.GetAdapter()
 	if adapter == nil {
+		release()
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent not running", nil)
 		return resp
 	}
+	defer release()
 
 	if err := adapter.Initialize(ctx); err != nil {
 		s.logger.Error("initialize failed", zap.Error(err))
@@ -684,14 +691,21 @@ func (s *Server) handleWSPrompt(ctx context.Context, msg *ws.Message) *ws.Messag
 		return resp
 	}
 
+	release, err := s.procMgr.BeginAdapterOperation()
+	if err != nil {
+		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent execution is stopping", nil)
+		return resp
+	}
 	adapter := s.procMgr.GetAdapter()
 	if adapter == nil {
+		release()
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent not running", nil)
 		return resp
 	}
 
 	sessionID := s.procMgr.GetSessionID()
 	if sessionID == "" {
+		release()
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "no active session - call new_session first", nil)
 		return resp
 	}
@@ -713,6 +727,7 @@ func (s *Server) handleWSPrompt(ctx context.Context, msg *ws.Message) *ws.Messag
 	// The prompt completes naturally when the agent process exits (stdin/stdout close),
 	// the user cancels, or agentctl shuts down.
 	go func() {
+		defer release()
 		if err := promptOrSteer(context.Background(), adapter, req); err != nil {
 			if acptransport.IsPromptAbandonedAfterCancel(err) {
 				s.logger.Info("async prompt abandoned after cancel; suppressing stale error event",
@@ -789,6 +804,12 @@ func (s *Server) handleWSPermissionRespond(_ context.Context, msg *ws.Message) *
 		zap.String("option_id", req.OptionID),
 		zap.Bool("cancelled", req.Cancelled))
 
+	release, err := s.procMgr.BeginAdapterOperation()
+	if err != nil {
+		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "agent execution is stopping", nil)
+		return resp
+	}
+	defer release()
 	if err := s.procMgr.RespondToPermission(req.PendingID, req.OptionID, req.Cancelled); err != nil {
 		s.logger.Error("failed to respond to permission", zap.Error(err))
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, err.Error(), nil)

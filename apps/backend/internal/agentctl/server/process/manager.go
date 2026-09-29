@@ -237,6 +237,7 @@ type Manager struct {
 	pendingPermissions       map[string]*PendingPermission
 	permissionTombstones     map[string]string
 	permissionTombstoneOrder []string
+	permissionDispatchHook   func()
 	permissionMu             sync.RWMutex
 
 	// VS Code server manager (lazy-initialized on demand)
@@ -325,6 +326,13 @@ func (m *Manager) admitStart() (func(), error) {
 			m.admissionMu.Unlock()
 		})
 	}, nil
+}
+
+// BeginAdapterOperation admits a dispatch to the live protocol adapter. The
+// release function must cover the adapter call itself so an execution fence
+// cannot observe a drained manager while a captured adapter starts work.
+func (m *Manager) BeginAdapterOperation() (func(), error) {
+	return m.admitStart()
 }
 
 // CloseAdmission rejects new process owners without waiting for in-flight
@@ -1466,6 +1474,7 @@ func (m *Manager) buildAdapterConfig() error {
 		NotificationQueueCapacity: m.cfg.NotificationQueueCapacity,
 		PromptCancelJoinTimeout:   m.cfg.PromptCancelJoinTimeout,
 		ProviderGatewayAuth:       m.cfg.ProviderGatewayAuth,
+		AcquireAdmission:          m.BeginAdapterOperation,
 	}
 
 	// Configure one-shot mode when a continue command is provided.
@@ -3303,13 +3312,21 @@ func (m *Manager) addPermissionTombstoneLocked(requestID, code string) {
 
 // RespondToPermission responds to a pending permission request
 func (m *Manager) RespondToPermission(pendingID string, optionID string, cancelled bool) error {
+	release, err := m.BeginAdapterOperation()
+	if err != nil {
+		return err
+	}
+	defer release()
+	if m.permissionDispatchHook != nil {
+		m.permissionDispatchHook()
+	}
 	validate := func(pending *PendingPermission) error {
 		if !cancelled && !permissionOffersOption(pending, optionID) {
 			return fmt.Errorf("permission option not offered: %s", optionID)
 		}
 		return nil
 	}
-	_, err := m.consumePermission(pendingID, "", validate, &adapter.PermissionResponse{
+	_, err = m.consumePermission(pendingID, "", validate, &adapter.PermissionResponse{
 		OptionID:  optionID,
 		Cancelled: cancelled,
 	}, streams.PermissionErrorAlreadyResolved)

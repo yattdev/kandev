@@ -67,6 +67,10 @@ type Config struct {
 	// ProviderGatewayAuth, when set, makes the ACP adapter authenticate the
 	// agent against an OpenAI-compatible gateway right after initialize.
 	ProviderGatewayAuth *acpprovider.GatewayAuth
+
+	// AcquireAdmission rejects adapter-originated dispatch after the owning
+	// execution has closed admission. The returned release spans the dispatch.
+	AcquireAdmission func() (func(), error)
 }
 
 // GetPermissionTimeout returns the configured permission timeout or the default.

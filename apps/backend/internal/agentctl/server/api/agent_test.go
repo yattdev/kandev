@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -516,6 +517,61 @@ func TestHandleWSPrompt_SuppressesPromptAbandonedAfterCancel(t *testing.T) {
 	case event := <-s.procMgr.GetUpdates():
 		t.Fatalf("expected no error event for prompt abandoned after cancel, got %+v", event)
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+type blockingPromptAdapter struct {
+	promptErrorAdapter
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (a *blockingPromptAdapter) Prompt(_ context.Context, _ string, _ []v1.MessageAttachment, _ uint64) error {
+	a.once.Do(func() { close(a.entered) })
+	<-a.release
+	return nil
+}
+
+func TestHandleWSPrompt_FenceWaitsForAdmittedDispatchAndRejectsLaterPrompt(t *testing.T) {
+	s := newTestServer(t)
+	adpt := &blockingPromptAdapter{
+		promptErrorAdapter: promptErrorAdapter{sessionID: "session-123"},
+		entered:            make(chan struct{}),
+		release:            make(chan struct{}),
+	}
+	s.procMgr.SetAdapterForTest(adpt)
+	msg, _ := ws.NewRequest("prompt-before-fence", "agent.prompt", PromptRequest{Text: "before", PromptGeneration: 1})
+	if response := s.handleWSPrompt(context.Background(), msg); response.Type != ws.MessageTypeResponse {
+		t.Fatalf("prompt response type = %q, want response", response.Type)
+	}
+	select {
+	case <-adpt.entered:
+	case <-time.After(time.Second):
+		t.Fatal("prompt did not enter adapter dispatch")
+	}
+
+	s.procMgr.CloseAdmissionGracefully()
+	drained := make(chan error, 1)
+	go func() { drained <- s.procMgr.WaitForAdmission(context.Background()) }()
+	select {
+	case err := <-drained:
+		t.Fatalf("fence drained before admitted prompt completed: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(adpt.release)
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatalf("wait for admitted prompt: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fence did not drain after prompt completed")
+	}
+
+	postCutoff, _ := ws.NewRequest("prompt-after-fence", "agent.prompt", PromptRequest{Text: "after", PromptGeneration: 2})
+	if response := s.handleWSPrompt(context.Background(), postCutoff); response.Type != ws.MessageTypeError {
+		t.Fatalf("post-cutoff prompt response type = %q, want error", response.Type)
 	}
 }
 
