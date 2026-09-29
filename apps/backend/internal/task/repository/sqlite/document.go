@@ -87,7 +87,22 @@ func (r *Repository) GetDocument(ctx context.Context, taskID, key string) (*mode
 // UpdateDocument updates an existing document HEAD row.
 func (r *Repository) UpdateDocument(ctx context.Context, doc *models.TaskDocument) error {
 	doc.UpdatedAt = time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin document update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskID string
+	if err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT task_id FROM task_documents WHERE task_id = ? AND key = ?`), doc.TaskID, doc.Key).Scan(&taskID); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("document not found: task=%s key=%s", doc.TaskID, doc.Key)
+		}
+		return fmt.Errorf("load document owner: %w", err)
+	}
+	if err := r.ensureDocumentTaskAvailableTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, tx.Rebind(`
 		UPDATE task_documents
 		SET type = ?, title = ?, content = ?, author_kind = ?, author_name = ?,
 		    filename = ?, mime_type = ?, size_bytes = ?, disk_path = ?, updated_at = ?
@@ -101,6 +116,9 @@ func (r *Repository) UpdateDocument(ctx context.Context, doc *models.TaskDocumen
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return fmt.Errorf("document not found: task=%s key=%s", doc.TaskID, doc.Key)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit document update: %w", err)
 	}
 	return nil
 }
