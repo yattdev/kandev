@@ -2231,6 +2231,23 @@ func (r *Repository) SetTaskTitleIfPending(ctx context.Context, taskID, sessionI
 	if sessionID == "" {
 		return false, nil
 	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var taskExists bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&taskExists); err != nil {
+		return false, err
+	}
+	if taskExists {
+		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+			return false, err
+		}
+	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return false, err
+	}
 	var query string
 	if dialect.IsPostgres(r.db.DriverName()) {
 		query = `
@@ -2257,12 +2274,18 @@ func (r *Repository) SetTaskTitleIfPending(ctx context.Context, taskID, sessionI
 	if dialect.IsPostgres(r.db.DriverName()) {
 		path = models.MetaKeyAgentTitlePending
 	}
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(query), title, time.Now().UTC(), taskID, path, sessionID)
+	result, err := tx.ExecContext(ctx, r.db.Rebind(query), title, time.Now().UTC(), taskID, path, sessionID)
 	if err != nil {
 		return false, err
 	}
 	rows, err := result.RowsAffected()
-	return rows > 0, err
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return rows > 0, nil
 }
 
 // SetTaskMetadataKey updates one metadata key without replacing concurrent
