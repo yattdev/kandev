@@ -570,7 +570,10 @@ type CoordinatorStopOperationLister interface {
 // from the exact per-session receipts it captures.
 type CoordinatorStopRequestRepository interface {
 	CaptureCoordinatorStopRequest(ctx context.Context, request models.CoordinatorStopRequest) (*models.CoordinatorStopRequest, bool, error)
+	CompleteCoordinatorStopRequest(ctx context.Context, taskID, operationID, parentTaskID, status string) error
+	GetCoordinatorStopRequest(ctx context.Context, taskID, operationID, parentTaskID string) (*models.CoordinatorStopRequest, error)
 	BindCoordinatorStopRequestReceipt(ctx context.Context, taskID, operationID, receiptID string) error
+	BindCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID string, receiptIDs []string) error
 	ListCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID, parentTaskID string) ([]models.CoordinatorStopOperation, error)
 }
 

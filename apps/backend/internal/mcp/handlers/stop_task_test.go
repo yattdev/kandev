@@ -11,12 +11,14 @@ import (
 	"github.com/kandev/kandev/internal/task/models"
 	taskrepo "github.com/kandev/kandev/internal/task/repository"
 	ws "github.com/kandev/kandev/pkg/websocket"
+	"github.com/stretchr/testify/require"
 )
 
 type recordingTaskStopper struct {
-	result orchestrator.CoordinatorTaskStopResult
-	err    error
-	calls  []string
+	result       orchestrator.CoordinatorTaskStopResult
+	err          error
+	calls        []string
+	operationIDs []string
 }
 
 func (s *recordingTaskStopper) StopTaskForCoordinator(
@@ -24,6 +26,15 @@ func (s *recordingTaskStopper) StopTaskForCoordinator(
 	taskID string,
 ) (orchestrator.CoordinatorTaskStopResult, error) {
 	s.calls = append(s.calls, taskID)
+	return s.result, s.err
+}
+
+func (s *recordingTaskStopper) StopTaskForCoordinatorOperation(
+	_ context.Context,
+	taskID, _, operationID string,
+) (orchestrator.CoordinatorTaskStopResult, error) {
+	s.calls = append(s.calls, taskID)
+	s.operationIDs = append(s.operationIDs, operationID)
 	return s.result, s.err
 }
 
@@ -87,6 +98,7 @@ func TestHandleStopTask_AuthorizesOnlyDirectParentInWorkspace(t *testing.T) {
 			msg := makeWSMessage(t, ws.ActionMCPStopTask, map[string]interface{}{
 				"task_id":        tt.targetID,
 				"sender_task_id": tt.senderID,
+				"operation_id":   "request-1",
 				"reason":         "forged destructive cleanup reason",
 				"force":          true,
 			})
@@ -115,6 +127,9 @@ func TestHandleStopTask_AuthorizesOnlyDirectParentInWorkspace(t *testing.T) {
 			if len(stopper.calls) != 1 || stopper.calls[0] != tt.targetID {
 				t.Fatalf("stopper calls = %v", stopper.calls)
 			}
+			if len(stopper.operationIDs) != 1 || stopper.operationIDs[0] != "request-1" {
+				t.Fatalf("stop request IDs = %v", stopper.operationIDs)
+			}
 		})
 	}
 }
@@ -133,6 +148,27 @@ func TestHandleGetStopReceiptRejectsUnknownOperationWithoutStop(t *testing.T) {
 	if len(stopper.calls) != 1 || stopper.calls[0] != "child" {
 		t.Fatalf("lookup calls = %#v", stopper.calls)
 	}
+}
+
+func TestHandleGetStopReceiptUsesTrustedCallerInsteadOfForgedSender(t *testing.T) {
+	tasks := map[string]*models.Task{
+		"trusted-parent": {ID: "trusted-parent", WorkspaceID: "ws"},
+		"forged-parent":  {ID: "forged-parent", WorkspaceID: "ws"},
+		"child":          {ID: "child", WorkspaceID: "ws", ParentID: "trusted-parent"},
+	}
+	stopper := &recordingTaskStopper{result: orchestrator.CoordinatorTaskStopResult{Status: orchestrator.CoordinatorTaskStopStatusIncomplete}}
+	h := stopTaskTestHandler(t, tasks, nil, stopper)
+	ctx := mcpscope.WithPrincipal(context.Background(), mcpscope.Principal{
+		CallerTaskID: "trusted-parent", CallerSessionID: "parent-session", WorkspaceID: "ws",
+	})
+	msg := makeWSMessage(t, ws.ActionMCPGetStopReceipt, map[string]interface{}{
+		"task_id": "child", "sender_task_id": "forged-parent", "operation_id": "request-7",
+	})
+
+	resp, err := h.handleGetStopReceipt(ctx, msg)
+	require.NoError(t, err)
+	require.Equal(t, ws.MessageTypeResponse, resp.Type)
+	require.Equal(t, []string{"child"}, stopper.calls)
 }
 
 func TestHandleStopTaskAutomationUsesTrustedCallerWithoutLookingUpSender(t *testing.T) {
@@ -179,7 +215,7 @@ func TestHandleStopTaskAutomationUsesTrustedCallerWithoutLookingUpSender(t *test
 				Surface: mcpprofile.SurfaceAutomation,
 			})
 			msg := makeWSMessage(t, ws.ActionMCPStopTask, map[string]interface{}{
-				"task_id": tt.targetID, "sender_task_id": "untrusted-sender-value",
+				"task_id": tt.targetID, "sender_task_id": "untrusted-sender-value", "operation_id": "request-1",
 			})
 
 			resp, err := h.handleStopTask(ctx, msg)
@@ -219,7 +255,7 @@ func TestHandleStopTaskReturnsDurableReceipt(t *testing.T) {
 		SessionFences: []models.CoordinatorStopSessionFenceReceipt{sessionFence},
 	}}
 	h := stopTaskTestHandler(t, tasks, nil, stopper)
-	msg := makeWSMessage(t, ws.ActionMCPStopTask, map[string]interface{}{"task_id": "child", "sender_task_id": "parent"})
+	msg := makeWSMessage(t, ws.ActionMCPStopTask, map[string]interface{}{"task_id": "child", "sender_task_id": "parent", "operation_id": "request-1"})
 	resp, err := h.handleStopTask(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("handleStopTask: %v", err)
@@ -283,7 +319,7 @@ func TestHandleStopTask_MapsLookupFailures(t *testing.T) {
 			stopper := &recordingTaskStopper{}
 			h := stopTaskTestHandler(t, tasks, tt.errorsByID, stopper)
 			msg := makeWSMessage(t, ws.ActionMCPStopTask, map[string]interface{}{
-				"task_id": "child", "sender_task_id": "parent",
+				"task_id": "child", "sender_task_id": "parent", "operation_id": "request-1",
 			})
 
 			resp, err := h.handleStopTask(context.Background(), msg)
@@ -306,7 +342,7 @@ func TestHandleStopTask_MapsStopperFailure(t *testing.T) {
 	stopper := &recordingTaskStopper{err: errors.New("stop failed")}
 	h := stopTaskTestHandler(t, tasks, nil, stopper)
 	msg := makeWSMessage(t, ws.ActionMCPStopTask, map[string]interface{}{
-		"task_id": "child", "sender_task_id": "parent",
+		"task_id": "child", "sender_task_id": "parent", "operation_id": "request-1",
 	})
 
 	resp, err := h.handleStopTask(context.Background(), msg)
@@ -326,7 +362,7 @@ func TestHandleStopTask_ReturnsNotRunning(t *testing.T) {
 	}}
 	h := stopTaskTestHandler(t, tasks, nil, stopper)
 	msg := makeWSMessage(t, ws.ActionMCPStopTask, map[string]interface{}{
-		"task_id": "child", "sender_task_id": "parent",
+		"task_id": "child", "sender_task_id": "parent", "operation_id": "request-1",
 	})
 
 	resp, err := h.handleStopTask(context.Background(), msg)
@@ -360,7 +396,7 @@ func TestHandleStopTask_RejectsMissingStopperAndInvalidStatus(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := stopTaskTestHandler(t, tasks, nil, tt.stopper)
 			msg := makeWSMessage(t, ws.ActionMCPStopTask, map[string]interface{}{
-				"task_id": "child", "sender_task_id": "parent",
+				"task_id": "child", "sender_task_id": "parent", "operation_id": "request-1",
 			})
 			resp, err := h.handleStopTask(context.Background(), msg)
 			if err != nil {
@@ -383,7 +419,7 @@ func TestRegisterHandlers_RegistersStopTask(t *testing.T) {
 	dispatcher := ws.NewDispatcher()
 	h.RegisterHandlers(dispatcher)
 	msg := makeWSMessage(t, ws.ActionMCPStopTask, map[string]interface{}{
-		"task_id": "child", "sender_task_id": "parent",
+		"task_id": "child", "sender_task_id": "parent", "operation_id": "request-1",
 	})
 
 	resp, err := dispatcher.Dispatch(context.Background(), msg)

@@ -25,7 +25,7 @@ func (r *Repository) CaptureCoordinatorStopRequest(ctx context.Context, request 
 		return nil, false, err
 	}
 	var got models.CoordinatorStopRequest
-	err = r.db.GetContext(ctx, &got, r.db.Rebind(`SELECT task_id, operation_id, parent_task_id, created_at, updated_at FROM task_stop_requests WHERE task_id = ? AND operation_id = ?`), request.TaskID, request.OperationID)
+	err = r.db.GetContext(ctx, &got, r.db.Rebind(`SELECT task_id, operation_id, parent_task_id, complete, result_status, created_at, updated_at FROM task_stop_requests WHERE task_id = ? AND operation_id = ?`), request.TaskID, request.OperationID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -33,6 +33,58 @@ func (r *Repository) CaptureCoordinatorStopRequest(ctx context.Context, request 
 		return nil, false, fmt.Errorf("coordinator stop request ID is bound to a different parent")
 	}
 	return &got, created == 1, nil
+}
+
+func (r *Repository) CompleteCoordinatorStopRequest(ctx context.Context, taskID, operationID, parentTaskID, status string) error {
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`UPDATE task_stop_requests SET complete = ?, result_status = ?, updated_at = ? WHERE task_id = ? AND operation_id = ? AND parent_task_id = ?`), true, status, time.Now().UTC(), taskID, operationID, parentTaskID)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return fmt.Errorf("coordinator stop request is not bound to task and parent")
+	}
+	return nil
+}
+
+func (r *Repository) GetCoordinatorStopRequest(ctx context.Context, taskID, operationID, parentTaskID string) (*models.CoordinatorStopRequest, error) {
+	var request models.CoordinatorStopRequest
+	err := r.db.GetContext(ctx, &request, r.db.Rebind(`SELECT task_id, operation_id, parent_task_id, complete, result_status, created_at, updated_at FROM task_stop_requests WHERE task_id = ? AND operation_id = ? AND parent_task_id = ?`), taskID, operationID, parentTaskID)
+	if err != nil {
+		return nil, err
+	}
+	return &request, nil
+}
+
+func (r *Repository) BindCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID string, receiptIDs []string) error {
+	if len(receiptIDs) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, receiptID := range receiptIDs {
+		result, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_request_receipts (task_id, operation_id, receipt_id) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM task_stop_requests WHERE task_id = ? AND operation_id = ?) AND EXISTS (SELECT 1 FROM task_stop_operations WHERE id = ? AND task_id = ?) ON CONFLICT(task_id, operation_id, receipt_id) DO NOTHING`), taskID, operationID, receiptID, taskID, operationID, receiptID, taskID)
+		if err != nil {
+			return err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if changed == 0 {
+			var bound bool
+			if err := tx.GetContext(ctx, &bound, r.db.Rebind(`SELECT EXISTS (SELECT 1 FROM task_stop_request_receipts WHERE task_id = ? AND operation_id = ? AND receipt_id = ?)`), taskID, operationID, receiptID); err != nil || !bound {
+				return fmt.Errorf("coordinator stop request or exact receipt is not bound to task")
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) BindCoordinatorStopRequestReceipt(ctx context.Context, taskID, operationID, receiptID string) error {

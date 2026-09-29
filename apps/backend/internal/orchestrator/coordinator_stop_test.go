@@ -69,6 +69,122 @@ func TestStopTaskForCoordinator_FencesCapturedExecutionBeforeGracefulTeardown(t 
 	require.EqualValues(t, 2, stopCalls.Load())
 }
 
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-006
+func TestStopTaskForCoordinatorOperation_RetryResumesOnlyBoundReceipt(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	const taskID, parentID, sessionID, executionID, turnID = "task-request-stop", "parent-request-stop", "session-request-stop", "execution-request-stop", "turn-request-stop"
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: parentID, Title: "parent"}))
+	seedTaskAndSession(t, repo, taskID, sessionID, models.TaskSessionStateRunning)
+	now := time.Now().UTC()
+	require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: turnID, TaskID: taskID, TaskSessionID: sessionID, StartedAt: now, CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
+		ID: sessionID, SessionID: sessionID, TaskID: taskID, ExecutorID: "executor", Runtime: agentruntime.RuntimeStandalone,
+		AgentExecutionID: executionID, AgentctlGeneration: 1, Status: models.ExecutorRunningStatusRunning,
+	}))
+	manager := &mockAgentManager{repoForExecutionLookup: repo}
+	var stopCalls atomic.Int32
+	manager.closeExecutionAdmissionFunc = func(_ context.Context, gotExecutionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
+		require.Equal(t, executionID, gotExecutionID)
+		require.Equal(t, uint64(1), generation)
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true}, nil
+	}
+	manager.stopAgentWithReasonFunc = func(_ context.Context, gotExecutionID, _ string, force bool) error {
+		require.Equal(t, executionID, gotExecutionID)
+		require.False(t, force)
+		stopCalls.Add(1)
+		return nil
+	}
+	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), manager)
+
+	first, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "lost-ack")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, first.Status)
+	require.Len(t, first.Receipts, 1)
+	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, first.Receipts[0].Status)
+
+	retry, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "lost-ack")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, retry.Status)
+	require.Len(t, retry.Receipts, 1)
+	require.Equal(t, first.Receipts[0].ID, retry.Receipts[0].ID)
+	require.EqualValues(t, 2, stopCalls.Load(), "same request retries the captured incarnation")
+
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
+		ID: sessionID, SessionID: sessionID, TaskID: taskID, ExecutorID: "executor", Runtime: agentruntime.RuntimeStandalone,
+		AgentExecutionID: "replacement-execution", AgentctlGeneration: 2, Status: models.ExecutorRunningStatusRunning,
+		UpdatedAt: now.Add(time.Second),
+	}))
+	changedExecutionRetry, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "lost-ack")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, changedExecutionRetry.Status)
+	require.Len(t, changedExecutionRetry.Receipts, 1)
+	require.Equal(t, first.Receipts[0].ID, changedExecutionRetry.Receipts[0].ID)
+	require.EqualValues(t, 2, stopCalls.Load(), "retry must never stop the replacement execution")
+
+	lookup, err := svc.GetCoordinatorStopReceipt(ctx, taskID, parentID, "lost-ack")
+	require.NoError(t, err)
+	require.Len(t, lookup.Receipts, 1)
+	require.Equal(t, first.Receipts[0].ID, lookup.Receipts[0].ID)
+}
+
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-006
+func TestStopTaskForCoordinatorOperation_NewKeyDoesNotClaimOlderPendingReceipt(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	const taskID, parentID, sessionID, executionID, turnID = "task-new-stop-key", "parent-new-stop-key", "session-new-stop-key", "execution-new-stop-key", "turn-new-stop-key"
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: parentID, Title: "parent"}))
+	seedTaskAndSession(t, repo, taskID, sessionID, models.TaskSessionStateRunning)
+	now := time.Now().UTC()
+	require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: turnID, TaskID: taskID, TaskSessionID: sessionID, StartedAt: now, CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
+		ID: sessionID, SessionID: sessionID, TaskID: taskID, ExecutorID: "executor", Runtime: agentruntime.RuntimeStandalone,
+		AgentExecutionID: executionID, AgentctlGeneration: 1, Status: models.ExecutorRunningStatusRunning,
+	}))
+	manager := &mockAgentManager{repoForExecutionLookup: repo}
+	manager.closeExecutionAdmissionFunc = func(_ context.Context, _ string, _ uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true}, nil
+	}
+	manager.stopAgentWithReasonFunc = func(_ context.Context, _ string, _ string, _ bool) error { return nil }
+	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), manager)
+
+	first, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "first-request")
+	require.NoError(t, err)
+	require.Len(t, first.Receipts, 1)
+
+	second, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "second-request")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusNotRunning, second.Status)
+	require.Empty(t, second.Receipts)
+
+	_, err = svc.GetCoordinatorStopReceipt(ctx, taskID, parentID, "second-request")
+	require.NoError(t, err)
+}
+
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-006
+func TestStopTaskForCoordinatorOperation_PersistsEmptyCaptureOutcome(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	const taskID, parentID = "task-empty-stop", "parent-empty-stop"
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: parentID, Title: "parent"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, Title: "child", ParentID: parentID}))
+	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), &mockAgentManager{})
+
+	first, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "empty-capture")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusNotRunning, first.Status)
+	require.Empty(t, first.Receipts)
+
+	retry, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "empty-capture")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusNotRunning, retry.Status)
+	require.Empty(t, retry.Receipts)
+
+	lookup, err := svc.GetCoordinatorStopReceipt(ctx, taskID, parentID, "empty-capture")
+	require.NoError(t, err)
+	require.Equal(t, CoordinatorTaskStopStatusNotRunning, lookup.Status)
+}
+
 type coordinatorStopCallOutcome struct {
 	result CoordinatorTaskStopResult
 	err    error

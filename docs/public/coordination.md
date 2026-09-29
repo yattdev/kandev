@@ -167,7 +167,7 @@ Only a direct parent may interrupt its child. Halt-only stop is stricter: it acc
 
 ### Stop a direct child's work
 
-`stop_task_kandev` accepts the full ID of one direct child and has no session-specific option. Kandev inspects that child's active sessions, captures exact executor incarnations where possible, and fences executor registration when an incarnation is unavailable. It does not recurse into descendants.
+`stop_task_kandev` accepts the full ID of one direct child, a caller-generated `operation_id`, and has no session-specific option. Reuse the operation ID to retry after a lost response; use `get_stop_receipt_kandev` with the same child ID and operation ID for an exact read without another stop attempt. Kandev inspects that child's active sessions, captures exact executor incarnations where possible, and fences executor registration when an incarnation is unavailable. It does not recurse into descendants.
 
 Kandev persists each accepted session as `CANCELLED` and fences executor registration when no exact execution incarnation can be captured. The response includes `receipts` for exact execution operations and `session_fences` for sessions stopped at the launch boundary. `status: "incomplete"` means cancellation or admission fencing succeeded but terminal runtime proof is pending; retry resumes pending exact receipts. `status: "stopped"` is reserved for verified terminal process and executor-row proof. An already settled task with no pending stop receipt returns `not_running`.
 

@@ -18,6 +18,7 @@ const stopTaskStatusKey = "status"
 type stopTaskRequest struct {
 	TaskID       string `json:"task_id"`
 	SenderTaskID string `json:"sender_task_id"`
+	OperationID  string `json:"operation_id"`
 }
 
 type stopReceiptRequest struct {
@@ -26,6 +27,7 @@ type stopReceiptRequest struct {
 	OperationID  string `json:"operation_id"`
 }
 
+//nolint:cyclop // Trusted principal attribution and direct-parent validation share one authorization boundary.
 func (h *Handlers) handleGetStopReceipt(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
 	var req stopReceiptRequest
 	if err := json.Unmarshal(msg.Payload, &req); err != nil {
@@ -35,16 +37,28 @@ func (h *Handlers) handleGetStopReceipt(ctx context.Context, msg *ws.Message) (*
 	if req.TaskID == "" || req.SenderTaskID == "" || req.OperationID == "" {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "task_id, sender_task_id, and operation_id are required", nil)
 	}
-	sender, failure := h.lookupStopTask(ctx, msg, req.SenderTaskID, "sender")
+	principal, hasPrincipal := mcpscope.PrincipalFromContext(ctx)
+	senderID := req.SenderTaskID
+	trustedCaller := hasPrincipal
+	if trustedCaller {
+		senderID = principal.CallerTaskID
+		if senderID == "" {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "only a task's direct parent in the same workspace can read its stop receipt", nil)
+		}
+	}
+	sender, failure := h.lookupStopTask(ctx, msg, senderID, "sender")
 	if failure != nil {
 		return failure.response, failure.err
+	}
+	if trustedCaller && sender.WorkspaceID != principal.WorkspaceID {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "only a task's direct parent in the same workspace can read its stop receipt", nil)
 	}
 	target, failure := h.lookupStopTask(ctx, msg, req.TaskID, "target")
 	if failure != nil {
 		return failure.response, failure.err
 	}
-	if !canStopTask(sender, target) {
-		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "only a task's direct parent in the same workspace can stop it", nil)
+	if !canStopTask(sender, target) || (trustedCaller && target.WorkspaceID != principal.WorkspaceID) {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "only a task's direct parent in the same workspace can read its stop receipt", nil)
 	}
 	if h.taskStopper == nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "task stop is not configured", nil)
@@ -109,7 +123,7 @@ func (h *Handlers) handleStopTask(ctx context.Context, msg *ws.Message) (*ws.Mes
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "task stop is not configured", nil)
 	}
 
-	result, err := h.taskStopper.StopTaskForCoordinator(ctx, target.ID)
+	result, err := h.taskStopper.StopTaskForCoordinatorOperation(ctx, target.ID, sender.ID, req.OperationID)
 	if err != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "failed to stop target task", nil)
 	}
@@ -133,12 +147,16 @@ func parseStopTaskRequest(msg *ws.Message) (stopTaskRequest, *stopTaskFailure) {
 	}
 	req.TaskID = strings.TrimSpace(req.TaskID)
 	req.SenderTaskID = strings.TrimSpace(req.SenderTaskID)
+	req.OperationID = strings.TrimSpace(req.OperationID)
 	if req.TaskID == "" {
 		return req, newStopTaskFailure(msg, ws.ErrorCodeValidation, "task_id is required")
 	}
 	if req.SenderTaskID == "" {
 		return req, newStopTaskFailure(msg, ws.ErrorCodeValidation,
 			"sender_task_id is required (the calling agent's MCP server must supply this)")
+	}
+	if req.OperationID == "" {
+		return req, newStopTaskFailure(msg, ws.ErrorCodeValidation, "operation_id is required")
 	}
 	return req, nil
 }

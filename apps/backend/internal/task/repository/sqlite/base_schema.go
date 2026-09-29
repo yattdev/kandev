@@ -144,6 +144,12 @@ func (r *Repository) initCoordinatorStopOperationSchema() error {
 		)`); err != nil {
 		return fmt.Errorf("create task stop request receipts table: %w", err)
 	}
+	if err := r.migrate.Apply("task_stop_requests.outcome", `
+		ALTER TABLE task_stop_requests ADD COLUMN complete BOOLEAN NOT NULL DEFAULT FALSE;
+		ALTER TABLE task_stop_requests ADD COLUMN result_status TEXT NOT NULL DEFAULT '';
+	`); err != nil {
+		return fmt.Errorf("add task stop request outcome: %w", err)
+	}
 	return r.migrate.Err()
 }
 

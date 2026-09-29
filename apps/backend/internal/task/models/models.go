@@ -2049,32 +2049,34 @@ type Turn struct {
 // parent-initiated halt. Fencing and runtime proof are separate phases: a
 // fencing receipt is intentionally not evidence that the process has stopped.
 type CoordinatorStopOperation struct {
-	ID          string `json:"operation_id"`
-	TaskID      string `json:"task_id"`
-	SessionID   string `json:"session_id"`
-	TurnID      string `json:"turn_id"`
-	ExecutionID string `json:"execution_id"`
+	ID          string `db:"id" json:"operation_id"`
+	TaskID      string `db:"task_id" json:"task_id"`
+	SessionID   string `db:"session_id" json:"session_id"`
+	TurnID      string `db:"turn_id" json:"turn_id"`
+	ExecutionID string `db:"execution_id" json:"execution_id"`
 	// AgentctlGeneration identifies the agentctl process incarnation. It is
 	// distinct from queue_incarnation_id, which only identifies queue ownership.
-	AgentctlGeneration uint64    `json:"agentctl_generation"`
-	ExecutorStatus     string    `json:"executor_status"`
-	ExecutorUpdatedAt  time.Time `json:"executor_updated_at"`
-	AdmissionCutoff    time.Time `json:"admission_cutoff"`
-	Status             string    `json:"status"`
-	ReasonCode         string    `json:"reason_code,omitempty"`
-	ProofScope         string    `json:"proof_scope"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	AgentctlGeneration uint64    `db:"agentctl_generation" json:"agentctl_generation"`
+	ExecutorStatus     string    `db:"executor_status" json:"executor_status"`
+	ExecutorUpdatedAt  time.Time `db:"executor_updated_at" json:"executor_updated_at"`
+	AdmissionCutoff    time.Time `db:"admission_cutoff" json:"admission_cutoff"`
+	Status             string    `db:"status" json:"status"`
+	ReasonCode         string    `db:"reason_code" json:"reason_code,omitempty"`
+	ProofScope         string    `db:"proof_scope" json:"proof_scope"`
+	CreatedAt          time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // CoordinatorStopRequest binds one caller-supplied idempotency key to its
 // direct parent and the immutable exact receipts captured for this task.
 type CoordinatorStopRequest struct {
-	TaskID       string    `json:"task_id"`
-	OperationID  string    `json:"operation_id"`
-	ParentTaskID string    `json:"parent_task_id"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	TaskID       string    `db:"task_id" json:"task_id"`
+	OperationID  string    `db:"operation_id" json:"operation_id"`
+	ParentTaskID string    `db:"parent_task_id" json:"parent_task_id"`
+	Complete     bool      `db:"complete" json:"complete"`
+	ResultStatus string    `db:"result_status" json:"result_status,omitempty"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
 const (

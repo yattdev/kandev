@@ -80,8 +80,8 @@ func (s *Service) StopAutomationRun(ctx context.Context, taskID, sessionID, turn
 	if !valid {
 		return false, nil
 	}
-	stopped, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID)
-	return stopped, err
+	result, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID)
+	return result.Changed, err
 }
 
 // AutomationRunLive is the conservative liveness check used during startup

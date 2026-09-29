@@ -667,19 +667,32 @@ func (s *Server) messageTaskHandler() server.ToolHandlerFunc {
 }
 
 func (s *Server) stopTaskHandler() server.ToolHandlerFunc {
+	return s.coordinatorStopRequestHandler(ws.ActionMCPStopTask)
+}
+
+func (s *Server) getStopReceiptHandler() server.ToolHandlerFunc {
+	return s.coordinatorStopRequestHandler(ws.ActionMCPGetStopReceipt)
+}
+
+func (s *Server) coordinatorStopRequestHandler(action string) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		taskID, err := req.RequireString(mcpKeyTaskID)
 		if err != nil {
 			return mcp.NewToolResultError("task_id is required"), nil
+		}
+		operationID, err := req.RequireString("operation_id")
+		if err != nil {
+			return mcp.NewToolResultError("operation_id is required"), nil
 		}
 		// Build a fresh payload so callers cannot override trusted sender
 		// attribution or supply runtime-level session, reason, or force controls.
 		payload := map[string]interface{}{
 			mcpKeyTaskID:     taskID,
 			"sender_task_id": s.taskID,
+			"operation_id":   operationID,
 		}
 		var result map[string]interface{}
-		if err := s.backend.RequestPayload(ctx, ws.ActionMCPStopTask, payload, &result); err != nil {
+		if err := s.backend.RequestPayload(ctx, action, payload, &result); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		data, _ := json.MarshalIndent(result, "", "  ")

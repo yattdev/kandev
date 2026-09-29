@@ -222,6 +222,7 @@ type peerMessageStartAdmissionProvider interface {
 // in the orchestrator.
 type TaskStopper interface {
 	StopTaskForCoordinator(ctx context.Context, taskID string) (orchestrator.CoordinatorTaskStopResult, error)
+	StopTaskForCoordinatorOperation(ctx context.Context, taskID, parentTaskID, operationID string) (orchestrator.CoordinatorTaskStopResult, error)
 	GetCoordinatorStopReceipt(ctx context.Context, taskID, parentTaskID, operationID string) (orchestrator.CoordinatorTaskStopResult, error)
 }
 

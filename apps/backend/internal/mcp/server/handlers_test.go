@@ -844,36 +844,40 @@ func TestStopTask_ToolSchemaIsMinimalAndDescriptionIsAccurate(t *testing.T) {
 
 	properties, ok := parsed["properties"].(map[string]interface{})
 	require.True(t, ok, "stop schema must declare properties")
-	require.Len(t, properties, 1, "stop schema must not expose sender, session, reason, or force controls")
+	require.Len(t, properties, 2, "stop schema must expose only target and retry identity")
 	assert.Contains(t, properties, "task_id")
+	assert.Contains(t, properties, "operation_id")
 	for _, forbidden := range []string{"sender_task_id", "sender_session_id", "session_id", "reason", "force"} {
 		assert.NotContains(t, properties, forbidden)
 	}
 
 	required, ok := parsed["required"].([]interface{})
 	require.True(t, ok, "stop schema must declare task_id as required")
-	assert.Equal(t, []interface{}{"task_id"}, required)
+	assert.Equal(t, []interface{}{"task_id", "operation_id"}, required)
 
 	description := stopTool.Tool.Description
 	for _, phrase := range []string{
 		"direct child",
-		"all live sessions",
-		"halt-only",
-		"does not send a prompt or start a replacement turn",
-		"CANCELLED",
-		"REVIEW",
-		"asynchronously",
-		"not_running",
-		"message_task_kandev",
-		`delivery_mode="interrupt"`,
-		// The recovery path. A parent that stops a wedged child then tries to
-		// restart it hits "session is CANCELLED — cannot send message" and has
-		// nowhere to go unless this tool says which tool gives it a new session.
-		"spawn_session_kandev",
-		"cannot be resumed",
+		"operation_id",
+		"get_stop_receipt_kandev",
+		"incomplete",
+		"stopped",
+		"verified terminal proof",
+		"preserved",
 	} {
 		assert.Contains(t, description, phrase)
 	}
+
+	receiptTool, ok := tools["get_stop_receipt_kandev"]
+	require.True(t, ok, "exact stop receipt lookup must be registered in task mode")
+	receiptSchema, err := json.Marshal(receiptTool.Tool.InputSchema)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(receiptSchema, &parsed))
+	properties, ok = parsed["properties"].(map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, properties, 2)
+	assert.Contains(t, properties, "task_id")
+	assert.Contains(t, properties, "operation_id")
 }
 
 func TestStopTask_ForwardsTrustedSenderToBackend(t *testing.T) {
@@ -886,20 +890,40 @@ func TestStopTask_ForwardsTrustedSenderToBackend(t *testing.T) {
 	s := newTaskModeServer(t, backend, "task-current")
 
 	result := callTool(t, s, "stop_task_kandev", map[string]interface{}{
-		"task_id": "task-target",
+		"task_id":      "task-target",
+		"operation_id": "stop-attempt-1",
 	})
 
 	assert.False(t, result.IsError)
 	assert.Equal(t, "mcp.stop_task", backend.lastAction)
 	payload, ok := backend.lastPayload.(map[string]interface{})
 	require.True(t, ok)
-	require.Len(t, payload, 2, "forwarder must build a fresh trusted payload")
+	require.Len(t, payload, 3, "forwarder must build a fresh trusted payload")
 	assert.Equal(t, "task-target", payload["task_id"])
+	assert.Equal(t, "stop-attempt-1", payload["operation_id"])
 	assert.Equal(t, "task-current", payload["sender_task_id"])
 	assert.NotContains(t, payload, "sender_session_id")
 	assert.NotContains(t, payload, "session_id")
 	assert.NotContains(t, payload, "reason")
 	assert.NotContains(t, payload, "force")
+}
+
+func TestGetStopReceipt_ForwardsTrustedSenderAndExactOperation(t *testing.T) {
+	backend := &testBackend{response: map[string]interface{}{"status": "incomplete"}}
+	s := newTaskModeServer(t, backend, "task-current")
+
+	result := callTool(t, s, "get_stop_receipt_kandev", map[string]interface{}{
+		"task_id": "task-target", "operation_id": "stop-attempt-1",
+	})
+
+	assert.False(t, result.IsError)
+	assert.Equal(t, "mcp.get_stop_receipt", backend.lastAction)
+	payload, ok := backend.lastPayload.(map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, payload, 3)
+	assert.Equal(t, "task-target", payload["task_id"])
+	assert.Equal(t, "stop-attempt-1", payload["operation_id"])
+	assert.Equal(t, "task-current", payload["sender_task_id"])
 }
 
 func TestStopTask_MissingTaskIDReturnsErrorWithoutForwarding(t *testing.T) {
@@ -918,7 +942,8 @@ func TestStopTask_BackendErrorReturnsToolError(t *testing.T) {
 	s := newTaskModeServer(t, backend, "task-current")
 
 	result := callTool(t, s, "stop_task_kandev", map[string]interface{}{
-		"task_id": "task-target",
+		"task_id":      "task-target",
+		"operation_id": "stop-attempt-2",
 	})
 
 	assert.True(t, result.IsError)

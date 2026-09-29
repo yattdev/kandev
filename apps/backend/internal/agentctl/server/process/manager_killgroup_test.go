@@ -95,6 +95,48 @@ func TestVerifyGracefulStopRejectsLiveCapturedProcessGroupOnRetry(t *testing.T) 
 	}
 }
 
+func TestStopGracefullyRetryRejectsChildAfterLeaderExitsLate(t *testing.T) {
+	log := newTestLogger(t)
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	m := &Manager{logger: log, doneCh: make(chan struct{})}
+	m.cmd = fixtureCmd("sleep-with-child " + pidFile + " 30")
+	setProcGroup(m.cmd)
+	require.NoError(t, m.cmd.Start())
+	leaderPID := m.cmd.Process.Pid
+	childPID := waitForChildPID(t, pidFile, 5*time.Second)
+	m.status.Store(StatusRunning)
+
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+		_ = m.cmd.Wait()
+		m.status.Store(StatusStopped)
+		close(m.doneCh)
+	}()
+	t.Cleanup(func() {
+		_ = killProcessGroup(leaderPID)
+		select {
+		case <-m.doneCh:
+		case <-time.After(5 * time.Second):
+			t.Errorf("timed out waiting for the leader to be reaped")
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	err := m.StopGracefully(ctx)
+	cancel()
+	require.Error(t, err, "the first graceful stop must time out while the captured tree is live")
+	require.True(t, processAlive(childPID))
+
+	// Model a late natural leader exit after the bounded request returned. The
+	// child remains in the captured process group and must prevent retry success.
+	require.NoError(t, m.cmd.Process.Kill())
+	require.Eventually(t, func() bool { return m.Status() == StatusStopped }, 5*time.Second, 10*time.Millisecond)
+	require.True(t, processAlive(childPID), "the descendant must still be live for the retry assertion")
+
+	require.Error(t, m.StopGracefully(context.Background()), "retry must recheck the captured process group")
+}
+
 func TestWaitForProcessExit_ContextCanceledWaitsAfterForceKill(t *testing.T) {
 	log := newTestLogger(t)
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
