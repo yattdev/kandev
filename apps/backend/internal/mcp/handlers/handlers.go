@@ -2578,7 +2578,7 @@ func (h *Handlers) handleStepComplete(ctx context.Context, msg *ws.Message) (*ws
 		"step_id":     task.WorkflowStepID,
 		"signaled_at": signal.SignaledAt,
 	}
-	if advances, note, ok := h.resolveStepCompletionAdvances(ctx, task.WorkflowStepID); ok {
+	if advances, note, ok := h.resolveStepCompletionAdvances(ctx, task.WorkflowStepID, signal.Blockers); ok {
 		response["advances"] = advances
 		if note != "" {
 			response["note"] = note
@@ -2605,13 +2605,16 @@ func (h *Handlers) handleStepComplete(ctx context.Context, msg *ws.Message) (*ws
 // reads it, so the caller can accept a signal that changes nothing. ok is
 // false (both other return values ignored) when the current step cannot be
 // resolved: the caller must never guess this field into existence.
-func (h *Handlers) resolveStepCompletionAdvances(ctx context.Context, workflowStepID string) (advances bool, note string, ok bool) {
+func (h *Handlers) resolveStepCompletionAdvances(ctx context.Context, workflowStepID, blockers string) (advances bool, note string, ok bool) {
 	if h.workflowCtrl == nil || workflowStepID == "" {
 		return false, "", false
 	}
 	resp, err := h.workflowCtrl.GetStep(ctx, workflowStepID)
 	if err != nil || resp == nil || resp.Step == nil {
 		return false, "", false
+	}
+	if strings.TrimSpace(blockers) != "" {
+		return false, "this completion signal reports blockers", true
 	}
 	if resp.Step.AutoAdvanceRequiresSignal {
 		return true, "", true

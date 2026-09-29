@@ -62,10 +62,12 @@ func TestHandleStepComplete_AdvancesFieldReflectsAutoAdvanceRequiresSignal(t *te
 	cases := []struct {
 		name                      string
 		autoAdvanceRequiresSignal bool
+		blockers                  string
 		wantAdvances              bool
 		wantNote                  bool
 	}{
 		{name: "signal-gated step advances", autoAdvanceRequiresSignal: true, wantAdvances: true, wantNote: false},
+		{name: "blocked signal does not advance", autoAdvanceRequiresSignal: true, blockers: "REVIEW_RESULT=BLOCKED", wantAdvances: false, wantNote: true},
 		{name: "non-signal-gated step does not advance", autoAdvanceRequiresSignal: false, wantAdvances: false, wantNote: true},
 	}
 
@@ -92,6 +94,7 @@ func TestHandleStepComplete_AdvancesFieldReflectsAutoAdvanceRequiresSignal(t *te
 				"task_id":    "task-advances",
 				"session_id": "session-advances",
 				"summary":    "implementation finished",
+				"blockers":   tc.blockers,
 			})
 			resp, err := h.handleStepComplete(ctx, msg)
 			require.NoError(t, err)

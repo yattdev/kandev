@@ -7673,6 +7673,14 @@ func (s *Service) allowEngineSignalCompletion(
 		s.setSessionWaitingForInput(ctx, taskID, session.ID, session)
 		return false
 	}
+	if strings.TrimSpace(signal.Blockers) != "" {
+		s.logger.Info("on_turn_complete gated on blocked completion signal",
+			zap.String("task_id", taskID),
+			zap.String("session_id", session.ID),
+			zap.String("step_id", currentStep.ID))
+		s.setSessionWaitingForInput(ctx, taskID, session.ID, session)
+		return false
+	}
 	s.logger.Info("on_turn_complete consuming explicit signal",
 		zap.String("task_id", taskID),
 		zap.String("session_id", session.ID),
