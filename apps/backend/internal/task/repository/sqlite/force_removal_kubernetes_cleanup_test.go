@@ -47,3 +47,36 @@ func TestClaimForceRemovalBlocksKubernetesEnvironmentCleanup(t *testing.T) {
 	_, err = repo.ClaimKubernetesEnvironmentCleanup(ctx, heldEnvID, heldTaskID, 2, "stale")
 	require.ErrorIs(t, err, models.ErrKubernetesEnvironmentConflict)
 }
+
+func TestClaimForceRemovalBlocksKubernetesEnvironmentAdmission(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForEntityTests(t)
+	const (
+		heldTaskID    = "force-kubernetes-admission-held"
+		heldEnvID     = "force-kubernetes-admission-held-environment"
+		foreignTaskID = "force-kubernetes-admission-foreign"
+		foreignEnvID  = "force-kubernetes-admission-foreign-environment"
+	)
+	seedRecoveryClaimEnvironment(t, repo, heldTaskID, heldEnvID)
+	seedRecoveryClaimEnvironment(t, repo, foreignTaskID, foreignEnvID)
+
+	heldTask, err := repo.GetTask(ctx, heldTaskID)
+	require.NoError(t, err)
+	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
+		TaskID: heldTask.ID, WorkspaceID: heldTask.WorkspaceID, TaskGeneration: heldTask.UpdatedAt,
+		AdmissionGeneration: "admission", OperationID: "kubernetes-admission", RequestDigest: "request", PreviewDigest: "preview",
+	})
+	require.NoError(t, err)
+
+	_, err = repo.ClaimKubernetesEnvironment(ctx, heldEnvID, heldTaskID, 1, "held")
+	require.ErrorIs(t, err, ErrForceRemovalTaskHeld)
+	_, err = repo.GetKubernetesEnvironment(ctx, heldEnvID)
+	require.ErrorIs(t, err, models.ErrKubernetesEnvironmentNotFound)
+
+	foreign, err := repo.ClaimKubernetesEnvironment(ctx, foreignEnvID, foreignTaskID, 1, "foreign")
+	require.NoError(t, err)
+	require.Equal(t, "foreign", foreign.OperationID)
+
+	_, err = repo.ClaimKubernetesEnvironment(ctx, heldEnvID, heldTaskID, 2, "stale")
+	require.ErrorIs(t, err, models.ErrKubernetesEnvironmentConflict)
+}

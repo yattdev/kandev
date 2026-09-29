@@ -37,6 +37,9 @@ func (r *Repository) ClaimKubernetesEnvironment(ctx context.Context, environment
 	if err := r.validateKubernetesEnvironmentOwner(ctx, tx, environmentID, taskID, generation); err != nil {
 		return nil, err
 	}
+	if err := ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID); err != nil {
+		return nil, err
+	}
 	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_environment_kubernetes (environment_id, task_id, ownership_generation)
  VALUES (?, ?, ?) ON CONFLICT DO NOTHING`), environmentID, taskID, generation)
 	if err != nil {
