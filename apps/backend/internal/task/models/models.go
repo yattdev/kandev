@@ -2067,6 +2067,16 @@ type CoordinatorStopOperation struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 }
 
+// CoordinatorStopRequest binds one caller-supplied idempotency key to its
+// direct parent and the immutable exact receipts captured for this task.
+type CoordinatorStopRequest struct {
+	TaskID       string    `json:"task_id"`
+	OperationID  string    `json:"operation_id"`
+	ParentTaskID string    `json:"parent_task_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 const (
 	CoordinatorStopOperationStatusFencing      = "fencing"
 	CoordinatorStopOperationStatusIncomplete   = "incomplete"

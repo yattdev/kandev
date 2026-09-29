@@ -125,6 +125,25 @@ func (r *Repository) initCoordinatorStopOperationSchema() error {
 		CREATE INDEX IF NOT EXISTS idx_task_stop_operations_task ON task_stop_operations(task_id, created_at)`); err != nil {
 		return fmt.Errorf("create task stop operations task index: %w", err)
 	}
+	if err := r.migrate.Apply("task_stop_requests.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_requests (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, parent_task_id TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
+			PRIMARY KEY(task_id, operation_id),
+			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+			FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop requests table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_request_receipts.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_request_receipts (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, receipt_id TEXT NOT NULL,
+			PRIMARY KEY(task_id, operation_id, receipt_id),
+			FOREIGN KEY (task_id, operation_id) REFERENCES task_stop_requests(task_id, operation_id) ON DELETE CASCADE,
+			FOREIGN KEY (receipt_id) REFERENCES task_stop_operations(id) ON DELETE RESTRICT
+		)`); err != nil {
+		return fmt.Errorf("create task stop request receipts table: %w", err)
+	}
 	return r.migrate.Err()
 }
 
