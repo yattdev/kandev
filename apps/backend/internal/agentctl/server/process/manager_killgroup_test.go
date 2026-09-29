@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -85,6 +86,13 @@ func TestWaitForProcessExit_KillsProcessGroupOnTimeout(t *testing.T) {
 		return !processAlive(childPID)
 	}, 15*time.Second, 50*time.Millisecond,
 		"child process %d should be killed by process-group reap", childPID)
+}
+
+func TestVerifyGracefulStopRejectsLiveCapturedProcessGroupOnRetry(t *testing.T) {
+	m := &Manager{cmd: &exec.Cmd{Process: &os.Process{Pid: 4242}}, groupAliveFn: func(int) bool { return true }}
+	if err := m.verifyGracefulStop(StatusStopped); err == nil {
+		t.Fatal("graceful retry accepted a live captured process group")
+	}
 }
 
 func TestWaitForProcessExit_ContextCanceledWaitsAfterForceKill(t *testing.T) {

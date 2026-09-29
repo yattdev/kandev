@@ -2218,6 +2218,9 @@ func (m *Manager) verifyGracefulStop(status Status) error {
 	if status == StatusStopping {
 		return fmt.Errorf("graceful agent process stop is still incomplete")
 	}
+	if pid := m.agentPID(); pid != 0 && m.processGroupAlive(pid) {
+		return fmt.Errorf("graceful stop cannot prove agent process group %d is terminal", pid)
+	}
 	if blocker := m.gracefulStopBlocker(); blocker != "" {
 		return fmt.Errorf("graceful stop cannot prove owned command drain: %s", blocker)
 	}
