@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"encoding/base64"
 	"reflect"
 	"testing"
 
@@ -162,11 +163,11 @@ func TestPluginHostExactDecisionEvidenceUsesReceiptAndCursor(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, second.PendingTransitions, 1)
 	require.False(t, secondInfo.HasMore)
-	tamperedSuffix := "x"
-	if info.NextCursor[len(info.NextCursor)-1:] == tamperedSuffix {
-		tamperedSuffix = "y"
-	}
-	tampered := info.NextCursor[:len(info.NextCursor)-1] + tamperedSuffix
+	tamperedBytes, err := base64.RawURLEncoding.DecodeString(info.NextCursor)
+	require.NoError(t, err)
+	require.NotEmpty(t, tamperedBytes)
+	tamperedBytes[len(tamperedBytes)-1] ^= 1
+	tampered := base64.RawURLEncoding.EncodeToString(tamperedBytes)
 	_, _, err = d.host.ListTaskDecisionEvidenceExact(context.Background(), pluginsdk.ExactTaskDecisionEvidenceQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1, SnapshotVersion: info.SnapshotVersion, Cursor: tampered}})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	_, _, err = d.host.ListTaskDecisionEvidenceExact(context.Background(), pluginsdk.ExactTaskDecisionEvidenceQuery{WorkspaceID: "workspace-2", CapabilityRevision: 2})
