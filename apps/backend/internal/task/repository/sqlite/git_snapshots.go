@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -157,6 +158,9 @@ func (r *Repository) UpsertLatestLiveGitSnapshot(ctx context.Context, snapshot *
 	if err := r.lockGitSnapshotEnvironment(tx, snapshot.TaskEnvironmentID); err != nil {
 		return err
 	}
+	if err := r.ensureGitSnapshotEnvironmentAvailableTx(ctx, tx, snapshot.TaskEnvironmentID); err != nil {
+		return err
+	}
 
 	repositoryName := gitSnapshotRepositoryName(snapshot)
 	repositoryExpr := "COALESCE(" + dialect.JSONExtract(r.db.DriverName(), "metadata", "repository_name") + ", '')"
@@ -195,6 +199,22 @@ func (r *Repository) UpsertLatestLiveGitSnapshot(ctx context.Context, snapshot *
 // their JSON-text column forms. Nil maps serialize to "{}" (the sentinel
 // that scans back to a nil map), preserving the row shape for both SQLite
 // and Postgres.
+
+func (r *Repository) ensureGitSnapshotEnvironmentAvailableTx(ctx context.Context, tx *sqlx.Tx, environmentID string) error {
+	var taskID string
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_environments WHERE id = ?`), environmentID).Scan(&taskID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
+		return err
+	}
+	return ensureForceRemovalTaskAvailableTx(ctx, r.db, tx, taskID)
+}
+
 func serializeSnapshotJSON(snapshot *models.GitSnapshot) (string, string, error) {
 	filesJSON := "{}"
 	if snapshot.Files != nil {
