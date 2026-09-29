@@ -70,6 +70,15 @@ func (m *Manager) Get(terminalID string) (*Session, bool) {
 	return s, ok
 }
 
+// HasActiveSessions reports whether stopping this manager would own any
+// terminal process. Graceful-only teardown uses it to fail closed instead of
+// delegating to StopAll, which may escalate after its own timeout.
+func (m *Manager) HasActiveSessions() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.terminals) > 0
+}
+
 // Stop stops and removes the shell session for the given terminal ID.
 func (m *Manager) Stop(terminalID string) error {
 	m.mu.RLock()

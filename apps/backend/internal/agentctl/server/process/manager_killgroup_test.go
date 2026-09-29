@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/kandev/kandev/internal/agentctl/server/adapter"
+	"github.com/kandev/kandev/internal/agentctl/server/config"
+	"github.com/kandev/kandev/internal/agentctl/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -318,6 +320,82 @@ func TestProcessExitGraceUsesShortGraceForKillRequiredAdapter(t *testing.T) {
 	defer cancel()
 
 	require.Equal(t, processKillRequiredExitGrace, m.processExitGrace(ctx))
+}
+
+func TestStopGracefullyLeavesUnresponsiveProcessOwned(t *testing.T) {
+	log, observed := newObservedTestLogger(t)
+	manager := &Manager{logger: log, adapter: &stubAdapter{requiresProcessKill: true, updatesCh: make(chan adapter.AgentEvent)}}
+	manager.status.Store(StatusRunning)
+	manager.cmd = fixtureCmd("sleep 30")
+	setProcGroup(manager.cmd)
+	require.NoError(t, manager.cmd.Start())
+	pid := manager.cmd.Process.Pid
+	waitDone := make(chan struct{})
+	manager.wg.Add(1)
+	go func() {
+		defer manager.wg.Done()
+		_ = manager.cmd.Wait()
+		close(waitDone)
+	}()
+	t.Cleanup(func() {
+		_ = killProcessGroup(pid)
+		select {
+		case <-waitDone:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for fixture process to exit")
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err := manager.StopGracefully(ctx)
+
+	require.Error(t, err)
+	require.True(t, processAlive(pid), "timed-out graceful stop must leave process owned and alive")
+	require.NotEqual(t, StatusStopped, manager.Status(), "incomplete graceful stop must not publish stopped")
+	require.False(t, observedLogsContain(observed, "SIGKILL requested"), "graceful stop must not force-kill")
+	retryCtx, cancelRetry := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancelRetry()
+	require.Error(t, manager.StopGracefully(retryCtx), "a retry must not treat a prior incomplete stop as success")
+}
+
+func TestStopGracefullyKeepsLiveManagedCommandOwned(t *testing.T) {
+	log := newTestLogger(t)
+	manager := NewManager(&config.InstanceConfig{WorkDir: t.TempDir()}, log)
+	manager.status.Store(StatusRunning)
+	manager.cmd = fixtureCmd("sleep 30")
+	setProcGroup(manager.cmd)
+	require.NoError(t, manager.cmd.Start())
+	agentPID := manager.cmd.Process.Pid
+	waitDone := make(chan struct{})
+	manager.wg.Add(1)
+	go func() {
+		defer manager.wg.Done()
+		_ = manager.cmd.Wait()
+		close(waitDone)
+	}()
+	t.Cleanup(func() {
+		_ = manager.killProcessGroup(agentPID)
+		select {
+		case <-waitDone:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for fixture agent to exit")
+		}
+		_ = manager.processRunner.StopAllAndWait(context.Background())
+	})
+
+	managed, err := manager.StartProcess(t.Context(), StartProcessRequest{
+		SessionID: "session-fence", Command: "sleep 30",
+	})
+	require.NoError(t, err)
+
+	err = manager.StopGracefully(context.Background())
+	require.Error(t, err)
+	require.Equal(t, StatusRunning, manager.Status(), "an unresolved managed command must leave the agent process untouched")
+	process, found := manager.GetProcess(managed.ID, false)
+	require.True(t, found, "the admitted command must remain tracked")
+	require.Equal(t, types.ProcessStatusRunning, process.Status)
+	require.True(t, processAlive(agentPID), "graceful stop must not terminate the exact agent process before owned commands drain")
 }
 
 func TestStop_DoesNotReapStaleProcessGroupWhenStatusAlreadyStopped(t *testing.T) {

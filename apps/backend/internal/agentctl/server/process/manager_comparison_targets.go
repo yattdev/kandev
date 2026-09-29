@@ -372,7 +372,10 @@ func (m *Manager) stopComparisonTargetOperations(ctx context.Context) (error, bo
 		operation.cancel()
 	}
 	m.comparisonTargetOpsMu.Unlock()
+	return m.waitComparisonTargetOperations(ctx)
+}
 
+func (m *Manager) waitComparisonTargetOperations(ctx context.Context) (error, bool) {
 	done := make(chan struct{})
 	go func() {
 		m.comparisonTargetOpsWG.Wait()

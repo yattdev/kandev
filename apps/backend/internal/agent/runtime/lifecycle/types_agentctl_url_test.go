@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	agentctl "github.com/kandev/kandev/internal/agent/runtime/agentctl"
@@ -138,5 +141,35 @@ func TestAgentExecutionCloseExecutionAdmissionRejectsStaleGeneration(t *testing.
 	exec := &AgentExecution{ID: "execution-fence", startupAttemptGeneration: 2}
 	if _, err := exec.CloseExecutionAdmission(t.Context(), 1); err == nil {
 		t.Fatal("CloseExecutionAdmission accepted stale generation")
+	}
+}
+
+func TestAgentExecutionStopAgentctlGracefullyRejectsStaleGeneration(t *testing.T) {
+	exec := &AgentExecution{ID: "execution-fence", startupAttemptGeneration: 2}
+	if err := exec.StopAgentctlGracefully(t.Context(), 1); err == nil {
+		t.Fatal("StopAgentctlGracefully accepted stale generation")
+	}
+}
+
+func TestAgentExecutionStopAgentctlGracefullyUsesRetainedClient(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/stop/graceful" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	port := server.Listener.Addr().(*net.TCPAddr).Port
+	client := agentctl.NewClient("127.0.0.1", port, newNopLogger(t))
+	exec := &AgentExecution{ID: "execution-fence", startupAttemptGeneration: 2, agentctl: client}
+	if err := exec.StopAgentctlGracefully(t.Context(), 2); err != nil {
+		t.Fatalf("StopAgentctlGracefully: %v", err)
+	}
+	if !called {
+		t.Fatal("graceful stop did not use retained agentctl client")
 	}
 }

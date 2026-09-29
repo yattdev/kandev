@@ -479,6 +479,26 @@ func TestStop_PostsToStopEndpoint(t *testing.T) {
 	}
 }
 
+func TestStopGracefully_PostsToDedicatedEndpoint(t *testing.T) {
+	srv, got := captureServer(t, jsonResponder(http.StatusOK, `{"success":true}`))
+
+	if err := newHTTPOnlyClient(srv.URL).StopGracefully(context.Background()); err != nil {
+		t.Fatalf("StopGracefully: %v", err)
+	}
+	if got.Method != http.MethodPost || got.Path != "/api/v1/stop/graceful" {
+		t.Errorf("request = %s %s, want POST /api/v1/stop/graceful", got.Method, got.Path)
+	}
+}
+
+func TestStopGracefullyReturnsIncompleteResponse(t *testing.T) {
+	srv, _ := captureServer(t, jsonResponder(http.StatusGatewayTimeout, `{"success":false,"error":"graceful stop incomplete"}`))
+
+	err := newHTTPOnlyClient(srv.URL).StopGracefully(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "graceful stop request failed with status 504") {
+		t.Fatalf("StopGracefully error = %v, want incomplete response", err)
+	}
+}
+
 func TestStop_FailureModes(t *testing.T) {
 	tests := []struct {
 		name    string

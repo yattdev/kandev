@@ -1170,6 +1170,18 @@ func (m *Manager) StopExecutionWithFence(
 	if current, currentExists := m.executionStore.Get(executionID); !currentExists || current != execution {
 		return fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
 	}
+	return m.stopExecutionWithFenceLocked(ctx, executionID, generation, execution, reason, consumeReceipt, consumeTerminalProof)
+}
+
+func (m *Manager) stopExecutionWithFenceLocked(
+	ctx context.Context,
+	executionID string,
+	generation uint64,
+	execution *AgentExecution,
+	reason string,
+	consumeReceipt func(*ExecutionFenceReceipt) error,
+	consumeTerminalProof func() error,
+) error {
 	agentctlReceipt, err := execution.CloseExecutionAdmission(ctx, generation)
 	if err != nil {
 		return err
@@ -1181,6 +1193,16 @@ func (m *Manager) StopExecutionWithFence(
 	if receipt.ExecutionID != executionID || receipt.AgentctlGeneration != generation || receipt.AdmissionClosedAt.IsZero() {
 		return errors.New("agentctl returned a mismatched execution fence receipt")
 	}
+	if err := execution.StopAgentctlGracefully(ctx, generation); err != nil {
+		return fmt.Errorf("graceful stop exact agentctl execution: %w", err)
+	}
+	terminalReceipt, err := execution.verifiedTerminalFenceReceipt(ctx, executionID, generation)
+	if err != nil {
+		return err
+	}
+	receipt.ManagedProcessCount = terminalReceipt.ManagedProcessCount
+	receipt.AgentProcessTerminal = terminalReceipt.AgentProcessTerminal
+	receipt.ManagedProcessesDrained = terminalReceipt.ManagedProcessesDrained
 	if consumeReceipt != nil {
 		if err := consumeReceipt(receipt); err != nil {
 			return fmt.Errorf("persist execution fence receipt: %w", err)
@@ -1195,6 +1217,25 @@ func (m *Manager) StopExecutionWithFence(
 		}
 	}
 	return nil
+}
+
+func (e *AgentExecution) verifiedTerminalFenceReceipt(ctx context.Context, executionID string, generation uint64) (*ExecutionFenceReceipt, error) {
+	receipt, err := e.CloseExecutionAdmission(ctx, generation)
+	if err != nil {
+		return nil, fmt.Errorf("verify exact agentctl execution after graceful stop: %w", err)
+	}
+	if receipt.ExecutionID != executionID || receipt.AgentctlGeneration != generation ||
+		!receipt.ManagedProcessesDrained || !receipt.AgentProcessTerminal {
+		return nil, errors.New("agentctl did not prove the exact execution terminal after graceful stop")
+	}
+	return &ExecutionFenceReceipt{
+		ExecutionID:             receipt.ExecutionID,
+		AgentctlGeneration:      receipt.AgentctlGeneration,
+		AdmissionClosedAt:       receipt.AdmissionClosedAt,
+		ManagedProcessCount:     receipt.ManagedProcessCount,
+		AgentProcessTerminal:    receipt.AgentProcessTerminal,
+		ManagedProcessesDrained: receipt.ManagedProcessesDrained,
+	}, nil
 }
 
 //nolint:cyclop // The existing stop sequence must keep lifecycle ownership serialized.
@@ -1719,6 +1760,8 @@ type ExecutionFenceReceipt struct {
 	ExecutionID             string
 	AgentctlGeneration      uint64
 	AdmissionClosedAt       time.Time
+	ManagedProcessCount     int
+	AgentProcessTerminal    bool
 	ManagedProcessesDrained bool
 }
 
@@ -1736,7 +1779,11 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, executionID strin
 	if err != nil {
 		return nil, err
 	}
-	return &ExecutionFenceReceipt{ExecutionID: receipt.ExecutionID, AgentctlGeneration: receipt.AgentctlGeneration, AdmissionClosedAt: receipt.AdmissionClosedAt, ManagedProcessesDrained: receipt.ManagedProcessesDrained}, nil
+	return &ExecutionFenceReceipt{
+		ExecutionID: receipt.ExecutionID, AgentctlGeneration: receipt.AgentctlGeneration,
+		AdmissionClosedAt: receipt.AdmissionClosedAt, ManagedProcessCount: receipt.ManagedProcessCount,
+		AgentProcessTerminal: receipt.AgentProcessTerminal, ManagedProcessesDrained: receipt.ManagedProcessesDrained,
+	}, nil
 }
 
 // ResolveTaskEnvironmentID returns the task environment ID for a session.

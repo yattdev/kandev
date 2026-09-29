@@ -4,6 +4,7 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -864,6 +865,21 @@ func (ae *AgentExecution) CloseExecutionAdmission(ctx context.Context, generatio
 		return nil, fmt.Errorf("agentctl returned mismatched execution fence receipt")
 	}
 	return receipt, nil
+}
+
+// StopAgentctlGracefully stops only the exact currently retained agentctl
+// client. A timeout leaves lifecycle ownership intact for a retry.
+func (ae *AgentExecution) StopAgentctlGracefully(ctx context.Context, generation uint64) error {
+	ae.agentctlLifecycleMu.Lock()
+	defer ae.agentctlLifecycleMu.Unlock()
+	if generation == 0 || ae.startupAttemptGeneration != generation {
+		return errors.New("agentctl generation mismatch")
+	}
+	client := ae.currentAgentCtlClient()
+	if client == nil {
+		return errors.New("agentctl client is unavailable")
+	}
+	return client.StopGracefully(ctx)
 }
 
 // replaceAgentctlClient atomically publishes a replacement connection while

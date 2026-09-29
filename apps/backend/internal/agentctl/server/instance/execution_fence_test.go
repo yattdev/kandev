@@ -53,6 +53,9 @@ func TestCloseExecutionAdmissionKeepsLiveManagedProcessIncomplete(t *testing.T) 
 	if receipt.ManagedProcessesDrained || receipt.ManagedProcessCount != 1 {
 		t.Fatalf("receipt = %+v, want one live managed process and incomplete drain", receipt)
 	}
+	if got := len(procMgr.ListProcesses("session-fence-live")); got != 1 {
+		t.Fatalf("managed process count after fence = %d, want the admitted command to remain live", got)
+	}
 	if _, err := procMgr.StartProcess(t.Context(), process.StartProcessRequest{
 		SessionID: "session-fence-live", Command: "true",
 	}); !errors.Is(err, process.ErrManagerStopping) {

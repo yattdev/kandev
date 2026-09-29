@@ -6,6 +6,7 @@ Scoped guidance for `apps/backend/internal/agentctl/`. Higher-level backend arch
 
 agentctl exposes these route groups (see `server/api/`):
 - `/health`, `/info`, `/status` - Health and status
+- `POST /api/v1/stop/graceful` - Closes command admission and requests bounded graceful process exit; it reports incomplete without escalating to SIGTERM/SIGKILL
 - `/instances/*` - Multi-instance management
 - `/processes/*` - Agent subprocess management (start/stop)
 - `/agent/configure`, `/agent/stream` - Agent configuration and event streaming

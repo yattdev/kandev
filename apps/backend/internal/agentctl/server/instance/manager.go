@@ -374,8 +374,8 @@ type ExecutionFenceReceipt struct {
 
 // CloseExecutionAdmission closes command admission for one exact instance
 // incarnation and observes the work agentctl still owns. It never terminates a
-// process: stop promotion needs an independently verified drain, not a forceful
-// cleanup side effect.
+// process: stop promotion needs an independently verified drain, not a
+// cancellation side effect.
 func (m *Manager) CloseExecutionAdmission(ctx context.Context, instanceID string, req ExecutionFenceRequest) (*ExecutionFenceReceipt, error) {
 	m.mu.RLock()
 	inst, ok := m.instances[instanceID]
@@ -398,7 +398,7 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, instanceID string
 	}
 
 	cutoff := time.Now().UTC()
-	procMgr.CloseAdmission()
+	procMgr.CloseAdmissionGracefully()
 	if err := procMgr.WaitForAdmission(ctx); err != nil {
 		return nil, fmt.Errorf("wait for command admission to drain: %w", err)
 	}

@@ -141,6 +141,21 @@ func TestHandleStop_WhenNothingRunning(t *testing.T) {
 	}
 }
 
+func TestHandleStopGracefully_WhenNothingRunning(t *testing.T) {
+	srv := newTestServer(t)
+	rec := serverPost(t, srv, "/api/v1/stop/graceful")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var body StopResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode graceful stop response: %v", err)
+	}
+	if !body.Success || body.Message != "agent stopped gracefully" {
+		t.Fatalf("graceful stop response = %+v", body)
+	}
+}
+
 // TestShellEndpoints_WithoutShell pins the two different no-shell answers.
 // Status reports availability inside a 200 so the UI can render a disabled
 // terminal pane, while the buffer read is a 503 because there is nothing to
