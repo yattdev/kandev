@@ -1774,6 +1774,7 @@ func (s *Server) registerStepCompleteTool() {
 			mcp.WithString("summary", mcp.Required(), mcp.Description("One-paragraph plain-text summary of what was done in this step. Shown to the user.")),
 			mcp.WithString("handoff", mcp.Description("Optional context for the immediately-following step's agent, delivered once in that step's first prompt and not carried beyond it. Up to 8,192 bytes; longer values are truncated.")),
 			mcp.WithString("blockers", mcp.Description("Optional list of known unresolved issues. Recorded on this step's transition history, not delivered to the next step's agent — do not use it to pass context forward. Use sparingly, only when you cannot make further progress without input. Up to 8,192 bytes; longer values are truncated.")),
+			mcp.WithString("verdict", mcp.Description("Gate verdict for Review or QA: PASS admits the next step; any other or absent verdict keeps the task on its current step.")),
 		),
 		s.wrapHandler("step_complete_kandev", s.stepCompleteHandler()),
 	)
@@ -1830,6 +1831,7 @@ func (s *Server) stepCompleteHandler() server.ToolHandlerFunc {
 			"summary":    summary,
 			"handoff":    req.GetString("handoff", ""),
 			"blockers":   req.GetString("blockers", ""),
+			"verdict":    req.GetString("verdict", ""),
 		}
 		var result map[string]interface{}
 		if err := s.backend.RequestPayload(ctx, ws.ActionMCPStepComplete, payload, &result); err != nil {

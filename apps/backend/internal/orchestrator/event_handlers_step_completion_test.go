@@ -137,8 +137,12 @@ func TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceLegacyGate(t *testing.
 
 	seedSignal := func(t *testing.T, svc *Service, stepID, summary, blockers string) *models.TaskSession {
 		t.Helper()
+		verdict := "PASS"
+		if blockers != "" {
+			verdict = "BLOCKED"
+		}
 		if err := svc.repo.SetSessionMetadataKey(ctx, "session-legacy-gate", models.SessionMetaKeyPendingStepCompletion, models.PendingStepCompletionSignal{
-			StepID: stepID, Source: models.StepCompletionSourceAgent, Summary: summary, Blockers: blockers, SignaledAt: time.Now().UTC(),
+			StepID: stepID, Source: models.StepCompletionSourceAgent, Summary: summary, Blockers: blockers, Verdict: verdict, SignaledAt: time.Now().UTC(),
 		}); err != nil {
 			t.Fatalf("seed completion signal: %v", err)
 		}
@@ -174,6 +178,21 @@ func TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceLegacyGate(t *testing.
 
 		if svc.processOnTurnComplete(ctx, loadTask(t, svc), session) {
 			t.Fatal("blocked Review signal advanced to QA")
+		}
+		assertStep(t, svc, "review")
+	})
+
+	t.Run("absent verdict stays at review", func(t *testing.T) {
+		svc, _ := build(t, "review")
+		session := seedSignal(t, svc, "review", "review finished", "")
+		signal, _ := models.LoadPendingStepSignal(session.Metadata)
+		signal.Verdict = ""
+		if err := svc.repo.SetSessionMetadataKey(ctx, session.ID, models.SessionMetaKeyPendingStepCompletion, signal); err != nil {
+			t.Fatalf("clear verdict: %v", err)
+		}
+		session, _ = svc.repo.GetTaskSession(ctx, session.ID)
+		if svc.processOnTurnComplete(ctx, loadTask(t, svc), session) {
+			t.Fatal("missing Review verdict advanced to QA")
 		}
 		assertStep(t, svc, "review")
 	})
@@ -234,8 +253,12 @@ func TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceGate(t *testing.T) {
 
 	seedSignal := func(t *testing.T, svc *Service, stepID, summary, blockers string) *models.TaskSession {
 		t.Helper()
+		verdict := "PASS"
+		if blockers != "" {
+			verdict = "BLOCKED"
+		}
 		if err := svc.repo.SetSessionMetadataKey(ctx, "session-gate", models.SessionMetaKeyPendingStepCompletion, models.PendingStepCompletionSignal{
-			StepID: stepID, Source: models.StepCompletionSourceAgent, Summary: summary, Blockers: blockers, SignaledAt: time.Now().UTC(),
+			StepID: stepID, Source: models.StepCompletionSourceAgent, Summary: summary, Blockers: blockers, Verdict: verdict, SignaledAt: time.Now().UTC(),
 		}); err != nil {
 			t.Fatalf("seed completion signal: %v", err)
 		}
@@ -252,6 +275,27 @@ func TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceGate(t *testing.T) {
 
 		if svc.processOnTurnCompleteViaEngine(ctx, "task-gate", session) {
 			t.Fatal("blocked Review signal advanced to QA")
+		}
+		task, err := svc.repo.GetTask(ctx, "task-gate")
+		if err != nil {
+			t.Fatalf("get task: %v", err)
+		}
+		if task.WorkflowStepID != "review" {
+			t.Errorf("workflow step = %q, want review", task.WorkflowStepID)
+		}
+	})
+
+	t.Run("absent verdict stays at review", func(t *testing.T) {
+		svc, _ := build(t, "review")
+		session := seedSignal(t, svc, "review", "review finished", "")
+		signal, _ := models.LoadPendingStepSignal(session.Metadata)
+		signal.Verdict = ""
+		if err := svc.repo.SetSessionMetadataKey(ctx, session.ID, models.SessionMetaKeyPendingStepCompletion, signal); err != nil {
+			t.Fatalf("clear verdict: %v", err)
+		}
+		session, _ = svc.repo.GetTaskSession(ctx, session.ID)
+		if svc.processOnTurnCompleteViaEngine(ctx, "task-gate", session) {
+			t.Fatal("missing Review verdict advanced to QA")
 		}
 		task, err := svc.repo.GetTask(ctx, "task-gate")
 		if err != nil {

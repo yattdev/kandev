@@ -2500,6 +2500,7 @@ func (h *Handlers) handleStepComplete(ctx context.Context, msg *ws.Message) (*ws
 		Summary   string `json:"summary"`
 		Handoff   string `json:"handoff"`
 		Blockers  string `json:"blockers"`
+		Verdict   string `json:"verdict"`
 	}
 	if err := json.Unmarshal(msg.Payload, &req); err != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "Invalid payload: "+err.Error(), nil)
@@ -2542,6 +2543,7 @@ func (h *Handlers) handleStepComplete(ctx context.Context, msg *ws.Message) (*ws
 		Summary:    strings.TrimSpace(req.Summary),
 		Handoff:    boundedHandoff,
 		Blockers:   boundedBlockers,
+		Verdict:    strings.ToUpper(strings.TrimSpace(req.Verdict)),
 		SignaledAt: time.Now().UTC(),
 	}
 	stored, err := h.claimStepCompletionSignal(ctx, req.TaskID, req.SessionID, launchStepID, signal)
@@ -2578,7 +2580,7 @@ func (h *Handlers) handleStepComplete(ctx context.Context, msg *ws.Message) (*ws
 		"step_id":     task.WorkflowStepID,
 		"signaled_at": signal.SignaledAt,
 	}
-	if advances, note, ok := h.resolveStepCompletionAdvances(ctx, task.WorkflowStepID, signal.Blockers); ok {
+	if advances, note, ok := h.resolveStepCompletionAdvances(ctx, task.WorkflowStepID, signal.Blockers, signal.Verdict); ok {
 		response["advances"] = advances
 		if note != "" {
 			response["note"] = note
@@ -2605,7 +2607,7 @@ func (h *Handlers) handleStepComplete(ctx context.Context, msg *ws.Message) (*ws
 // reads it, so the caller can accept a signal that changes nothing. ok is
 // false (both other return values ignored) when the current step cannot be
 // resolved: the caller must never guess this field into existence.
-func (h *Handlers) resolveStepCompletionAdvances(ctx context.Context, workflowStepID, blockers string) (advances bool, note string, ok bool) {
+func (h *Handlers) resolveStepCompletionAdvances(ctx context.Context, workflowStepID, blockers, verdict string) (advances bool, note string, ok bool) {
 	if h.workflowCtrl == nil || workflowStepID == "" {
 		return false, "", false
 	}
@@ -2616,10 +2618,22 @@ func (h *Handlers) resolveStepCompletionAdvances(ctx context.Context, workflowSt
 	if strings.TrimSpace(blockers) != "" {
 		return false, "this completion signal reports blockers", true
 	}
+	if stepCompletionVerdictRequired(resp.Step.Name) && verdict != models.StepCompletionVerdictPass {
+		return false, "this completion signal requires an explicit PASS verdict", true
+	}
 	if resp.Step.AutoAdvanceRequiresSignal {
 		return true, "", true
 	}
 	return false, "this step does not advance on a completion signal", true
+}
+
+func stepCompletionVerdictRequired(stepName string) bool {
+	switch strings.ToLower(strings.TrimSpace(stepName)) {
+	case models.StepCompletionReviewStepName, models.StepCompletionQAStepName:
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *Handlers) stepCompletionLaunchStep(ctx context.Context, sessionID, fallback string) (string, error) {

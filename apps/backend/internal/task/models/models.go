@@ -1153,6 +1153,9 @@ func (e LastAgentError) IsDismissed() bool {
 const (
 	StepCompletionSourceAgent          = "agent"
 	StepCompletionSourceManualFallback = "manual_fallback"
+	StepCompletionVerdictPass          = "PASS"
+	StepCompletionReviewStepName       = "review"
+	StepCompletionQAStepName           = "qa"
 )
 
 // PendingStepCompletionSignal is the JSON shape persisted under
@@ -1166,6 +1169,7 @@ type PendingStepCompletionSignal struct {
 	Summary    string    `json:"summary"`
 	Handoff    string    `json:"handoff,omitempty"`
 	Blockers   string    `json:"blockers,omitempty"`
+	Verdict    string    `json:"verdict,omitempty"`
 	SignaledAt time.Time `json:"signaled_at"`
 }
 
@@ -1294,6 +1298,7 @@ func LoadPendingStepSignal(metadata map[string]interface{}) (PendingStepCompleti
 			Summary:  StringFromAny(v["summary"]),
 			Handoff:  StringFromAny(v["handoff"]),
 			Blockers: StringFromAny(v["blockers"]),
+			Verdict:  StringFromAny(v["verdict"]),
 		}
 		if ts, ok := v["signaled_at"].(string); ok {
 			if parsed, err := time.Parse(time.RFC3339Nano, ts); err == nil {
