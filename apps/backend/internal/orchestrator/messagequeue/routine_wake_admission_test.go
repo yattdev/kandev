@@ -106,6 +106,36 @@ func TestAdmitRoutineWakeForSessionKeepsOneDirtySuccessorParity(t *testing.T) {
 	}
 }
 
+func TestAdmitRoutineWakeForSessionReleaseSettlesLeaderParity(t *testing.T) {
+	for _, factory := range []struct {
+		name string
+		new  func(*testing.T) Repository
+	}{
+		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
+		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
+	} {
+		t.Run(factory.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := factory.new(t)
+			identity := QueueSessionIdentity{TaskID: "task", SessionID: "session", SessionIncarnationID: "incarnation"}
+			seedQueueSessionIdentity(t, repo, identity)
+			queue := NewService(repo, DefaultMaxPerSession, logger.Default())
+			_, err := queue.AdmitRoutineWakeForSession(ctx, identity, routineWakeEnvelope("source-a"), "wake")
+			require.NoError(t, err)
+			leader, _, _, err := queue.ReserveQueuedForDeliveryWithAutoRunForSession(ctx, identity)
+			require.NoError(t, err)
+			successor, err := queue.AdmitRoutineWakeForSession(ctx, identity, routineWakeEnvelope("source-b"), "wake")
+			require.NoError(t, err)
+			require.NoError(t, queue.ReleaseQueuedDeliveryForSession(ctx, identity, leader))
+			entries, err := repo.ListBySession(ctx, identity.SessionID)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			require.Equal(t, successor.Message.ID, entries[0].ID)
+		})
+	}
+}
+
 func routineWakeEnvelope(source string) RoutineWakeEnvelope {
 	return RoutineWakeEnvelope{
 		WorkspaceID: "workspace", RoutineType: "wake", RoutineName: "cycle",
