@@ -197,7 +197,15 @@ func (r *Repository) InsertDocumentRevision(ctx context.Context, rev *models.Tas
 	}
 	rev.UpdatedAt = now
 
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin document revision insert: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.ensureDocumentTaskAvailableTx(ctx, tx, rev.TaskID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, tx.Rebind(`
 		INSERT INTO task_document_revisions
 			(`+docRevSelectCols+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -206,6 +214,9 @@ func (r *Repository) InsertDocumentRevision(ctx context.Context, rev *models.Tas
 		rev.AuthorKind, rev.AuthorName, rev.RevertOfRevisionID, rev.CreatedAt, rev.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("insert document revision: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit document revision insert: %w", err)
 	}
 	return nil
 }
