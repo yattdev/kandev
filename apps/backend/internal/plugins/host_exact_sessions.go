@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	taskmodels "github.com/kandev/kandev/internal/task/models"
@@ -17,8 +18,7 @@ const exactSessionPageLimit int32 = 99
 // ListSessionsExact returns the bounded lifecycle projection pinned by the
 // task repository's durable workspace snapshot.
 func (h *pluginHost) ListSessionsExact(ctx context.Context, query pluginsdk.ExactSessionQuery) ([]pluginsdk.ExactSession, *pluginsdk.ExactPageInfo, error) {
-	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("sessions", query.WorkspaceID, query.Page.SnapshotVersion))
-	if err != nil {
+	if _, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("sessions", query.WorkspaceID, query.Page.SnapshotVersion)); err != nil {
 		return nil, nil, err
 	}
 	if h.taskData == nil || h.exactSnapshots == nil {
@@ -41,6 +41,10 @@ func (h *pluginHost) ListSessionsExact(ctx context.Context, query pluginsdk.Exac
 		return nil, nil, exactSessionSnapshotError(err)
 	}
 	items, err := exactSessionDTOs(rows, query.WorkspaceID, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("sessions", query.WorkspaceID, binding.ProjectionVersion, strconv.Itoa(offset), strconv.FormatInt(int64(limit), 10)))
 	if err != nil {
 		return nil, nil, err
 	}

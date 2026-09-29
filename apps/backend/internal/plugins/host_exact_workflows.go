@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strconv"
 
+	taskmodels "github.com/kandev/kandev/internal/task/models"
 	wfmodels "github.com/kandev/kandev/internal/workflow/models"
 	"github.com/kandev/kandev/pkg/pluginsdk"
 	"google.golang.org/grpc/codes"
@@ -15,8 +17,7 @@ import (
 const exactWorkflowPageLimit int32 = 100
 
 func (h *pluginHost) ListWorkflowsExact(ctx context.Context, query pluginsdk.ExactWorkflowQuery) ([]pluginsdk.Workflow, *pluginsdk.ExactPageInfo, error) {
-	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflows", query.WorkspaceID, query.Page.SnapshotVersion))
-	if err != nil {
+	if _, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflows", query.WorkspaceID, query.Page.SnapshotVersion)); err != nil {
 		return nil, nil, err
 	}
 	if h.workflows == nil || h.exactSnapshots == nil {
@@ -41,6 +42,14 @@ func (h *pluginHost) ListWorkflowsExact(ctx context.Context, query pluginsdk.Exa
 	if err != nil {
 		return nil, nil, err
 	}
+	offset, err := h.exactOffset(h.exactPageBinding(query.WorkspaceID, query.CapabilityRevision, "workflows", version), query.Page)
+	if err != nil {
+		return nil, nil, err
+	}
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflows", query.WorkspaceID, version, strconv.Itoa(offset), strconv.FormatInt(int64(effectiveExactWorkflowPageLimit(query.Page)), 10)))
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := h.recordExactPageRead(info, receipt); err != nil {
 		return nil, nil, err
 	}
@@ -48,8 +57,7 @@ func (h *pluginHost) ListWorkflowsExact(ctx context.Context, query pluginsdk.Exa
 }
 
 func (h *pluginHost) ListWorkflowStepsExact(ctx context.Context, query pluginsdk.ExactWorkflowStepsQuery) ([]pluginsdk.WorkflowStep, *pluginsdk.ExactPageInfo, error) {
-	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflow-steps", query.WorkspaceID, query.WorkflowID, query.Page.SnapshotVersion))
-	if err != nil {
+	if _, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflow-steps", query.WorkspaceID, query.WorkflowID, query.Page.SnapshotVersion)); err != nil {
 		return nil, nil, err
 	}
 	if h.workflows == nil || h.workflowSteps == nil || h.exactSnapshots == nil {
@@ -59,14 +67,7 @@ func (h *pluginHost) ListWorkflowStepsExact(ctx context.Context, query pluginsdk
 	if err != nil {
 		return nil, nil, err
 	}
-	found := false
-	for _, workflow := range workflows {
-		if workflow != nil && workflow.ID == query.WorkflowID && workflow.WorkspaceID == query.WorkspaceID {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !exactWorkflowExists(workflows, query.WorkspaceID, query.WorkflowID) {
 		return nil, nil, status.Error(codes.NotFound, "workflow not found")
 	}
 	rows, err := h.workflowSteps.ListStepsByWorkflow(ctx, query.WorkflowID)
@@ -81,10 +82,27 @@ func (h *pluginHost) ListWorkflowStepsExact(ctx context.Context, query pluginsdk
 	if err != nil {
 		return nil, nil, err
 	}
+	offset, err := h.exactOffset(h.exactPageBinding(query.WorkspaceID, query.CapabilityRevision, "workflow-steps:"+query.WorkflowID, version), query.Page)
+	if err != nil {
+		return nil, nil, err
+	}
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workflows", CanonicalApprovalDigest("workflow-steps", query.WorkspaceID, query.WorkflowID, version, strconv.Itoa(offset), strconv.FormatInt(int64(effectiveExactWorkflowPageLimit(query.Page)), 10)))
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := h.recordExactPageRead(info, receipt); err != nil {
 		return nil, nil, err
 	}
 	return items, info, nil
+}
+
+func exactWorkflowExists(workflows []*taskmodels.Workflow, workspaceID, workflowID string) bool {
+	for _, workflow := range workflows {
+		if workflow != nil && workflow.ID == workflowID && workflow.WorkspaceID == workspaceID {
+			return true
+		}
+	}
+	return false
 }
 
 func exactWorkflowStepProjection(rows []*wfmodels.WorkflowStep, workflowID string) ([]pluginsdk.WorkflowStep, string, error) {
@@ -130,10 +148,7 @@ func (h *pluginHost) exactOffset(binding exactSnapshotBinding, page pluginsdk.Ex
 }
 
 func (h *pluginHost) exactInfo(binding exactSnapshotBinding, page pluginsdk.ExactPage, total, offset int) (*pluginsdk.ExactPageInfo, int, error) {
-	limit := int(page.Limit)
-	if limit == 0 {
-		limit = int(exactWorkflowPageLimit)
-	}
+	limit := int(effectiveExactWorkflowPageLimit(page))
 	if offset > total {
 		return nil, 0, status.Error(codes.InvalidArgument, "exact snapshot cursor is invalid")
 	}
@@ -150,6 +165,13 @@ func (h *pluginHost) exactInfo(binding exactSnapshotBinding, page pluginsdk.Exac
 		info.NextCursor = cursor
 	}
 	return info, end, nil
+}
+
+func effectiveExactWorkflowPageLimit(page pluginsdk.ExactPage) int32 {
+	if page.Limit > 0 {
+		return page.Limit
+	}
+	return exactWorkflowPageLimit
 }
 
 func (h *pluginHost) pageExactWorkflows(workspaceID string, revision uint64, filter, version string, page pluginsdk.ExactPage, items []pluginsdk.Workflow) ([]pluginsdk.Workflow, *pluginsdk.ExactPageInfo, error) {

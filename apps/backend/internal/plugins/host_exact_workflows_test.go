@@ -9,6 +9,7 @@ import (
 	taskmodels "github.com/kandev/kandev/internal/task/models"
 	wfmodels "github.com/kandev/kandev/internal/workflow/models"
 	"github.com/kandev/kandev/pkg/pluginsdk"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -20,20 +21,22 @@ func TestPluginHost_ListWorkflowsExactBindsAuthorityAndCursor(t *testing.T) {
 	d.steps.steps = map[string][]*wfmodels.WorkflowStep{"workflow-1": {{ID: "step-1", WorkflowID: "workflow-1", Position: 1}}}
 	d.host.installationID = "installation-1"
 	d.host.exactSnapshots = newExactSnapshotStore([]byte("01234567890123456789012345678901"))
-	d.host.exactAuthorize = func(workspaceID string, revision uint64, capabilityID, _ string) ApprovalDecision {
-		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:workflows", Receipt: ApprovalReceipt{AuditID: "workflow-read-audit"}}
+	d.host.exactAuthorize = func(workspaceID string, revision uint64, capabilityID, requestDigest string) ApprovalDecision {
+		return ApprovalDecision{Allowed: workspaceID == "workspace-1" && revision == 2 && capabilityID == "host.v2.read:workflows", Receipt: ApprovalReceipt{InstallationID: "installation-1", WorkspaceID: workspaceID, Revision: revision, CapabilityID: capabilityID, AuditID: CanonicalApprovalDigest("workflow-read-audit", requestDigest), Result: approvalReceiptAllowed}}
 	}
-	var receipts []ApprovalReceipt
-	d.host.exactReadReceipt = func(receipt ApprovalReceipt) error { receipts = append(receipts, receipt); return nil }
+	ledgerDir := t.TempDir()
+	d.host.exactReadReceipt = newApprovalLedger(ledgerDir).recordReadReceipt
 
 	items, page, err := d.host.ListWorkflowsExact(context.Background(), pluginsdk.ExactWorkflowQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1}})
-	if err != nil || len(items) != 1 || items[0].ID != "workflow-1" || !page.HasMore || page.NextCursor == "" || page.AuditID != "workflow-read-audit" {
+	if err != nil || len(items) != 1 || items[0].ID != "workflow-1" || !page.HasMore || page.NextCursor == "" || page.AuditID == "" {
 		t.Fatalf("first exact workflows = %#v %#v, %v", items, page, err)
 	}
+	firstWorkflowPage := page
 	items, page, err = d.host.ListWorkflowsExact(context.Background(), pluginsdk.ExactWorkflowQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1, Cursor: page.NextCursor, SnapshotVersion: page.SnapshotVersion}})
-	if err != nil || len(items) != 1 || items[0].ID != "workflow-2" || page.HasMore || page.AuditID != "workflow-read-audit" {
+	if err != nil || len(items) != 1 || items[0].ID != "workflow-2" || page.HasMore || page.AuditID == "" {
 		t.Fatalf("second exact workflows = %#v %#v, %v", items, page, err)
 	}
+	require.NotEqual(t, page.AuditID, "")
 
 	for _, query := range []pluginsdk.ExactWorkflowQuery{{WorkspaceID: "workspace-2", CapabilityRevision: 2}, {WorkspaceID: "workspace-1", CapabilityRevision: 1}, {WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Cursor: "bad", SnapshotVersion: "drift"}}} {
 		_, _, err := d.host.ListWorkflowsExact(context.Background(), query)
@@ -41,21 +44,36 @@ func TestPluginHost_ListWorkflowsExactBindsAuthorityAndCursor(t *testing.T) {
 			t.Fatalf("denial error = %v", err)
 		}
 	}
-	if len(receipts) != 2 {
-		t.Fatalf("invalid workflow requests recorded receipts = %#v", receipts)
-	}
+	file, err := newApprovalLedger(ledgerDir).load()
+	require.NoError(t, err)
+	require.Len(t, file.ReadReceipts, 2)
+	require.NotEqual(t, file.ReadReceipts[0].AuditID, file.ReadReceipts[1].AuditID)
+
+	d.workflows.workflows["workspace-1"][0].Name = "Changed"
+	_, changedWorkflowPage, err := d.host.ListWorkflowsExact(context.Background(), pluginsdk.ExactWorkflowQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1}})
+	require.NoError(t, err)
+	require.NotEqual(t, firstWorkflowPage.SnapshotVersion, changedWorkflowPage.SnapshotVersion)
+	require.NotEqual(t, firstWorkflowPage.AuditID, changedWorkflowPage.AuditID)
+	file, err = newApprovalLedger(ledgerDir).load()
+	require.NoError(t, err)
+	require.Len(t, file.ReadReceipts, 3)
 
 	steps, stepPage, err := d.host.ListWorkflowStepsExact(context.Background(), pluginsdk.ExactWorkflowStepsQuery{WorkspaceID: "workspace-1", WorkflowID: "workflow-1", CapabilityRevision: 2})
-	if err != nil || len(steps) != 1 || stepPage.SnapshotVersion == "" || stepPage.AuditID != "workflow-read-audit" {
+	if err != nil || len(steps) != 1 || stepPage.SnapshotVersion == "" || stepPage.AuditID == "" {
 		t.Fatalf("exact workflow steps = %#v %#v, %v", steps, stepPage, err)
 	}
 	_, _, err = d.host.ListWorkflowStepsExact(context.Background(), pluginsdk.ExactWorkflowStepsQuery{WorkspaceID: "workspace-1", WorkflowID: "unknown", CapabilityRevision: 2})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("unknown workflow error = %v", err)
 	}
-	if len(receipts) != 3 {
-		t.Fatalf("invalid workflow step request recorded receipts = %#v", receipts)
-	}
+	d.steps.steps["workflow-1"][0].Name = "Changed"
+	_, changedStepPage, err := d.host.ListWorkflowStepsExact(context.Background(), pluginsdk.ExactWorkflowStepsQuery{WorkspaceID: "workspace-1", WorkflowID: "workflow-1", CapabilityRevision: 2})
+	require.NoError(t, err)
+	require.NotEqual(t, stepPage.SnapshotVersion, changedStepPage.SnapshotVersion)
+	require.NotEqual(t, stepPage.AuditID, changedStepPage.AuditID)
+	file, err = newApprovalLedger(ledgerDir).load()
+	require.NoError(t, err)
+	require.Len(t, file.ReadReceipts, 5)
 }
 
 func TestPluginHost_ListWorkflowStepsExactRejectsExposedFieldDrift(t *testing.T) {

@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/kandev/kandev/pkg/pluginsdk"
 	"google.golang.org/grpc/codes"
@@ -14,8 +15,7 @@ func (h *pluginHost) ListWorkspacesExact(ctx context.Context, query pluginsdk.Ex
 	if query.Page.Limit < 0 || query.Page.Limit > exactWorkspacePageLimit {
 		return nil, nil, status.Error(codes.InvalidArgument, "exact workspace page limit is invalid")
 	}
-	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workspaces", CanonicalApprovalDigest("workspaces", query.WorkspaceID, query.Page.SnapshotVersion))
-	if err != nil {
+	if _, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workspaces", CanonicalApprovalDigest("workspaces", query.WorkspaceID, query.Page.SnapshotVersion)); err != nil {
 		return nil, nil, err
 	}
 	if h.taskData == nil || h.exactSnapshots == nil {
@@ -39,6 +39,10 @@ func (h *pluginHost) ListWorkspacesExact(ctx context.Context, query pluginsdk.Ex
 		}
 		binding := exactSnapshotBinding{InstallationID: h.installationID, WorkspaceID: query.WorkspaceID, FilterDigest: "workspaces", ApprovalRevision: query.CapabilityRevision, ProjectionVersion: version}
 		if err := h.validateExactWorkspacePage(binding, query.Page); err != nil {
+			return nil, nil, err
+		}
+		receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:workspaces", CanonicalApprovalDigest("workspaces", query.WorkspaceID, binding.ProjectionVersion, "0", strconv.FormatInt(int64(exactWorkspacePageLimit), 10)))
+		if err != nil {
 			return nil, nil, err
 		}
 		info := &pluginsdk.ExactPageInfo{SnapshotVersion: version}

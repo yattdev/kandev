@@ -23,8 +23,7 @@ func (h *pluginHost) ListTasksExact(ctx context.Context, query pluginsdk.ExactTa
 	if query.Page.Limit > 0 {
 		limit = query.Page.Limit
 	}
-	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("tasks", query.WorkspaceID, query.Page.SnapshotVersion, query.Page.Cursor, strconv.FormatInt(int64(limit), 10)))
-	if err != nil {
+	if _, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("tasks", query.WorkspaceID, query.Page.SnapshotVersion, query.Page.Cursor, strconv.FormatInt(int64(limit), 10))); err != nil {
 		return nil, nil, err
 	}
 	if h.taskData == nil || h.exactSnapshots == nil {
@@ -48,6 +47,10 @@ func (h *pluginHost) ListTasksExact(ctx context.Context, query pluginsdk.ExactTa
 			return nil, nil, status.Error(codes.FailedPrecondition, "exact task projection is incomplete")
 		}
 		items[i] = exactTaskToDTO(rows[i])
+	}
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("tasks", query.WorkspaceID, binding.ProjectionVersion, strconv.Itoa(offset), strconv.FormatInt(int64(limit), 10)))
+	if err != nil {
+		return nil, nil, err
 	}
 	snapshotVersion, err := h.exactSnapshots.create(binding, 0)
 	if err != nil {

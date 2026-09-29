@@ -90,6 +90,19 @@ func TestPluginHostExactTasksUseApprovalBoundDurableSnapshotAndPageReceipts(t *t
 	require.Len(t, file.ReadReceipts, 3)
 	require.Equal(t, page.AuditID, file.ReadReceipts[2].AuditID)
 
+	d.tasks.exactSnapshots["snapshot-workspace-1-changed"] = append([]taskmodels.ExactTaskSnapshotTask(nil), d.tasks.exactSnapshots["snapshot-workspace-1"]...)
+	d.tasks.exactSnapshots["snapshot-workspace-1-changed"][0].Title = "Changed"
+	d.tasks.exactSnapshotTokens = map[string]string{"workspace-1": "snapshot-workspace-1-changed"}
+	items, changedPage, err := d.host.ListTasksExact(context.Background(), pluginsdk.ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: pluginsdk.ExactPage{Limit: 1}})
+	require.NoError(t, err)
+	require.Equal(t, "Changed", items[0].Title)
+	require.NotEqual(t, firstPage.SnapshotVersion, changedPage.SnapshotVersion)
+	require.NotEqual(t, firstPage.AuditID, changedPage.AuditID)
+	file, err = newApprovalLedger(ledgerDir).load()
+	require.NoError(t, err)
+	require.Len(t, file.ReadReceipts, 4)
+	require.Equal(t, changedPage.AuditID, file.ReadReceipts[3].AuditID)
+
 	task, err := d.host.GetTaskExact(context.Background(), pluginsdk.ExactTaskGetQuery{WorkspaceID: "workspace-1", TaskID: "task-3", CapabilityRevision: 2, SnapshotVersion: snapshotVersion})
 	require.NoError(t, err)
 	require.Equal(t, int64(5), task.ResourceVersion)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	taskmodels "github.com/kandev/kandev/internal/task/models"
@@ -18,8 +19,7 @@ const exactSessionMessagePageLimit int32 = 100
 // ListSessionMessagesExact reads the private materialized transcript through
 // an approval-bound, connection-scoped snapshot cursor.
 func (h *pluginHost) ListSessionMessagesExact(ctx context.Context, query pluginsdk.ExactSessionMessageQuery) ([]pluginsdk.ExactSessionMessage, *pluginsdk.ExactPageInfo, error) {
-	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("session-messages", query.WorkspaceID, query.TaskID, query.SessionID, query.Page.SnapshotVersion))
-	if err != nil {
+	if _, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("session-messages", query.WorkspaceID, query.TaskID, query.SessionID, query.Page.SnapshotVersion)); err != nil {
 		return nil, nil, err
 	}
 	data, err := h.exactSessionMessageData(query)
@@ -48,6 +48,10 @@ func (h *pluginHost) ListSessionMessagesExact(ctx context.Context, query plugins
 	items := make([]pluginsdk.ExactSessionMessage, min(len(rows), int(limit)))
 	for i := range items {
 		items[i] = pluginsdk.ExactSessionMessage{ID: rows[i].ID, AuthorType: string(rows[i].AuthorType), Content: rows[i].Content, Type: string(rows[i].Type), RequestsInput: rows[i].RequestsInput, CreatedAt: rows[i].CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: rows[i].UpdatedAt.UTC().Format(time.RFC3339Nano)}
+	}
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("session-messages", query.WorkspaceID, query.TaskID, query.SessionID, binding.ProjectionVersion, strconv.Itoa(offset), strconv.FormatInt(int64(limit), 10)))
+	if err != nil {
+		return nil, nil, err
 	}
 	version, err := h.exactSnapshots.create(binding, 0)
 	if err != nil {

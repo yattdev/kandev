@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
@@ -18,8 +19,7 @@ type exactDecisionEvidenceSource interface {
 }
 
 func (h *pluginHost) ListTaskDecisionEvidenceExact(ctx context.Context, query pluginsdk.ExactTaskDecisionEvidenceQuery) (*pluginsdk.ExactTaskDecisionEvidencePage, *pluginsdk.ExactPageInfo, error) {
-	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("task-decision-evidence", query.WorkspaceID, query.Page.SnapshotVersion))
-	if err != nil {
+	if _, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("task-decision-evidence", query.WorkspaceID, query.Page.SnapshotVersion)); err != nil {
 		return nil, nil, err
 	}
 	evidence, err := h.exactDecisionEvidenceReader()
@@ -43,6 +43,10 @@ func (h *pluginHost) ListTaskDecisionEvidenceExact(ctx context.Context, query pl
 		return nil, nil, status.Error(codes.FailedPrecondition, "exact task decision evidence is unavailable")
 	}
 	result, err := exactDecisionEvidencePageToDTO(page, query.WorkspaceID, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+	receipt, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("task-decision-evidence", query.WorkspaceID, binding.ProjectionVersion, strconv.Itoa(offset), strconv.FormatInt(int64(limit), 10)))
 	if err != nil {
 		return nil, nil, err
 	}

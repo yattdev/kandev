@@ -26,27 +26,28 @@ func int64Ptr(v int64) *int64 { return &v }
 // ── fakes for the narrow Host data API interfaces ───────────────────────
 
 type fakeTaskDataSource struct {
-	transitionRows   map[string][]taskmodels.StepTransition
-	transitionGroups map[string][]taskmodels.TransitionGroup
-	transitionCalls  int
-	groupCalls       int
-	workspaces       []*taskmodels.Workspace
-	tasksByWorkspace map[string][]*taskmodels.Task
-	tasksByID        map[string]*taskmodels.Task
-	exactSnapshots   map[string][]taskmodels.ExactTaskSnapshotTask
-	exactSnapshotErr error
-	exactPageErr     error
-	exactSessions    map[string][]taskmodels.ExactSessionSnapshotSession
-	exactSessionErr  error
-	exactMessages    map[string][]taskmodels.ExactSessionMessageSnapshotMessage
-	exactMessageErr  error
-	repositories     map[string][]*taskmodels.Repository
-	sessionsByTask   map[string][]*taskmodels.TaskSession
-	executorRunning  map[string]*taskmodels.ExecutorRunning
-	executorProfiles []*taskmodels.ExecutorProfile
-	executors        map[string]*taskmodels.Executor
-	executorErrors   map[string]error
-	executorCalls    int
+	transitionRows      map[string][]taskmodels.StepTransition
+	transitionGroups    map[string][]taskmodels.TransitionGroup
+	transitionCalls     int
+	groupCalls          int
+	workspaces          []*taskmodels.Workspace
+	tasksByWorkspace    map[string][]*taskmodels.Task
+	tasksByID           map[string]*taskmodels.Task
+	exactSnapshots      map[string][]taskmodels.ExactTaskSnapshotTask
+	exactSnapshotTokens map[string]string
+	exactSnapshotErr    error
+	exactPageErr        error
+	exactSessions       map[string][]taskmodels.ExactSessionSnapshotSession
+	exactSessionErr     error
+	exactMessages       map[string][]taskmodels.ExactSessionMessageSnapshotMessage
+	exactMessageErr     error
+	repositories        map[string][]*taskmodels.Repository
+	sessionsByTask      map[string][]*taskmodels.TaskSession
+	executorRunning     map[string]*taskmodels.ExecutorRunning
+	executorProfiles    []*taskmodels.ExecutorProfile
+	executors           map[string]*taskmodels.Executor
+	executorErrors      map[string]error
+	executorCalls       int
 
 	// gotIncludeArchived records the includeArchived flag of every
 	// ListTasksByWorkspace call, in call order.
@@ -81,7 +82,11 @@ func (f *fakeTaskDataSource) OpenExactTaskSnapshot(_ context.Context, request ta
 	if f.exactSnapshotErr != nil {
 		return nil, f.exactSnapshotErr
 	}
-	return &taskmodels.ExactTaskSnapshot{Token: "snapshot-" + request.WorkspaceID, WorkspaceID: request.WorkspaceID}, nil
+	token := f.exactSnapshotTokens[request.WorkspaceID]
+	if token == "" {
+		token = "snapshot-" + request.WorkspaceID
+	}
+	return &taskmodels.ExactTaskSnapshot{Token: token, WorkspaceID: request.WorkspaceID}, nil
 }
 
 func (f *fakeTaskDataSource) PageExactTaskSnapshot(_ context.Context, token string, offset, limit int) ([]taskmodels.ExactTaskSnapshotTask, error) {
