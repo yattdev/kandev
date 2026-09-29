@@ -49,3 +49,11 @@ func (r *Repository) BindCoordinatorStopRequestReceipt(ctx context.Context, task
 	}
 	return nil
 }
+
+// ListCoordinatorStopRequestReceipts returns only receipts bound to the exact
+// parent-owned request; it never falls back to task-wide receipt inventory.
+func (r *Repository) ListCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID, parentTaskID string) ([]models.CoordinatorStopOperation, error) {
+	var receipts []models.CoordinatorStopOperation
+	err := r.db.SelectContext(ctx, &receipts, r.db.Rebind(`SELECT o.* FROM task_stop_operations o JOIN task_stop_request_receipts b ON b.receipt_id = o.id JOIN task_stop_requests q ON q.task_id = b.task_id AND q.operation_id = b.operation_id WHERE q.task_id = ? AND q.operation_id = ? AND q.parent_task_id = ? ORDER BY o.session_id`), taskID, operationID, parentTaskID)
+	return receipts, err
+}

@@ -80,6 +80,30 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	return CoordinatorTaskStopResult{}, errors.New("request-scoped coordinator stop receipt capture is not yet wired")
 }
 
+// GetCoordinatorStopReceipt reads only the receipts bound to one parent-owned
+// stop request. It does not resume lifecycle work or enumerate task receipts.
+func (s *Service) GetCoordinatorStopReceipt(ctx context.Context, taskID, parentTaskID, operationID string) (CoordinatorTaskStopResult, error) {
+	repo, ok := s.repo.(taskrepo.CoordinatorStopRequestRepository)
+	if !ok {
+		return CoordinatorTaskStopResult{}, errors.New("coordinator stop request repository is unavailable")
+	}
+	receipts, err := repo.ListCoordinatorStopRequestReceipts(ctx, taskID, operationID, parentTaskID)
+	if err != nil {
+		return CoordinatorTaskStopResult{}, err
+	}
+	if len(receipts) == 0 {
+		return CoordinatorTaskStopResult{}, errors.New("coordinator stop receipt not found")
+	}
+	result := CoordinatorTaskStopResult{Receipts: receipts, Status: CoordinatorTaskStopStatusIncomplete}
+	for _, receipt := range receipts {
+		if receipt.Status != models.CoordinatorStopOperationStatusStopped {
+			return result, nil
+		}
+	}
+	result.Status = CoordinatorTaskStopStatusStopped
+	return result, nil
+}
+
 // resumeReasonErrorRecovery is the resume reason returned when a session is in
 // error-recovery state (WAITING_FOR_INPUT with a non-empty ErrorMessage).
 const resumeReasonErrorRecovery = "error_recovery"

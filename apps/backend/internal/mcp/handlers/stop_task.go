@@ -20,6 +20,42 @@ type stopTaskRequest struct {
 	SenderTaskID string `json:"sender_task_id"`
 }
 
+type stopReceiptRequest struct {
+	TaskID       string `json:"task_id"`
+	SenderTaskID string `json:"sender_task_id"`
+	OperationID  string `json:"operation_id"`
+}
+
+func (h *Handlers) handleGetStopReceipt(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
+	var req stopReceiptRequest
+	if err := json.Unmarshal(msg.Payload, &req); err != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "Invalid payload", nil)
+	}
+	req.TaskID, req.SenderTaskID, req.OperationID = strings.TrimSpace(req.TaskID), strings.TrimSpace(req.SenderTaskID), strings.TrimSpace(req.OperationID)
+	if req.TaskID == "" || req.SenderTaskID == "" || req.OperationID == "" {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "task_id, sender_task_id, and operation_id are required", nil)
+	}
+	sender, failure := h.lookupStopTask(ctx, msg, req.SenderTaskID, "sender")
+	if failure != nil {
+		return failure.response, failure.err
+	}
+	target, failure := h.lookupStopTask(ctx, msg, req.TaskID, "target")
+	if failure != nil {
+		return failure.response, failure.err
+	}
+	if !canStopTask(sender, target) {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "only a task's direct parent in the same workspace can stop it", nil)
+	}
+	if h.taskStopper == nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "task stop is not configured", nil)
+	}
+	result, err := h.taskStopper.GetCoordinatorStopReceipt(ctx, target.ID, sender.ID, req.OperationID)
+	if err != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "stop receipt not found", nil)
+	}
+	return ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{keyTaskID: target.ID, stopTaskStatusKey: result.Status, "receipts": result.Receipts})
+}
+
 type stopTaskFailure struct {
 	response *ws.Message
 	err      error

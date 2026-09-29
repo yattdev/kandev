@@ -27,6 +27,11 @@ func (s *recordingTaskStopper) StopTaskForCoordinator(
 	return s.result, s.err
 }
 
+func (s *recordingTaskStopper) GetCoordinatorStopReceipt(_ context.Context, taskID, _, _ string) (orchestrator.CoordinatorTaskStopResult, error) {
+	s.calls = append(s.calls, taskID)
+	return s.result, s.err
+}
+
 func stopTaskTestHandler(
 	t *testing.T,
 	tasks map[string]*models.Task,
@@ -111,6 +116,22 @@ func TestHandleStopTask_AuthorizesOnlyDirectParentInWorkspace(t *testing.T) {
 				t.Fatalf("stopper calls = %v", stopper.calls)
 			}
 		})
+	}
+}
+
+func TestHandleGetStopReceiptRejectsUnknownOperationWithoutStop(t *testing.T) {
+	stopper := &recordingTaskStopper{err: errors.New("missing")}
+	h := stopTaskTestHandler(t, map[string]*models.Task{
+		"parent": {ID: "parent", WorkspaceID: "ws"},
+		"child":  {ID: "child", WorkspaceID: "ws", ParentID: "parent"},
+	}, nil, stopper)
+	msg := makeWSMessage(t, ws.ActionMCPGetStopReceipt, map[string]interface{}{"task_id": "child", "sender_task_id": "parent", "operation_id": "lost-response"})
+	resp, err := h.handleGetStopReceipt(context.Background(), msg)
+	if err != nil || resp.Type != ws.MessageTypeError {
+		t.Fatalf("unknown receipt response = %+v, %v", resp, err)
+	}
+	if len(stopper.calls) != 1 || stopper.calls[0] != "child" {
+		t.Fatalf("lookup calls = %#v", stopper.calls)
 	}
 }
 
