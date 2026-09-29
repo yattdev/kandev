@@ -20,6 +20,7 @@ type messageQueueScopeRequest struct {
 type removeMessageQueueEntryRequest struct {
 	messageQueueScopeRequest
 	EntryID string `json:"entry_id"`
+	Claim   string `json:"claim"`
 }
 
 type queueSnapshotter interface {
@@ -37,6 +38,7 @@ type messageQueueCensusEntry struct {
 	QueuedBy    string `json:"queued_by"`
 	ContentHash string `json:"content_hash"`
 	ContentSize int    `json:"content_size"`
+	Claim       string `json:"claim"`
 }
 
 func (h *Handlers) handleGetMessageQueueCensus(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
@@ -61,7 +63,7 @@ func (h *Handlers) handleGetMessageQueueCensus(ctx context.Context, msg *ws.Mess
 		digest := sha256.Sum256([]byte(entry.Content))
 		entries = append(entries, messageQueueCensusEntry{
 			ID: entry.ID, Position: entry.Position, QueuedAt: entry.QueuedAt.UTC().Format("2006-01-02T15:04:05.999999999Z"),
-			QueuedBy: entry.QueuedBy, ContentHash: hex.EncodeToString(digest[:]), ContentSize: len(entry.Content),
+			QueuedBy: entry.QueuedBy, ContentHash: hex.EncodeToString(digest[:]), ContentSize: len(entry.Content), Claim: messagequeue.QueueEntryClaim(&entry),
 		})
 	}
 	return ws.NewResponse(msg.ID, msg.Action, map[string]any{
@@ -75,15 +77,24 @@ func (h *Handlers) handleRemoveMessageQueueEntry(ctx context.Context, msg *ws.Me
 	if err := json.Unmarshal(msg.Payload, &req); err != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "invalid payload", nil)
 	}
-	if strings.TrimSpace(req.EntryID) == "" {
-		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "entry_id is required", nil)
+	if strings.TrimSpace(req.EntryID) == "" || strings.TrimSpace(req.Claim) == "" {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "entry_id and claim are required", nil)
 	}
 	identity, response, err := h.authorizeOwnMessageQueue(ctx, msg, req.messageQueueScopeRequest)
 	if response != nil {
 		return response, err
 	}
-	removed, err := h.messageQueue.RemoveEntryForSession(ctx, identity, req.EntryID)
+	remover, ok := h.messageQueue.(interface {
+		RemoveEntryForSessionWithClaim(context.Context, messagequeue.QueueSessionIdentity, string, string) (*messagequeue.QueueRemovalResult, error)
+	})
+	if !ok {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "claimed message queue removal is not available", nil)
+	}
+	removed, err := remover.RemoveEntryForSessionWithClaim(ctx, identity, req.EntryID, req.Claim)
 	if err != nil {
+		if err == messagequeue.ErrQueueEntryClaimChanged {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "queue entry changed", nil)
+		}
 		if err == messagequeue.ErrEntryNotFound {
 			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "queue entry not found", nil)
 		}

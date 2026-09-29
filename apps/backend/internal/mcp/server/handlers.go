@@ -689,12 +689,16 @@ func (s *Server) removeMessageQueueEntryHandler() server.ToolHandlerFunc {
 		if err != nil {
 			return mcp.NewToolResultError("entry_id is required"), nil
 		}
+		claim, err := req.RequireString("claim")
+		if err != nil {
+			return mcp.NewToolResultError("claim is required"), nil
+		}
 		if s.taskID == "" || s.sessionID == "" {
 			return mcp.NewToolResultError("message queue identity is unavailable in this session"), nil
 		}
 		var result map[string]interface{}
 		if err := s.backend.RequestPayload(ctx, ws.ActionMCPRemoveMessageQueueEntry, map[string]string{
-			"task_id": s.taskID, "session_id": s.sessionID, "entry_id": entryID,
+			"task_id": s.taskID, "session_id": s.sessionID, "entry_id": entryID, "claim": claim,
 		}, &result); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

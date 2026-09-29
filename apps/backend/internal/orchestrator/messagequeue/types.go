@@ -1,6 +1,9 @@
 package messagequeue
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -8,6 +11,23 @@ import (
 	"github.com/kandev/kandev/internal/task/plancomments"
 	workflowmove "github.com/kandev/kandev/internal/workflow/move"
 )
+
+// ErrQueueEntryClaimChanged reports a queue entry that no longer matches the
+// snapshot presented by a caller.
+var ErrQueueEntryClaimChanged = errors.New("queue entry claim changed")
+
+// QueueEntryClaim returns the opaque immutable snapshot claim for one entry.
+func QueueEntryClaim(entry *QueuedMessage) string {
+	if entry == nil {
+		return ""
+	}
+	encoded, err := json.Marshal(entry)
+	if err != nil {
+		return ""
+	}
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
+}
 
 // DefaultMaxPerSession is the default cap for queued messages per session
 // when the env var KANDEV_QUEUE_MAX_PER_SESSION is unset or invalid.

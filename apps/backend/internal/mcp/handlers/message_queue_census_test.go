@@ -55,17 +55,41 @@ func TestRemoveMessageQueueEntryPreservesOtherSessionEntries(t *testing.T) {
 	dispatcher := ws.NewDispatcher()
 	h.RegisterHandlers(dispatcher)
 	ctx := scope.WithPrincipal(context.Background(), scope.Principal{WorkspaceID: "workspace-1", CallerTaskID: "task-1", CallerSessionID: "session-1"})
-	response, err := dispatcher.Dispatch(ctx, makeWSMessage(t, "mcp.remove_message_queue_entry", map[string]string{"task_id": "task-1", "session_id": "session-1", "entry_id": remove.ID}))
+	identity, err := queue.ResolveSessionIdentity(context.Background(), "task-1", "session-1")
+	require.NoError(t, err)
+	firstStatus, err := queue.Snapshot(context.Background(), identity)
+	require.NoError(t, err)
+	response, err := dispatcher.Dispatch(ctx, makeWSMessage(t, "mcp.remove_message_queue_entry", map[string]string{"task_id": "task-1", "session_id": "session-1", "entry_id": remove.ID, "claim": messagequeue.QueueEntryClaim(&firstStatus.Entries[0])}))
 	require.NoError(t, err)
 	require.Equal(t, ws.MessageTypeResponse, response.Type)
-	identity, err := queue.ResolveSessionIdentity(context.Background(), "task-2", "session-2")
+	identity, err = queue.ResolveSessionIdentity(context.Background(), "task-2", "session-2")
 	require.NoError(t, err)
 	status, err := queue.Snapshot(context.Background(), identity)
 	require.NoError(t, err)
 	require.Len(t, status.Entries, 1)
 	require.Equal(t, keep.ID, status.Entries[0].ID)
 
-	response, err = dispatcher.Dispatch(ctx, makeWSMessage(t, "mcp.remove_message_queue_entry", map[string]string{"task_id": "task-1", "session_id": "session-1", "entry_id": keep.ID}))
+	response, err = dispatcher.Dispatch(ctx, makeWSMessage(t, "mcp.remove_message_queue_entry", map[string]string{"task_id": "task-1", "session_id": "session-1", "entry_id": keep.ID, "claim": "foreign"}))
 	require.NoError(t, err)
 	assertWSError(t, response, ws.ErrorCodeNotFound)
+}
+
+func TestRemoveMessageQueueEntryRejectsStaleClaim(t *testing.T) {
+	queue := messagequeue.NewServiceMemory(testLogger(t))
+	entry, err := queue.QueueMessage(context.Background(), "session-1", "task-1", "keep", "", messagequeue.QueuedByAgent, false, nil)
+	require.NoError(t, err)
+	h := &Handlers{messageQueue: queue, logger: testLogger(t)}
+	dispatcher := ws.NewDispatcher()
+	h.RegisterHandlers(dispatcher)
+	ctx := scope.WithPrincipal(context.Background(), scope.Principal{WorkspaceID: "workspace-1", CallerTaskID: "task-1", CallerSessionID: "session-1"})
+	response, err := dispatcher.Dispatch(ctx, makeWSMessage(t, "mcp.remove_message_queue_entry", map[string]string{
+		"task_id": "task-1", "session_id": "session-1", "entry_id": entry.ID, "claim": "stale",
+	}))
+	require.NoError(t, err)
+	assertWSError(t, response, ws.ErrorCodeConflict)
+	identity, err := queue.ResolveSessionIdentity(context.Background(), "task-1", "session-1")
+	require.NoError(t, err)
+	status, err := queue.Snapshot(context.Background(), identity)
+	require.NoError(t, err)
+	require.Len(t, status.Entries, 1)
 }

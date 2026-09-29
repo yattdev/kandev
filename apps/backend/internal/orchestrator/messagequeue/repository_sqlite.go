@@ -5454,7 +5454,15 @@ func (r *sqliteRepository) DeleteByIDForSession(ctx context.Context, identity Qu
 	return r.deleteByID(ctx, &identity, identity.SessionID, entryID)
 }
 
+func (r *sqliteRepository) DeleteByIDForSessionWithClaim(ctx context.Context, identity QueueSessionIdentity, entryID, claim string) (*QueueRemovalResult, error) {
+	return r.deleteByIDWithClaim(ctx, &identity, identity.SessionID, entryID, claim)
+}
+
 func (r *sqliteRepository) deleteByID(ctx context.Context, identity *QueueSessionIdentity, sessionID, entryID string) (*QueueRemovalResult, error) {
+	return r.deleteByIDWithClaim(ctx, identity, sessionID, entryID, "")
+}
+
+func (r *sqliteRepository) deleteByIDWithClaim(ctx context.Context, identity *QueueSessionIdentity, sessionID, entryID, claim string) (*QueueRemovalResult, error) {
 	unlock := r.withSessionLock(sessionID)
 	defer unlock()
 
@@ -5486,12 +5494,8 @@ func (r *sqliteRepository) deleteByID(ctx context.Context, identity *QueueSessio
 	if err != nil {
 		return nil, fmt.Errorf("read queued cancellation candidate: %w", err)
 	}
-	reserved, err := isReservedMetadataJSON(metadataJSON)
-	if err != nil {
+	if err := validateQueueRemovalCandidate(removed, metadataJSON, claim); err != nil {
 		return nil, err
-	}
-	if reserved {
-		return nil, ErrEntryNotFound
 	}
 	blocked, err := r.editLeaseBlocksEntryTx(ctx, tx, sessionID, entryID)
 	if err != nil {
@@ -5526,6 +5530,20 @@ func (r *sqliteRepository) deleteByID(ctx context.Context, identity *QueueSessio
 		Removed:  []QueuedMessage{*removed},
 		Retained: retained,
 	}, nil
+}
+
+func validateQueueRemovalCandidate(removed *QueuedMessage, metadataJSON string, claim string) error {
+	reserved, err := isReservedMetadataJSON(metadataJSON)
+	if err != nil {
+		return err
+	}
+	if reserved {
+		return ErrEntryNotFound
+	}
+	if claim != "" && QueueEntryClaim(removed) != claim {
+		return ErrQueueEntryClaimChanged
+	}
+	return nil
 }
 
 func listQueuedMessagesBySessionTx(

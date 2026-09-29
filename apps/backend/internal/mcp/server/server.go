@@ -1350,7 +1350,7 @@ func (s *Server) registerKanbanTools() {
 		s.wrapHandler("get_message_queue_census_kandev", s.getMessageQueueCensusHandler()),
 	)
 	s.mcpServer.AddTool(
-		mcp.NewTool("remove_message_queue_entry_kandev", mcp.WithDescription("Remove one exact pending entry from the calling session's queue."), mcp.WithString("entry_id", mcp.Required(), mcp.Description("The entry ID returned by get_message_queue_census_kandev"))),
+		mcp.NewTool("remove_message_queue_entry_kandev", mcp.WithDescription("Remove one unchanged pending entry from the calling session's queue."), mcp.WithString("entry_id", mcp.Required(), mcp.Description("The entry ID returned by get_message_queue_census_kandev")), mcp.WithString("claim", mcp.Required(), mcp.Description("The opaque claim returned by get_message_queue_census_kandev"))),
 		s.wrapHandler("remove_message_queue_entry_kandev", s.removeMessageQueueEntryHandler()),
 	)
 	s.mcpServer.AddTool(

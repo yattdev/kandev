@@ -3067,6 +3067,29 @@ func (s *Service) RemoveEntryForSession(ctx context.Context, identity QueueSessi
 	return result, nil
 }
 
+type claimedEntryRemovalRepository interface {
+	DeleteByIDForSessionWithClaim(context.Context, QueueSessionIdentity, string, string) (*QueueRemovalResult, error)
+}
+
+// RemoveEntryForSessionWithClaim deletes an entry only if its exact snapshot
+// still matches the caller's census claim.
+func (s *Service) RemoveEntryForSessionWithClaim(ctx context.Context, identity QueueSessionIdentity, entryID, claim string) (*QueueRemovalResult, error) {
+	repository, ok := s.repo.(claimedEntryRemovalRepository)
+	if !ok {
+		return nil, ErrQueueEntryClaimChanged
+	}
+	var result *QueueRemovalResult
+	err := s.WithSessionAdmission(ctx, identity.SessionID, func(admittedCtx context.Context) error {
+		var err error
+		result, err = repository.DeleteByIDForSessionWithClaim(admittedCtx, identity, entryID, claim)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // MergeIntoAbove folds the entry identified by entryID into the entry directly
 // above it within the same session. See Repository.MergeIntoAbove for the merge
 // rules and error mapping (ErrEntryNotFound / ErrNoMergeTarget).

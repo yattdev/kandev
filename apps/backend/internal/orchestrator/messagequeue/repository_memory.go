@@ -2124,6 +2124,20 @@ func (r *memoryRepository) DeleteByIDForSession(_ context.Context, identity Queu
 	return r.deleteByIDForSessionLocked(identity.SessionID, entryID)
 }
 
+func (r *memoryRepository) DeleteByIDForSessionWithClaim(_ context.Context, identity QueueSessionIdentity, entryID, claim string) (*QueueRemovalResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.bindIdentityLocked(identity); err != nil {
+		return nil, err
+	}
+	for _, entry := range r.entries[identity.SessionID] {
+		if entry.ID == entryID && QueueEntryClaim(entry) != claim {
+			return nil, ErrQueueEntryClaimChanged
+		}
+	}
+	return r.deleteByIDForSessionLocked(identity.SessionID, entryID)
+}
+
 func (r *memoryRepository) deleteByIDForSessionLocked(sessionID, entryID string) (*QueueRemovalResult, error) {
 	list, ok := r.entries[sessionID]
 	if !ok {
