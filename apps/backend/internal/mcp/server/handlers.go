@@ -667,6 +667,42 @@ func (s *Server) messageTaskHandler() server.ToolHandlerFunc {
 	}
 }
 
+func (s *Server) getMessageQueueCensusHandler() server.ToolHandlerFunc {
+	return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if s.taskID == "" || s.sessionID == "" {
+			return mcp.NewToolResultError("message queue identity is unavailable in this session"), nil
+		}
+		var result map[string]interface{}
+		if err := s.backend.RequestPayload(ctx, ws.ActionMCPGetMessageQueueCensus, map[string]string{
+			"task_id": s.taskID, "session_id": s.sessionID,
+		}, &result); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultStructured(result, string(data)), nil
+	}
+}
+
+func (s *Server) removeMessageQueueEntryHandler() server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		entryID, err := req.RequireString("entry_id")
+		if err != nil {
+			return mcp.NewToolResultError("entry_id is required"), nil
+		}
+		if s.taskID == "" || s.sessionID == "" {
+			return mcp.NewToolResultError("message queue identity is unavailable in this session"), nil
+		}
+		var result map[string]interface{}
+		if err := s.backend.RequestPayload(ctx, ws.ActionMCPRemoveMessageQueueEntry, map[string]string{
+			"task_id": s.taskID, "session_id": s.sessionID, "entry_id": entryID,
+		}, &result); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultStructured(result, string(data)), nil
+	}
+}
+
 func (s *Server) stopTaskHandler() server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		taskID, err := req.RequireString(mcpKeyTaskID)

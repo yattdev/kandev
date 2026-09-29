@@ -793,6 +793,16 @@ func TestMessageTask_ForwardsToBackend(t *testing.T) {
 	assert.Equal(t, "test-session", payload["sender_session_id"])
 }
 
+func TestMessageQueueCensusToolUsesServerSessionIdentity(t *testing.T) {
+	backend := &testBackend{response: map[string]interface{}{"count": 1}}
+	s := newTaskModeServer(t, backend, "task-current")
+	result := callTool(t, s, "get_message_queue_census_kandev", map[string]interface{}{})
+	require.False(t, result.IsError)
+	assert.Equal(t, ws.ActionMCPGetMessageQueueCensus, backend.lastAction)
+	assert.Equal(t, map[string]string{"task_id": "task-current", "session_id": "test-session"}, backend.lastPayload)
+	assert.Contains(t, s.mcpServer.ListTools(), "remove_message_queue_entry_kandev")
+}
+
 func TestMessageTask_DescriptionExplainsQueueInterruptAndStop(t *testing.T) {
 	backend := &testBackend{}
 	s := newTaskModeServer(t, backend, "task-current")
