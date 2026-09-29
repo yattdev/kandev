@@ -17,6 +17,7 @@ func TestAdmitRoutineWakeForSessionPendingMergeParity(t *testing.T) {
 	}{
 		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
 		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
 	} {
 		t.Run(factory.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -74,6 +75,7 @@ func TestAdmitRoutineWakeForSessionKeepsOneDirtySuccessorParity(t *testing.T) {
 	}{
 		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
 		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
 	} {
 		t.Run(factory.name, func(t *testing.T) {
 			ctx := context.Background()
