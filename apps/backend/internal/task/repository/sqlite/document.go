@@ -125,7 +125,22 @@ func (r *Repository) UpdateDocument(ctx context.Context, doc *models.TaskDocumen
 
 // DeleteDocument removes a document HEAD row (revisions cascade via FK).
 func (r *Repository) DeleteDocument(ctx context.Context, taskID, key string) error {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin document delete: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var storedTaskID string
+	if err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT task_id FROM task_documents WHERE task_id = ? AND key = ?`), taskID, key).Scan(&storedTaskID); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("document not found: task=%s key=%s", taskID, key)
+		}
+		return fmt.Errorf("load document owner: %w", err)
+	}
+	if err := r.ensureDocumentTaskAvailableTx(ctx, tx, storedTaskID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, tx.Rebind(
 		`DELETE FROM task_documents WHERE task_id = ? AND key = ?`,
 	), taskID, key)
 	if err != nil {
@@ -134,6 +149,9 @@ func (r *Repository) DeleteDocument(ctx context.Context, taskID, key string) err
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return fmt.Errorf("document not found: task=%s key=%s", taskID, key)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit document delete: %w", err)
 	}
 	return nil
 }
