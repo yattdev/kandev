@@ -23,6 +23,12 @@ var (
 // ClaimForceRemoval installs one task-scoped admission fence. The claim is
 // intentionally private until the service can authorize and quiesce it.
 func (r *Repository) ClaimForceRemoval(ctx context.Context, claim *models.ForceRemovalClaim) (*models.ForceRemovalClaim, bool, error) {
+	return r.ClaimForceRemovalWithReceipts(ctx, claim, nil)
+}
+
+// ClaimForceRemovalWithReceipts atomically installs one exact-task fence and
+// its immutable receipts. A receipt conflict rolls back the claim as well.
+func (r *Repository) ClaimForceRemovalWithReceipts(ctx context.Context, claim *models.ForceRemovalClaim, receipts []models.ExactRetirementPredicateReceipt) (*models.ForceRemovalClaim, bool, error) {
 	if !validForceRemovalClaim(claim) {
 		return nil, false, fmt.Errorf("%w: complete claim identity is required", ErrForceRemovalClaimStale)
 	}
@@ -61,20 +67,27 @@ func (r *Repository) ClaimForceRemoval(ctx context.Context, claim *models.ForceR
 	if err != nil {
 		return nil, false, err
 	}
+	replay := false
 	if inserted == 0 {
 		stored, err := loadForceRemovalClaimTx(ctx, r.db, tx, claim.TaskID)
 		if err != nil {
 			return nil, false, err
 		}
 		if sameForceRemovalClaim(stored, claim) {
-			return stored, true, tx.Commit()
+			claim, replay = stored, true
+		} else {
+			return nil, false, ErrForceRemovalClaimConflict
 		}
-		return nil, false, ErrForceRemovalClaimConflict
+	}
+	for _, receipt := range receipts {
+		if err := appendForceRemovalReceiptTx(ctx, r.db, tx, claim.OperationID, receipt); err != nil {
+			return nil, false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, false, err
 	}
-	return claim, false, nil
+	return claim, replay, nil
 }
 
 func loadForceRemovalClaimTx(ctx context.Context, db *sqlx.DB, tx *sqlx.Tx, taskID string) (*models.ForceRemovalClaim, error) {
@@ -118,14 +131,21 @@ func (r *Repository) AppendForceRemovalReceipt(ctx context.Context, operationID 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := lockForceRemovalClaimTx(ctx, r.db, tx, operationID); err != nil {
+	if err := appendForceRemovalReceiptTx(ctx, r.db, tx, operationID, receipt); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func appendForceRemovalReceiptTx(ctx context.Context, db *sqlx.DB, tx *sqlx.Tx, operationID string, receipt models.ExactRetirementPredicateReceipt) error {
+	if err := lockForceRemovalClaimTx(ctx, db, tx, operationID); err != nil {
 		return err
 	}
 	var ordinal int
-	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT COALESCE(MAX(ordinal) + 1, 0) FROM task_force_removal_receipts WHERE operation_id = ?`), operationID).Scan(&ordinal); err != nil {
+	if err := tx.QueryRowContext(ctx, db.Rebind(`SELECT COALESCE(MAX(ordinal) + 1, 0) FROM task_force_removal_receipts WHERE operation_id = ?`), operationID).Scan(&ordinal); err != nil {
 		return err
 	}
-	result, err := tx.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, db.Rebind(`
 		INSERT INTO task_force_removal_receipts (
 			operation_id, ordinal, predicate, status, reason_code, resource_id,
 			observed_generation, evidence_digest, created_at
@@ -140,7 +160,7 @@ func (r *Repository) AppendForceRemovalReceipt(ctx context.Context, operationID 
 		return err
 	}
 	if inserted == 0 {
-		stored, err := loadForceRemovalReceiptTx(ctx, r.db, tx, operationID, receipt.Predicate)
+		stored, err := loadForceRemovalReceiptTx(ctx, db, tx, operationID, receipt.Predicate)
 		if err != nil {
 			return err
 		}
@@ -148,7 +168,7 @@ func (r *Repository) AppendForceRemovalReceipt(ctx context.Context, operationID 
 			return ErrForceRemovalClaimConflict
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func lockForceRemovalClaimTx(ctx context.Context, db *sqlx.DB, tx *sqlx.Tx, operationID string) error {

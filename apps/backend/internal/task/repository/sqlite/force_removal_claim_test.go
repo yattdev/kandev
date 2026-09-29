@@ -58,6 +58,29 @@ func TestClaimForceRemovalRejectsStaleOrForeignTaskAndHoldsCleanup(t *testing.T)
 	require.Nil(t, environment)
 }
 
+func TestClaimForceRemovalWithReceiptsRollsBackClaimOnReceiptConflict(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "atomic-force-ws", Name: "Force"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "atomic-force-task", WorkspaceID: "atomic-force-ws", Title: "Force"}))
+	task, err := repo.GetTask(ctx, "atomic-force-task")
+	require.NoError(t, err)
+	claim := &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "admission", OperationID: "atomic-operation", RequestDigest: "request", PreviewDigest: "preview"}
+	receipt := models.ExactRetirementPredicateReceipt{Predicate: models.ExactRetirementIdentityPredicate, Status: models.ExactRetirementReceiptPass, ReasonCode: "EXACT_TASK_CLAIMED", ResourceID: task.ID, ObservedGeneration: "generation", EvidenceDigest: "first"}
+	conflict := receipt
+	conflict.EvidenceDigest = "conflict"
+
+	_, _, err = repo.ClaimForceRemovalWithReceipts(ctx, claim, []models.ExactRetirementPredicateReceipt{receipt, conflict})
+	require.ErrorIs(t, err, ErrForceRemovalClaimConflict)
+	stored, replay, err := repo.ClaimForceRemoval(ctx, claim)
+	require.NoError(t, err)
+	require.False(t, replay)
+	require.Equal(t, claim.OperationID, stored.OperationID)
+	receipts, err := repo.ListForceRemovalReceipts(ctx, claim.OperationID)
+	require.NoError(t, err)
+	require.Empty(t, receipts)
+}
+
 // @covers AC-TASKS-SAFE-FORCE-REMOVAL-004.1
 func TestClaimForceRemovalOperationCannotBeReusedForAnotherTask(t *testing.T) {
 	ctx := context.Background()
