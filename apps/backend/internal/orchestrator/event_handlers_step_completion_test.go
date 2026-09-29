@@ -109,6 +109,99 @@ func TestProcessOnTurnComplete_ExplicitSignalGating(t *testing.T) {
 	})
 }
 
+func TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceLegacyGate(t *testing.T) {
+	ctx := context.Background()
+
+	build := func(t *testing.T, currentStep string) (*Service, *models.TaskSession) {
+		t.Helper()
+		repo := setupTestRepo(t)
+		seedSession(t, repo, "task-legacy-gate", "session-legacy-gate", currentStep)
+		stepGetter := newMockStepGetter()
+		stepGetter.steps["review"] = &wfmodels.WorkflowStep{
+			ID: "review", WorkflowID: "wf1", Name: "Review", Position: 1,
+			AutoAdvanceRequiresSignal: true,
+			Events:                    wfmodels.StepEvents{OnTurnComplete: []wfmodels.OnTurnCompleteAction{{Type: wfmodels.OnTurnCompleteMoveToNext}}},
+		}
+		stepGetter.steps["qa"] = &wfmodels.WorkflowStep{
+			ID: "qa", WorkflowID: "wf1", Name: "QA", Position: 2,
+			AutoAdvanceRequiresSignal: true,
+			Events:                    wfmodels.StepEvents{OnTurnComplete: []wfmodels.OnTurnCompleteAction{{Type: wfmodels.OnTurnCompleteMoveToNext}}},
+		}
+		stepGetter.steps["pr"] = &wfmodels.WorkflowStep{ID: "pr", WorkflowID: "wf1", Name: "PR", Position: 3}
+		session, err := repo.GetTaskSession(ctx, "session-legacy-gate")
+		if err != nil {
+			t.Fatalf("get session: %v", err)
+		}
+		return createTestService(repo, stepGetter, newMockTaskRepo()), session
+	}
+
+	seedSignal := func(t *testing.T, svc *Service, stepID, summary, blockers string) *models.TaskSession {
+		t.Helper()
+		if err := svc.repo.SetSessionMetadataKey(ctx, "session-legacy-gate", models.SessionMetaKeyPendingStepCompletion, models.PendingStepCompletionSignal{
+			StepID: stepID, Source: models.StepCompletionSourceAgent, Summary: summary, Blockers: blockers, SignaledAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("seed completion signal: %v", err)
+		}
+		session, err := svc.repo.GetTaskSession(ctx, "session-legacy-gate")
+		if err != nil {
+			t.Fatalf("reload session: %v", err)
+		}
+		return session
+	}
+
+	assertStep := func(t *testing.T, svc *Service, want string) {
+		t.Helper()
+		task, err := svc.repo.GetTask(ctx, "task-legacy-gate")
+		if err != nil {
+			t.Fatalf("get task: %v", err)
+		}
+		if task.WorkflowStepID != want {
+			t.Errorf("workflow step = %q, want %q", task.WorkflowStepID, want)
+		}
+	}
+	loadTask := func(t *testing.T, svc *Service) *models.Task {
+		t.Helper()
+		task, err := svc.repo.GetTask(ctx, "task-legacy-gate")
+		if err != nil {
+			t.Fatalf("get task: %v", err)
+		}
+		return task
+	}
+
+	t.Run("blocked review stays at review", func(t *testing.T) {
+		svc, _ := build(t, "review")
+		session := seedSignal(t, svc, "review", "review finished", "REVIEW_RESULT=BLOCKED")
+
+		if svc.processOnTurnComplete(ctx, loadTask(t, svc), session) {
+			t.Fatal("blocked Review signal advanced to QA")
+		}
+		assertStep(t, svc, "review")
+	})
+
+	t.Run("explicit review pass advances to QA and stale duplicate does not advance QA", func(t *testing.T) {
+		svc, _ := build(t, "review")
+		session := seedSignal(t, svc, "review", "REVIEW_RESULT=PASS", "")
+
+		if !svc.processOnTurnComplete(ctx, loadTask(t, svc), session) {
+			t.Fatal("explicit Review pass did not advance to QA")
+		}
+		if svc.processOnTurnComplete(ctx, loadTask(t, svc), session) {
+			t.Fatal("stale Review completion advanced QA")
+		}
+		assertStep(t, svc, "qa")
+	})
+
+	t.Run("blocked QA stays at QA", func(t *testing.T) {
+		svc, _ := build(t, "qa")
+		session := seedSignal(t, svc, "qa", "QA finished", "QA_RESULT=BLOCKED")
+
+		if svc.processOnTurnComplete(ctx, loadTask(t, svc), session) {
+			t.Fatal("blocked QA signal advanced to PR")
+		}
+		assertStep(t, svc, "qa")
+	})
+}
+
 // TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceGate verifies that a
 // completion signal reporting blockers cannot admit a successor gate. A later
 // explicit pass from the current step is still eligible, and a stale delivery

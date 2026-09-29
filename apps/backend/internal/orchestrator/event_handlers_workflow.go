@@ -253,6 +253,14 @@ func (s *Service) shouldRunLegacyTurnCompletion(
 			s.setSessionWaitingForInput(ctx, task.ID, session.ID, session)
 			return false
 		}
+		if strings.TrimSpace(signal.Blockers) != "" {
+			s.logger.Info("on_turn_complete gated on blocked completion signal (legacy path)",
+				zap.String("task_id", task.ID),
+				zap.String("session_id", session.ID),
+				zap.String("step_id", currentStep.ID))
+			s.setSessionWaitingForInput(ctx, task.ID, session.ID, session)
+			return false
+		}
 	}
 	return true
 }
