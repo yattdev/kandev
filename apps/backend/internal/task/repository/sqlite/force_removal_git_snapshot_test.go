@@ -80,3 +80,29 @@ func TestClaimForceRemovalBlocksSessionLiveGitSnapshotDelete(t *testing.T) {
 	require.Zero(t, foreignCount)
 	require.NoError(t, r.DeleteLiveMonitorSnapshots(ctx, "missing-session"))
 }
+
+func TestClaimForceRemovalBlocksEnvironmentLiveGitSnapshotDelete(t *testing.T) {
+	ctx := context.Background()
+	r := newRepoForHealTests(t)
+	require.NoError(t, r.CreateWorkspace(ctx, &models.Workspace{ID: "force-git-env-delete-ws", Name: "Force"}))
+	for _, id := range []string{"held", "foreign"} {
+		require.NoError(t, r.CreateTask(ctx, &models.Task{ID: id, WorkspaceID: "force-git-env-delete-ws", Title: id}))
+		require.NoError(t, r.CreateTaskEnvironment(ctx, &models.TaskEnvironment{ID: id + "e", TaskID: id, ExecutorType: "local", Status: models.TaskEnvironmentStatusReady}))
+		require.NoError(t, r.CreateGitSnapshot(ctx, &models.GitSnapshot{ID: id + "snap", TaskEnvironmentID: id + "e", TriggeredBy: TriggeredByLiveMonitor}))
+	}
+	held, err := r.GetTask(ctx, "held")
+	require.NoError(t, err)
+	_, _, err = r.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{TaskID: held.ID, WorkspaceID: held.WorkspaceID, TaskGeneration: held.UpdatedAt, AdmissionGeneration: "a", OperationID: "o", RequestDigest: "r", PreviewDigest: "p"})
+	require.NoError(t, err)
+
+	require.ErrorIs(t, r.DeleteLiveMonitorSnapshotsByTaskEnvironmentID(ctx, "helde"), ErrForceRemovalTaskHeld)
+	var heldCount int
+	require.NoError(t, r.db.GetContext(ctx, &heldCount, `SELECT COUNT(*) FROM task_session_git_snapshots WHERE task_environment_id = ?`, "helde"))
+	require.Equal(t, 1, heldCount)
+
+	require.NoError(t, r.DeleteLiveMonitorSnapshotsByTaskEnvironmentID(ctx, "foreigne"))
+	var foreignCount int
+	require.NoError(t, r.db.GetContext(ctx, &foreignCount, `SELECT COUNT(*) FROM task_session_git_snapshots WHERE task_environment_id = ?`, "foreigne"))
+	require.Zero(t, foreignCount)
+	require.NoError(t, r.DeleteLiveMonitorSnapshotsByTaskEnvironmentID(ctx, "missing-environment"))
+}
