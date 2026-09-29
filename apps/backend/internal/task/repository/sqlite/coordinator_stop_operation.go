@@ -16,6 +16,8 @@ import (
 // CaptureCoordinatorStopOperation commits a durable boundary for one exact
 // agentctl incarnation. Queue ownership is deliberately absent: a queue
 // incarnation does not identify a replaced agentctl process.
+//
+//nolint:cyclop // Receipt capture and caller-request binding must commit in one transaction.
 func (r *Repository) CaptureCoordinatorStopOperation(ctx context.Context, operation models.CoordinatorStopOperation) (*models.CoordinatorStopOperation, bool, error) {
 	if err := validateCoordinatorStopOperation(operation); err != nil {
 		return nil, false, err
@@ -37,6 +39,9 @@ func (r *Repository) CaptureCoordinatorStopOperation(ctx context.Context, operat
 		}
 		if !sameCoordinatorStopIdentity(existing, operation) {
 			return nil, false, errors.New("coordinator stop operation ID is already bound to a different execution")
+		}
+		if err := bindCoordinatorStopRequestReceiptTx(ctx, tx, r.db, operation); err != nil {
+			return nil, false, err
 		}
 		return existing, false, tx.Commit()
 	}
@@ -61,10 +66,38 @@ func (r *Repository) CaptureCoordinatorStopOperation(ctx context.Context, operat
 	if err != nil {
 		return nil, false, err
 	}
+	if err := bindCoordinatorStopRequestReceiptTx(ctx, tx, r.db, operation); err != nil {
+		return nil, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, false, err
 	}
 	return &operation, true, nil
+}
+
+func bindCoordinatorStopRequestReceiptTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, operation models.CoordinatorStopOperation) error {
+	if operation.RequestOperationID == "" {
+		return nil
+	}
+	result, err := tx.ExecContext(ctx, db.Rebind(`INSERT INTO task_stop_request_receipts (task_id, operation_id, receipt_id) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM task_stop_requests WHERE task_id = ? AND operation_id = ?) ON CONFLICT(task_id, operation_id, receipt_id) DO NOTHING`), operation.TaskID, operation.RequestOperationID, operation.ID, operation.TaskID, operation.RequestOperationID)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 1 {
+		return nil
+	}
+	var bound bool
+	if err := tx.GetContext(ctx, &bound, db.Rebind(`SELECT EXISTS (SELECT 1 FROM task_stop_request_receipts WHERE task_id = ? AND operation_id = ? AND receipt_id = ?)`), operation.TaskID, operation.RequestOperationID, operation.ID); err != nil {
+		return err
+	}
+	if !bound {
+		return errors.New("coordinator stop request is not bound to task")
+	}
+	return nil
 }
 
 func validateCoordinatorStopOperation(operation models.CoordinatorStopOperation) error {
@@ -189,6 +222,17 @@ func (r *Repository) ListCoordinatorStopOperations(ctx context.Context, taskID s
 // FenceCoordinatorStopSession settles the session and leaves a durable launch
 // tombstone when no exact execution incarnation was available to capture.
 func (r *Repository) FenceCoordinatorStopSession(ctx context.Context, taskID, sessionID string) (bool, error) {
+	return r.fenceCoordinatorStopSession(ctx, taskID, sessionID, "")
+}
+
+func (r *Repository) FenceCoordinatorStopSessionForRequest(ctx context.Context, taskID, sessionID, operationID string) (bool, error) {
+	if operationID == "" {
+		return false, errors.New("coordinator stop request operation ID is required")
+	}
+	return r.fenceCoordinatorStopSession(ctx, taskID, sessionID, operationID)
+}
+
+func (r *Repository) fenceCoordinatorStopSession(ctx context.Context, taskID, sessionID, operationID string) (bool, error) {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -224,10 +268,59 @@ func (r *Repository) FenceCoordinatorStopSession(ctx context.Context, taskID, se
 	if _, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_session_fences(task_id, session_id, created_at) VALUES (?, ?, ?) ON CONFLICT(task_id, session_id) DO NOTHING`), taskID, sessionID, now); err != nil {
 		return false, err
 	}
+	if changed == 1 {
+		if err := bindCoordinatorStopRequestFenceTx(ctx, tx, r.db, taskID, sessionID, operationID); err != nil {
+			return false, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
 	return changed == 1, nil
+}
+
+func bindCoordinatorStopRequestFenceTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, taskID, sessionID, operationID string) error {
+	if operationID == "" {
+		return nil
+	}
+	result, err := tx.ExecContext(ctx, db.Rebind(`INSERT INTO task_stop_request_fences (task_id, operation_id, session_id) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM task_stop_requests WHERE task_id = ? AND operation_id = ?) ON CONFLICT(task_id, operation_id, session_id) DO NOTHING`), taskID, operationID, sessionID, taskID, operationID)
+	if err != nil {
+		return err
+	}
+	bound, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if bound == 1 {
+		return nil
+	}
+	var exists bool
+	if err := tx.GetContext(ctx, &exists, db.Rebind(`SELECT EXISTS (SELECT 1 FROM task_stop_request_fences WHERE task_id = ? AND operation_id = ? AND session_id = ?)`), taskID, operationID, sessionID); err != nil {
+		return err
+	}
+	if !exists {
+		return errors.New("coordinator stop request is not bound to task")
+	}
+	return nil
+}
+
+func (r *Repository) ListCoordinatorStopRequestSessionFences(ctx context.Context, taskID, operationID string) ([]models.CoordinatorStopSessionFenceReceipt, error) {
+	rows, err := r.ro.QueryxContext(ctx, r.ro.Rebind(`SELECT f.task_id, f.session_id, f.created_at FROM task_stop_session_fences f JOIN task_stop_request_fences b ON b.task_id = f.task_id AND b.session_id = f.session_id WHERE b.task_id = ? AND b.operation_id = ? ORDER BY f.created_at ASC, f.session_id ASC`), taskID, operationID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var receipts []models.CoordinatorStopSessionFenceReceipt
+	for rows.Next() {
+		var receipt models.CoordinatorStopSessionFenceReceipt
+		if err := rows.Scan(&receipt.TaskID, &receipt.SessionID, &receipt.CreatedAt); err != nil {
+			return nil, err
+		}
+		receipt.Status = models.CoordinatorStopOperationStatusIncomplete
+		receipt.ProofScope = "session_launch_fenced_without_execution_identity"
+		receipts = append(receipts, receipt)
+	}
+	return receipts, rows.Err()
 }
 
 func (r *Repository) ListCoordinatorStopSessionFences(ctx context.Context, taskID string) ([]models.CoordinatorStopSessionFenceReceipt, error) {

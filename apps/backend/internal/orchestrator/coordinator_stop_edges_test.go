@@ -73,7 +73,7 @@ func TestCaptureCoordinatorStopExecutionFailsClosedOnUncapturedExecutorState(t *
 			session, err := repo.GetTaskSession(ctx, "session-stop-capture")
 			require.NoError(t, err)
 
-			_, _, handled, err := svc.captureCoordinatorStopExecution(ctx, session)
+			_, _, handled, err := svc.captureCoordinatorStopExecution(ctx, session, "")
 
 			require.True(t, handled, "an ambiguous or incomplete execution identity must not fall through to the launch-only fence")
 			require.Error(t, err)

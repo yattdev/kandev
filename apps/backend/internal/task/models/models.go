@@ -2049,11 +2049,12 @@ type Turn struct {
 // parent-initiated halt. Fencing and runtime proof are separate phases: a
 // fencing receipt is intentionally not evidence that the process has stopped.
 type CoordinatorStopOperation struct {
-	ID          string `db:"id" json:"operation_id"`
-	TaskID      string `db:"task_id" json:"task_id"`
-	SessionID   string `db:"session_id" json:"session_id"`
-	TurnID      string `db:"turn_id" json:"turn_id"`
-	ExecutionID string `db:"execution_id" json:"execution_id"`
+	ID                 string `db:"id" json:"operation_id"`
+	RequestOperationID string `db:"-" json:"-"`
+	TaskID             string `db:"task_id" json:"task_id"`
+	SessionID          string `db:"session_id" json:"session_id"`
+	TurnID             string `db:"turn_id" json:"turn_id"`
+	ExecutionID        string `db:"execution_id" json:"execution_id"`
 	// AgentctlGeneration identifies the agentctl process incarnation. It is
 	// distinct from queue_incarnation_id, which only identifies queue ownership.
 	AgentctlGeneration uint64    `db:"agentctl_generation" json:"agentctl_generation"`

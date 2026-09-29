@@ -171,6 +171,28 @@ func TestHandleGetStopReceiptUsesTrustedCallerInsteadOfForgedSender(t *testing.T
 	require.Equal(t, []string{"child"}, stopper.calls)
 }
 
+// @covers AC-STOP-FENCE-006
+func TestHandleGetStopReceiptReturnsRequestScopedSessionFences(t *testing.T) {
+	stopper := &recordingTaskStopper{result: orchestrator.CoordinatorTaskStopResult{
+		Status:        orchestrator.CoordinatorTaskStopStatusIncomplete,
+		SessionFences: []models.CoordinatorStopSessionFenceReceipt{{TaskID: "child", SessionID: "launch-session", Status: models.CoordinatorStopOperationStatusIncomplete}},
+	}}
+	h := stopTaskTestHandler(t, map[string]*models.Task{
+		"parent": {ID: "parent", WorkspaceID: "ws"},
+		"child":  {ID: "child", WorkspaceID: "ws", ParentID: "parent"},
+	}, nil, stopper)
+	msg := makeWSMessage(t, ws.ActionMCPGetStopReceipt, map[string]interface{}{"task_id": "child", "sender_task_id": "parent", "operation_id": "launch-request"})
+	resp, err := h.handleGetStopReceipt(context.Background(), msg)
+	require.NoError(t, err)
+	require.Equal(t, ws.MessageTypeResponse, resp.Type)
+	var payload struct {
+		SessionFences []models.CoordinatorStopSessionFenceReceipt `json:"session_fences"`
+	}
+	require.NoError(t, resp.ParsePayload(&payload))
+	require.Len(t, payload.SessionFences, 1)
+	require.Equal(t, "launch-session", payload.SessionFences[0].SessionID)
+}
+
 func TestHandleStopTaskAutomationUsesTrustedCallerWithoutLookingUpSender(t *testing.T) {
 	tasks := map[string]*models.Task{
 		"automation-caller":       {ID: "automation-caller", WorkspaceID: "ws-1"},

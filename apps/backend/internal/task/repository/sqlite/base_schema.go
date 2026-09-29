@@ -144,6 +144,15 @@ func (r *Repository) initCoordinatorStopOperationSchema() error {
 		)`); err != nil {
 		return fmt.Errorf("create task stop request receipts table: %w", err)
 	}
+	if err := r.migrate.Apply("task_stop_request_fences.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_request_fences (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, session_id TEXT NOT NULL,
+			PRIMARY KEY(task_id, operation_id, session_id),
+			FOREIGN KEY (task_id, operation_id) REFERENCES task_stop_requests(task_id, operation_id) ON DELETE CASCADE,
+			FOREIGN KEY (task_id, session_id) REFERENCES task_stop_session_fences(task_id, session_id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop request fences table: %w", err)
+	}
 	if err := r.migrate.Apply("task_stop_requests.outcome", `
 		ALTER TABLE task_stop_requests ADD COLUMN complete BOOLEAN NOT NULL DEFAULT FALSE;
 		ALTER TABLE task_stop_requests ADD COLUMN result_status TEXT NOT NULL DEFAULT '';

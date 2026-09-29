@@ -582,6 +582,11 @@ type CoordinatorStopSessionFencer interface {
 	ListCoordinatorStopSessionFences(ctx context.Context, taskID string) ([]models.CoordinatorStopSessionFenceReceipt, error)
 }
 
+type CoordinatorStopRequestSessionFencer interface {
+	FenceCoordinatorStopSessionForRequest(ctx context.Context, taskID, sessionID, operationID string) (bool, error)
+	ListCoordinatorStopRequestSessionFences(ctx context.Context, taskID, operationID string) ([]models.CoordinatorStopSessionFenceReceipt, error)
+}
+
 // SessionRepository handles task session lifecycle and workflow-session relationships.
 type SessionRepository interface {
 	CreateTaskSession(ctx context.Context, session *models.TaskSession) error

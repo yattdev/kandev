@@ -87,7 +87,7 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 		return CoordinatorTaskStopResult{}, err
 	}
 	if request.Complete && len(receipts) == 0 {
-		fences, err := s.coordinatorStopRequestSessionFences(ctx, taskID)
+		fences, err := s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
 		if err != nil {
 			return CoordinatorTaskStopResult{}, err
 		}
@@ -107,15 +107,14 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 		}
 	}
 	result.Receipts = receipts
-	result.SessionFences, err = s.coordinatorStopRequestSessionFences(ctx, taskID)
+	result.SessionFences, err = s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
-	if len(receipts) > 0 {
+	if len(result.SessionFences) > 0 {
+		result.Status = CoordinatorTaskStopStatusIncomplete
+	} else if len(receipts) > 0 {
 		result.Status = CoordinatorTaskStopStatusStopped
-		if len(result.SessionFences) > 0 {
-			result.Status = CoordinatorTaskStopStatusIncomplete
-		}
 		for _, receipt := range receipts {
 			if receipt.Status != models.CoordinatorStopOperationStatusStopped {
 				result.Status = CoordinatorTaskStopStatusIncomplete
@@ -129,12 +128,12 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	return result, nil
 }
 
-func (s *Service) coordinatorStopRequestSessionFences(ctx context.Context, taskID string) ([]models.CoordinatorStopSessionFenceReceipt, error) {
-	fencer, ok := s.repo.(taskrepo.CoordinatorStopSessionFencer)
+func (s *Service) coordinatorStopRequestSessionFences(ctx context.Context, taskID, operationID string) ([]models.CoordinatorStopSessionFenceReceipt, error) {
+	fencer, ok := s.repo.(taskrepo.CoordinatorStopRequestSessionFencer)
 	if !ok {
 		return nil, nil
 	}
-	return fencer.ListCoordinatorStopSessionFences(ctx, taskID)
+	return fencer.ListCoordinatorStopRequestSessionFences(ctx, taskID, operationID)
 }
 
 func (s *Service) resumeCoordinatorStopRequestReceipts(
@@ -171,7 +170,7 @@ func (s *Service) captureCoordinatorStopRequest(
 		return coordinatorStopSessionID(sessions[i]) < coordinatorStopSessionID(sessions[j])
 	})
 
-	accepted, incomplete, err := s.captureCoordinatorStopRequestSessions(ctx, &result, taskID, sessions)
+	accepted, incomplete, err := s.captureCoordinatorStopRequestSessions(ctx, &result, taskID, operationID, sessions)
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
@@ -181,13 +180,6 @@ func (s *Service) captureCoordinatorStopRequest(
 	if accepted > 0 && !incomplete && len(result.SessionFences) == 0 {
 		result.Status = CoordinatorTaskStopStatusStopped
 	}
-	receiptIDs := make([]string, 0, len(result.Receipts))
-	for _, receipt := range result.Receipts {
-		receiptIDs = append(receiptIDs, receipt.ID)
-	}
-	if err := repo.BindCoordinatorStopRequestReceipts(ctx, taskID, operationID, receiptIDs); err != nil {
-		return CoordinatorTaskStopResult{}, err
-	}
 	receipts, err := repo.ListCoordinatorStopRequestReceipts(ctx, taskID, operationID, parentTaskID)
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
@@ -196,14 +188,14 @@ func (s *Service) captureCoordinatorStopRequest(
 	return result, nil
 }
 
-func (s *Service) captureCoordinatorStopRequestSessions(ctx context.Context, result *CoordinatorTaskStopResult, taskID string, sessions []*models.TaskSession) (int, bool, error) {
+func (s *Service) captureCoordinatorStopRequestSessions(ctx context.Context, result *CoordinatorTaskStopResult, taskID, operationID string, sessions []*models.TaskSession) (int, bool, error) {
 	accepted := 0
 	incomplete := false
 	for _, candidate := range sessions {
 		if candidate == nil || candidate.ID == "" {
 			return 0, false, errors.New("coordinator stop: active session candidate is nil or has an empty ID")
 		}
-		stopResult, sessionIncomplete, stopErr := s.stopTaskSessionForCoordinator(ctx, taskID, candidate.ID)
+		stopResult, sessionIncomplete, stopErr := s.stopTaskSessionForCoordinator(ctx, taskID, candidate.ID, operationID)
 		if stopErr != nil {
 			return 0, false, stopErr
 		}
@@ -263,6 +255,8 @@ func (s *Service) appendCapturedCoordinatorStopRequestFence(ctx context.Context,
 
 // GetCoordinatorStopReceipt reads only the receipts bound to one parent-owned
 // stop request. It does not resume lifecycle work or enumerate task receipts.
+//
+//nolint:cyclop,nestif // Exact receipt and request-scoped fence recovery share one authorization boundary.
 func (s *Service) GetCoordinatorStopReceipt(ctx context.Context, taskID, parentTaskID, operationID string) (CoordinatorTaskStopResult, error) {
 	repo, ok := s.repo.(taskrepo.CoordinatorStopRequestRepository)
 	if !ok {
@@ -274,21 +268,38 @@ func (s *Service) GetCoordinatorStopReceipt(ctx context.Context, taskID, parentT
 	}
 	if len(receipts) == 0 {
 		request, requestErr := repo.GetCoordinatorStopRequest(ctx, taskID, operationID, parentTaskID)
-		if requestErr != nil || !request.Complete {
+		if requestErr != nil {
 			return CoordinatorTaskStopResult{}, errors.New("coordinator stop receipt not found")
 		}
-		fences, fenceErr := s.coordinatorStopRequestSessionFences(ctx, taskID)
+		fences, fenceErr := s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
 		if fenceErr != nil {
 			return CoordinatorTaskStopResult{}, fenceErr
 		}
-		return CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatus(request.ResultStatus), SessionFences: fences}, nil
+		if len(fences) > 0 {
+			status := CoordinatorTaskStopStatusIncomplete
+			if request.Complete {
+				status = CoordinatorTaskStopStatus(request.ResultStatus)
+			}
+			return CoordinatorTaskStopResult{Status: status, SessionFences: fences}, nil
+		}
+		if !request.Complete {
+			return CoordinatorTaskStopResult{}, errors.New("coordinator stop receipt not found")
+		}
+		return CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatus(request.ResultStatus)}, nil
 	}
 	result := CoordinatorTaskStopResult{Receipts: receipts, Status: CoordinatorTaskStopStatusIncomplete}
-	result.SessionFences, err = s.coordinatorStopRequestSessionFences(ctx, taskID)
+	result.SessionFences, err = s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
 	if len(result.SessionFences) > 0 {
+		return result, nil
+	}
+	if len(receipts) == 0 {
+		request, requestErr := repo.GetCoordinatorStopRequest(ctx, taskID, operationID, parentTaskID)
+		if requestErr == nil && request.Complete {
+			result.Status = CoordinatorTaskStopStatus(request.ResultStatus)
+		}
 		return result, nil
 	}
 	for _, receipt := range receipts {
@@ -5030,7 +5041,7 @@ func (s *Service) StopTaskForCoordinator(ctx context.Context, taskID string) (Co
 			failures = append(failures, errors.New("coordinator stop: active session candidate is nil or has an empty ID"))
 			continue
 		}
-		stopResult, sessionIncomplete, stopErr := s.stopTaskSessionForCoordinator(ctx, taskID, candidate.ID)
+		stopResult, sessionIncomplete, stopErr := s.stopTaskSessionForCoordinator(ctx, taskID, candidate.ID, "")
 		changed := stopResult.Changed
 		if stopErr != nil {
 			failures = append(failures, stopErr)
@@ -5108,14 +5119,14 @@ func coordinatorStopSessionID(session *models.TaskSession) string {
 	return session.ID
 }
 
-func (s *Service) stopTaskSessionForCoordinator(ctx context.Context, taskID, sessionID string) (executor.SessionStopResult, bool, error) {
+func (s *Service) stopTaskSessionForCoordinator(ctx context.Context, taskID, sessionID, requestOperationID string) (executor.SessionStopResult, bool, error) {
 	endCancel := s.beginCancelInFlight(sessionID)
 	defer endCancel()
 
 	lock, release := s.acquireCancelInFlightGuard(sessionID)
 	lock.Lock()
 
-	result, teardownClaimed, incomplete, err := s.stopTaskSessionForCoordinatorLocked(ctx, taskID, sessionID)
+	result, teardownClaimed, incomplete, err := s.stopTaskSessionForCoordinatorLocked(ctx, taskID, sessionID, requestOperationID)
 	lock.Unlock()
 	release()
 	// The detached teardown callback is allowed to observe coordinator state;
@@ -5145,7 +5156,7 @@ func (s *Service) stopTaskSessionForCoordinator(ctx context.Context, taskID, ses
 //nolint:nestif // Cancellation fallback must remain under the session guard.
 func (s *Service) stopTaskSessionForCoordinatorLocked(
 	ctx context.Context,
-	taskID, sessionID string,
+	taskID, sessionID, requestOperationID string,
 ) (executor.SessionStopResult, bool, bool, error) {
 
 	// Re-read after acquiring the shared cancel/ready/queue guard. A candidate
@@ -5163,8 +5174,36 @@ func (s *Service) stopTaskSessionForCoordinatorLocked(
 	if !isCoordinatorStoppableSessionState(session.State) {
 		return executor.SessionStopResult{FinalState: session.State}, false, false, nil
 	}
-	if result, handled, incomplete, err := s.stopCapturedCoordinatorExecution(ctx, session); handled {
+	if result, handled, incomplete, err := s.stopCapturedCoordinatorExecution(ctx, session, requestOperationID); handled {
 		return result, false, incomplete, err
+	}
+	if requestOperationID != "" {
+		fencer, ok := s.repo.(taskrepo.CoordinatorStopRequestSessionFencer)
+		if !ok {
+			return executor.SessionStopResult{}, false, false, errors.New("coordinator stop request session fencer is unavailable")
+		}
+		s.taskRuntimeStateMu.Lock()
+		s.retireAndClearTransientRetryState(sessionID)
+		s.taskRuntimeStateMu.Unlock()
+		var changed bool
+		err := s.withSessionPromptAdmission(ctx, sessionID, func(admittedCtx context.Context) error {
+			var fenceErr error
+			changed, fenceErr = fencer.FenceCoordinatorStopSessionForRequest(admittedCtx, taskID, sessionID, requestOperationID)
+			return fenceErr
+		})
+		if err != nil {
+			return executor.SessionStopResult{}, false, false, fmt.Errorf("coordinator stop: fence session %q: %w", sessionID, err)
+		}
+		s.resolveTransientRetryMessages(context.WithoutCancel(ctx), sessionID)
+		if changed {
+			updated, readErr := s.repo.GetTaskSession(ctx, sessionID)
+			if readErr != nil {
+				return executor.SessionStopResult{}, false, true, fmt.Errorf("coordinator stop: read fenced session %q: %w", sessionID, readErr)
+			}
+			s.publishAcceptedTaskSessionState(ctx, taskID, sessionID, session.State, models.TaskSessionStateCancelled, coordinatorMCPStopReason, &updated.UpdatedAt, updated)
+			return executor.SessionStopResult{Changed: true, FinalState: models.TaskSessionStateCancelled}, false, true, nil
+		}
+		return executor.SessionStopResult{FinalState: session.State}, false, false, nil
 	}
 	if fencer, ok := s.repo.(taskrepo.CoordinatorStopSessionFencer); ok {
 		s.taskRuntimeStateMu.Lock()
@@ -5243,8 +5282,8 @@ func (s *Service) stopTaskSessionForCoordinatorLocked(
 // has a complete execution/turn incarnation. It fences admission before
 // graceful teardown and deliberately returns incomplete until a later
 // lifecycle-owned terminal-row proof can promote the receipt.
-func (s *Service) stopCapturedCoordinatorExecution(ctx context.Context, session *models.TaskSession) (executor.SessionStopResult, bool, bool, error) {
-	op, _, handled, err := s.captureCoordinatorStopExecution(ctx, session)
+func (s *Service) stopCapturedCoordinatorExecution(ctx context.Context, session *models.TaskSession, requestOperationID string) (executor.SessionStopResult, bool, bool, error) {
+	op, _, handled, err := s.captureCoordinatorStopExecution(ctx, session, requestOperationID)
 	if !handled {
 		return executor.SessionStopResult{}, false, false, nil
 	}
@@ -5277,7 +5316,7 @@ func (s *Service) resumeCoordinatorStopOperation(ctx context.Context, op *models
 	return repo.GetCoordinatorStopOperation(ctx, op.ID)
 }
 
-func (s *Service) captureCoordinatorStopExecution(ctx context.Context, session *models.TaskSession) (*models.CoordinatorStopOperation, taskrepo.CoordinatorStopOperationRepository, bool, error) {
+func (s *Service) captureCoordinatorStopExecution(ctx context.Context, session *models.TaskSession, requestOperationID string) (*models.CoordinatorStopOperation, taskrepo.CoordinatorStopOperationRepository, bool, error) {
 	repo, ok := s.repo.(taskrepo.CoordinatorStopOperationRepository)
 	if !ok || session == nil {
 		return nil, nil, false, nil
@@ -5300,7 +5339,7 @@ func (s *Service) captureCoordinatorStopExecution(ctx context.Context, session *
 		return nil, nil, true, fmt.Errorf("active turn identity for session %q is unavailable", session.ID)
 	}
 	op, _, err := repo.CaptureCoordinatorStopOperation(ctx, models.CoordinatorStopOperation{
-		ID: uuid.NewString(), TaskID: session.TaskID, SessionID: session.ID, TurnID: turn.ID,
+		ID: uuid.NewString(), RequestOperationID: requestOperationID, TaskID: session.TaskID, SessionID: session.ID, TurnID: turn.ID,
 		ExecutionID: running.AgentExecutionID, AgentctlGeneration: running.AgentctlGeneration,
 		ExecutorStatus: running.Status, ExecutorUpdatedAt: running.UpdatedAt,
 	})

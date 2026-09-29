@@ -104,6 +104,55 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 	require.ErrorIs(t, err, models.ErrExecutionRotated)
 }
 
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-006
+func TestCaptureCoordinatorStopOperationBindsCallerRequestAtomically(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForSessionTests(t)
+	now := time.Now().UTC()
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "task-stop-request", Title: "stop", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "parent-stop-request", Title: "parent", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "session-stop-request", TaskID: "task-stop-request", State: models.TaskSessionStateRunning, StartedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: "turn-stop-request", TaskID: "task-stop-request", TaskSessionID: "session-stop-request", StartedAt: now, CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{ID: "session-stop-request", SessionID: "session-stop-request", TaskID: "task-stop-request", ExecutorID: "executor", Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: "execution-stop-request", AgentctlGeneration: 1, Status: models.ExecutorRunningStatusRunning}))
+	_, _, err := repo.CaptureCoordinatorStopRequest(ctx, models.CoordinatorStopRequest{TaskID: "task-stop-request", ParentTaskID: "parent-stop-request", OperationID: "caller-stop-request"})
+	require.NoError(t, err)
+	running, err := repo.GetExecutorRunningBySessionID(ctx, "session-stop-request")
+	require.NoError(t, err)
+
+	op, _, err := repo.CaptureCoordinatorStopOperation(ctx, models.CoordinatorStopOperation{
+		ID: "exact-stop-request", RequestOperationID: "caller-stop-request", TaskID: "task-stop-request", SessionID: "session-stop-request", TurnID: "turn-stop-request",
+		ExecutionID: "execution-stop-request", AgentctlGeneration: 1, ExecutorStatus: running.Status, ExecutorUpdatedAt: running.UpdatedAt,
+	})
+	require.NoError(t, err)
+	require.Equal(t, models.CoordinatorStopOperationStatusFencing, op.Status)
+	bound, err := repo.ListCoordinatorStopRequestReceipts(ctx, "task-stop-request", "caller-stop-request", "parent-stop-request")
+	require.NoError(t, err)
+	require.Len(t, bound, 1, "receipt binding must commit with session and turn settlement")
+	require.Equal(t, op.ID, bound[0].ID)
+}
+
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-006
+func TestFenceCoordinatorStopSessionDoesNotBindUnchangedFenceToNewRequest(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForSessionTests(t)
+	now := time.Now().UTC()
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "task-old-fence", Title: "stop", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "parent-old-fence", Title: "parent", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "session-old-fence", TaskID: "task-old-fence", State: models.TaskSessionStateCancelled, StartedAt: now, UpdatedAt: now}))
+	changed, err := repo.FenceCoordinatorStopSession(ctx, "task-old-fence", "session-old-fence")
+	require.NoError(t, err)
+	require.False(t, changed)
+	_, _, err = repo.CaptureCoordinatorStopRequest(ctx, models.CoordinatorStopRequest{TaskID: "task-old-fence", ParentTaskID: "parent-old-fence", OperationID: "new-stop-key"})
+	require.NoError(t, err)
+
+	changed, err = repo.FenceCoordinatorStopSessionForRequest(ctx, "task-old-fence", "session-old-fence", "new-stop-key")
+	require.NoError(t, err)
+	require.False(t, changed)
+	fences, err := repo.ListCoordinatorStopRequestSessionFences(ctx, "task-old-fence", "new-stop-key")
+	require.NoError(t, err)
+	require.Empty(t, fences, "a no-op request must not claim a launch fence accepted by another operation")
+}
+
 // @covers AC-STOP-FENCE-003, AC-STOP-FENCE-004
 func TestFinalizeCoordinatorStopOperationRequiresCapturedTerminalExecutor(t *testing.T) {
 	ctx := context.Background()

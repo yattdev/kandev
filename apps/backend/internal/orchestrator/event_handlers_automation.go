@@ -80,7 +80,7 @@ func (s *Service) StopAutomationRun(ctx context.Context, taskID, sessionID, turn
 	if !valid {
 		return false, nil
 	}
-	result, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID)
+	result, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID, "")
 	return result.Changed, err
 }
 
@@ -903,7 +903,7 @@ func (s *Service) cancelAutomationDispatch(ctx context.Context, taskID, sessionI
 	if s.turnService == nil || s.executor == nil {
 		return
 	}
-	if _, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID); err != nil {
+	if _, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID, ""); err != nil {
 		s.logger.Warn("failed to cancel automation dispatch without a turn identity",
 			zap.String("task_id", taskID), zap.String("session_id", sessionID), zap.Error(err))
 	}

@@ -301,9 +301,10 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 	manager.removeExecutorRecord = func(ctx context.Context, _ string) error {
 		return ts.TaskRepo.DeleteExecutorRunningBySessionID(ctx, launch.SessionID)
 	}
+	const stopOperationID = "direct-parent-long-running-stop"
 
 	stopRequest, err := ws.NewRequest("mcp-stop-1", ws.ActionMCPStopTask, map[string]interface{}{
-		"task_id": child.ID, "sender_task_id": parentTaskID,
+		"task_id": child.ID, "sender_task_id": parentTaskID, "operation_id": stopOperationID,
 	})
 	require.NoError(t, err)
 	dispatchDone := make(chan mcpStopDispatchOutcome, 1)
@@ -338,6 +339,18 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 	require.Equal(t, orchestrator.CoordinatorTaskStopStatusStopped, firstPayload.Status)
 	require.Len(t, firstPayload.Receipts, 1)
 	require.Equal(t, models.CoordinatorStopOperationStatusStopped, firstPayload.Receipts[0].Status)
+	require.Empty(t, firstPayload.SessionFences)
+
+	lookupRequest, err := ws.NewRequest("mcp-stop-lookup", ws.ActionMCPGetStopReceipt, map[string]interface{}{
+		"task_id": child.ID, "sender_task_id": parentTaskID, "operation_id": stopOperationID,
+	})
+	require.NoError(t, err)
+	lookupResponse, err := ts.Gateway.Dispatcher.Dispatch(context.Background(), lookupRequest)
+	require.NoError(t, err)
+	require.Equal(t, ws.MessageTypeResponse, lookupResponse.Type)
+	lookupPayload := mcpStopParseResponse(t, lookupResponse)
+	require.Equal(t, firstPayload.Status, lookupPayload.Status)
+	require.Equal(t, firstPayload.Receipts, lookupPayload.Receipts)
 
 	// A stopped receipt is returned only after the simulated owned process and
 	// executor row have reached their terminal boundary.
@@ -365,7 +378,7 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 	stopCallsAfterStop := manager.stopCalls.Load()
 
 	repeatRequest, err := ws.NewRequest("mcp-stop-2", ws.ActionMCPStopTask, map[string]interface{}{
-		"task_id": child.ID, "sender_task_id": parentTaskID,
+		"task_id": child.ID, "sender_task_id": parentTaskID, "operation_id": stopOperationID,
 	})
 	require.NoError(t, err)
 	repeatResponse, err := ts.Gateway.Dispatcher.Dispatch(context.Background(), repeatRequest)
@@ -391,9 +404,10 @@ func TestMCPStopTask_DirectParentStopsLongRunningChild(t *testing.T) {
 }
 
 type mcpStopResponsePayload struct {
-	TaskID   string                                 `json:"task_id"`
-	Status   orchestrator.CoordinatorTaskStopStatus `json:"status"`
-	Receipts []models.CoordinatorStopOperation      `json:"receipts"`
+	TaskID        string                                      `json:"task_id"`
+	Status        orchestrator.CoordinatorTaskStopStatus      `json:"status"`
+	Receipts      []models.CoordinatorStopOperation           `json:"receipts"`
+	SessionFences []models.CoordinatorStopSessionFenceReceipt `json:"session_fences"`
 }
 
 func mcpStopParseResponse(t *testing.T, response *ws.Message) mcpStopResponsePayload {

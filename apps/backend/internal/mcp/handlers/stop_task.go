@@ -67,7 +67,10 @@ func (h *Handlers) handleGetStopReceipt(ctx context.Context, msg *ws.Message) (*
 	if err != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "stop receipt not found", nil)
 	}
-	return ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{keyTaskID: target.ID, stopTaskStatusKey: result.Status, "receipts": result.Receipts})
+	return ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
+		keyTaskID: target.ID, stopTaskStatusKey: result.Status,
+		"receipts": result.Receipts, "session_fences": result.SessionFences,
+	})
 }
 
 type stopTaskFailure struct {
