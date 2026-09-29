@@ -21,7 +21,11 @@ func QueueEntryClaim(entry *QueuedMessage) string {
 	if entry == nil {
 		return ""
 	}
-	encoded, err := json.Marshal(entry)
+	canonical := *entry
+	// PostgreSQL persists timestamps with microsecond precision. Normalize the
+	// returned insert value so an immediately presented claim matches its row.
+	canonical.QueuedAt = canonical.QueuedAt.UTC().Truncate(time.Microsecond)
+	encoded, err := json.Marshal(&canonical)
 	if err != nil {
 		return ""
 	}
