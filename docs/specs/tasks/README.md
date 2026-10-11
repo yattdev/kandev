@@ -37,6 +37,7 @@ signals, and task-scoped scheduling contracts.
 ### Requirements
 
 - [Initial task brief](requirements/initial-task-brief.md)
+- [Task-local Coordinator instructions](requirements/task-local-instructions.md)
 
 - [Bounded Session History Storage](requirements/bounded-session-history.md)
 - [Task completion, conversation follow-ups, and workspace access](requirements/task-completion.md)
@@ -155,6 +156,7 @@ signals, and task-scoped scheduling contracts.
 
 - [Bounded Session History Storage](system-design/bounded-session-history.md)
 - [Initial task brief](system-design/initial-task-brief.md)
+- [Task-local Coordinator instructions](system-design/task-local-instructions.md)
 
 - [Task completion, conversation follow-ups, and workspace access](system-design/task-completion.md)
 
