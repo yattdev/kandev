@@ -752,7 +752,7 @@ func (s *Service) AssociateVerifiedSourcePRByURLForWorkspace(
 	if err != nil {
 		return nil, fmt.Errorf("fetch PR: %w", err)
 	}
-	if err := validateGitHubContributionPR(owner, repo, number, pr); err != nil {
+	if err := validateGitHubPRLink(owner, repo, number, pr); err != nil {
 		return nil, err
 	}
 	if !strings.EqualFold(strings.TrimSuffix(pr.HTMLURL, "/"), strings.TrimSuffix(prURL, "/")) {
@@ -765,11 +765,8 @@ func (s *Service) AssociateVerifiedSourcePRByURLForWorkspace(
 	if err != nil {
 		return nil, fmt.Errorf("inspect existing task PR links: %w", err)
 	}
-	if existing != nil && !strings.EqualFold(strings.TrimSuffix(existing.PRURL, "/"), strings.TrimSuffix(prURL, "/")) {
-		return nil, errors.New("a different canonical PR already uses this task repository and number")
-	}
-	if existing != nil && existing.DetachedAt == nil && existing.HeadSHA != pr.HeadSHA {
-		return nil, errors.New("existing PR link has a stale head SHA")
+	if err := validateExistingGitHubPRLink(existing, pr, prURL); err != nil {
+		return nil, err
 	}
 	tp, err := s.associatePRWithTask(ctx, workspaceID, taskID, repositoryID, pr, true, true, TaskPRSourceURLLink)
 	if err != nil {

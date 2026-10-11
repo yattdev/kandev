@@ -108,6 +108,16 @@ func buildGitHubRemoteContribution(rawURL, owner, repo string, number int, pr *P
 }
 
 func validateGitHubContributionPR(owner, repo string, number int, pr *PR) error {
+	if err := validateGitHubPRIdentityAndRefs(owner, repo, number, pr); err != nil {
+		return err
+	}
+	if strings.ToLower(strings.TrimSpace(pr.State)) != taskmodels.RemoteContributionStateOpen {
+		return fmt.Errorf("GitHub pull request #%d is not open", number)
+	}
+	return nil
+}
+
+func validateGitHubPRIdentityAndRefs(owner, repo string, number int, pr *PR) error {
 	if pr == nil {
 		return errors.New("GitHub pull request response is empty")
 	}
@@ -115,9 +125,6 @@ func validateGitHubContributionPR(owner, repo string, number int, pr *PR) error 
 		(pr.RepoName != "" && !strings.EqualFold(pr.RepoName, repo)) ||
 		!strings.EqualFold(pr.BaseRepoOwner, owner) || !strings.EqualFold(pr.BaseRepoName, repo) {
 		return errors.New("GitHub pull request identity changed during resolution")
-	}
-	if strings.ToLower(strings.TrimSpace(pr.State)) != taskmodels.RemoteContributionStateOpen {
-		return fmt.Errorf("GitHub pull request #%d is not open", number)
 	}
 	if !securityutil.IsValidBranchName(pr.HeadBranch) || !securityutil.IsValidBaseBranchRef(pr.BaseBranch) ||
 		!securityutil.LooksLikeCommitSHA(pr.HeadSHA) {
