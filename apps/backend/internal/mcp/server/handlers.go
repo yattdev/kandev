@@ -383,13 +383,16 @@ func (s *Server) manageTaskChangeRequestHandler() server.ToolHandlerFunc {
 		if errMsg := validateChangeRequestOldIdentity(operation, req.GetArguments()); errMsg != "" {
 			return mcp.NewToolResultError(errMsg), nil
 		}
+		if reason := validateScopedPRURLArguments(req.GetArguments()); reason != "" {
+			return mcp.NewToolResultError(reason), nil
+		}
 		payload := map[string]interface{}{
 			"operation":      operation,
 			mcpKeyTaskID:     taskID,
 			"caller_task_id": s.taskID,
 		}
 		for _, key := range []string{
-			"provider", "repository_id", "number", "old_provider", "old_repository_id", "old_number",
+			"provider", "repository_id", "number", "pr_url", "expected_head_sha", "old_provider", "old_repository_id", "old_number",
 		} {
 			if value, ok := req.GetArguments()[key]; ok {
 				payload[key] = value

@@ -302,6 +302,35 @@ number. For example:
 }
 ```
 
+For a parent linking a fork child to an upstream GitHub PR, use strict URL mode:
+
+```json
+{
+  "operation": "link",
+  "task_id": "<direct-child-task-id>",
+  "provider": "github",
+  "repository_id": "<attached-source-repository-id>",
+  "number": 42,
+  "pr_url": "https://github.com/upstream/project/pull/42",
+  "expected_head_sha": "0123456789012345678901234567890123456789"
+}
+```
+
+`pr_url` and the full 40-character head SHA must appear together, only for a
+GitHub `link`. The number must match the URL. The caller needs a running,
+task-bound direct-parent session in the same workspace; external, self,
+configuration and unrelated callers are rejected. The provider must confirm the
+attached source repository, canonical target and expected head. Open and merged
+PRs are eligible; linking does not grant contribution editing or launch rights.
+
+Strict URL mode rejects stale stored heads, conflicting same-number canonical
+identities and another nonarchived task's active link. It never transfers or
+removes another task's association. Refresh stale state through the existing
+sync path before retrying. An identical verified retry returns the existing row.
+Success includes `resolved` (repository ID, number, URL and head SHA), `links`
+and `state_known`. A postcommit readback failure reports uncertainty rather than
+success; inspect current state before deciding whether to retry.
+
 `replace` also requires `old_provider`, `old_repository_id`, and `old_number`.
 Replacement supports one provider at a time. Every successful mutation returns
 the resulting active link set, and the target task must be reachable from the

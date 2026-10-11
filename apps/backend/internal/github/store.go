@@ -2748,7 +2748,15 @@ func (s *Store) CreateTaskPR(ctx context.Context, tp *TaskPR) error {
 	now := time.Now().UTC()
 	tp.UpdatedAt = now
 	tp.WorkflowAttentionJSON = marshalWorkflowAttention(tp.WorkflowAttention)
-	return insertTaskPR(ctx, s.db, tp)
+	tx, err := s.beginPRMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = insertTaskPR(ctx, tx, tp); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // taskPRColumns is the explicit column list for every github_task_prs read.
@@ -3059,59 +3067,19 @@ func (s *Store) RestoreTaskPR(ctx context.Context, taskID, repositoryID string, 
 	if status == nil || status.PR == nil {
 		return nil, errors.New("restore task PR: missing PR data")
 	}
-	pr := status.PR
-
-	tx, err := s.db.BeginTxx(ctx, nil)
+	tx, err := s.beginPRMutation(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	var outgoing TaskPR
-	err = tx.GetContext(ctx, &outgoing,
-		tx.Rebind(`SELECT `+taskPRColumns+` FROM github_task_prs
-			 WHERE task_id = ? AND repository_id = ? AND pr_number = ?`),
-		taskID, repositoryID, pr.Number)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	row, err := restoreTaskPRTx(ctx, tx, taskID, repositoryID, status)
+	if err != nil {
 		return nil, err
 	}
-	if err == nil {
-		if err := hydrateTaskPRWorkflowAttention(&outgoing); err != nil {
-			return nil, err
-		}
-	}
-
-	isDraft, changedFiles, mergedByLogin, closedByLogin, autoMergeObservedAt :=
-		resolveTaskPROutcomeFields(&outgoing, status)
-	queue := resolveTaskPRMergeQueueState(&outgoing, status)
-	headSHA := outgoing.HeadSHA
-	if pr.HeadSHA != "" {
-		headSHA = pr.HeadSHA
-	}
-	workflowAttention := resolveTaskPRWorkflowAttention(&outgoing, status, headSHA)
-
-	if _, err := tx.ExecContext(ctx, tx.Rebind(
-		`UPDATE github_task_prs SET owner = ?, repo = ?, pr_url = ?, pr_title = ?,
-			head_branch = ?, base_branch = ?, head_sha = ?, author_login = ?, state = ?, mergeable_state = ?, has_merge_conflicts = ?,
-			merge_queue_state = ?, merge_queue_position = ?, merge_queue_entry_id = ?, merge_queue_entry_head_sha = ?, merge_queue_estimated_time_to_merge_seconds = ?,
-			merge_queue_last_removal_id = ?, merge_queue_last_removed_at = ?, merge_queue_last_removal_reason = ?, merge_queue_last_removal_before_sha = ?,
-			additions = ?, deletions = ?, merged_at = ?, closed_at = ?, detached_at = NULL, updated_at = ?,
-			is_draft = ?, changed_files = ?, merged_by_login = ?, closed_by_login = ?,
-			auto_merge_observed_at = COALESCE(auto_merge_observed_at, ?), workflow_attention = ?
-		 WHERE task_id = ? AND repository_id = ? AND pr_number = ?`),
-		pr.RepoOwner, pr.RepoName, pr.HTMLURL, pr.Title, pr.HeadBranch, pr.BaseBranch, headSHA, pr.AuthorLogin,
-		pr.State, effectivePRMergeableState(pr), observedTaskPRMergeConflict(outgoing.HasMergeConflicts, pr, pr.MergeableState), queue.state, queue.position, queue.entryID, queue.entryHeadSHA, queue.estimate,
-		queue.lastRemovalID, queue.lastRemovedAt, queue.lastRemovalReason, queue.lastRemovalBeforeSHA,
-		pr.Additions, pr.Deletions, pr.MergedAt, pr.ClosedAt, time.Now().UTC(),
-		isDraft, changedFiles, mergedByLogin, closedByLogin, autoMergeObservedAt,
-		marshalWorkflowAttention(workflowAttention),
-		taskID, repositoryID, pr.Number); err != nil {
+	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return s.GetTaskPRByRepoAndNumber(ctx, taskID, repositoryID, pr.Number)
+	return row, nil
 }
 
 // ListTaskPRsByTaskIDs returns PR associations for multiple tasks. Each task
@@ -3247,67 +3215,19 @@ func groupTaskPRsByTask(prs []TaskPR) map[string][]*TaskPR {
 // the row actually written, since the five resolved outcome fields may
 // differ from what the caller's tp carried in.
 func (s *Store) ReplaceTaskPR(ctx context.Context, tp *TaskPR, status *PRStatus) (*TaskPR, error) {
-	if tp.ID == "" {
-		tp.ID = uuid.New().String()
-	}
-	now := time.Now().UTC()
-	tp.UpdatedAt = now
-
-	tx, err := s.db.BeginTxx(ctx, nil)
+	tx, err := s.beginPRMutation(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	outgoing, err := replaceTaskPROutgoingRow(ctx, tx, tp)
+	row, err := replaceTaskPRTx(ctx, tx, tp, status)
 	if err != nil {
 		return nil, err
 	}
-	tp.IsDraft, tp.ChangedFiles, tp.MergedByLogin, tp.ClosedByLogin, tp.AutoMergeObservedAt =
-		resolveTaskPROutcomeFields(outgoing, status)
-	if status != nil && status.PR != nil {
-		tp.MergeableState = effectivePRMergeableState(status.PR)
-		tp.HasMergeConflicts = observedTaskPRMergeConflict(outgoing.HasMergeConflicts, status.PR, status.PR.MergeableState)
-	}
-	queueSource := tp
-	if outgoing.ID != "" {
-		queueSource = outgoing
-	}
-	queue := resolveTaskPRMergeQueueState(queueSource, status)
-	tp.MergeQueueState, tp.MergeQueuePosition, tp.MergeQueueEstimatedTimeToMergeSeconds = queue.state, queue.position, queue.estimate
-	tp.MergeQueueEntryID, tp.MergeQueueEntryHeadSHA = queue.entryID, queue.entryHeadSHA
-	tp.MergeQueueLastRemovalID, tp.MergeQueueLastRemovedAt = queue.lastRemovalID, queue.lastRemovedAt
-	tp.MergeQueueLastRemovalReason, tp.MergeQueueLastRemovalBeforeSHA = queue.lastRemovalReason, queue.lastRemovalBeforeSHA
-	if status != nil && status.PR != nil && status.PR.HeadSHA != "" {
-		tp.HeadSHA = status.PR.HeadSHA
-	} else if tp.HeadSHA == "" && outgoing.ID != "" {
-		tp.HeadSHA = outgoing.HeadSHA
-	}
-	tp.WorkflowAttention = resolveTaskPRWorkflowAttention(outgoing, status, tp.HeadSHA)
-	tp.WorkflowAttentionJSON = marshalWorkflowAttention(tp.WorkflowAttention)
-
-	if tp.RepositoryID != "" {
-		if _, err := tx.ExecContext(ctx, tx.Rebind(
-			`DELETE FROM github_task_prs
-			 WHERE task_id = ? AND repository_id = ? AND pr_number = ?`),
-			tp.TaskID, tp.RepositoryID, tp.PRNumber); err != nil {
-			return nil, err
-		}
-	} else {
-		if _, err := tx.ExecContext(ctx, tx.Rebind(
-			`DELETE FROM github_task_prs
-			 WHERE task_id = ? AND repository_id = '' AND pr_number = ?`),
-			tp.TaskID, tp.PRNumber); err != nil {
-			return nil, err
-		}
-	}
-	if err := insertTaskPR(ctx, tx, tp); err != nil {
+	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return tp, nil
+	return row, nil
 }
 
 // replaceTaskPROutgoingRow reads, inside tx, the row ReplaceTaskPR is about

@@ -1580,6 +1580,8 @@ func taskChangeRequestToolSchema() json.RawMessage {
     "provider": {"type": "string", "enum": ["github", "gitlab"]},
     "repository_id": {"type": "string", "minLength": 1},
     "number": {"type": "integer", "minimum": 1},
+    "pr_url": {"type": "string", "minLength": 1},
+    "expected_head_sha": {"type": "string", "minLength": 40, "maxLength": 40},
     "old_provider": {"type": "string", "enum": ["github", "gitlab"]},
     "old_repository_id": {"type": "string", "minLength": 1},
     "old_number": {"type": "integer", "minimum": 1}

@@ -126,6 +126,11 @@ func (f *fakeGitLabChangeLinks) UnlinkTaskMR(_ context.Context, _ string, associ
 }
 
 func newTaskChangeCoordinatorHarness(t *testing.T) (*taskservice.Service, *sqliterepo.Repository) {
+	tasks, repo, _ := newTaskChangeCoordinatorHarnessDB(t)
+	return tasks, repo
+}
+
+func newTaskChangeCoordinatorHarnessDB(t *testing.T) (*taskservice.Service, *sqliterepo.Repository, *sqlx.DB) {
 	t.Helper()
 	dbConn, err := db.OpenSQLite(filepath.Join(t.TempDir(), "task-change-links.db"))
 	if err != nil {
@@ -156,7 +161,7 @@ func newTaskChangeCoordinatorHarness(t *testing.T) (*taskservice.Service, *sqlit
 		Environments: repos,
 		Reviews:      repos,
 	}, bus.NewMemoryEventBus(log), log, taskservice.RepositoryDiscoveryConfig{})
-	return taskSvc, repos
+	return taskSvc, repos, database
 }
 
 func seedTaskChangeCoordinatorTask(

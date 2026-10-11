@@ -22,10 +22,12 @@ type TaskChangeLink struct {
 
 // TaskChangeLinkRequest is one provider-neutral change-request operation.
 type TaskChangeLinkRequest struct {
-	Operation string
-	TaskID    string
-	Link      TaskChangeLink
-	Old       *TaskChangeLink
+	Operation       string
+	TaskID          string
+	Link            TaskChangeLink
+	Old             *TaskChangeLink
+	PRURL           string
+	ExpectedHeadSHA string
 }
 
 const (
@@ -38,11 +40,12 @@ const (
 // request operation. StateKnown is false when the provider mutation or the
 // final association read cannot establish the active set.
 type TaskChangeLinkMutationResult struct {
-	TaskID         string           `json:"task_id"`
-	Links          []TaskChangeLink `json:"links"`
-	OperationError string           `json:"operation_error,omitempty"`
-	RollbackError  string           `json:"rollback_error,omitempty"`
-	StateKnown     bool             `json:"state_known"`
+	TaskID         string                    `json:"task_id"`
+	Resolved       *TaskChangeURLAssociation `json:"resolved,omitempty"`
+	Links          []TaskChangeLink          `json:"links"`
+	OperationError string                    `json:"operation_error,omitempty"`
+	RollbackError  string                    `json:"rollback_error,omitempty"`
+	StateKnown     bool                      `json:"state_known"`
 }
 
 // TaskChangeLinkMutationService is an optional richer seam for the neutral
@@ -52,7 +55,16 @@ type TaskChangeLinkMutationService interface {
 	ManageTaskChangeRequest(context.Context, TaskChangeLinkRequest) (TaskChangeLinkMutationResult, error)
 }
 
+type TaskChangeURLAssociation struct {
+	RepositoryID string `json:"repository_id"`
+	Number       int    `json:"number"`
+	URL          string `json:"url"`
+	HeadSHA      string `json:"head_sha"`
+}
+
 type taskChangeRequestPayload struct {
+	PRURL           string `json:"pr_url"`
+	ExpectedHeadSHA string `json:"expected_head_sha"`
 	Operation       string `json:"operation"`
 	TaskID          string `json:"task_id"`
 	CallerTaskID    string `json:"caller_task_id"`
@@ -115,7 +127,8 @@ func (h *Handlers) handleManageTaskChangeRequest(ctx context.Context, msg *ws.Me
 	}
 	request := TaskChangeLinkRequest{
 		Operation: payload.Operation,
-		TaskID:    payload.TaskID,
+		PRURL:     payload.PRURL, ExpectedHeadSHA: payload.ExpectedHeadSHA,
+		TaskID: payload.TaskID,
 		Link: TaskChangeLink{
 			Provider: payload.Provider, RepositoryID: payload.RepositoryID, Number: payload.Number,
 		},
@@ -131,6 +144,9 @@ func (h *Handlers) handleManageTaskChangeRequest(ctx context.Context, msg *ws.Me
 			return taskChangeLinkMutationError(msg, result, err)
 		}
 		return ws.NewResponse(msg.ID, msg.Action, result)
+	}
+	if payload.PRURL != "" {
+		return taskChangeLinksUnavailable(msg)
 	}
 	var links []TaskChangeLink
 	switch payload.Operation {
@@ -182,6 +198,10 @@ func (h *Handlers) parseTaskChangeRequestPayload(ctx context.Context, msg *ws.Me
 		response, responseErr := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "Invalid payload: "+err.Error(), nil)
 		return taskChangeRequestPayload{}, response, responseErr
 	}
+	if err := validateScopedPRURLFields(fields, payload); err != nil {
+		response, responseErr := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, err.Error(), nil)
+		return taskChangeRequestPayload{}, response, responseErr
+	}
 	link, response, responseErr := validateTaskChangeRequestOperation(msg, fields, payload)
 	if response != nil || responseErr != nil {
 		return taskChangeRequestPayload{}, response, responseErr
@@ -191,6 +211,7 @@ func (h *Handlers) parseTaskChangeRequestPayload(ctx context.Context, msg *ws.Me
 		return taskChangeRequestPayload{}, response, responseErr
 	}
 	return taskChangeRequestPayload{
+		PRURL: payload.PRURL, ExpectedHeadSHA: payload.ExpectedHeadSHA,
 		Operation:       payload.Operation,
 		TaskID:          targetID,
 		CallerTaskID:    payload.CallerTaskID,
@@ -254,6 +275,12 @@ func (h *Handlers) authorizeTaskChangeRequest(
 		response, responseErr := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "task is outside the caller workspace", nil)
 		return "", response, responseErr
 	}
+	if payload.PRURL != "" {
+		if err := h.authorizeScopedPRURL(ctx, principal, target); err != nil {
+			response, responseErr := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, err.Error(), nil)
+			return "", response, responseErr
+		}
+	}
 	return target.ID, nil, nil
 }
 
@@ -271,7 +298,7 @@ func taskChangeRequestFields(payload json.RawMessage) (map[string]json.RawMessag
 func rejectUnknownTaskChangeRequestFields(fields map[string]json.RawMessage) error {
 	for field := range fields {
 		switch field {
-		case "operation", keyTaskID, "caller_task_id", "provider", "repository_id", "number", "old_provider", "old_repository_id", "old_number":
+		case "pr_url", "expected_head_sha", "operation", keyTaskID, "caller_task_id", "provider", "repository_id", "number", "old_provider", "old_repository_id", "old_number":
 		default:
 			return fmt.Errorf("unknown task change request field %q", field)
 		}

@@ -40,7 +40,7 @@ func (s *Store) ReconcileTaskPROwnership(
 		return false, nil
 	}
 
-	tx, err := s.db.BeginTxx(ctx, nil)
+	tx, err := s.beginPRMutation(ctx)
 	if err != nil {
 		return false, err
 	}

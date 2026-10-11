@@ -31,6 +31,9 @@ type taskChangeLinkCoordinator struct {
 func (c taskChangeLinkCoordinator) ManageTaskChangeRequest(
 	ctx context.Context, req mcp.TaskChangeLinkRequest,
 ) (mcp.TaskChangeLinkMutationResult, error) {
+	if req.PRURL != "" {
+		return c.scopedPRURLMutation(ctx, req)
+	}
 	switch req.Operation {
 	case "", "link":
 		return c.simpleMutation(ctx, req, c.LinkTaskChange)

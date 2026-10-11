@@ -27,6 +27,11 @@ to the watch-driven path that fetches their evidence.
 The REST PR response alone cannot supply those aggregates.
 
 The backend is the only writer of `github_task_prs`.
+Association insert/restore and ownership reconciliation use `beginPRMutation`
+before reading admission state. It reserves SQLite's writer or takes the shared
+PostgreSQL transaction advisory lock. Strict agent URL links recheck live parent,
+session, attachment and canonical identity inside that transaction; manual
+multi-task association remains valid. Publish association effects after commit.
 The feedback read persists through `SyncTaskPR` in `service_pr_feedback_sync.go`.
 Its `github.task_pr.updated` event updates every frontend surface.
 Do not patch lifecycle fields only in a frontend store copy.
