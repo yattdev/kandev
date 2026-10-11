@@ -10,6 +10,7 @@ import (
 	"github.com/kandev/kandev/internal/task/repository/managedconversation"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 	"github.com/kandev/kandev/internal/task/statussummary"
+	"github.com/kandev/kandev/internal/task/taskinstructions"
 	wfmodels "github.com/kandev/kandev/internal/workflow/models"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 )
@@ -998,6 +999,14 @@ type TaskEnvironmentRepository interface {
 	UpdateTaskEnvironmentRepo(ctx context.Context, repo *models.TaskEnvironmentRepo) error
 	DeleteTaskEnvironmentRepo(ctx context.Context, id string) error
 	DeleteTaskEnvironmentReposByEnv(ctx context.Context, envID string) error
+}
+
+// TaskInstructionBindingRepository persists the Host-authoritative record
+// behind a task-local Coordinator instruction projection. The caller must use
+// the exact write fence; reading alone never admits a provider prompt.
+type TaskInstructionBindingRepository interface {
+	GetTaskInstructionBinding(context.Context, string) (*taskinstructions.DurableBinding, error)
+	PutTaskInstructionBindingExact(context.Context, taskinstructions.WriteRequest) (*taskinstructions.DurableBinding, error)
 }
 
 // TaskEnvironmentRecoveryRepository is the optional durable authority

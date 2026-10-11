@@ -31,6 +31,7 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		r.initWalkthroughsSchema,
 		r.initDocumentsSchema,
 		r.initSessionSchema,
+		r.initTaskInstructionBindingsSchema,
 		r.initSessionContinuitySchema,
 		r.initAgentDeliverySchema,
 		r.initDynamicRoutingSchema,
@@ -1214,6 +1215,29 @@ func (r *Repository) initSessionSchema() error {
 		return err
 	}
 	return r.initSubagentContextSchema()
+}
+
+func (r *Repository) initTaskInstructionBindingsSchema() error {
+	_, err := r.db.ExecContext(r.migrationContext(), `
+	CREATE TABLE IF NOT EXISTS task_instruction_bindings (
+		task_id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		task_environment_id TEXT NOT NULL,
+		ownership_generation INTEGER NOT NULL,
+		version BIGINT NOT NULL,
+		content TEXT NOT NULL,
+		content_sha256 TEXT NOT NULL,
+		control_path TEXT NOT NULL DEFAULT '',
+		guard_kind TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMP NOT NULL,
+		updated_at TIMESTAMP NOT NULL,
+		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+		FOREIGN KEY (task_environment_id) REFERENCES task_environments(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_task_instruction_bindings_environment
+		ON task_instruction_bindings(task_environment_id, ownership_generation);
+	`)
+	return err
 }
 
 // initSubagentContextSchema creates task_session_subagents, the durable
