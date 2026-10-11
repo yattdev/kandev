@@ -259,3 +259,71 @@ func TestPreparedWorkflowRecoveryLeavesKeptSessionRouteAlone(t *testing.T) {
 		require.Equal(t, f.current.ID, got.ID)
 	}
 }
+
+func TestPreparedWorkflowRestartAfterPromotionBeforePrompt(t *testing.T) {
+	f, sourceStep, step, route := preparedWorkflowFixture(t, true)
+	ctx := context.Background()
+	_, handled, err := f.svc.retryRecordedPreparedWorkflow(ctx, "t1", &route, step, sourceStep, false)
+	require.NoError(t, err)
+	require.True(t, handled)
+	task, err := f.repo.GetTask(ctx, "t1")
+	require.NoError(t, err)
+	committed, ok := models.LoadWorkflowSessionRoute(task.Metadata)
+	require.True(t, ok)
+	require.Equal(t, "committed", committed.Phase)
+	before, err := f.repo.ListTurnsBySession(ctx, route.DestinationID)
+	require.NoError(t, err)
+	require.Empty(t, before)
+	f.svc.reconcilePreparedWorkflowSessionsOnStartup(ctx)
+	f.svc.reconcileTaskLifecycleTokens(ctx)
+	after, err := f.repo.ListTurnsBySession(ctx, route.DestinationID)
+	require.NoError(t, err)
+	require.Len(t, after, 1, "restart must finish the exact destination's missing first prompt")
+}
+
+func TestPreparedWorkflowPendingPromptDoesNotReplayExistingTurn(t *testing.T) {
+	f, sourceStep, step, route := preparedWorkflowFixture(t, true)
+	ctx := context.Background()
+	_, _, err := f.svc.prepareWorkflowStepSession(ctx, "t1", f.current, step, sourceStep)
+	require.NoError(t, err)
+	require.NoError(t, f.repo.CreateTurn(ctx, &models.Turn{ID: "already-admitted", TaskID: "t1", TaskSessionID: route.DestinationID}))
+	f.svc.reconcilePreparedWorkflowSessionsOnStartup(ctx)
+	turns, err := f.repo.ListTurnsBySession(ctx, route.DestinationID)
+	require.NoError(t, err)
+	require.Len(t, turns, 1)
+	require.Equal(t, "already-admitted", turns[0].ID)
+	sessions, err := f.repo.ListTaskSessions(ctx, "t1")
+	require.NoError(t, err)
+	require.Len(t, sessions, 2)
+}
+
+func TestPreparedWorkflowCommittedRouteWithoutPendingIntentIsNotReplayed(t *testing.T) {
+	f, sourceStep, step, route := preparedWorkflowFixture(t, true)
+	ctx := context.Background()
+	_, _, err := f.svc.prepareWorkflowStepSession(ctx, "t1", f.current, step, sourceStep)
+	require.NoError(t, err)
+	task, err := f.repo.GetTask(ctx, "t1")
+	require.NoError(t, err)
+	committed, ok := models.LoadWorkflowSessionRoute(task.Metadata)
+	require.True(t, ok)
+	committed.FirstPromptPending = false
+	require.NoError(t, f.repo.SetTaskMetadataKey(ctx, "t1", models.MetaKeyWorkflowSessionRoute, committed))
+	f.svc.reconcilePreparedWorkflowSessionsOnStartup(ctx)
+	turns, err := f.repo.ListTurnsBySession(ctx, route.DestinationID)
+	require.NoError(t, err)
+	require.Empty(t, turns)
+}
+
+func TestPreparedWorkflowStartupRefusesChangedStepProfile(t *testing.T) {
+	f, _, step, route := preparedWorkflowFixture(t, true)
+	ctx := context.Background()
+	step.AgentProfileID = "changed-profile"
+	f.svc.reconcilePreparedWorkflowSessionsOnStartup(ctx)
+	destination, err := f.repo.GetTaskSession(ctx, route.DestinationID)
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateFailed, destination.State)
+	require.False(t, destination.IsPrimary)
+	turns, err := f.repo.ListTurnsBySession(ctx, route.DestinationID)
+	require.NoError(t, err)
+	require.Empty(t, turns)
+}

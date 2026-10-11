@@ -11,13 +11,18 @@ import (
 	"github.com/kandev/kandev/internal/task/models"
 )
 
-const preparedWorkflowAttachFailure = "environment preparation failed: base branch does not exist"
+const (
+	preparedWorkflowAttachFailure = "environment preparation failed: base branch does not exist"
+	preparedWorkflowRoutePhase    = "prepared"
+	committedWorkflowRoutePhase   = "committed"
+)
 
 // PromotePreparedWorkflowSession keeps the route/entry/source checks inside
 // the same transaction that commits primary ownership after workspace attach.
 func (r *Repository) PromotePreparedWorkflowSession(ctx context.Context, sessionID string, route models.WorkflowSessionRoute) (bool, error) {
 	prepared := route
-	prepared.Phase = "prepared"
+	prepared.Phase = preparedWorkflowRoutePhase
+	route.FirstPromptPending = true
 	return r.setSessionPrimary(ctx, sessionID, true, &route, prepared)
 }
 
@@ -60,13 +65,14 @@ func (r *Repository) RearmPreparedWorkflowSession(ctx context.Context, taskID st
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.managedDeletionBarrierTx(ctx, tx, taskID); err != nil {
-		return false, err
-	}
 	if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), route.DestinationID); err != nil {
 		return false, err
 	}
 	if err := lockAgentDeliveryWrites(ctx, tx, r.db.DriverName(), []string{route.DestinationID}, nil); err != nil {
+		return false, err
+	}
+	// Match turn admission and reconstruction: turn, delivery, then task.
+	if err := r.managedDeletionBarrierTx(ctx, tx, taskID); err != nil {
 		return false, err
 	}
 	valid, err := r.preparedWorkflowRouteCurrentTx(ctx, tx, taskID, route)
@@ -94,7 +100,7 @@ func (r *Repository) RearmPreparedWorkflowSession(ctx context.Context, taskID st
 }
 
 func validPreparedWorkflowRearmRoute(route models.WorkflowSessionRoute) bool {
-	return route.Phase == "prepared" && route.TargetKind == "profile" && route.TargetStepID == "" &&
+	return route.Phase == preparedWorkflowRoutePhase && route.TargetKind == "profile" && route.TargetStepID == "" &&
 		route.SourceSessionID != "" && route.DestinationID != "" && route.SourceSessionID != route.DestinationID
 }
 

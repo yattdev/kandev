@@ -21,4 +21,4 @@ spec: ../../specs/tasks/requirements/additional-session-workspace-reuse.md
 
 ## Results
 
-Pending. No live deployment action authorized. Temporary databases use repository fixtures in task-owned test directories.
+In progress. First candidate 897f6c37ab received independent Review and QA FINDINGS. MAIN corrected promotion-before-first-prompt restart recovery and reproduced/fixed PostgreSQL lock order with actual competing connections. Five PostgreSQL tests passed three repetitions unskipped on task-owned signed PG16.15. Final successor verification, PR/merge/release and isolated deployment acceptance remain pending. No live deployment action authorized.

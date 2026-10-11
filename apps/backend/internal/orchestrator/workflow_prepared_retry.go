@@ -42,7 +42,10 @@ func (s *Service) retryRecordedPreparedWorkflow(ctx context.Context, taskID stri
 		return nil, false, nil
 	}
 	if route.Phase == workflowSessionRouteCommitted {
-		return destination, true, nil
+		if startPrompt {
+			err = s.resumePendingWorkflowFirstPrompt(ctx, taskID, *route, destination, step, sourceStep)
+		}
+		return destination, true, err
 	}
 	if route.Phase != workflowSessionRoutePrepared || sourceStep == nil {
 		return nil, true, fmt.Errorf("prepared workflow route cannot be retried")
@@ -53,6 +56,11 @@ func (s *Service) retryRecordedPreparedWorkflow(ctx context.Context, taskID stri
 	recovered, err := s.attachPreparedWorkflowDestination(ctx, taskID, *route, sourceStep)
 	if err == nil && startPrompt {
 		err = s.startPreparedWorkflowPrompt(ctx, taskID, recovered, step)
+		if err == nil {
+			if store, ok := s.repo.(pendingWorkflowFirstPromptStore); ok {
+				err = store.CompletePendingWorkflowFirstPrompt(ctx, taskID, *route)
+			}
+		}
 	}
 	return recovered, true, err
 }
@@ -179,13 +187,17 @@ func (s *Service) reconcilePreparedWorkflowSessionsOnStartup(ctx context.Context
 			return
 		}
 		route, ok := models.LoadWorkflowSessionRoute(task.Metadata)
-		if !ok || route.Phase != workflowSessionRoutePrepared || route.DestinationID == "" {
+		if !ok || !recoverablePreparedWorkflowRoute(route) || route.DestinationID == "" {
 			continue
 		}
 		if err := s.reconcilePreparedWorkflowRoute(ctx, task.ID, route); err != nil {
 			s.logger.Warn("reconcile prepared workflow route", zap.String("task_id", task.ID), zap.Error(err))
 		}
 	}
+}
+
+func recoverablePreparedWorkflowRoute(route models.WorkflowSessionRoute) bool {
+	return route.Phase == workflowSessionRoutePrepared || (route.Phase == workflowSessionRouteCommitted && route.FirstPromptPending)
 }
 
 func (s *Service) reconcilePreparedWorkflowRoute(ctx context.Context, taskID string, route models.WorkflowSessionRoute) error {
@@ -195,6 +207,13 @@ func (s *Service) reconcilePreparedWorkflowRoute(ctx context.Context, taskID str
 	}
 	if !simplePreparedWorkflowStep(step) {
 		return nil
+	}
+	profileID, err := s.resolveStepAgentProfileForTaskID(ctx, taskID, step)
+	if err != nil {
+		return err
+	}
+	if profileID != route.AgentProfileID {
+		return fmt.Errorf("prepared workflow step profile changed")
 	}
 	reader, ok := s.repo.(interface {
 		ListTaskStepTransitions(context.Context, string, int64, int) ([]models.StepTransition, error)
@@ -227,6 +246,6 @@ func (s *Service) startPreparedWorkflowPrompt(ctx context.Context, taskID string
 	if err != nil {
 		return err
 	}
-	return s.autoStartStepPromptWithPromptContext(ctx, taskID, destination, step, prompt, false, true,
+	return s.autoStartStepPromptWithPromptContext(ctx, taskID, destination, step, prompt, false, false,
 		newStepHandoffOnce(), referenceContext)
 }

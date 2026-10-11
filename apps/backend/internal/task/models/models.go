@@ -447,6 +447,8 @@ type WorkflowSessionRoute struct {
 	SourceSessionID string `json:"source_session_id,omitempty"`
 	DestinationID   string `json:"destination_session_id,omitempty"`
 	Phase           string `json:"phase"`
+	// FirstPromptPending survives recovery promotion until first-turn admission.
+	FirstPromptPending bool `json:"first_prompt_pending,omitempty"`
 }
 
 // LoadWorkflowSessionRoute decodes the bounded route record stored in task

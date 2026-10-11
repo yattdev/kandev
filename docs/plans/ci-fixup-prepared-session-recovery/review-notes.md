@@ -18,15 +18,24 @@ Reuse configuration retains the stored checkout base and omits new-checkout PR-b
 
 ## Verification
 
-See task-01 through task-04 for executable RED/GREEN commands and source identity. Focused executor/worktree/orchestrator/SQLite checks passed; final post-code race command `cd apps/backend && go test -trimpath -race -tags fts5 ./internal/orchestrator ./internal/orchestrator/executor ./internal/task/repository/sqlite -run 'Test.*(PreparedWorkflow|WorkflowSessionRoute|WorkspaceReusePRBase)' -count=1 -timeout=120s` passed (1.895s, 1.126s, 2.456s). PostgreSQL test was env-skipped, not passed. Specification lint, documentation catalog validation and git diff --check passed. Changed-code lint initially found new rearm complexity and passed after helper extraction; commit hooks recheck the frozen candidate.
+See task-01 through task-04 for executable RED/GREEN commands and source identity. Focused executor/worktree/orchestrator/SQLite checks passed; final post-code race command `cd apps/backend && go test -trimpath -race -tags fts5 ./internal/orchestrator ./internal/orchestrator/executor ./internal/task/repository/sqlite -run 'Test.*(PreparedWorkflow|WorkflowSessionRoute|WorkspaceReusePRBase)' -count=1 -timeout=120s` passed (1.895s, 1.126s, 2.456s). That first-round PostgreSQL test was env-skipped; correction-round PostgreSQL evidence is recorded below. Specification lint, documentation catalog validation and git diff --check passed. Changed-code lint initially found new rearm complexity and passed after helper extraction; commit hooks recheck the frozen candidate.
 
 ## Runtime and data
 
-TEST_RUNTIME: TRANSIENT. Only repository fixtures, real isolated SQLite files and mocked external agent boundaries; no reusable web service, HOST/LAN URL or live DB is required for the source regression. PostgreSQL parity is env-gated; approved isolated fixture requested from parent, not yet delivered. No release/image/runtime acceptance is claimed.
+TEST_RUNTIME: TRANSIENT. Only repository fixtures, real isolated SQLite files and mocked external agent boundaries; no reusable web service, HOST/LAN URL or live DB is required for the source regression. Coordinator-approved synthetic fixtures now run on task-owned PostgreSQL 16.15, signed PGDG packages extracted without installation, private Unix socket only. DSN is ignored and mode 0600. No external dump or credentials are used. No release/image/runtime acceptance is claimed.
 
 ## Fixed during review
 
-Pending independent sessions. MAIN alone implements corrections.
+Round 1 on 897f6c37ab: REVIEW e9b5f63c-e85a-4515-9f40-73fca2a5760f and QA 42e8c340-1830-421a-aab1-d0b180e295ee both FINDINGS. Reports live under ignored task artifacts; no pass is claimed.
+
+- R1 / QA-001: promotion-before-first-prompt crash stranded CREATED destination. Permanent RED reproduced zero turns. Correction records optional pending-first-prompt intent in the same recovery promotion transaction. Only the exact current marked CREATED destination can finish; FAILED committed or existing-turn/submission/generation/recovery owners cannot be replayed. Permanent startup, no-pending-intent and existing-first-turn controls are GREEN.
+- MAIN-003: startup needed to resolve the current effective step profile, not trust the recorded profile. RED changed profile incorrectly reached STARTING; correction refuses before rearm. GREEN preserves FAILED destination and no turn.
+- R2: real PostgreSQL RED demonstrated task-row ownership while actual rearm waited on the turn advisory boundary (SQLSTATE 55P03). Rearm now takes turn and delivery locks before the managed-deletion task lock, matching turn admission/reconstruction. The deterministic lock-order regression and actual competing turn/delivery methods pass.
+- QA-002: five actual PostgreSQL tests passed three repetitions without skips: lock footprint, turn race, delivery race, concurrent exact promotion/pending first prompt, and atomic state changes. The initial fixture lacked its workspace row and failed before the tested behavior; that test fixture was corrected before the R2 RED. Logs and signed-package provenance remain in ignored task artifacts. Independent QA must verify the final candidate.
+
+Correction-round race selector passed all three packages with PostgreSQL configured (1.843s, 1.103s, 5.795s). Changed-code golangci-lint reports 0 issues; specification lint, documentation catalog validation and diff whitespace checks pass.
+
+Both sessions finished the first round and are WFI. Reuse the same two sessions for the committed successor and real PG evidence; final-candidate re-verification is still pending.
 
 ## Follow-up tasks created
 
@@ -34,7 +43,7 @@ None. Reuse terminal retention 3cf0e07b-eac6-4703-bd5d-5d31920bf3e0, silent Done
 
 ## Action required by author
 
-No product decision. Parent owns PostgreSQL fixture receipt and upstream scheduling. Merge/release/image acceptance and overlay retirement are later delivery gates; no live deployment or whole-overlay removal is authorized.
+No product decision. Parent approved repository-generated PostgreSQL data and owns upstream scheduling. Merge/release/image acceptance and overlay retirement are later delivery gates; no live deployment or whole-overlay removal is authorized.
 
 ## QA fixes worth reviewer attention
 

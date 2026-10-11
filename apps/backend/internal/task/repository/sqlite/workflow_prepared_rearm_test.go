@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/testutil"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
@@ -15,23 +16,25 @@ import (
 func seedPreparedWorkflowRearm(t *testing.T, repo *Repository) (string, models.WorkflowSessionRoute) {
 	t.Helper()
 	ctx := context.Background()
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "ws-1", Name: "prepared workflow fixture"}))
+	sourceID, destinationID := uuid.NewString(), uuid.NewString()
 	task := createStepTransitionsTestTask(t, repo, "retry-task", "wf1", "source-step")
 	task.WorkflowStepID, task.State = "destination-step", v1.TaskStateFailed
 	require.NoError(t, repo.UpdateTask(ctx, task))
 	require.NoError(t, repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
 		ID: "env", TaskID: task.ID, ExecutorType: string(models.ExecutorTypeLocal), Status: models.TaskEnvironmentStatusReady,
 	}))
-	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "source", TaskID: task.ID,
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: sourceID, TaskID: task.ID,
 		AgentProfileID: "profile-a", State: models.TaskSessionStateWaitingForInput, IsPrimary: true, TaskEnvironmentID: "env",
 		StartedAt: time.Now().UTC()}))
-	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "destination", TaskID: task.ID,
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: destinationID, TaskID: task.ID,
 		AgentProfileID: "profile-b", State: models.TaskSessionStateFailed, TaskEnvironmentID: "env",
 		ErrorMessage: "environment preparation failed: base branch does not exist", StartedAt: time.Now().UTC()}))
 	latest, err := repo.GetLatestTaskStepTransitionID(ctx, task.ID)
 	require.NoError(t, err)
 	route := models.WorkflowSessionRoute{OperationID: "retry", DestinationStepID: task.WorkflowStepID,
 		EntryIdentity: fmt.Sprintf("entry:%020d", latest), TargetKind: "profile", AgentProfileID: "profile-b",
-		SourceSessionID: "source", DestinationID: "destination", Phase: "prepared"}
+		SourceSessionID: sourceID, DestinationID: destinationID, Phase: "prepared"}
 	require.NoError(t, repo.SetTaskMetadataKey(ctx, task.ID, models.MetaKeyWorkflowSessionRoute, route))
 	return task.ID, route
 }
