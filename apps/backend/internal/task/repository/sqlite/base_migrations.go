@@ -79,6 +79,10 @@ func (r *Repository) migrateSessionsAddCostColumns() {
 //
 //nolint:cyclop,funlen,maintidx // Legacy flat list of ~60 independent idempotent migration steps predating startup-step instrumentation; splitting it is out of scope here.
 func (r *Repository) runMigrations(ctx context.Context) error {
+	_ = r.migrate.Apply("task_stop_request_candidates.queue_incarnation_id", `ALTER TABLE task_stop_request_candidates ADD COLUMN queue_incarnation_id TEXT NOT NULL DEFAULT ''`)
+	_ = r.migrate.Apply("task_stop_request_candidates.turn_id", `ALTER TABLE task_stop_request_candidates ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''`)
+	_ = r.migrate.Apply("task_stop_request_candidates.execution_id", `ALTER TABLE task_stop_request_candidates ADD COLUMN execution_id TEXT NOT NULL DEFAULT ''`)
+	_ = r.migrate.Apply("task_stop_request_candidates.agentctl_generation", `ALTER TABLE task_stop_request_candidates ADD COLUMN agentctl_generation BIGINT NOT NULL DEFAULT 0`)
 	if err := r.migrateTaskPriorityToTextPostgres(); err != nil {
 		return err
 	}

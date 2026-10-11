@@ -170,7 +170,7 @@ func TestCaptureCoordinatorStopRequestWithCandidatesRetainsOriginalPartialInvent
 
 	_, candidates, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentID, OperationID: operationID})
 	require.NoError(t, err)
-	require.Equal(t, []string{"original-a", "original-b"}, candidates)
+	require.Equal(t, []string{"original-a", "original-b"}, coordinatorStopCandidateIDs(candidates))
 	// Model a partial attempt that terminalizes only one original candidate.
 	require.NoError(t, repo.UpdateTaskSessionState(ctx, "original-a", models.TaskSessionStateCancelled, "partial stop"))
 	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "later-successor", TaskID: taskID, State: models.TaskSessionStateRunning, StartedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)}))
@@ -178,7 +178,15 @@ func TestCaptureCoordinatorStopRequestWithCandidatesRetainsOriginalPartialInvent
 	_, retryCandidates, created, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentID, OperationID: operationID})
 	require.NoError(t, err)
 	require.False(t, created)
-	require.Equal(t, []string{"original-a", "original-b"}, retryCandidates, "retry keeps unprocessed original candidates and excludes a later successor")
+	require.Equal(t, []string{"original-a", "original-b"}, coordinatorStopCandidateIDs(retryCandidates), "retry keeps unprocessed original candidates and excludes a later successor")
+}
+
+func coordinatorStopCandidateIDs(candidates []models.CoordinatorStopRequestCandidate) []string {
+	ids := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		ids = append(ids, candidate.SessionID)
+	}
+	return ids
 }
 
 // @covers AC-STOP-FENCE-005, AC-STOP-FENCE-006

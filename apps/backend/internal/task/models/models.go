@@ -2080,6 +2080,19 @@ type CoordinatorStopRequest struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// CoordinatorStopRequestCandidate is the immutable session incarnation
+// captured with a parent stop request. Retries must not reload these values
+// from a session that may have advanced to a newer execution.
+type CoordinatorStopRequestCandidate struct {
+	TaskID             string `db:"task_id"`
+	OperationID        string `db:"operation_id"`
+	SessionID          string `db:"session_id"`
+	QueueIncarnationID string `db:"queue_incarnation_id"`
+	TurnID             string `db:"turn_id"`
+	ExecutionID        string `db:"execution_id"`
+	AgentctlGeneration uint64 `db:"agentctl_generation"`
+}
+
 const (
 	CoordinatorStopOperationStatusFencing      = "fencing"
 	CoordinatorStopOperationStatusIncomplete   = "incomplete"

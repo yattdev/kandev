@@ -151,6 +151,8 @@ func (r *Repository) initCoordinatorStopRequestSchema() error {
 	if err := r.migrate.Apply("task_stop_request_fences.table", `
 		CREATE TABLE IF NOT EXISTS task_stop_request_fences (
 			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, session_id TEXT NOT NULL,
+			queue_incarnation_id TEXT NOT NULL DEFAULT '', turn_id TEXT NOT NULL DEFAULT '',
+			execution_id TEXT NOT NULL DEFAULT '', agentctl_generation INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY(task_id, operation_id, session_id),
 			FOREIGN KEY (task_id, operation_id) REFERENCES task_stop_requests(task_id, operation_id) ON DELETE CASCADE,
 			FOREIGN KEY (task_id, session_id) REFERENCES task_stop_session_fences(task_id, session_id) ON DELETE CASCADE

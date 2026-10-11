@@ -116,12 +116,19 @@ func TestStopTaskForCoordinatorOperation_RetryResumesOnlyBoundReceipt(t *testing
 		AgentExecutionID: "replacement-execution", AgentctlGeneration: 2, Status: models.ExecutorRunningStatusRunning,
 		UpdatedAt: now.Add(time.Second),
 	}))
+	successor, err := repo.GetTaskSession(ctx, sessionID)
+	require.NoError(t, err)
+	successor.State = models.TaskSessionStateRunning
+	successor.CompletedAt = nil
+	successor.QueueIncarnationID = "successor-incarnation"
+	require.NoError(t, repo.UpdateTaskSession(ctx, successor))
 	changedExecutionRetry, err := svc.StopTaskForCoordinatorOperation(ctx, taskID, parentID, "lost-ack")
 	require.NoError(t, err)
 	require.Equal(t, CoordinatorTaskStopStatusIncomplete, changedExecutionRetry.Status)
 	require.Len(t, changedExecutionRetry.Receipts, 1)
 	require.Equal(t, first.Receipts[0].ID, changedExecutionRetry.Receipts[0].ID)
 	require.EqualValues(t, 2, stopCalls.Load(), "retry must never stop the replacement execution")
+	require.Equal(t, models.TaskSessionStateRunning, mustGetSession(t, repo, sessionID).State)
 
 	lookup, err := svc.GetCoordinatorStopReceipt(ctx, taskID, parentID, "lost-ack")
 	require.NoError(t, err)

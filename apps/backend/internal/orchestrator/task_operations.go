@@ -78,11 +78,7 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	if taskID == "" || parentTaskID == "" || operationID == "" {
 		return CoordinatorTaskStopResult{}, errors.New("coordinator stop request requires task, parent, and operation IDs")
 	}
-	request, candidateIDs, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentTaskID, OperationID: operationID})
-	if err != nil {
-		return CoordinatorTaskStopResult{}, err
-	}
-	candidates, err := s.loadCoordinatorStopRequestCandidates(ctx, candidateIDs)
+	request, candidates, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentTaskID, OperationID: operationID})
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
@@ -123,7 +119,11 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
-	if len(result.SessionFences) > 0 {
+	pending, err := s.coordinatorStopRequestHasPendingCandidate(ctx, candidates, receipts, result.SessionFences)
+	if err != nil {
+		return CoordinatorTaskStopResult{}, err
+	}
+	if pending || len(result.SessionFences) > 0 {
 		result.Status = CoordinatorTaskStopStatusIncomplete
 	} else if len(receipts) > 0 {
 		result.Status = CoordinatorTaskStopStatusStopped
@@ -148,6 +148,45 @@ func (s *Service) coordinatorStopRequestSessionFences(ctx context.Context, taskI
 	return fencer.ListCoordinatorStopRequestSessionFences(ctx, taskID, operationID)
 }
 
+func (s *Service) coordinatorStopRequestHasPendingCandidate(
+	ctx context.Context,
+	candidates []models.CoordinatorStopRequestCandidate,
+	receipts []models.CoordinatorStopOperation,
+	fences []models.CoordinatorStopSessionFenceReceipt,
+) (bool, error) {
+	for _, candidate := range candidates {
+		if coordinatorStopCandidateHasReceipt(receipts, candidate.SessionID) || coordinatorStopCandidateHasFence(fences, candidate.SessionID) {
+			continue
+		}
+		session, err := s.repo.GetTaskSession(ctx, candidate.SessionID)
+		if err != nil {
+			return true, err
+		}
+		if session != nil && session.QueueIncarnationID == candidate.QueueIncarnationID && isCoordinatorStoppableSessionState(session.State) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func coordinatorStopCandidateHasReceipt(receipts []models.CoordinatorStopOperation, sessionID string) bool {
+	for _, receipt := range receipts {
+		if receipt.SessionID == sessionID {
+			return true
+		}
+	}
+	return false
+}
+
+func coordinatorStopCandidateHasFence(fences []models.CoordinatorStopSessionFenceReceipt, sessionID string) bool {
+	for _, fence := range fences {
+		if fence.SessionID == sessionID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) resumeCoordinatorStopRequestReceipts(
 	ctx context.Context,
 	receipts []models.CoordinatorStopOperation,
@@ -169,17 +208,17 @@ func (s *Service) captureCoordinatorStopRequest(
 	ctx context.Context,
 	repo taskrepo.CoordinatorStopRequestRepository,
 	taskID, parentTaskID, operationID string,
-	sessions []*models.TaskSession,
+	candidates []models.CoordinatorStopRequestCandidate,
 ) (CoordinatorTaskStopResult, error) {
 	if s.executor == nil {
 		return CoordinatorTaskStopResult{}, errors.New("coordinator stop: executor is not configured")
 	}
 	result := CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatusNotRunning}
-	sort.SliceStable(sessions, func(i, j int) bool {
-		return coordinatorStopSessionID(sessions[i]) < coordinatorStopSessionID(sessions[j])
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].SessionID < candidates[j].SessionID
 	})
 
-	accepted, incomplete, err := s.captureCoordinatorStopRequestSessions(ctx, &result, taskID, operationID, sessions)
+	accepted, incomplete, err := s.captureCoordinatorStopRequestSessions(ctx, &result, taskID, operationID, candidates)
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
@@ -197,26 +236,14 @@ func (s *Service) captureCoordinatorStopRequest(
 	return result, nil
 }
 
-func (s *Service) loadCoordinatorStopRequestCandidates(ctx context.Context, ids []string) ([]*models.TaskSession, error) {
-	candidates := make([]*models.TaskSession, 0, len(ids))
-	for _, id := range ids {
-		session, getErr := s.repo.GetTaskSession(ctx, id)
-		if getErr != nil {
-			return nil, getErr
-		}
-		candidates = append(candidates, session)
-	}
-	return candidates, nil
-}
-
-func (s *Service) captureCoordinatorStopRequestSessions(ctx context.Context, result *CoordinatorTaskStopResult, taskID, operationID string, sessions []*models.TaskSession) (int, bool, error) {
+func (s *Service) captureCoordinatorStopRequestSessions(ctx context.Context, result *CoordinatorTaskStopResult, taskID, operationID string, candidates []models.CoordinatorStopRequestCandidate) (int, bool, error) {
 	accepted := 0
 	incomplete := false
-	for _, candidate := range sessions {
-		if candidate == nil || candidate.ID == "" {
-			return 0, false, errors.New("coordinator stop: active session candidate is nil or has an empty ID")
+	for _, candidate := range candidates {
+		if candidate.SessionID == "" {
+			return 0, false, errors.New("coordinator stop: active session candidate has an empty ID")
 		}
-		stopResult, sessionIncomplete, stopErr := s.stopTaskSessionForCoordinator(ctx, taskID, candidate.ID, operationID)
+		stopResult, sessionIncomplete, stopErr := s.stopTaskSessionForCoordinatorCandidate(ctx, taskID, candidate, operationID)
 		if stopErr != nil {
 			return 0, false, stopErr
 		}
@@ -225,10 +252,10 @@ func (s *Service) captureCoordinatorStopRequestSessions(ctx context.Context, res
 		}
 		accepted++
 		incomplete = incomplete || sessionIncomplete
-		if err := s.appendCapturedCoordinatorStopRequestReceipt(ctx, result, taskID, candidate.ID, stopResult.ExecutionID); err != nil {
+		if err := s.appendCapturedCoordinatorStopRequestReceipt(ctx, result, taskID, candidate.SessionID, stopResult.ExecutionID); err != nil {
 			return 0, false, err
 		}
-		if err := s.appendCapturedCoordinatorStopRequestFence(ctx, result, taskID, candidate.ID); err != nil {
+		if err := s.appendCapturedCoordinatorStopRequestFence(ctx, result, taskID, candidate.SessionID); err != nil {
 			return 0, false, err
 		}
 	}
@@ -283,15 +310,15 @@ func (s *Service) GetCoordinatorStopReceipt(ctx context.Context, taskID, parentT
 	if !ok {
 		return CoordinatorTaskStopResult{}, errors.New("coordinator stop request repository is unavailable")
 	}
+	request, requestErr := repo.GetCoordinatorStopRequest(ctx, taskID, operationID, parentTaskID)
+	if requestErr != nil {
+		return CoordinatorTaskStopResult{}, errors.New("coordinator stop receipt not found")
+	}
 	receipts, err := repo.ListCoordinatorStopRequestReceipts(ctx, taskID, operationID, parentTaskID)
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
 	if len(receipts) == 0 {
-		request, requestErr := repo.GetCoordinatorStopRequest(ctx, taskID, operationID, parentTaskID)
-		if requestErr != nil {
-			return CoordinatorTaskStopResult{}, errors.New("coordinator stop receipt not found")
-		}
 		fences, fenceErr := s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
 		if fenceErr != nil {
 			return CoordinatorTaskStopResult{}, fenceErr
@@ -319,11 +346,7 @@ func (s *Service) GetCoordinatorStopReceipt(ctx context.Context, taskID, parentT
 	if len(result.SessionFences) > 0 {
 		return result, nil
 	}
-	if len(receipts) == 0 {
-		request, requestErr := repo.GetCoordinatorStopRequest(ctx, taskID, operationID, parentTaskID)
-		if requestErr == nil && request.Complete {
-			result.Status = CoordinatorTaskStopStatus(request.ResultStatus)
-		}
+	if !request.Complete {
 		return result, nil
 	}
 	for _, receipt := range receipts {
@@ -331,7 +354,7 @@ func (s *Service) GetCoordinatorStopReceipt(ctx context.Context, taskID, parentT
 			return result, nil
 		}
 	}
-	result.Status = CoordinatorTaskStopStatusStopped
+	result.Status = CoordinatorTaskStopStatus(request.ResultStatus)
 	return result, nil
 }
 
@@ -5144,13 +5167,18 @@ func coordinatorStopSessionID(session *models.TaskSession) string {
 }
 
 func (s *Service) stopTaskSessionForCoordinator(ctx context.Context, taskID, sessionID, requestOperationID string) (executor.SessionStopResult, bool, error) {
+	return s.stopTaskSessionForCoordinatorCandidate(ctx, taskID, models.CoordinatorStopRequestCandidate{SessionID: sessionID}, requestOperationID)
+}
+
+func (s *Service) stopTaskSessionForCoordinatorCandidate(ctx context.Context, taskID string, candidate models.CoordinatorStopRequestCandidate, requestOperationID string) (executor.SessionStopResult, bool, error) {
+	sessionID := candidate.SessionID
 	endCancel := s.beginCancelInFlight(sessionID)
 	defer endCancel()
 
 	lock, release := s.acquireCancelInFlightGuard(sessionID)
 	lock.Lock()
 
-	result, teardownClaimed, incomplete, err := s.stopTaskSessionForCoordinatorLocked(ctx, taskID, sessionID, requestOperationID)
+	result, teardownClaimed, incomplete, err := s.stopTaskSessionForCoordinatorLocked(ctx, taskID, sessionID, requestOperationID, &candidate)
 	lock.Unlock()
 	release()
 	// The detached teardown callback is allowed to observe coordinator state;
@@ -5180,7 +5208,7 @@ func (s *Service) stopTaskSessionForCoordinator(ctx context.Context, taskID, ses
 //nolint:nestif // Cancellation fallback must remain under the session guard.
 func (s *Service) stopTaskSessionForCoordinatorLocked(
 	ctx context.Context,
-	taskID, sessionID, requestOperationID string,
+	taskID, sessionID, requestOperationID string, candidate *models.CoordinatorStopRequestCandidate,
 ) (executor.SessionStopResult, bool, bool, error) {
 
 	// Re-read after acquiring the shared cancel/ready/queue guard. A candidate
@@ -5195,10 +5223,13 @@ func (s *Service) stopTaskSessionForCoordinatorLocked(
 	if session.TaskID != taskID {
 		return executor.SessionStopResult{}, false, false, fmt.Errorf("coordinator stop: session %q belongs to task %q, not %q", sessionID, session.TaskID, taskID)
 	}
+	if candidate != nil && candidate.QueueIncarnationID != "" && session.QueueIncarnationID != candidate.QueueIncarnationID {
+		return executor.SessionStopResult{FinalState: session.State}, false, false, nil
+	}
 	if !isCoordinatorStoppableSessionState(session.State) {
 		return executor.SessionStopResult{FinalState: session.State}, false, false, nil
 	}
-	if result, handled, incomplete, err := s.stopCapturedCoordinatorExecution(ctx, session, requestOperationID); handled {
+	if result, handled, incomplete, err := s.stopCapturedCoordinatorExecution(ctx, session, requestOperationID, candidate); handled {
 		return result, false, incomplete, err
 	}
 	if requestOperationID != "" {
@@ -5306,13 +5337,16 @@ func (s *Service) stopTaskSessionForCoordinatorLocked(
 // has a complete execution/turn incarnation. It fences admission before
 // graceful teardown and deliberately returns incomplete until a later
 // lifecycle-owned terminal-row proof can promote the receipt.
-func (s *Service) stopCapturedCoordinatorExecution(ctx context.Context, session *models.TaskSession, requestOperationID string) (executor.SessionStopResult, bool, bool, error) {
-	op, _, handled, err := s.captureCoordinatorStopExecution(ctx, session, requestOperationID)
+func (s *Service) stopCapturedCoordinatorExecution(ctx context.Context, session *models.TaskSession, requestOperationID string, candidate *models.CoordinatorStopRequestCandidate) (executor.SessionStopResult, bool, bool, error) {
+	op, _, handled, err := s.captureCoordinatorStopExecution(ctx, session, requestOperationID, candidate)
 	if !handled {
 		return executor.SessionStopResult{}, false, false, nil
 	}
 	if err != nil {
 		return executor.SessionStopResult{}, true, false, fmt.Errorf("capture coordinator stop operation: %w", err)
+	}
+	if op == nil {
+		return executor.SessionStopResult{FinalState: session.State}, true, false, nil
 	}
 	result := executor.SessionStopResult{Changed: true, ExecutionID: op.ExecutionID, FinalState: models.TaskSessionStateCancelled}
 	updated, err := s.resumeCoordinatorStopOperation(ctx, op)
@@ -5340,7 +5374,7 @@ func (s *Service) resumeCoordinatorStopOperation(ctx context.Context, op *models
 	return repo.GetCoordinatorStopOperation(ctx, op.ID)
 }
 
-func (s *Service) captureCoordinatorStopExecution(ctx context.Context, session *models.TaskSession, requestOperationID string) (*models.CoordinatorStopOperation, taskrepo.CoordinatorStopOperationRepository, bool, error) {
+func (s *Service) captureCoordinatorStopExecution(ctx context.Context, session *models.TaskSession, requestOperationID string, candidate *models.CoordinatorStopRequestCandidate) (*models.CoordinatorStopOperation, taskrepo.CoordinatorStopOperationRepository, bool, error) {
 	repo, ok := s.repo.(taskrepo.CoordinatorStopOperationRepository)
 	if !ok || session == nil {
 		return nil, nil, false, nil
@@ -5355,6 +5389,9 @@ func (s *Service) captureCoordinatorStopExecution(ctx context.Context, session *
 	if !validCoordinatorStopExecutor(running) {
 		return nil, nil, true, fmt.Errorf("executor identity for session %q is incomplete", session.ID)
 	}
+	if !coordinatorStopCandidateMatchesExecution(candidate, running) {
+		return nil, nil, true, nil
+	}
 	turn, err := s.repo.GetActiveTurnBySessionID(ctx, session.ID)
 	if err != nil {
 		return nil, nil, true, fmt.Errorf("read active turn for session %q: %w", session.ID, err)
@@ -5362,12 +5399,24 @@ func (s *Service) captureCoordinatorStopExecution(ctx context.Context, session *
 	if turn == nil || turn.ID == "" || turn.TaskID != session.TaskID {
 		return nil, nil, true, fmt.Errorf("active turn identity for session %q is unavailable", session.ID)
 	}
+	if !coordinatorStopCandidateMatchesTurn(candidate, turn) {
+		return nil, nil, true, nil
+	}
 	op, _, err := repo.CaptureCoordinatorStopOperation(ctx, models.CoordinatorStopOperation{
 		ID: uuid.NewString(), RequestOperationID: requestOperationID, TaskID: session.TaskID, SessionID: session.ID, TurnID: turn.ID,
 		ExecutionID: running.AgentExecutionID, AgentctlGeneration: running.AgentctlGeneration,
 		ExecutorStatus: running.Status, ExecutorUpdatedAt: running.UpdatedAt,
 	})
 	return op, repo, true, err
+}
+
+func coordinatorStopCandidateMatchesExecution(candidate *models.CoordinatorStopRequestCandidate, running *models.ExecutorRunning) bool {
+	return candidate == nil || candidate.ExecutionID == "" ||
+		(running.AgentExecutionID == candidate.ExecutionID && running.AgentctlGeneration == candidate.AgentctlGeneration)
+}
+
+func coordinatorStopCandidateMatchesTurn(candidate *models.CoordinatorStopRequestCandidate, turn *models.Turn) bool {
+	return candidate == nil || candidate.TurnID == "" || turn.ID == candidate.TurnID
 }
 
 func validCoordinatorStopExecutor(running *models.ExecutorRunning) bool {

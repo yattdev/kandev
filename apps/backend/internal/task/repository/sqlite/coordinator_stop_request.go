@@ -21,7 +21,7 @@ func (r *Repository) CaptureCoordinatorStopRequest(ctx context.Context, request 
 // returns the original inventory, including a durable empty inventory.
 //
 //nolint:cyclop,nestif // The single transaction is the atomicity boundary for request and inventory.
-func (r *Repository) CaptureCoordinatorStopRequestWithCandidates(ctx context.Context, request models.CoordinatorStopRequest) (*models.CoordinatorStopRequest, []string, bool, error) {
+func (r *Repository) CaptureCoordinatorStopRequestWithCandidates(ctx context.Context, request models.CoordinatorStopRequest) (*models.CoordinatorStopRequest, []models.CoordinatorStopRequestCandidate, bool, error) {
 	if request.TaskID == "" || request.OperationID == "" || request.ParentTaskID == "" {
 		return nil, nil, false, fmt.Errorf("coordinator stop request requires task, operation, and parent")
 	}
@@ -61,12 +61,19 @@ func (r *Repository) CaptureCoordinatorStopRequestWithCandidates(ctx context.Con
 				return nil, nil, false, err
 			}
 		}
-		var sessionIDs []string
-		if err := tx.SelectContext(ctx, &sessionIDs, r.db.Rebind(`SELECT id FROM task_sessions WHERE task_id = ? AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT') ORDER BY started_at DESC`), request.TaskID); err != nil {
+		var candidates []models.CoordinatorStopRequestCandidate
+		if err := tx.SelectContext(ctx, &candidates, r.db.Rebind(`
+			SELECT s.id AS session_id, s.queue_incarnation_id,
+				COALESCE((SELECT t.id FROM task_session_turns t WHERE t.task_session_id = s.id AND t.completed_at IS NULL ORDER BY t.started_at DESC LIMIT 1), '') AS turn_id,
+				COALESCE(e.agent_execution_id, '') AS execution_id, COALESCE(e.agentctl_generation, 0) AS agentctl_generation
+			FROM task_sessions s
+			LEFT JOIN executors_running e ON e.session_id = s.id
+			WHERE s.task_id = ? AND s.state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
+			ORDER BY s.started_at DESC`), request.TaskID); err != nil {
 			return nil, nil, false, err
 		}
-		for _, sessionID := range sessionIDs {
-			if _, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_request_candidates(task_id, operation_id, session_id) VALUES (?, ?, ?)`), request.TaskID, request.OperationID, sessionID); err != nil {
+		for _, candidate := range candidates {
+			if _, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_request_candidates(task_id, operation_id, session_id, queue_incarnation_id, turn_id, execution_id, agentctl_generation) VALUES (?, ?, ?, ?, ?, ?, ?)`), request.TaskID, request.OperationID, candidate.SessionID, candidate.QueueIncarnationID, candidate.TurnID, candidate.ExecutionID, candidate.AgentctlGeneration); err != nil {
 				return nil, nil, false, err
 			}
 		}
@@ -74,8 +81,8 @@ func (r *Repository) CaptureCoordinatorStopRequestWithCandidates(ctx context.Con
 			return nil, nil, false, err
 		}
 	}
-	var candidates []string
-	if err := tx.SelectContext(ctx, &candidates, r.db.Rebind(`SELECT session_id FROM task_stop_request_candidates WHERE task_id = ? AND operation_id = ? ORDER BY session_id`), request.TaskID, request.OperationID); err != nil {
+	var candidates []models.CoordinatorStopRequestCandidate
+	if err := tx.SelectContext(ctx, &candidates, r.db.Rebind(`SELECT task_id, operation_id, session_id, queue_incarnation_id, turn_id, execution_id, agentctl_generation FROM task_stop_request_candidates WHERE task_id = ? AND operation_id = ? ORDER BY session_id`), request.TaskID, request.OperationID); err != nil {
 		return nil, nil, false, err
 	}
 	if err := tx.Commit(); err != nil {
