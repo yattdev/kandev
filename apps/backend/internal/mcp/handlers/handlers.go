@@ -345,6 +345,9 @@ type Handlers struct {
 	// Optional list_pending_agent_permissions_kandev / resolve_agent_permission_kandev
 	// dependency (external MCP surface only, set via SetAgentPermissionService).
 	agentPermissionSvc AgentPermissionService
+	liveCallerVerifier interface {
+		VerifyLiveCaller(context.Context) (mcpscope.Principal, error)
+	}
 }
 
 func (h *Handlers) releaseWorkspacePolicyAfterCreateRollback(ctx context.Context, taskID string) {
@@ -432,6 +435,12 @@ func (h *Handlers) SetTaskStopper(stopper TaskStopper) {
 // SetAgentPermissionService wires the authorized permission domain service.
 func (h *Handlers) SetAgentPermissionService(svc AgentPermissionService) {
 	h.agentPermissionSvc = svc
+}
+
+func (h *Handlers) SetLiveCallerVerifier(verifier interface {
+	VerifyLiveCaller(context.Context) (mcpscope.Principal, error)
+}) {
+	h.liveCallerVerifier = verifier
 }
 
 // SetTaskTitleBranchRenamer wires the best-effort branch rename performed
@@ -546,6 +555,7 @@ func (h *Handlers) registerTaskMutationHandlers(d *guardedMCPDispatcher) {
 	d.RegisterFunc(ws.ActionMCPStepComplete, h.handleStepComplete)
 	d.RegisterFunc(ws.ActionMCPMessageTask, h.handleMessageTask)
 	d.RegisterFunc(ws.ActionMCPStopTask, h.handleStopTask)
+	d.RegisterFunc(ws.ActionMCPCommitForceRemoval, h.handleCommitForceRemoval)
 	d.RegisterFunc(ws.ActionMCPSpawnSession, h.handleSpawnSession)
 }
 

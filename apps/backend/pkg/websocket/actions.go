@@ -495,6 +495,7 @@ const (
 	ActionMCPPublishReviewFindings                 = "mcp.publish_review_findings"
 	ActionMCPClarificationTimeout                  = "mcp.clarification_timeout"
 	ActionMCPSetTaskTitle                          = "mcp.set_task_title"
+	ActionMCPCommitForceRemoval                    = "mcp.commit_force_removal"
 	ActionMCPGetDiagnosticBundle                   = "mcp.get_diagnostic_bundle"
 
 	// Office task handoffs (cross-task context).

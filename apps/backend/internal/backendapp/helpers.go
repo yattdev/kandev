@@ -2177,6 +2177,7 @@ func registerMCPAndDebugRoutes(
 		func() bool { return p.authSvc != nil && p.authSvc.Mode() != auth.ModeDisabled },
 		p.log,
 	)
+	mcpHandlers.SetLiveCallerVerifier(mcpScopeResolver)
 	p.lifecycleMgr.SetMCPPrincipalScoper(mcpScopeResolver.ScopePrincipal)
 	if p.authSvc != nil {
 		p.lifecycleMgr.SetMCPIdentityScoper(mcpScopeResolver.Scope)
