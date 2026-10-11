@@ -29,3 +29,9 @@ After final constant extraction, every new admission/executor regression passed
 again with `go test ./internal/repoclone ./internal/backendapp ./internal/orchestrator/executor -run 'Test(ManagedAttachment|ManagedSourceAttachment|HostRepositoryMaterialization)' -count=1`.
 Evidence: task-local `.kandev/managed-attachment/main/{packages,executor}.jsonl`.
 No dump or credentials. Temporary Git/SQLite fixtures clean up through testing.T.
+
+Compatibility correction: the pre-workspace GitLab owner/name layout is an exact
+legacy candidate too. A new absent-path test first failed with ownership mismatch.
+The correction admits that registered layout, validates the origin of an existing
+checkout, and still clones an absent legacy source into its workspace destination.
+`cd apps/backend && go test ./internal/repoclone -count=1`: PASS after correction.

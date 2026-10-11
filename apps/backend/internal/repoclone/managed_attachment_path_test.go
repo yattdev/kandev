@@ -17,7 +17,7 @@ type attachmentPathInspector interface {
 }
 
 func TestManagedAttachmentPathAdmission(t *testing.T) {
-	for _, scenario := range []string{"missing", "valid", "foreign", "other-workspace", "symlink-parent", "occupied", "git-file", "common-dir", "wrong-origin", "legacy", "scoped", "worktree-config", "objects-link", "permission-denied"} {
+	for _, scenario := range []string{"missing", "valid", "foreign", "other-workspace", "symlink-parent", "occupied", "git-file", "common-dir", "wrong-origin", "legacy", "legacy-gitlab", "legacy-gitlab-valid", "scoped", "worktree-config", "objects-link", "permission-denied"} {
 		t.Run(scenario, func(t *testing.T) {
 			root, err := filepath.EvalSymlinks(t.TempDir())
 			if err != nil {
@@ -29,6 +29,11 @@ func TestManagedAttachmentPathAdmission(t *testing.T) {
 				t.Fatal("cloner lacks owned managed attachment admission")
 			}
 			repo := &models.Repository{WorkspaceID: "ws-1", SourceType: "provider", Provider: "github", ProviderHost: "https://github.com", ProviderOwner: "acme", ProviderName: "notes", RemoteURL: "https://github.com/acme/notes.git"}
+			if scenario == "legacy-gitlab" {
+				repo.Provider = "gitlab"
+				repo.ProviderHost = "https://gitlab.example"
+				repo.RemoteURL = "https://gitlab.example/acme/notes.git"
+			}
 			if scenario == "scoped" {
 				repo.Provider = "fixture"
 				repo.ProviderScope = "connection"
@@ -51,6 +56,11 @@ func TestManagedAttachmentPathAdmission(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+			case "legacy-gitlab", "legacy-gitlab-valid":
+				path, err = c.RepoPath("acme", "notes")
+				if err != nil {
+					t.Fatal(err)
+				}
 			case "symlink-parent":
 				if err := os.MkdirAll(filepath.Dir(filepath.Dir(path)), 0755); err != nil {
 					t.Fatal(err)
@@ -59,7 +69,7 @@ func TestManagedAttachmentPathAdmission(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			exists := scenario == "valid" || scenario == "wrong-origin" || scenario == "common-dir" || scenario == "worktree-config" || scenario == "objects-link"
+			exists := scenario == "legacy-gitlab-valid" || scenario == "valid" || scenario == "wrong-origin" || scenario == "common-dir" || scenario == "worktree-config" || scenario == "objects-link"
 			if exists {
 				runGit(t, root, "init", path)
 				origin := repo.RemoteURL
@@ -115,11 +125,11 @@ func TestManagedAttachmentPathAdmission(t *testing.T) {
 			}
 			found, err := inspector.InspectHostRepositoryPath(context.Background(), repo, path)
 			switch scenario {
-			case "missing", "legacy", "scoped":
+			case "missing", "legacy", "legacy-gitlab", "scoped":
 				if err != nil || found {
 					t.Fatalf("owned absent path: %v %v", found, err)
 				}
-			case "valid":
+			case "valid", "legacy-gitlab-valid":
 				if err != nil || !found {
 					t.Fatalf("valid checkout: %v %v", found, err)
 				}

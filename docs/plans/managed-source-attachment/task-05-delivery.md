@@ -1,7 +1,7 @@
 ---
 id: "05-delivery"
 title: "Independent verification and delivery"
-status: pending
+status: in_progress
 plan: "plan.md"
 spec: "../../specs/managed-source-attachment/spec.md"
 ---

@@ -69,11 +69,9 @@ func (c *Cloner) isLegacyAttachmentPath(repo *models.Repository, path string) bo
 	if filepath.Clean(path) == filepath.Clean(providerPath) {
 		return true
 	}
-	// The owner/name layout predates provider hosts and belongs only to GitHub's
-	// default origin. GitLab and custom hosts must not borrow that identity.
-	if provider != githubProvider || nonDefaultProviderHostSegment(provider, repo.ProviderHost) != "" {
-		return false
-	}
+	// Older built-in clones also used owner/name without provider or workspace
+	// directories. The registered path is exact; an existing checkout still has
+	// to prove its provider origin before it can be reused.
 	legacy, err := c.RepoPath(repo.ProviderOwner, repo.ProviderName)
 	return err == nil && filepath.Clean(path) == filepath.Clean(legacy)
 }
