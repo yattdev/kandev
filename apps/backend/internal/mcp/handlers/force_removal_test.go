@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -39,4 +40,27 @@ func TestCommitForceRemovalUsesVerifiedCallerInsteadOfPayload(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotEmpty(t, resp.Type)
+}
+
+func TestCommitForceRemovalRejectsUnverifiedCallerWithoutConsumingGrant(t *testing.T) {
+	svc, repo := newTestTaskService(t)
+	ctx := authn.WithIdentity(context.Background(), authn.Identity{UserID: "admin", Role: authn.RoleAdmin, Synthetic: true})
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-mcp-deny-ws", Name: "Force"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "force-mcp-deny-target", WorkspaceID: "force-mcp-deny-ws", Title: "Target"}))
+	task, err := repo.GetTask(ctx, "force-mcp-deny-target")
+	require.NoError(t, err)
+	grant, err := repo.IssueForceRemovalGrant(ctx, &models.ForceRemovalGrant{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, CallerTaskID: "trusted-task", CallerSessionID: "trusted-session", IssuedByUserID: "admin", ExpiresAt: time.Now().Add(time.Minute)})
+	require.NoError(t, err)
+	preview, err := svc.PreviewForceRemoval(ctx, task.ID, task.WorkspaceID, task.UpdatedAt.UTC().Format(time.RFC3339Nano))
+	require.NoError(t, err)
+	payload, err := json.Marshal(forceRemovalCommitRequest{TaskID: task.ID, WorkspaceID: task.WorkspaceID, ExpectedTaskGeneration: task.UpdatedAt.UTC().Format(time.RFC3339Nano), AdmissionGeneration: "admission", OperationID: "mcp-deny-op", RequestDigest: "request", PreviewDigest: preview.Digest, GrantID: grant.ID})
+	require.NoError(t, err)
+	h := &Handlers{taskSvc: svc, liveCallerVerifier: forceRemovalVerifier{err: errors.New("missing authenticated caller")}}
+
+	resp, err := h.handleCommitForceRemoval(ctx, &ws.Message{ID: "mcp", Action: ws.ActionMCPCommitForceRemoval, Payload: payload})
+
+	require.NoError(t, err)
+	require.Equal(t, ws.MessageTypeError, resp.Type)
+	_, err = repo.ConsumeForceRemovalGrant(ctx, grant.ID, task.ID, task.WorkspaceID, "trusted-task", "trusted-session", task.UpdatedAt)
+	require.NoError(t, err, "a rejected caller must not consume its grant or create an admission")
 }
