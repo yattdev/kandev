@@ -248,6 +248,16 @@ Read the consequence summary in the dialog or drawer before submitting. It descr
 current executor will restart the agent or update the live remote workspace. **Cancel** or closing
 the surface sends no attachment request and leaves the workspace unchanged.
 
+On Local/Local PC and Worktree tasks, attaching a registered provider repository
+recreates a missing Kandev-managed clone using the task session's configured Git
+credentials. This also applies to the Worktree-only branch attachment tool. A
+saved managed path does not require a manual clone. Kandev validates the managed
+repository path and origin before reuse; foreign or occupied paths are rejected.
+User-managed local repositories are preserved, and a missing local checkout must
+be restored by its owner. When the Kandev server itself runs in Docker, these
+managed paths belong to the server container; this is separate from a task using
+the Docker executor.
+
 Kandev rejects the entire request if a source is invalid, duplicated, inaccessible, or cannot be materialized. A failure removes new source records and Kandev-owned materialization; existing task contents remain intact. Attachments persist across reload, relaunch, and reset. A missing persisted folder is surfaced during a new or reset environment rather than silently omitted.
 
 When a second source promotes a single-repository workspace to the task root, Kandev restarts the

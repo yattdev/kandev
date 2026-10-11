@@ -910,6 +910,9 @@ func (e *Executor) EnsureRepositoryClonedForSession(
 	if repo == nil {
 		return "", errors.New("repository is required")
 	}
+	if repo.SourceType == "provider" {
+		return e.materializeManagedHostRepository(ctx, taskID, sessionID, repo)
+	}
 	if repo.LocalPath != "" {
 		return repo.LocalPath, nil
 	}

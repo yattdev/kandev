@@ -103,6 +103,9 @@ func newWorkspaceSourceMaterializer(repo workspaceSourceMaterializerRepo, mgr *w
 func (m *workspaceSourceMaterializer) SetHostRepositoryCloner(cloner orchestrator.RepositoryHostCloner) {
 	if m != nil {
 		m.hostCloner = cloner
+		if m.branches != nil {
+			m.branches.SetHostRepositoryCloner(cloner)
+		}
 	}
 }
 
@@ -427,10 +430,10 @@ func (m *workspaceSourceMaterializer) ensureHostRepositoryPaths(
 	sessionID := workspaceSourceCredentialSessionID(state.sessions)
 	for _, taskRepository := range state.repositories {
 		repository := state.entities[taskRepository.RepositoryID]
-		if repository == nil || repository.LocalPath != "" {
+		if repository == nil || (repository.LocalPath != "" && repository.SourceType != hostRepositorySourceProvider) {
 			continue
 		}
-		if repository.ProviderOwner == "" || repository.ProviderName == "" {
+		if repository.SourceType == hostRepositorySourceLocal || !hasHostProviderIdentity(repository) {
 			return fmt.Errorf("repository %q source path is missing", taskRepository.RepositoryID)
 		}
 		if m.hostCloner == nil {
