@@ -136,6 +136,78 @@ func TestAdmitRoutineWakeForSessionReleaseSettlesLeaderParity(t *testing.T) {
 	}
 }
 
+func TestAdmitRoutineWakeForSessionRestartedServiceSettlesLeaderParity(t *testing.T) {
+	for _, factory := range []struct {
+		name string
+		new  func(*testing.T) Repository
+	}{
+		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
+		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
+	} {
+		t.Run(factory.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := factory.new(t)
+			identity := QueueSessionIdentity{TaskID: "task", SessionID: "session", SessionIncarnationID: "incarnation"}
+			seedQueueSessionIdentity(t, repo, identity)
+			queue := NewService(repo, DefaultMaxPerSession, logger.Default())
+
+			_, err := queue.AdmitRoutineWakeForSession(ctx, identity, routineWakeEnvelope("source-a"), "wake")
+			require.NoError(t, err)
+			leader, _, _, err := queue.ReserveQueuedForDeliveryWithAutoRunForSession(ctx, identity)
+			require.NoError(t, err)
+			successor, err := queue.AdmitRoutineWakeForSession(ctx, identity, routineWakeEnvelope("source-b"), "wake")
+			require.NoError(t, err)
+
+			restarted := NewService(repo, DefaultMaxPerSession, logger.Default())
+			require.NoError(t, restarted.ReleaseQueuedDeliveryForSession(ctx, identity, leader))
+			entries, err := repo.ListBySession(ctx, identity.SessionID)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			require.Equal(t, successor.Message.ID, entries[0].ID)
+		})
+	}
+}
+
+func TestAdmitRoutineWakeForSessionStaleIncarnationFencesLeaderParity(t *testing.T) {
+	for _, factory := range []struct {
+		name string
+		new  func(*testing.T) Repository
+	}{
+		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
+		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
+	} {
+		t.Run(factory.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := factory.new(t)
+			first := QueueSessionIdentity{TaskID: "task", SessionID: "session", SessionIncarnationID: "incarnation-a"}
+			seedQueueSessionIdentity(t, repo, first)
+			queue := NewService(repo, DefaultMaxPerSession, logger.Default())
+
+			_, err := queue.AdmitRoutineWakeForSession(ctx, first, routineWakeEnvelope("source-a"), "wake")
+			require.NoError(t, err)
+			leader, _, _, err := queue.ReserveQueuedForDeliveryWithAutoRunForSession(ctx, first)
+			require.NoError(t, err)
+			successor, err := queue.AdmitRoutineWakeForSession(ctx, first, routineWakeEnvelope("source-b"), "wake")
+			require.NoError(t, err)
+
+			replacement := first
+			replacement.SessionIncarnationID = "incarnation-b"
+			seedQueueSessionIdentity(t, repo, replacement)
+			require.ErrorIs(t, queue.ReleaseQueuedDeliveryForSession(ctx, first, leader), ErrSessionIdentityMismatch)
+			reserved, _, _, err := queue.ReserveQueuedForDeliveryWithAutoRunForSession(ctx, replacement)
+			require.NoError(t, err)
+			require.NotNil(t, reserved)
+			require.Equal(t, successor.Message.ID, reserved.ID)
+			entries, err := repo.ListBySession(ctx, replacement.SessionID)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			require.Equal(t, successor.Message.ID, entries[0].ID)
+		})
+	}
+}
+
 func TestAdmitRoutineWakeForSessionPreservesDistinctMessagesParity(t *testing.T) {
 	for _, factory := range []struct {
 		name string
