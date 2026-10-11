@@ -353,8 +353,19 @@ func (c taskChangeLinkCoordinator) list(ctx context.Context, taskID string) ([]m
 			links = append(links, mcp.TaskChangeLink{Provider: taskChangeProviderGitHub, RepositoryID: pr.RepositoryID, Number: pr.PRNumber})
 		}
 	}
+	gl, err := c.gitlabLinks(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	links = append(links, gl...)
+
+	return links, nil
+}
+
+func (c taskChangeLinkCoordinator) gitlabLinks(ctx context.Context, task *models.Task) ([]mcp.TaskChangeLink, error) {
+	links := []mcp.TaskChangeLink{}
 	if c.gitlab != nil {
-		mrs, err := c.gitlab.ListTaskMRsByTask(ctx, taskID)
+		mrs, err := c.gitlab.ListTaskMRsByTask(ctx, task.ID)
 		if err != nil {
 			return nil, err
 		}

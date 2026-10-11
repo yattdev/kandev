@@ -19,7 +19,9 @@ type scopedURLProvider struct {
 
 func (p *scopedURLProvider) AssociateScopedPRURL(_ context.Context, req github.ScopedPRURLRequest) (*github.TaskPR, error) {
 	p.request = req
-	return &github.TaskPR{TaskID: req.TaskID, RepositoryID: req.RepositoryID, PRNumber: req.Number, PRURL: req.URL, HeadSHA: req.ExpectedHead}, nil
+	row := &github.TaskPR{ID: "association", TaskID: req.TaskID, RepositoryID: req.RepositoryID, PRNumber: req.Number, PRURL: req.URL, HeadSHA: req.ExpectedHead}
+	p.prs = []*github.TaskPR{row}
+	return row, nil
 }
 func TestTaskChangeCoordinatorScopedPRURL(t *testing.T) {
 	tasks, repo := newTaskChangeCoordinatorHarness(t)

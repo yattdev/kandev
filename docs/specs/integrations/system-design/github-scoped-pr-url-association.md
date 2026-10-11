@@ -48,8 +48,16 @@ parent relationship, session policy and source identity after provider fetch.
 The transaction rejects same-slot URL/stored-head conflicts and active competing
 links, then reuses the established outcome-field insert/restore writers.
 Manual multi-task links remain allowed by their existing entry points.
+Ordinary association rechecks an earlier absent-slot observation inside the
+shared transaction; a conflicting concurrent canonical link is never replaced.
+Deliberate manual upserts remain a separate primitive. Strict-versus-ordinary
+writer schedules and conflicting same-slot URLs have deterministic regressions.
 Only a changed committed row emits the existing association event and comparison
 projection. Exact persisted row and active links are read back for the response.
+Readback must match the committed association ID, source slot, canonical target
+and head. The coordinator derives resolved evidence and GitHub links from one
+active-row snapshot, so a concurrent replacement/detach reports uncertainty
+without undoing the manual operation.
 Failure to establish final state never becomes success.
 
 ## Compatibility and validation

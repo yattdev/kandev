@@ -631,21 +631,16 @@ func (s *Service) associatePRWithTaskForSession(
 		Source:            source,
 		HasMergeConflicts: observedTaskPRMergeConflict(nil, pr, pr.MergeableState),
 	}
-	// ReplaceTaskPR upserts the row matching (task, repository, pr_number)
-	// and resolves the five outcome-attribution columns itself, inside its
-	// own transaction, against the row it is about to overwrite (AC-43,
-	// AC-43a) — this caller must not pre-resolve them. Multi-branch tasks
-	// may already hold sibling rows for the SAME (task, repository) on
-	// different PR numbers — ReplaceTaskPR no longer touches them. The
-	// early-return above guarantees we only reach this line when no row for
-	// the exact pr_number exists yet, so this is a straight insert in
-	// steady state; the delete-then-insert form is retained so a retry that
-	// races a partial write resolves cleanly.
-	replaced, err := s.store.ReplaceTaskPR(ctx, tp, &PRStatus{PR: pr, OutcomeFieldsPopulated: outcomeFieldsPopulated})
+	// An ordinary caller may have read an absent slot before waiting for the
+	// write fence. Recheck there so it cannot replace a concurrent canonical link.
+	replaced, changed, err := s.store.AssociateTaskPR(ctx, tp, &PRStatus{PR: pr, OutcomeFieldsPopulated: outcomeFieldsPopulated}, restoreDetached)
 	if err != nil {
-		return nil, fmt.Errorf("replace task PR: %w", err)
+		return nil, fmt.Errorf("associate task PR: %w", err)
 	}
 	tp = replaced
+	if !changed {
+		return tp, nil
+	}
 
 	// Publish event for UI
 	if s.eventBus != nil {

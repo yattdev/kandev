@@ -23,6 +23,10 @@ Merged deliverable linking grants no contribution editing or launch authority.
 Association insert/restore and ownership writers share database serialization;
 scope and slot checks run in the same transaction as the strict mutation.
 Keep the existing schema and outcome metadata. Emit effects after commit.
+Ordinary association also rechecks its absent-slot precheck within the shared
+write fence instead of overwriting a concurrent link. Explicit manual upserts
+retain their own semantics. Strict successful readback must match committed
+identity/head evidence and the active link snapshot.
 
 ## Consequences
 

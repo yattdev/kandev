@@ -1,7 +1,7 @@
 ---
 id: "04-mcp-dispatch"
 title: "MCP dispatch"
-status: done
+status: in_progress
 wave: 4
 depends_on: ["02","03"]
 plan: "plan.md"
@@ -32,3 +32,7 @@ Shared writer regressions passed:
 Documentation catalog/spec/public-doc validation passed; public-doc tests passed 164/164. Repository fixtures only, test-owned temporary DBs removed by cleanup. No provider or deployment writes. `PROMPT.md` remains local-only.
 
 PostgreSQL concurrency remains UNVERIFIED pending a task-owned DSN. Independent Review/QA and AC14 post-merge release evidence are pending; no skipped check is recorded as passed.
+
+## Round 1 corrections
+
+See plan.md corrected readback/shared-writer/full-failure ledger. MAIN correction focused race tests and lint passed; next committed candidate still requires both independent sessions and real PostgreSQL verification.

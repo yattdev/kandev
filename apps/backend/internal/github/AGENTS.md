@@ -32,6 +32,10 @@ before reading admission state. It reserves SQLite's writer or takes the shared
 PostgreSQL transaction advisory lock. Strict agent URL links recheck live parent,
 session, attachment and canonical identity inside that transaction; manual
 multi-task association remains valid. Publish association effects after commit.
+Ordinary association uses `AssociateTaskPR` to recheck an absent-slot precheck
+inside that fence; it must not overwrite a link installed while it waited.
+`ReplaceTaskPR` remains an explicit upsert. Strict readback compares immutable
+association identity and canonical URL/head with committed evidence.
 The feedback read persists through `SyncTaskPR` in `service_pr_feedback_sync.go`.
 Its `github.task_pr.updated` event updates every frontend surface.
 Do not patch lifecycle fields only in a frontend store copy.

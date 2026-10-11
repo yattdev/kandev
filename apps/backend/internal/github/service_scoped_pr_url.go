@@ -78,6 +78,7 @@ func (s *Service) AssociateScopedPRURL(ctx context.Context, req ScopedPRURLReque
 	if err != nil {
 		return nil, err
 	}
+	evidence := *row
 	if changed {
 		if s.eventBus != nil {
 			_ = s.eventBus.Publish(ctx, events.GitHubTaskPRUpdated, bus.NewEvent(events.GitHubTaskPRUpdated, "github", row))
@@ -85,7 +86,7 @@ func (s *Service) AssociateScopedPRURL(ctx context.Context, req ScopedPRURLReque
 		s.reconcileComparisonTarget(ctx, req.TaskID, pr)
 	}
 	persisted, err := s.store.GetTaskPRByRepoAndNumber(ctx, req.TaskID, req.RepositoryID, req.Number)
-	if err != nil || persisted == nil {
+	if err != nil || !persisted.MatchesAssociationEvidence(&evidence) {
 		return nil, ErrScopedPRURLReadback
 	}
 	return persisted, nil

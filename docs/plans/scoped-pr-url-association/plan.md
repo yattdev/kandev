@@ -199,3 +199,15 @@ Code and intended docs are ready for a candidate commit. The source checks above
 - Pre-existing issues found: task GitLab read tool reported provider_read_failed with no linked requests; unrelated to GitHub source work.
 - UI screenshots for PR/MR: not applicable (agent API-only change).
 - Review artifact location: .kandev/wrq/review. QA artifact location: .kandev/wrq/qa. Both are ignored/local only.
+
+## Fixed during independent round 1
+
+- R-01: deterministic postcommit replacement/detach tests reproduced unverified `resolved` success and inconsistent active links. Service readback now compares committed association ID/slot/canonical target/head evidence; coordinator uses one GitHub active-row snapshot for resolved plus links. Manual mutation is retained and returns uncertainty.
+- R-02 / QA-001: a barrier-controlled real ordinary-association call reproduced stale absent-slot overwrite after a strict link. `AssociateTaskPR` rechecks that precheck inside the write fence and preserves the concurrent row. Intentional `ReplaceTaskPR` and manual multi-links remain valid. Insert/restore/replacement schedules run in both orderings; conflicting slot URLs and identical/stale ordinary prechecks have SQLite and env-gated PostgreSQL coverage.
+- QA-002: full management failures assert `state_known`, no fabricated resolved evidence, unchanged incumbent/automation/comparison sentinels. Added after-fetch parent/source/policy revocation, same-repository and uppercase/trailing slash positives, provider-write counters and comparison/event counts.
+
+New file map: `internal/github/task_pr_evidence.go`, `store_task_pr_association.go`, `service_scoped_pr_url_readback_test.go`, `store_scoped_pr_url_interleaving_test.go`, `internal/backendapp/task_scoped_pr_url_readback_test.go`, `task_scoped_pr_url_failure_test.go` (all under apps/backend).
+
+MAIN correction checks passed: four-package focused race suite, SQLite deterministic interleavings (1.539s), full GitHub package race suite (40.958s), changed-code lint (0 issues). These results precede the correction commit; independent sessions must account for its immutable SHA. PG remains UNVERIFIED. Source/metadata/docs checks rerun for changed files before commit; candidate freeze applies only while sessions actively check.
+
+Both same-task side sessions finished round 1 and waited before MAIN edits. Ledger retained in ignored `.kandev/wrq/findings.md`. No implementation workers, live deployment or provider mutations. Post-merge release retirement remains pending.

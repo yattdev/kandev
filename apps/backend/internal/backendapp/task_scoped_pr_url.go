@@ -7,6 +7,7 @@ import (
 	"github.com/kandev/kandev/internal/auth/authn"
 	"github.com/kandev/kandev/internal/github"
 	mcp "github.com/kandev/kandev/internal/mcp/handlers"
+	"github.com/kandev/kandev/internal/task/models"
 )
 
 type scopedPRURLProvider interface {
@@ -37,7 +38,7 @@ func (c taskChangeLinkCoordinator) scopedPRURLMutation(ctx context.Context, req 
 	if err != nil || row == nil {
 		return c.scopedPRURLFailure(ctx, result, err)
 	}
-	result.Links, err = c.list(ctx, task.ID)
+	result.Links, row, err = c.scopedPRURLReadback(ctx, task, row)
 	if err != nil {
 		result.OperationError = taskChangeMutationReadbackError
 		return result, err
@@ -60,4 +61,31 @@ func (c taskChangeLinkCoordinator) scopedPRURLFailure(ctx context.Context, resul
 	result.Links = links
 	result.StateKnown = readErr == nil
 	return result, err
+}
+
+// The exact resolved row and GitHub active links come from one read snapshot.
+func (c taskChangeLinkCoordinator) scopedPRURLReadback(ctx context.Context, task *models.Task, expected *github.TaskPR) ([]mcp.TaskChangeLink, *github.TaskPR, error) {
+	rows, err := c.githubLinks(ctx, task.ID)
+	if err != nil {
+		return nil, nil, github.ErrScopedPRURLReadback
+	}
+	links := []mcp.TaskChangeLink{}
+	var resolved *github.TaskPR
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		links = append(links, mcp.TaskChangeLink{Provider: taskChangeProviderGitHub, RepositoryID: row.RepositoryID, Number: row.PRNumber})
+		if row.MatchesAssociationEvidence(expected) {
+			resolved = row
+		}
+	}
+	if resolved == nil {
+		return nil, nil, github.ErrScopedPRURLReadback
+	}
+	gl, err := c.gitlabLinks(ctx, task)
+	if err != nil {
+		return nil, nil, err
+	}
+	return append(links, gl...), resolved, nil
 }
