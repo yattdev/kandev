@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,14 +153,19 @@ func attachmentOriginIdentity(origin string) string {
 }
 
 func checkAttachmentGitEntries(gitDir string) error {
-	for _, entry := range []string{"objects", "objects/info", "refs", "config", "HEAD"} {
-		info, err := os.Lstat(filepath.Join(gitDir, filepath.FromSlash(entry)))
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+	// Git writes through nested ref, log, worktree and object namespaces. Checking
+	// only their roots would admit a descendant symlink to unrelated storage.
+	// WalkDir inspects links themselves and never follows them.
+	if err := filepath.WalkDir(gitDir, func(_ string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		if entry.Type()&os.ModeSymlink != 0 {
 			return ErrRepositoryOwnershipMismatch
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	if _, err := os.Lstat(filepath.Join(gitDir, "objects", "info", "alternates")); !errors.Is(err, os.ErrNotExist) {
 		if err != nil {

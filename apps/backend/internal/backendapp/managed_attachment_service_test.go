@@ -3,8 +3,11 @@ package backendapp
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/kandev/kandev/internal/events/bus"
@@ -16,7 +19,7 @@ import (
 
 func TestManagedAttachmentServiceCloneAndCompensation(t *testing.T) {
 	for _, route := range []string{"source", "branch"} {
-		for _, scenario := range []string{"missing", "empty", "foreign", "local", "local-valid", "clone-failure"} {
+		for _, scenario := range []string{"missing", "empty", "foreign", "local", "local-valid", "clone-failure", "nested-refs", "cloner-unavailable"} {
 			t.Run(route+"/"+scenario, func(t *testing.T) { exerciseManagedAttachmentService(t, route, scenario) })
 		}
 	}
@@ -60,11 +63,19 @@ func exerciseManagedAttachmentService(t *testing.T, route, scenario string) {
 	if err := repo.CreateRepository(ctx, notes); err != nil {
 		t.Fatal(err)
 	}
+	var foreignRefs string
+	var priorRefs map[string]string
+	if scenario == "nested-refs" {
+		foreignRefs, priorRefs = prepareAttachmentRedirectedRefs(t, origin, managed)
+	}
 	exc := executor.NewExecutor(nil, nil, log, executor.ExecutorConfig{})
 	exc.SetRepoCloner(cloner, &repoLocalPathUpdater{svc: svc})
 	mgr := newPersistingMaterializerWorktreeMgr(t, root, repo)
 	mat := newWorkspaceSourceMaterializer(repo, mgr, nil, log)
 	mat.SetHostRepositoryCloner(exc)
+	if scenario == "cloner-unavailable" {
+		mat.SetHostRepositoryCloner(nil)
+	}
 	svc.SetWorkspaceSourceMaterializer(mat)
 	svc.SetBranchMaterializer(mat.branches)
 	attach := func() error {
@@ -79,7 +90,7 @@ func exerciseManagedAttachmentService(t *testing.T, route, scenario string) {
 		return err
 	}
 	err = attach()
-	failure := scenario == "foreign" || scenario == "local" || scenario == "clone-failure"
+	failure := scenario == "foreign" || scenario == "local" || scenario == "clone-failure" || scenario == "nested-refs" || scenario == "cloner-unavailable"
 	if failure && err == nil {
 		t.Fatal("invalid source unexpectedly attached")
 	}
@@ -108,15 +119,18 @@ func exerciseManagedAttachmentService(t *testing.T, route, scenario string) {
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
+	if failure && stored.LocalPath != saved {
+		t.Fatal("failed source redirected")
+	}
+	if failure && scenario == "nested-refs" && !reflect.DeepEqual(priorRefs, attachmentRefDirectorySnapshot(t, foreignRefs)) {
+		t.Fatal("foreign ref directory changed")
+	}
+	if failure && scenario != "nested-refs" && scenario != "clone-failure" {
+		if _, err := os.Lstat(managed); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("invalid source cloned: %v", err)
+		}
+	}
 	if failure {
-		if stored.LocalPath != saved {
-			t.Fatal("failed source redirected")
-		}
-		if scenario != "clone-failure" {
-			if _, err := os.Lstat(managed); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("invalid source cloned: %v", err)
-			}
-		}
 		return
 	}
 	expectedPath := managed
@@ -138,4 +152,64 @@ func exerciseManagedAttachmentService(t *testing.T, route, scenario string) {
 			t.Fatalf("exact retry: %v", err)
 		}
 	}
+}
+
+func prepareAttachmentRedirectedRefs(t *testing.T, origin, managed string) (string, map[string]string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(managed), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "clone", origin, managed).CombinedOutput(); err != nil {
+		t.Fatalf("fixture clone: %s: %v", output, err)
+	}
+	heads := filepath.Join(managed, ".git", "refs", "heads")
+	foreign := canonicalTempDir(t)
+	if err := os.Rename(heads, heads+".original"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(heads + ".original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		content, err := os.ReadFile(filepath.Join(heads+".original", entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(foreign, entry.Name()), content, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(foreign, heads); err != nil {
+		t.Fatal(err)
+	}
+	return foreign, attachmentRefDirectorySnapshot(t, foreign)
+}
+
+func attachmentRefDirectorySnapshot(t *testing.T, root string) map[string]string {
+	t.Helper()
+	contents := make(map[string]string)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			contents[rel] = "directory"
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		contents[rel] = string(content)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contents
 }

@@ -58,7 +58,7 @@ func (u *attachmentPathUpdater) UpdateRepositoryLocalPath(_ context.Context, _, 
 }
 
 func TestHostRepositoryMaterializationManagedPaths(t *testing.T) {
-	for _, saved := range []string{"missing", "empty", "foreign", "local", "persist-failure", "auth-failure", "empty-result", "foreign-result", "canceled", "missing-session"} {
+	for _, saved := range []string{"missing", "empty", "valid", "foreign", "local", "persist-failure", "auth-failure", "empty-result", "foreign-result", "canceled", "missing-session"} {
 		t.Run(saved, func(t *testing.T) {
 			origin := initBareOriginWithMain(t)
 			cloner := &attachmentCloneFixture{Cloner: repoclone.NewCloner(repoclone.Config{BasePath: t.TempDir()}, repoclone.ProtocolHTTPS, "", logger.Default()), origin: origin, t: t}
@@ -69,6 +69,12 @@ func TestHostRepositoryMaterializationManagedPaths(t *testing.T) {
 			}
 			if saved != "empty" && saved != "persist-failure" {
 				repository.LocalPath = path
+			}
+			if saved == "valid" {
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					t.Fatal(err)
+				}
+				runGitInTest(t, "", "clone", origin, path)
 			}
 			if saved == "foreign" || saved == "local" {
 				repository.LocalPath = filepath.Join(t.TempDir(), "user-owned")
@@ -121,8 +127,19 @@ func TestHostRepositoryMaterializationManagedPaths(t *testing.T) {
 				if saved == "empty" && updater.path != result {
 					t.Fatalf("path not persisted: %q vs %q", updater.path, result)
 				}
-				if len(cloner.calls) != 1 || cloner.calls[0].TaskID != "task-1" || cloner.calls[0].SessionID != "session-1" {
+				wantCalls := 1
+				if saved == "valid" {
+					wantCalls = 0
+				}
+				if len(cloner.calls) != wantCalls {
+					t.Fatalf("clone requests=%d want %d", len(cloner.calls), wantCalls)
+				}
+				if wantCalls > 0 && (cloner.calls[0].TaskID != "task-1" || cloner.calls[0].SessionID != "session-1") {
 					t.Fatalf("wrong scope: %+v", cloner.calls)
+				}
+				repeated, err := exc.EnsureRepositoryClonedForSession(ctx, "task-1", "session-1", repository)
+				if err != nil || repeated != result || len(cloner.calls) != wantCalls {
+					t.Fatalf("existing clone was not reused: %q, %v, calls=%d", repeated, err, len(cloner.calls))
 				}
 			}
 		})

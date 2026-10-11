@@ -32,3 +32,23 @@ Foreign/absent local/clone failure compensation; valid local provider metadata;
 permission denial; origin/common-dir/Git redirects; credential denial; failed
 persistence/output/cancellation/scope are covered. No deployment or external DB.
 Main test artifacts stay task-local and untracked.
+
+## Fixed during independent review
+
+R1: the first committed candidate admitted symlinks below `.git/refs`. A reviewer
+probe proved that ordinary Git worktree creation wrote a branch ref to a foreign
+fixture directory. MAIN added failing nested ref/object/worktree metadata tests
+and real service tests for both attachment operations; both service routes first
+attached the redirected source successfully, contrary to the required rejection.
+
+Admission now traverses the Git metadata tree without following symlinks and
+propagates traversal errors. Real service regressions assert attachment and
+inventory compensation plus a byte-identical foreign ref-directory snapshot.
+The correction does not remove or rewrite the unsafe checkout. Tests also now
+assert that a valid managed clone and repeated repair avoid additional clone
+requests. Final independent verdicts belong in task-plan metadata and remain
+pending until both sessions verify the corrected committed SHA.
+
+Correction checks:
+`cd apps/backend && go test ./internal/repoclone ./internal/backendapp ./internal/orchestrator/executor -run 'Test(ManagedAttachment|ManagedSourceAttachment|HostRepositoryMaterialization)' -count=1`: PASS.
+`cd apps/backend && go test ./internal/repoclone ./internal/orchestrator/executor -run 'Test(ManagedAttachmentPathAdmission|HostRepositoryMaterialization)' -count=1`: PASS.

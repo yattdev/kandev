@@ -17,7 +17,7 @@ type attachmentPathInspector interface {
 }
 
 func TestManagedAttachmentPathAdmission(t *testing.T) {
-	for _, scenario := range []string{"missing", "valid", "foreign", "other-workspace", "symlink-parent", "occupied", "git-file", "common-dir", "wrong-origin", "legacy", "legacy-gitlab", "legacy-gitlab-valid", "scoped", "worktree-config", "objects-link", "permission-denied"} {
+	for _, scenario := range []string{"missing", "valid", "foreign", "other-workspace", "symlink-parent", "occupied", "git-file", "common-dir", "wrong-origin", "legacy", "legacy-gitlab", "legacy-gitlab-valid", "scoped", "worktree-config", "objects-link", "permission-denied", "nested-refs-link", "nested-pack-link", "nested-namespace-link", "nested-worktrees-link", "nested-loose-link", "nested-logs-link"} {
 		t.Run(scenario, func(t *testing.T) {
 			root, err := filepath.EvalSymlinks(t.TempDir())
 			if err != nil {
@@ -69,7 +69,8 @@ func TestManagedAttachmentPathAdmission(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			exists := scenario == "legacy-gitlab-valid" || scenario == "valid" || scenario == "wrong-origin" || scenario == "common-dir" || scenario == "worktree-config" || scenario == "objects-link"
+			nestedLink := scenario == "nested-refs-link" || scenario == "nested-pack-link" || scenario == "nested-namespace-link" || scenario == "nested-worktrees-link" || scenario == "nested-loose-link" || scenario == "nested-logs-link"
+			exists := nestedLink || scenario == "legacy-gitlab-valid" || scenario == "valid" || scenario == "wrong-origin" || scenario == "common-dir" || scenario == "worktree-config" || scenario == "objects-link"
 			if exists {
 				runGit(t, root, "init", path)
 				origin := repo.RemoteURL
@@ -95,6 +96,9 @@ func TestManagedAttachmentPathAdmission(t *testing.T) {
 				if err := os.Symlink(t.TempDir(), objects); err != nil {
 					t.Fatal(err)
 				}
+			}
+			if nestedLink {
+				seedNestedAttachmentMetadataLink(t, path, scenario)
 			}
 			if scenario == "occupied" || scenario == "git-file" {
 				if err := os.MkdirAll(path, 0755); err != nil {
@@ -145,5 +149,24 @@ func TestManagedAttachmentPathAdmission(t *testing.T) {
 				t.Fatalf("foreign path error=%v", err)
 			}
 		})
+	}
+}
+
+func seedNestedAttachmentMetadataLink(t *testing.T, path, scenario string) {
+	t.Helper()
+	metadata := map[string]string{"nested-refs-link": "refs/heads", "nested-pack-link": "objects/pack", "nested-namespace-link": "refs/heads/team", "nested-worktrees-link": "worktrees", "nested-loose-link": "objects/ab", "nested-logs-link": "logs/refs"}[scenario]
+	target := filepath.Join(path, ".git", filepath.FromSlash(metadata))
+	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(target); err == nil {
+		if err := os.Rename(target, target+".original"); err != nil {
+			t.Fatal(err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), target); err != nil {
+		t.Fatal(err)
 	}
 }
