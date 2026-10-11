@@ -136,6 +136,34 @@ func TestAdmitRoutineWakeForSessionReleaseSettlesLeaderParity(t *testing.T) {
 	}
 }
 
+func TestAdmitRoutineWakeForSessionPreservesDistinctMessagesParity(t *testing.T) {
+	for _, factory := range []struct {
+		name string
+		new  func(*testing.T) Repository
+	}{
+		{name: "memory", new: func(*testing.T) Repository { return NewMemoryRepository() }},
+		{name: "sqlite", new: newTestSQLiteRepo},
+		{name: "postgres", new: newTestPostgresRepo},
+	} {
+		t.Run(factory.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := factory.new(t)
+			identity := QueueSessionIdentity{TaskID: "task", SessionID: "session", SessionIncarnationID: "incarnation"}
+			seedQueueSessionIdentity(t, repo, identity)
+			queue := NewService(repo, DefaultMaxPerSession, logger.Default())
+			_, err := queue.AdmitRoutineWakeForSession(ctx, identity, routineWakeEnvelope("source-a"), "wake")
+			require.NoError(t, err)
+			for _, queuedBy := range []string{QueuedByUser, QueuedByAgent, QueuedByWorkflow} {
+				_, err := queue.QueueMessage(ctx, identity.SessionID, identity.TaskID, "distinct "+queuedBy, "", queuedBy, false, nil)
+				require.NoError(t, err)
+			}
+			entries, err := repo.ListBySession(ctx, identity.SessionID)
+			require.NoError(t, err)
+			require.Len(t, entries, 4)
+		})
+	}
+}
+
 func routineWakeEnvelope(source string) RoutineWakeEnvelope {
 	return RoutineWakeEnvelope{
 		WorkspaceID: "workspace", RoutineType: "wake", RoutineName: "cycle",
