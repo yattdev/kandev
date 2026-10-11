@@ -26,8 +26,17 @@ type ForceRemovalAdmissionRequest struct {
 	OperationID, RequestDigest, PreviewDigest                        string
 }
 
+// ForceRemovalTrustedCaller is derived by the server transport after it has
+// verified the live MCP principal. It is deliberately separate from request
+// data so a future wire adapter cannot use payload caller identifiers.
+type ForceRemovalTrustedCaller struct{ TaskID, SessionID string }
+
 type forceRemovalAdmissionStore interface {
 	ClaimForceRemovalWithReceipts(context.Context, *models.ForceRemovalClaim, []models.ExactRetirementPredicateReceipt) (*models.ForceRemovalClaim, bool, error)
+}
+
+type forceRemovalGrantAdmissionStore interface {
+	ClaimForceRemovalWithGrant(context.Context, string, string, string, *models.ForceRemovalClaim, []models.ExactRetirementPredicateReceipt) (*models.ForceRemovalClaim, bool, error)
 }
 
 // AdmitForceRemoval installs the durable fence and its identity receipt only.
@@ -57,6 +66,38 @@ func (s *Service) AdmitForceRemoval(ctx context.Context, req ForceRemovalAdmissi
 	claim := &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: req.AdmissionGeneration, OperationID: req.OperationID, RequestDigest: req.RequestDigest, PreviewDigest: req.PreviewDigest}
 	receipt := models.ExactRetirementPredicateReceipt{Predicate: models.ExactRetirementIdentityPredicate, Status: models.ExactRetirementReceiptPass, ReasonCode: "EXACT_TASK_CLAIMED", ResourceID: task.ID, ObservedGeneration: task.UpdatedAt.UTC().Format(time.RFC3339Nano), EvidenceDigest: exactRetirementDigest(task.ID, task.WorkspaceID, req.ExpectedTaskGeneration, req.PreviewDigest)}
 	return store.ClaimForceRemovalWithReceipts(ctx, claim, []models.ExactRetirementPredicateReceipt{receipt})
+}
+
+// AdmitForceRemovalWithGrant binds agent admission to a trusted live caller
+// and an atomic grant-consume-and-claim transaction. Transport remains closed.
+func (s *Service) AdmitForceRemovalWithGrant(ctx context.Context, req ForceRemovalAdmissionRequest, grantID string, caller ForceRemovalTrustedCaller) (*models.ForceRemovalClaim, bool, error) {
+	if grantID == "" || caller.TaskID == "" || caller.SessionID == "" {
+		return nil, false, ErrForceRemovalAdmissionStale
+	}
+	if err := s.AuthorizeTaskScope(ctx, req.TaskID, authz.ScopeTaskWrite); err != nil {
+		return nil, false, err
+	}
+	identity, ok := authn.IdentityFromContext(ctx)
+	if !ok || !identity.IsAdmin() {
+		return nil, false, ErrForbidden
+	}
+	task, err := s.GetTask(ctx, req.TaskID)
+	if err != nil {
+		return nil, false, err
+	}
+	if task.WorkspaceID != req.WorkspaceID || req.ExpectedTaskGeneration != exactRetirementGeneration(task) {
+		return nil, false, ErrForceRemovalAdmissionStale
+	}
+	if req.PreviewDigest != forceRemovalPreviewDigest(task) {
+		return nil, false, ErrForceRemovalPreviewInvalid
+	}
+	store, ok := s.tasks.(forceRemovalGrantAdmissionStore)
+	if !ok {
+		return nil, false, ErrForceRemovalAdmissionStale
+	}
+	claim := &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: req.AdmissionGeneration, OperationID: req.OperationID, RequestDigest: req.RequestDigest, PreviewDigest: req.PreviewDigest}
+	receipt := models.ExactRetirementPredicateReceipt{Predicate: models.ExactRetirementIdentityPredicate, Status: models.ExactRetirementReceiptPass, ReasonCode: "EXACT_TASK_CLAIMED", ResourceID: task.ID, ObservedGeneration: exactRetirementGeneration(task), EvidenceDigest: exactRetirementDigest(task.ID, task.WorkspaceID, req.ExpectedTaskGeneration, req.PreviewDigest)}
+	return store.ClaimForceRemovalWithGrant(ctx, grantID, caller.TaskID, caller.SessionID, claim, []models.ExactRetirementPredicateReceipt{receipt})
 }
 
 func forceRemovalPreviewDigest(task *models.Task) string {

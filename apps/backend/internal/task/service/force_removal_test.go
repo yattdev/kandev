@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository/sqlite"
@@ -42,6 +43,26 @@ func TestAdmitForceRemovalClaimsExactTaskAndPreservesReceipt(t *testing.T) {
 	stale.ExpectedTaskGeneration = "stale"
 	_, _, err = svc.AdmitForceRemoval(ctx, stale)
 	require.ErrorIs(t, err, ErrForceRemovalAdmissionStale)
+}
+
+func TestAdmitForceRemovalWithGrantConsumesOnlyTrustedCallerGrant(t *testing.T) {
+	ctx := ctxSynthetic()
+	svc, _, repo := createTestService(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "grant-service-ws", Name: "Grant"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "grant-service-task", WorkspaceID: "grant-service-ws", Title: "Grant"}))
+	task, err := repo.GetTask(ctx, "grant-service-task")
+	require.NoError(t, err)
+	grant, err := repo.IssueForceRemovalGrant(ctx, &models.ForceRemovalGrant{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, CallerTaskID: "caller", CallerSessionID: "session", IssuedByUserID: "admin", ExpiresAt: time.Now().Add(time.Minute)})
+	require.NoError(t, err)
+	req := ForceRemovalAdmissionRequest{TaskID: task.ID, WorkspaceID: task.WorkspaceID, ExpectedTaskGeneration: exactRetirementGeneration(task), AdmissionGeneration: "admission", OperationID: "grant-service-operation", RequestDigest: "request", PreviewDigest: forceRemovalPreviewDigest(task)}
+	_, _, err = svc.AdmitForceRemovalWithGrant(ctx, req, grant.ID, ForceRemovalTrustedCaller{TaskID: "caller", SessionID: "forged"})
+	require.ErrorIs(t, err, sqlite.ErrForceRemovalGrantUsed)
+	claim, replay, err := svc.AdmitForceRemovalWithGrant(ctx, req, grant.ID, ForceRemovalTrustedCaller{TaskID: "caller", SessionID: "session"})
+	require.NoError(t, err)
+	require.False(t, replay)
+	require.Equal(t, task.ID, claim.TaskID)
+	_, _, err = svc.AdmitForceRemovalWithGrant(ctx, req, grant.ID, ForceRemovalTrustedCaller{TaskID: "caller", SessionID: "session"})
+	require.ErrorIs(t, err, sqlite.ErrForceRemovalGrantUsed)
 }
 
 func TestPreviewForceRemovalDerivesFreshDigestAndRejectsStaleInput(t *testing.T) {
