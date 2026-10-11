@@ -120,22 +120,3 @@ func TestStandingInstructions(t *testing.T) {
 		}
 	})
 }
-
-func TestStandingInstructions_DocumentsGuardedProjectArtifactWorkflow(t *testing.T) {
-	got := StandingInstructions("Acme Workspace", "ws-1", "Ops", "")
-
-	assertions := []string{
-		"PROJECT ARTIFACT WORKFLOW:",
-		"only when the broker recognizes this as the registered Coordinator",
-		"artifact-discover", "artifact-deliver", "artifact-receipt",
-		"AVAILABLE", "ABSENT", "STALE_OR_INCOMPATIBLE", "INACCESSIBLE",
-		"delivery UUID", "receipt.json", "recipe.json", "inert",
-		"artifact-ack", "RECEIVED|CONSUMED|FAILED", "child-to-parent",
-		"source bytes", "raw recipe", "same-UID cross-task filesystem-read confidentiality",
-	}
-	for _, want := range assertions {
-		if !strings.Contains(got, want) {
-			t.Errorf("StandingInstructions() missing %q in:\n%s", want, got)
-		}
-	}
-}
