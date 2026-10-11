@@ -771,6 +771,8 @@ const (
 	Host_AddTaskRelationExact_FullMethodName                       = "/kandev.plugin.v1.Host/AddTaskRelationExact"
 	Host_RemoveTaskRelationExact_FullMethodName                    = "/kandev.plugin.v1.Host/RemoveTaskRelationExact"
 	Host_SendTaskMessageExact_FullMethodName                       = "/kandev.plugin.v1.Host/SendTaskMessageExact"
+	Host_GetTaskInstructionsExact_FullMethodName                   = "/kandev.plugin.v1.Host/GetTaskInstructionsExact"
+	Host_PutTaskInstructionsExact_FullMethodName                   = "/kandev.plugin.v1.Host/PutTaskInstructionsExact"
 	Host_IssueTaskDirectiveExact_FullMethodName                    = "/kandev.plugin.v1.Host/IssueTaskDirectiveExact"
 	Host_ResolveTaskDirectiveExact_FullMethodName                  = "/kandev.plugin.v1.Host/ResolveTaskDirectiveExact"
 	Host_AcquireTaskManagementClaimExact_FullMethodName            = "/kandev.plugin.v1.Host/AcquireTaskManagementClaimExact"
@@ -902,6 +904,8 @@ type HostClient interface {
 	AddTaskRelationExact(ctx context.Context, in *AddTaskRelationExactRequest, opts ...grpc.CallOption) (*AddTaskRelationExactResponse, error)
 	RemoveTaskRelationExact(ctx context.Context, in *RemoveTaskRelationExactRequest, opts ...grpc.CallOption) (*RemoveTaskRelationExactResponse, error)
 	SendTaskMessageExact(ctx context.Context, in *SendTaskMessageExactRequest, opts ...grpc.CallOption) (*SendTaskMessageExactResponse, error)
+	GetTaskInstructionsExact(ctx context.Context, in *GetTaskInstructionsExactRequest, opts ...grpc.CallOption) (*GetTaskInstructionsExactResponse, error)
+	PutTaskInstructionsExact(ctx context.Context, in *PutTaskInstructionsExactRequest, opts ...grpc.CallOption) (*PutTaskInstructionsExactResponse, error)
 	IssueTaskDirectiveExact(ctx context.Context, in *IssueTaskDirectiveExactRequest, opts ...grpc.CallOption) (*IssueTaskDirectiveExactResponse, error)
 	ResolveTaskDirectiveExact(ctx context.Context, in *ResolveTaskDirectiveExactRequest, opts ...grpc.CallOption) (*ResolveTaskDirectiveExactResponse, error)
 	AcquireTaskManagementClaimExact(ctx context.Context, in *AcquireTaskManagementClaimExactRequest, opts ...grpc.CallOption) (*TaskManagementClaimExactResponse, error)
@@ -1172,6 +1176,26 @@ func (c *hostClient) SendTaskMessageExact(ctx context.Context, in *SendTaskMessa
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SendTaskMessageExactResponse)
 	err := c.cc.Invoke(ctx, Host_SendTaskMessageExact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hostClient) GetTaskInstructionsExact(ctx context.Context, in *GetTaskInstructionsExactRequest, opts ...grpc.CallOption) (*GetTaskInstructionsExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTaskInstructionsExactResponse)
+	err := c.cc.Invoke(ctx, Host_GetTaskInstructionsExact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hostClient) PutTaskInstructionsExact(ctx context.Context, in *PutTaskInstructionsExactRequest, opts ...grpc.CallOption) (*PutTaskInstructionsExactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutTaskInstructionsExactResponse)
+	err := c.cc.Invoke(ctx, Host_PutTaskInstructionsExact_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2153,6 +2177,8 @@ type HostServer interface {
 	AddTaskRelationExact(context.Context, *AddTaskRelationExactRequest) (*AddTaskRelationExactResponse, error)
 	RemoveTaskRelationExact(context.Context, *RemoveTaskRelationExactRequest) (*RemoveTaskRelationExactResponse, error)
 	SendTaskMessageExact(context.Context, *SendTaskMessageExactRequest) (*SendTaskMessageExactResponse, error)
+	GetTaskInstructionsExact(context.Context, *GetTaskInstructionsExactRequest) (*GetTaskInstructionsExactResponse, error)
+	PutTaskInstructionsExact(context.Context, *PutTaskInstructionsExactRequest) (*PutTaskInstructionsExactResponse, error)
 	IssueTaskDirectiveExact(context.Context, *IssueTaskDirectiveExactRequest) (*IssueTaskDirectiveExactResponse, error)
 	ResolveTaskDirectiveExact(context.Context, *ResolveTaskDirectiveExactRequest) (*ResolveTaskDirectiveExactResponse, error)
 	AcquireTaskManagementClaimExact(context.Context, *AcquireTaskManagementClaimExactRequest) (*TaskManagementClaimExactResponse, error)
@@ -2358,6 +2384,12 @@ func (UnimplementedHostServer) RemoveTaskRelationExact(context.Context, *RemoveT
 }
 func (UnimplementedHostServer) SendTaskMessageExact(context.Context, *SendTaskMessageExactRequest) (*SendTaskMessageExactResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendTaskMessageExact not implemented")
+}
+func (UnimplementedHostServer) GetTaskInstructionsExact(context.Context, *GetTaskInstructionsExactRequest) (*GetTaskInstructionsExactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTaskInstructionsExact not implemented")
+}
+func (UnimplementedHostServer) PutTaskInstructionsExact(context.Context, *PutTaskInstructionsExactRequest) (*PutTaskInstructionsExactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PutTaskInstructionsExact not implemented")
 }
 func (UnimplementedHostServer) IssueTaskDirectiveExact(context.Context, *IssueTaskDirectiveExactRequest) (*IssueTaskDirectiveExactResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method IssueTaskDirectiveExact not implemented")
@@ -2835,6 +2867,42 @@ func _Host_SendTaskMessageExact_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(HostServer).SendTaskMessageExact(ctx, req.(*SendTaskMessageExactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Host_GetTaskInstructionsExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTaskInstructionsExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).GetTaskInstructionsExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_GetTaskInstructionsExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).GetTaskInstructionsExact(ctx, req.(*GetTaskInstructionsExactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Host_PutTaskInstructionsExact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutTaskInstructionsExactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HostServer).PutTaskInstructionsExact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Host_PutTaskInstructionsExact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HostServer).PutTaskInstructionsExact(ctx, req.(*PutTaskInstructionsExactRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4552,6 +4620,14 @@ var Host_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendTaskMessageExact",
 			Handler:    _Host_SendTaskMessageExact_Handler,
+		},
+		{
+			MethodName: "GetTaskInstructionsExact",
+			Handler:    _Host_GetTaskInstructionsExact_Handler,
+		},
+		{
+			MethodName: "PutTaskInstructionsExact",
+			Handler:    _Host_PutTaskInstructionsExact_Handler,
 		},
 		{
 			MethodName: "IssueTaskDirectiveExact",

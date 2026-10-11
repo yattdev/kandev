@@ -452,6 +452,10 @@ func (h *grpcHostClient) TaskCommands() ExactTaskCommandManager {
 	return grpcExactTaskCommandManager{client: h.client}
 }
 
+func (h *grpcHostClient) TaskInstructions() ExactTaskInstructionsManager {
+	return grpcExactTaskInstructionsManager{client: h.client}
+}
+
 func (h *grpcHostClient) TaskManagementClaims() ExactTaskManagementClaimCommandManager {
 	return grpcExactTaskManagementClaimCommandManager{client: h.client}
 }
@@ -865,6 +869,7 @@ func registerHostServer(s grpc.ServiceRegistrar, impl Host) {
 	exact, _ := impl.(ExactHost)
 	exactQueries, _ := impl.(ExactQueryHost)
 	taskCommands, _ := impl.(ExactTaskCommandHost)
+	taskInstructions, _ := impl.(ExactTaskInstructionsHost)
 	claimCommands, _ := impl.(ExactTaskManagementClaimCommandHost)
 	completionGateCommands, _ := impl.(ExactTaskCompletionGateCommandHost)
 	workspaceAdminCommands, _ := impl.(ExactWorkspaceAdministrationHost)
@@ -873,7 +878,7 @@ func registerHostServer(s grpc.ServiceRegistrar, impl Host) {
 	interactionCommands, _ := impl.(ExactInteractionCommandHost)
 	pluginv1.RegisterHostServer(s, &grpcHostServer{
 		impl: impl, exact: exact, exactQueries: exactQueries, taskCommands: taskCommands,
-		claimCommands: claimCommands, completionGateCommands: completionGateCommands,
+		claimCommands: claimCommands, completionGateCommands: completionGateCommands, taskInstructions: taskInstructions,
 		workspaceAdminCommands:       workspaceAdminCommands,
 		sourceIssueWritebackCommands: sourceIssueWritebackCommands,
 		executionCommands:            executionCommands, interactionCommands: interactionCommands,
@@ -886,6 +891,7 @@ type grpcHostServer struct {
 	exact                        ExactHost
 	exactQueries                 ExactQueryHost
 	taskCommands                 ExactTaskCommandHost
+	taskInstructions             ExactTaskInstructionsHost
 	claimCommands                ExactTaskManagementClaimCommandHost
 	completionGateCommands       ExactTaskCompletionGateCommandHost
 	workspaceAdminCommands       ExactWorkspaceAdministrationHost
@@ -1274,6 +1280,36 @@ func (s *grpcHostServer) SendTaskMessageExact(ctx context.Context, req *pluginv1
 		return nil, err
 	}
 	return &pluginv1.SendTaskMessageExactResponse{Result: commandResultToProto(result)}, nil
+}
+
+func (s *grpcHostServer) GetTaskInstructionsExact(ctx context.Context, req *pluginv1.GetTaskInstructionsExactRequest) (*pluginv1.GetTaskInstructionsExactResponse, error) {
+	if s.taskInstructions == nil || s.taskInstructions.TaskInstructions() == nil {
+		return nil, status.Error(codes.Unimplemented, "task instructions are unavailable")
+	}
+	binding, err := s.taskInstructions.TaskInstructions().Get(ctx, ExactTaskInstructionsGet{
+		WorkspaceID: req.GetWorkspaceId(), TaskID: req.GetTaskId(), ApprovalRevision: req.GetApprovalRevision(), ManifestDigest: req.GetManifestDigest(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pluginv1.GetTaskInstructionsExactResponse{Binding: taskInstructionBindingToProto(binding)}, nil
+}
+
+func (s *grpcHostServer) PutTaskInstructionsExact(ctx context.Context, req *pluginv1.PutTaskInstructionsExactRequest) (*pluginv1.PutTaskInstructionsExactResponse, error) {
+	if s.taskInstructions == nil || s.taskInstructions.TaskInstructions() == nil {
+		return nil, status.Error(codes.Unimplemented, "task instructions are unavailable")
+	}
+	result, binding, err := s.taskInstructions.TaskInstructions().Put(ctx, ExactTaskInstructionsPut{
+		RequestID: req.GetRequestId(), WorkspaceID: req.GetWorkspaceId(), TaskID: req.GetTaskId(), EnvironmentID: req.GetEnvironmentId(),
+		ExpectedTaskResourceVersion: req.GetExpectedTaskResourceVersion(), ExpectedOwnershipGeneration: req.GetExpectedOwnershipGeneration(),
+		ExpectedVersion: req.GetExpectedVersion(), ManagementInstanceKey: req.GetManagementInstanceKey(),
+		ExpectedClaimGeneration: req.GetExpectedClaimGeneration(), Content: req.GetContent(), IdempotencyKey: req.GetIdempotencyKey(),
+		ApprovalRevision: req.GetApprovalRevision(), ManifestDigest: req.GetManifestDigest(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pluginv1.PutTaskInstructionsExactResponse{Result: commandResultToProto(result), Binding: taskInstructionBindingToProto(binding)}, nil
 }
 
 func (s *grpcHostServer) IssueTaskDirectiveExact(ctx context.Context, req *pluginv1.IssueTaskDirectiveExactRequest) (*pluginv1.IssueTaskDirectiveExactResponse, error) {

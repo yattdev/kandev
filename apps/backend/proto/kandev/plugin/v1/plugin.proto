@@ -74,6 +74,8 @@ service Host {
   rpc AddTaskRelationExact(AddTaskRelationExactRequest) returns (AddTaskRelationExactResponse);
   rpc RemoveTaskRelationExact(RemoveTaskRelationExactRequest) returns (RemoveTaskRelationExactResponse);
   rpc SendTaskMessageExact(SendTaskMessageExactRequest) returns (SendTaskMessageExactResponse);
+  rpc GetTaskInstructionsExact(GetTaskInstructionsExactRequest) returns (GetTaskInstructionsExactResponse);
+  rpc PutTaskInstructionsExact(PutTaskInstructionsExactRequest) returns (PutTaskInstructionsExactResponse);
   rpc IssueTaskDirectiveExact(IssueTaskDirectiveExactRequest) returns (IssueTaskDirectiveExactResponse);
   rpc ResolveTaskDirectiveExact(ResolveTaskDirectiveExactRequest) returns (ResolveTaskDirectiveExactResponse);
   rpc AcquireTaskManagementClaimExact(AcquireTaskManagementClaimExactRequest) returns (TaskManagementClaimExactResponse);
@@ -479,6 +481,52 @@ message SendTaskMessageExactRequest {
 
 message SendTaskMessageExactResponse {
   HostCommandResult result = 1;
+}
+
+message TaskInstructionBinding {
+  string task_id = 1;
+  string workspace_id = 2;
+  string environment_id = 3;
+  int64 ownership_generation = 4;
+  int64 version = 5;
+  string owner_installation_id = 6;
+  string owner_instance_key = 7;
+  string content = 8;
+  string digest = 9;
+  string control_path = 10;
+  string guard_kind = 11;
+}
+
+message GetTaskInstructionsExactRequest {
+  string workspace_id = 1;
+  string task_id = 2;
+  uint64 approval_revision = 3;
+  string manifest_digest = 4;
+}
+
+message GetTaskInstructionsExactResponse {
+  TaskInstructionBinding binding = 1;
+}
+
+message PutTaskInstructionsExactRequest {
+  string request_id = 1;
+  string workspace_id = 2;
+  string task_id = 3;
+  string environment_id = 4;
+  string expected_task_resource_version = 5;
+  int64 expected_ownership_generation = 6;
+  int64 expected_version = 7;
+  string management_instance_key = 8;
+  int64 expected_claim_generation = 9;
+  string content = 10;
+  string idempotency_key = 11;
+  uint64 approval_revision = 12;
+  string manifest_digest = 13;
+}
+
+message PutTaskInstructionsExactResponse {
+  HostCommandResult result = 1;
+  TaskInstructionBinding binding = 2;
 }
 
 message TaskManagementClaim {
