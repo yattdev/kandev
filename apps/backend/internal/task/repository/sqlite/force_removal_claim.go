@@ -20,6 +20,8 @@ var (
 	ErrForceRemovalCleanupHeld   = errors.New("force removal cleanup is held")
 )
 
+const forceRemovalTaskGenerationQuery = `SELECT updated_at FROM tasks WHERE id = ? AND workspace_id = ?`
+
 // ClaimForceRemoval installs one task-scoped admission fence. The claim is
 // intentionally private until the service can authorize and quiesce it.
 func (r *Repository) ClaimForceRemoval(ctx context.Context, claim *models.ForceRemovalClaim) (*models.ForceRemovalClaim, bool, error) {
@@ -37,7 +39,7 @@ func (r *Repository) ClaimForceRemovalWithReceipts(ctx context.Context, claim *m
 		return nil, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	query := `SELECT updated_at FROM tasks WHERE id = ? AND workspace_id = ?`
+	query := forceRemovalTaskGenerationQuery
 	if dialect.IsPostgres(r.db.DriverName()) {
 		query += forUpdateClause
 	}

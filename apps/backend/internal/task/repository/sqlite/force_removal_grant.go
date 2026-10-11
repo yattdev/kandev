@@ -25,7 +25,7 @@ func (r *Repository) IssueForceRemovalGrant(ctx context.Context, grant *models.F
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	query := `SELECT updated_at FROM tasks WHERE id = ? AND workspace_id = ?`
+	query := forceRemovalTaskGenerationQuery
 	if dialect.IsPostgres(r.db.DriverName()) {
 		query += forUpdateClause
 	}
@@ -69,4 +69,58 @@ func (r *Repository) ConsumeForceRemovalGrant(ctx context.Context, id, taskID, w
 		return nil, ErrForceRemovalGrantUsed
 	}
 	return &models.ForceRemovalGrant{ID: id, TaskID: taskID, WorkspaceID: workspaceID, TaskGeneration: generation, CallerTaskID: callerTaskID, CallerSessionID: callerSessionID, ConsumedAt: &now}, nil
+}
+
+// ClaimForceRemovalWithGrant consumes an exact grant and persists the claim in
+// one transaction, so a rejected claim never burns a grant.
+func (r *Repository) ClaimForceRemovalWithGrant(ctx context.Context, grantID, callerTaskID, callerSessionID string, claim *models.ForceRemovalClaim, receipts []models.ExactRetirementPredicateReceipt) (*models.ForceRemovalClaim, bool, error) {
+	if !validForceRemovalClaim(claim) {
+		return nil, false, ErrForceRemovalClaimStale
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := time.Now().UTC()
+	consumed, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_force_removal_grants SET consumed_at = ? WHERE id = ? AND task_id = ? AND workspace_id = ? AND caller_task_id = ? AND caller_session_id = ? AND task_generation = ? AND consumed_at IS NULL AND expires_at > ?`), now, grantID, claim.TaskID, claim.WorkspaceID, callerTaskID, callerSessionID, claim.TaskGeneration, now)
+	if err != nil {
+		return nil, false, err
+	}
+	n, err := consumed.RowsAffected()
+	if err != nil {
+		return nil, false, err
+	}
+	if n != 1 {
+		return nil, false, ErrForceRemovalGrantUsed
+	}
+	query := forceRemovalTaskGenerationQuery
+	if dialect.IsPostgres(r.db.DriverName()) {
+		query += forUpdateClause
+	}
+	var generation time.Time
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(query), claim.TaskID, claim.WorkspaceID).Scan(&generation); err != nil || !generation.Equal(claim.TaskGeneration) {
+		return nil, false, ErrForceRemovalClaimStale
+	}
+	claim.CreatedAt, claim.UpdatedAt = now, now
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_force_removal_claims (task_id, workspace_id, task_generation, admission_generation, operation_id, request_digest, preview_digest, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(task_id) DO NOTHING`), claim.TaskID, claim.WorkspaceID, claim.TaskGeneration, claim.AdmissionGeneration, claim.OperationID, claim.RequestDigest, claim.PreviewDigest, claim.CreatedAt, claim.UpdatedAt)
+	if err != nil {
+		return nil, false, err
+	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return nil, false, err
+	}
+	if inserted == 0 {
+		return nil, false, ErrForceRemovalClaimConflict
+	}
+	for _, receipt := range receipts {
+		if err := appendForceRemovalReceiptTx(ctx, r.db, tx, claim.OperationID, receipt); err != nil {
+			return nil, false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, false, err
+	}
+	return claim, false, nil
 }

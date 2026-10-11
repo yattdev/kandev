@@ -28,3 +28,23 @@ func TestForceRemovalGrantConsumesOnceForExactLiveCallerAndTarget(t *testing.T) 
 	_, err = repo.ConsumeForceRemovalGrant(ctx, grant.ID, task.ID, task.WorkspaceID, "caller", "session", task.UpdatedAt)
 	require.ErrorIs(t, err, ErrForceRemovalGrantUsed)
 }
+
+func TestForceRemovalGrantClaimRollbackPreservesGrant(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepoForHealTests(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "atomic-grant-ws", Name: "Grant"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "atomic-grant-task", WorkspaceID: "atomic-grant-ws", Title: "Grant"}))
+	task, err := repo.GetTask(ctx, "atomic-grant-task")
+	require.NoError(t, err)
+	grant, err := repo.IssueForceRemovalGrant(ctx, &models.ForceRemovalGrant{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, CallerTaskID: "caller", CallerSessionID: "session", IssuedByUserID: "admin", ExpiresAt: time.Now().Add(time.Minute)})
+	require.NoError(t, err)
+	first := &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: "a", OperationID: "existing", RequestDigest: "r", PreviewDigest: "p"}
+	_, _, err = repo.ClaimForceRemoval(ctx, first)
+	require.NoError(t, err)
+	conflict := *first
+	conflict.OperationID = "new"
+	_, _, err = repo.ClaimForceRemovalWithGrant(ctx, grant.ID, "caller", "session", &conflict, nil)
+	require.ErrorIs(t, err, ErrForceRemovalClaimConflict)
+	_, err = repo.ConsumeForceRemovalGrant(ctx, grant.ID, task.ID, task.WorkspaceID, "caller", "session", task.UpdatedAt)
+	require.NoError(t, err)
+}
