@@ -2568,6 +2568,12 @@ func (e *Executor) buildLaunchAgentRequest(ctx context.Context, task *v1.Task, s
 	repoBacked := e.taskIsRepoBacked(ctx, task.ID)
 	workspaceReuseRequired = workspaceReuseAllowed(existingEnv, req.ExecutorType, workspaceReuseRequired, repoBacked)
 	req.WorkspaceReuseRequired = workspaceReuseRequired
+	if workspaceReuseRequired {
+		allRepos = repoInfosForWorkspaceReuse(allRepos)
+		if len(allRepos) > 0 {
+			repoInfo = allRepos[0]
+		}
+	}
 
 	// For remote executors (containerized *and* SSH), resolve only explicitly
 	// selected profile auth secrets. Workspace GitHub automation is configured

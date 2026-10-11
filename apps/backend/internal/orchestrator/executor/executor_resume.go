@@ -70,6 +70,7 @@ type repoInfo struct {
 	RepositoryID               string
 	RepositoryPath             string
 	BaseBranch                 string
+	WorkspaceBaseBranch        string // Stored checkout base, independent of the live PR target.
 	IntegrationRef             string
 	CheckoutBranch             string
 	PRNumber                   int // GitHub PR number when CheckoutBranch is a PR head; sourced from task_repositories.metadata["pr_number"].
@@ -182,6 +183,7 @@ func (e *Executor) resolveTaskRepoInfoForSession(
 		TaskRepositoryUpdatedAt: tr.UpdatedAt,
 		RepositoryID:            tr.RepositoryID,
 		BaseBranch:              tr.BaseBranch,
+		WorkspaceBaseBranch:     tr.BaseBranch,
 		IntegrationRef:          tr.BranchPolicyPullRequestTarget,
 		CheckoutBranch:          tr.CheckoutBranch,
 		PRNumber:                prNumberFromMetadata(tr.Metadata),
@@ -2225,14 +2227,20 @@ func (e *Executor) prepareResumeRepositorySettings(
 	if err != nil {
 		return "", nil, nil, err
 	}
+	// Keep verified contribution identity for the credential broker. Only
+	// workspace preparation receives materialization-free copies.
+	launchRepos := allRepos
+	if req.WorkspaceReuseRequired {
+		launchRepos = repoInfosForWorkspaceReuse(allRepos)
+	}
 	req.McpProviders = deriveMCPProviders(allRepos)
-	repositoryID, err := e.applyResumeRepoConfig(ctx, task, session, req, existingEnv, allRepos)
+	repositoryID, err := e.applyResumeRepoConfig(ctx, task, session, req, existingEnv, launchRepos)
 	if err != nil {
 		return "", nil, nil, err
 	}
-	applyResumeRepositoryFlags(req, allRepos)
+	applyResumeRepositoryFlags(req, launchRepos)
 	pinDirtyCloneRelocationToSelectedWorktrees(ctx, req, session, existingEnv)
-	if err := e.admitResumeWorkspaceInventory(ctx, task, session, req, existingEnv, allRepos, options); err != nil {
+	if err := e.admitResumeWorkspaceInventory(ctx, task, session, req, existingEnv, launchRepos, options); err != nil {
 		return "", existingEnv, nil, err
 	}
 

@@ -195,3 +195,15 @@ an optional session name remains best effort after a successful launch.
   checkout before attachment, as defined in
   [worktree recovery](worktree-metadata-recovery.md).
 - Reconstructing a missing physical worktree from filesystem guesses.
+
+### REQ-TASKS-ADDITIONAL-SESSION-WORKSPACE-REUSE-008: Prepared Workflow Attach Recovery
+
+**Intent:** Recover a workflow replacement whose workspace attach failed before its first turn, preserving the exact recorded destination.
+
+#### Acceptance criteria
+
+- **AC-TASKS-ADDITIONAL-SESSION-WORKSPACE-REUSE-008.1:** Attach-only launches shall retain the materialized checkout base independently of a verified live PR target. PR comparison identity and fresh materialization validation shall remain unchanged.
+- **AC-TASKS-ADDITIONAL-SESSION-WORKSPACE-REUSE-008.2:** A retry shall validate the latest exact prepared profile route, source primary, destination profile, executor and ready environment ownership. FAILED rearm shall require the bounded pre-first-turn attach failure. Unknown failures and terminal conversations shall remain terminal.
+- **AC-TASKS-ADDITIONAL-SESSION-WORKSPACE-REUSE-008.3:** CREATED and FAILED candidates with any turn, runtime, harness generation or delivery/recovery ownership shall not be rearmed. Conditional rearm shall change task and session states in one transaction.
+- **AC-TASKS-ADDITIONAL-SESSION-WORKSPACE-REUSE-008.4:** After validated attach, replay and startup recovery shall use existing primary promotion, source end policy and prompt admission. Concurrent retries and repeated startup shall not create another session, workspace or first turn.
+- **AC-TASKS-ADDITIONAL-SESSION-WORKSPACE-REUSE-008.5:** Automatic recovery shall cover only profile replacement steps with auto-start as their sole entry action and no explicit session target. Startup recovery shall run after event listeners are ready and stop with its owning service lifecycle.

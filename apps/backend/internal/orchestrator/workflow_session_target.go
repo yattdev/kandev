@@ -316,7 +316,16 @@ func (s *Service) promoteWorkflowSessionRoute(
 			committed := *route
 			committed.DestinationID = destination.ID
 			committed.Phase = workflowSessionRouteCommitted
-			promoted, promoteErr = promoter.SetSessionPrimaryWithWorkflowSessionRouteIfNonterminal(admissionCtx, destination.ID, committed)
+			if admissionCtx.Value(preparedWorkflowPromotionKey{}) == true {
+				preparedPromoter, ok := s.repo.(preparedWorkflowRoutePromoter)
+				if !ok {
+					promoteErr = fmt.Errorf("conditional prepared workflow promotion is unavailable")
+					return
+				}
+				promoted, promoteErr = preparedPromoter.PromotePreparedWorkflowSession(admissionCtx, destination.ID, committed)
+			} else {
+				promoted, promoteErr = promoter.SetSessionPrimaryWithWorkflowSessionRouteIfNonterminal(admissionCtx, destination.ID, committed)
+			}
 			return
 		}
 		// Legacy repository adapters do not expose the atomic route promoter.

@@ -4040,6 +4040,9 @@ func (s *Service) prepareWorkflowStepSession(
 		s.workflowEntryIdentity(ctx, taskID, entryIDs...),
 		startPolicy,
 	)
+	if recovered, handled, err := s.retryRecordedPreparedWorkflow(ctx, taskID, profileRoute, step, sourceStep, false); handled {
+		return recovered, err == nil && recovered != nil && recovered.ID != session.ID, err
+	}
 	if shouldKeepCurrentWorkflowStepSession(effectiveProfile, session.AgentProfileID, startPolicy) {
 		requiresFreshSession, err := s.workflowEntryRequiresFreshExactModelSession(ctx, session, step, sourceStep, effectiveProfile)
 		if err != nil {

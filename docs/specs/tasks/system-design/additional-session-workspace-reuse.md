@@ -275,3 +275,11 @@ The Files path component is shared by desktop and phone layouts. This repair
 changes backend state normalization, not layout, navigation, scrolling, or
 touch behavior, so the focused desktop recovery scenario plus existing shared
 component coverage provides mobile parity.
+
+## Prepared workflow recovery
+
+Keep stored checkout base separate from the verified live PR target in resolved launch configuration. On attach-only paths copy repository configuration, use the stored base and omit qualified PR-base materialization and remote-contribution setup. Preserve provider/head checks, comparison target, destination authorization, checkout options and canonical inventory/attestation. Never repair a real inventory mismatch by changing ownership or materializing another checkout.
+
+An internal exact-route retry handles a prepared profile replacement that failed before its first turn. Repository admission uses the existing task deletion, turn and delivery transaction locks to check route/transition identity, source primary, environment and executor ownership, and absence of execution/turn/delivery evidence before rearming. Both task and destination states commit together. The service serializes retries, attaches without starting an agent, then uses ordinary route promotion, source end policy and first-prompt admission. Arbitrary terminal sessions are excluded.
+
+The joined startup lifecycle sweep performs the same recovery after the watcher and scheduler start. Runtime crash recovery and already-dispatched turns retain their existing durable delivery owners; this path does not replay them.

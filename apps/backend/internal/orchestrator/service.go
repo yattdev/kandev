@@ -3615,6 +3615,7 @@ func (s *Service) startLifecycleSweepAsync(ctx context.Context) bool {
 	s.lifecycleSweepMu.Unlock()
 	go func() {
 		defer s.lifecycleSweepWorkers.Done()
+		s.reconcilePreparedWorkflowSessionsOnStartup(sweepCtx)
 		s.reconcileTaskLifecycleTokens(sweepCtx)
 		s.reconcileDependencyLaunchesOnStartup(sweepCtx)
 	}()

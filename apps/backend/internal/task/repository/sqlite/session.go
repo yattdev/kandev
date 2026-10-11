@@ -4920,6 +4920,7 @@ func (r *Repository) setSessionPrimary(
 	sessionID string,
 	requireNonterminal bool,
 	route *models.WorkflowSessionRoute,
+	preparedRetries ...models.WorkflowSessionRoute,
 ) (bool, error) {
 	now := time.Now().UTC()
 
@@ -4969,6 +4970,12 @@ func (r *Repository) setSessionPrimary(
 		}
 	}
 
+	if len(preparedRetries) > 0 {
+		valid, err := r.preparedWorkflowPromotionCurrentTx(ctx, tx, taskID, preparedRetries[0])
+		if err != nil || !valid {
+			return false, err
+		}
+	}
 	if route != nil {
 		if err := r.commitWorkflowSessionRouteTx(ctx, tx, taskID, sessionID, route, now); err != nil {
 			return false, err
