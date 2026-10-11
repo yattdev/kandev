@@ -64,6 +64,8 @@ const exactRespondPermissionMethod = "RespondPermissionExact"
 const exactAnswerClarificationMethod = "AnswerClarificationExact"
 const exactSourceIssueCommentMethod = "CommentSourceIssueExact"
 const exactSourceIssueTransitionMethod = "TransitionSourceIssueExact"
+const exactGetTaskInstructionsMethod = "GetTaskInstructionsExact"
+const exactPutTaskInstructionsMethod = "PutTaskInstructionsExact"
 
 var exactHostMethods = []exactMethod{
 	{method: "GetCapabilityContext", description: "Read supported exact Host methods and their workspace grants"},
@@ -90,6 +92,8 @@ var exactHostMethods = []exactMethod{
 	{method: exactTaskRelationAddMethod, capability: "host.v2.write:tasks", description: "Add a same-workspace dependency relation with cycle checks"},
 	{method: exactTaskRelationRemoveMethod, capability: "host.v2.write:tasks", description: "Remove a same-workspace dependency relation"},
 	{method: exactTaskMessageMethod, capability: "host.v2.write:messages", description: "Queue one version-fenced task message"},
+	{method: exactGetTaskInstructionsMethod, capability: "host.v2.read:task_instructions", description: "Read one task-local Coordinator instruction binding"},
+	{method: exactPutTaskInstructionsMethod, capability: "host.v2.write:task_instructions", description: "Update one task-local Coordinator instruction binding"},
 	{method: exactEnsureTaskRunMethod, capability: "host.v2.write:execution", description: "Ensure one task has a live run through native launch admission"},
 	{method: exactStopTaskRunMethod, capability: "host.v2.write:execution", description: "Stop only the observed session execution"},
 	{method: exactRecoverSessionMethod, capability: "host.v2.write:execution", description: "Recover one observed interrupted session through native launch"},
@@ -314,6 +318,17 @@ func exactTaskWriterUnavailableReason(method string, host *pluginHost, commandSt
 
 func exactExternalMutationUnavailableReason(method string, host *pluginHost, commandStoreAvailable bool) string {
 	switch method {
+	case exactGetTaskInstructionsMethod:
+		if host.taskInstructions == nil {
+			return "task_instructions_unavailable"
+		}
+	case exactPutTaskInstructionsMethod:
+		if host.taskInstructions == nil {
+			return "task_instructions_unavailable"
+		}
+		if !commandStoreAvailable {
+			return exactReasonCommandStoreUnavailable
+		}
 	case exactSourceIssueCommentMethod, exactSourceIssueTransitionMethod:
 		if host.sourceIssueController == nil {
 			return "source_issue_controller_unavailable"

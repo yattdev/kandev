@@ -157,6 +157,7 @@ type Service struct {
 	// outlive the late SetTaskPRSource wiring.
 	taskPRs               taskPRSource
 	taskWriter            taskWriter
+	taskInstructions      taskInstructionBindingWriter
 	workspaceAdminWriter  WorkspaceAdminWriter
 	sourceIssueController SourceIssueController
 
@@ -571,6 +572,12 @@ func (s *Service) SetWorkspaceAdminWriter(writer WorkspaceAdminWriter) {
 	s.workspaceAdminWriter = writer
 }
 
+// SetTaskInstructionBindingWriter wires the durable authority for the
+// narrowly scoped Coordinator task-instruction capability.
+func (s *Service) SetTaskInstructionBindingWriter(writer taskInstructionBindingWriter) {
+	s.taskInstructions = writer
+}
+
 // SetSourceIssueController wires native linked Jira and Linear operations.
 func (s *Service) SetSourceIssueController(controller SourceIssueController) {
 	s.sourceIssueController = controller
@@ -906,6 +913,7 @@ func (s *Service) hostForPlugin(pluginID string) pluginsdk.Host {
 		taskPRsDep:                 s.taskPRSourceDep,
 		pendingTaskTransitions:     s.pendingTaskTransitionSourceDep,
 		taskWriter:                 s.taskWriter,
+		taskInstructions:           s.taskInstructions,
 		workspaceAdminWriter:       s.workspaceAdminWriter,
 		sourceIssueController:      s.sourceIssueController,
 		utilityDeps:                s.utilityAgentDeps,

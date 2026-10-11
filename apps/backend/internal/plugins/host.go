@@ -87,6 +87,7 @@ type pluginHost struct {
 	// readers — the task service is available at data-source wiring time. See
 	// host_write.go.
 	taskWriter            taskWriter
+	taskInstructions      taskInstructionBindingWriter
 	workspaceAdminWriter  WorkspaceAdminWriter
 	sourceIssueController SourceIssueController
 
