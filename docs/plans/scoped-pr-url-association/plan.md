@@ -211,3 +211,10 @@ New file map: `internal/github/task_pr_evidence.go`, `store_task_pr_association.
 MAIN correction checks passed: four-package focused race suite, SQLite deterministic interleavings (1.539s), full GitHub package race suite (40.958s), changed-code lint (0 issues). These results precede the correction commit; independent sessions must account for its immutable SHA. PG remains UNVERIFIED. Source/metadata/docs checks rerun for changed files before commit; candidate freeze applies only while sessions actively check.
 
 Both same-task side sessions finished round 1 and waited before MAIN edits. Ledger retained in ignored `.kandev/wrq/findings.md`. No implementation workers, live deployment or provider mutations. Post-merge release retirement remains pending.
+
+
+## Second correction: stale tombstone decision (R-03)
+
+Independent Review found the ordinary detached-row branch still called unconditional restoration after its precheck. MAIN reproduced both schedules with real service and two database pools: conflicting canonical URL returned success; identical URL replaced the strict current head with the stale observed head. Ordinary absent and detached decisions now both use `AssociateTaskPR` under the shared fence. A still-detached row retains ordinary restoration compatibility; a concurrently active conflicting row rejects, and an identical active row is retained without restoration effects. Explicit manual replacement remains unchanged.
+
+`TestScopedPRURLLegacyTombstonePrecheckSQLite` is the red-green regression owner; its PostgreSQL counterpart remains pending approved supported runtime execution. Both independent roles must cover the next committed candidate. No deployment or overlay removal is authorized by this correction.

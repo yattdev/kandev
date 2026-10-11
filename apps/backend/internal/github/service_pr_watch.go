@@ -583,29 +583,7 @@ func (s *Service) associatePRWithTaskForSession(
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
-		if existing.DetachedAt != nil && restoreDetached {
-			// RestoreTaskPR resolves the five outcome-attribution columns
-			// itself, inside its own transaction, against the row it is
-			// about to overwrite (AC-43, AC-43a) — this caller must not
-			// pre-resolve them via resolveTaskPROutcomeFields, since a
-			// value resolved here would be stale by the time the store's
-			// statement executes.
-			restored, restoreErr := s.store.RestoreTaskPR(
-				ctx, taskID, repositoryID, &PRStatus{PR: pr, OutcomeFieldsPopulated: outcomeFieldsPopulated},
-			)
-			if restoreErr != nil || restored == nil {
-				return restored, restoreErr
-			}
-			if s.eventBus != nil {
-				event := bus.NewEvent(events.GitHubTaskPRUpdated, "github", restored)
-				if err := s.eventBus.Publish(ctx, events.GitHubTaskPRUpdated, event); err != nil {
-					s.logger.Debug("failed to publish restored task PR event", zap.Error(err))
-				}
-			}
-			s.reconcileComparisonTarget(ctx, taskID, pr)
-			return restored, nil
-		}
+	if existing != nil && (existing.DetachedAt == nil || !restoreDetached) {
 		s.reconcileComparisonTarget(ctx, taskID, pr)
 		return existing, nil
 	}
@@ -631,8 +609,8 @@ func (s *Service) associatePRWithTaskForSession(
 		Source:            source,
 		HasMergeConflicts: observedTaskPRMergeConflict(nil, pr, pr.MergeableState),
 	}
-	// An ordinary caller may have read an absent slot before waiting for the
-	// write fence. Recheck there so it cannot replace a concurrent canonical link.
+	// Recheck absent or detached decisions inside the write fence so neither
+	// can overwrite a concurrently installed active canonical association.
 	replaced, changed, err := s.store.AssociateTaskPR(ctx, tp, &PRStatus{PR: pr, OutcomeFieldsPopulated: outcomeFieldsPopulated}, restoreDetached)
 	if err != nil {
 		return nil, fmt.Errorf("associate task PR: %w", err)

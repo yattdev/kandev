@@ -1,6 +1,7 @@
 package github
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,15 +50,21 @@ func newScopedStorePair(t *testing.T, postgres bool) (*Store, *Store) {
 }
 
 func TestScopedPRURLLegacyStalePrecheckSQLite(t *testing.T) {
-	testScopedLegacyStalePrecheck(t, false, false)
+	testScopedLegacyStalePrecheck(t, false, false, false)
 }
 func TestScopedPRURLLegacyStalePrecheckPostgres(t *testing.T) {
-	testScopedLegacyStalePrecheck(t, true, false)
+	testScopedLegacyStalePrecheck(t, true, false, false)
 }
-func testScopedLegacyStalePrecheck(t *testing.T, postgres bool, sameURL bool) {
+func testScopedLegacyStalePrecheck(t *testing.T, postgres bool, sameURL bool, tombstone bool) {
 	t.Helper()
 	first, second := newScopedStorePair(t, postgres)
 	ctx := scopedPRURLContext()
+	if tombstone {
+		seeded, _, err := first.associateScopedPRURL(ctx, scopedPRRequest(), scopedPRFixture())
+		require.NoError(t, err)
+		_, _, err = first.DetachTaskPR(ctx, seeded.ID)
+		require.NoError(t, err)
+	}
 	client := NewMockClient()
 	pr := *scopedPRFixture()
 	pr.RepoOwner = "fork"
@@ -74,8 +81,12 @@ func testScopedLegacyStalePrecheck(t *testing.T, postgres bool, sameURL bool) {
 	svc := newWorkspaceAuthenticatedTestService(t, client, first, "ws-1")
 	events := &mockEventBus{}
 	svc.eventBus = events
+	comparison := &scopedComparisonProbe{}
+	svc.SetComparisonTargetObserver(comparison)
+	_, validComparison := githubComparisonTargetCandidate(&pr)
+	require.True(t, validComparison)
 	// Reserve only the legacy writer's pool connection. Its independent reader
-	// remains usable, so pool wait proves it has already performed the absent-slot read.
+	// remains usable, so pool wait proves it has already performed the absent or detached slot read.
 	held, err := first.db.Connx(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = held.Close() })
@@ -85,7 +96,7 @@ func testScopedLegacyStalePrecheck(t *testing.T, postgres bool, sameURL bool) {
 		_, err := svc.AssociateExistingPRByURLForWorkspace(ctx, "ws-1", "user", "child", "fork", pr.HTMLURL)
 		done <- err
 	}()
-	require.Eventually(t, func() bool { return first.db.Stats().WaitCount > before }, 10*time.Second, time.Millisecond, "legacy writer must reach its transaction after the absent-slot read")
+	require.Eventually(t, func() bool { return first.db.Stats().WaitCount > before }, 10*time.Second, time.Millisecond, "legacy writer must reach its transaction after the absent or detached slot read")
 	strict, _, err := second.associateScopedPRURL(ctx, scopedPRRequest(), scopedPRFixture())
 	require.NoError(t, err)
 	require.NoError(t, held.Close())
@@ -105,6 +116,7 @@ func testScopedLegacyStalePrecheck(t *testing.T, postgres bool, sameURL bool) {
 	require.Equal(t, strict.PRURL, persisted.PRURL)
 	require.Equal(t, strict.HeadSHA, persisted.HeadSHA)
 	require.Zero(t, events.publishedCount())
+	require.Zero(t, comparison.calls)
 }
 
 func TestScopedPRURLSharedWriterFenceSQLite(t *testing.T)   { testScopedSharedWriterFence(t, false) }
@@ -239,8 +251,19 @@ func testScopedConflictingSlotFence(t *testing.T, postgres bool) {
 }
 
 func TestScopedPRURLLegacyIdenticalPrecheckSQLite(t *testing.T) {
-	testScopedLegacyStalePrecheck(t, false, true)
+	testScopedLegacyStalePrecheck(t, false, true, false)
 }
 func TestScopedPRURLLegacyIdenticalPrecheckPostgres(t *testing.T) {
-	testScopedLegacyStalePrecheck(t, true, true)
+	testScopedLegacyStalePrecheck(t, true, true, false)
+}
+
+func TestScopedPRURLLegacyTombstonePrecheckSQLite(t *testing.T) {
+	for _, sameURL := range []bool{false, true} {
+		t.Run(fmt.Sprint(sameURL), func(t *testing.T) { testScopedLegacyStalePrecheck(t, false, sameURL, true) })
+	}
+}
+func TestScopedPRURLLegacyTombstonePrecheckPostgres(t *testing.T) {
+	for _, sameURL := range []bool{false, true} {
+		t.Run(fmt.Sprint(sameURL), func(t *testing.T) { testScopedLegacyStalePrecheck(t, true, sameURL, true) })
+	}
 }

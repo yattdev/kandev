@@ -9,7 +9,7 @@ import (
 	"github.com/kandev/kandev/internal/db/dialect"
 )
 
-// AssociateTaskPR records a provider observation after an ordinary absent-slot
+// AssociateTaskPR records a provider observation after an ordinary absent or detached
 // precheck. Recheck inside the shared write fence rather than overwriting a row
 // that another request installed while this caller waited for the transaction.
 // ReplaceTaskPR remains the explicit upsert primitive for deliberate replacements.
@@ -34,7 +34,7 @@ func (s *Store) AssociateTaskPR(ctx context.Context, tp *TaskPR, status *PRStatu
 		saved, err = replaceTaskPRTx(ctx, tx, tp, status)
 		changed = true
 	} else {
-		if !strings.EqualFold(strings.TrimSuffix(existing.PRURL, "/"), strings.TrimSuffix(tp.PRURL, "/")) {
+		if existing.DetachedAt == nil && !strings.EqualFold(strings.TrimSuffix(existing.PRURL, "/"), strings.TrimSuffix(tp.PRURL, "/")) {
 			return nil, false, errors.New("canonical PR slot changed during association")
 		}
 		saved = &existing
