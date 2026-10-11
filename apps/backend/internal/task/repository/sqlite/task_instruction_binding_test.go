@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 
@@ -17,9 +18,12 @@ func TestPutTaskInstructionBindingExactFencesVersionAndEnvironmentGeneration(t *
 	repo, _ := newReachabilityTestRepo(t)
 	ctx := context.Background()
 	seedInstructionBindingTask(t, repo)
+	task := taskForInstructionBinding(t, repo)
 
 	first, err := repo.PutTaskInstructionBindingExact(ctx, taskinstructions.WriteRequest{
 		TaskID: "task-instructions", WorkspaceID: "workspace-instructions", EnvironmentID: "env-instructions",
+		ExpectedTaskResourceVersion: task.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ManagementInstallationID:    "installation-instructions", ManagementInstanceKey: "instance-instructions", ExpectedClaimGeneration: 1,
 		ExpectedOwnershipGeneration: 1, ExpectedVersion: 0, Content: "first", Digest: taskinstructions.Digest("first"),
 	})
 	if err != nil {
@@ -31,6 +35,8 @@ func TestPutTaskInstructionBindingExactFencesVersionAndEnvironmentGeneration(t *
 
 	if _, err := repo.PutTaskInstructionBindingExact(ctx, taskinstructions.WriteRequest{
 		TaskID: "task-instructions", WorkspaceID: "workspace-instructions", EnvironmentID: "env-instructions",
+		ExpectedTaskResourceVersion: task.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ManagementInstallationID:    "installation-instructions", ManagementInstanceKey: "instance-instructions", ExpectedClaimGeneration: 1,
 		ExpectedOwnershipGeneration: 1, ExpectedVersion: 0, Content: "stale", Digest: taskinstructions.Digest("stale"),
 	}); !errors.Is(err, taskinstructions.ErrVersionConflict) {
 		t.Fatalf("stale write error = %v, want version conflict", err)
@@ -38,6 +44,8 @@ func TestPutTaskInstructionBindingExactFencesVersionAndEnvironmentGeneration(t *
 
 	second, err := repo.PutTaskInstructionBindingExact(ctx, taskinstructions.WriteRequest{
 		TaskID: "task-instructions", WorkspaceID: "workspace-instructions", EnvironmentID: "env-instructions",
+		ExpectedTaskResourceVersion: task.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ManagementInstallationID:    "installation-instructions", ManagementInstanceKey: "instance-instructions", ExpectedClaimGeneration: 1,
 		ExpectedOwnershipGeneration: 1, ExpectedVersion: 1, Content: "second", Digest: taskinstructions.Digest("second"),
 	})
 	if err != nil {
@@ -52,6 +60,8 @@ func TestPutTaskInstructionBindingExactFencesVersionAndEnvironmentGeneration(t *
 	}
 	if _, err := repo.PutTaskInstructionBindingExact(ctx, taskinstructions.WriteRequest{
 		TaskID: "task-instructions", WorkspaceID: "workspace-instructions", EnvironmentID: "env-instructions",
+		ExpectedTaskResourceVersion: task.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ManagementInstallationID:    "installation-instructions", ManagementInstanceKey: "instance-instructions", ExpectedClaimGeneration: 1,
 		ExpectedOwnershipGeneration: 1, ExpectedVersion: 2, Content: "foreign", Digest: taskinstructions.Digest("foreign"),
 	}); !errors.Is(err, taskinstructions.ErrEnvironmentChanged) {
 		t.Fatalf("stale environment write error = %v, want environment conflict", err)
@@ -66,6 +76,56 @@ func TestPutTaskInstructionBindingExactFencesVersionAndEnvironmentGeneration(t *
 	}
 }
 
+// @covers AC-2 and AC-3
+func TestPutTaskInstructionBindingExactRejectsStaleTaskResourceVersion(t *testing.T) {
+	repo, _ := newReachabilityTestRepo(t)
+	ctx := context.Background()
+	seedInstructionBindingTask(t, repo)
+	task := taskForInstructionBinding(t, repo)
+
+	if _, err := repo.db.ExecContext(ctx, `UPDATE tasks SET updated_at = ? WHERE id = ?`, task.UpdatedAt.Add(time.Second), task.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err := repo.PutTaskInstructionBindingExact(ctx, taskinstructions.WriteRequest{
+		TaskID: task.ID, WorkspaceID: task.WorkspaceID, EnvironmentID: "env-instructions",
+		ExpectedTaskResourceVersion: task.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ManagementInstallationID:    "installation-instructions", ManagementInstanceKey: "instance-instructions", ExpectedClaimGeneration: 1,
+		ExpectedOwnershipGeneration: 1, ExpectedVersion: 0, Content: "stale task", Digest: taskinstructions.Digest("stale task"),
+	})
+	if !errors.Is(err, taskinstructions.ErrTaskChanged) {
+		t.Fatalf("stale task write error = %v, want task changed", err)
+	}
+}
+
+// @covers AC-2
+func TestPutTaskInstructionBindingExactRejectsChangedManagementClaim(t *testing.T) {
+	repo, _ := newReachabilityTestRepo(t)
+	ctx := context.Background()
+	seedInstructionBindingTask(t, repo)
+	task := taskForInstructionBinding(t, repo)
+	claim, err := repo.GetTaskManagementClaim(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.ChangeTaskManagementClaim(ctx, models.TaskManagementClaimChange{
+		Action: models.TaskManagementClaimRelease, TaskID: task.ID, WorkspaceID: task.WorkspaceID,
+		ExpectedTaskResourceVersion:  task.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ExpectedClaimResourceVersion: claim.ResourceVersion, InstanceKey: claim.InstanceKey,
+		ActorID: "plugin:installation-instructions", ActorInstallationID: "installation-instructions", ActorInstanceKey: claim.InstanceKey,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = repo.PutTaskInstructionBindingExact(ctx, taskinstructions.WriteRequest{
+		TaskID: task.ID, WorkspaceID: task.WorkspaceID, EnvironmentID: "env-instructions",
+		ExpectedTaskResourceVersion: task.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ManagementInstallationID:    "installation-instructions", ManagementInstanceKey: "instance-instructions", ExpectedClaimGeneration: 1,
+		ExpectedOwnershipGeneration: 1, ExpectedVersion: 0, Content: "stale claim", Digest: taskinstructions.Digest("stale claim"),
+	})
+	if !errors.Is(err, taskinstructions.ErrManagementClaimChanged) {
+		t.Fatalf("stale management claim write error = %v, want claim changed", err)
+	}
+}
+
 // @covers AC-3
 func TestTaskInstructionBindingReadbackSurvivesRepositoryReopen(t *testing.T) {
 	repo, path := newReachabilityTestRepo(t)
@@ -73,6 +133,8 @@ func TestTaskInstructionBindingReadbackSurvivesRepositoryReopen(t *testing.T) {
 	seedInstructionBindingTask(t, repo)
 	written, err := repo.PutTaskInstructionBindingExact(ctx, taskinstructions.WriteRequest{
 		TaskID: "task-instructions", WorkspaceID: "workspace-instructions", EnvironmentID: "env-instructions",
+		ExpectedTaskResourceVersion: taskForInstructionBinding(t, repo).UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ManagementInstallationID:    "installation-instructions", ManagementInstanceKey: "instance-instructions", ExpectedClaimGeneration: 1,
 		ExpectedOwnershipGeneration: 1, ExpectedVersion: 0, Content: "survives restart", Digest: taskinstructions.Digest("survives restart"),
 	})
 	if err != nil {
@@ -98,6 +160,15 @@ func TestTaskInstructionBindingReadbackSurvivesRepositoryReopen(t *testing.T) {
 	}
 }
 
+func taskForInstructionBinding(t *testing.T, repo *Repository) *models.Task {
+	t.Helper()
+	task, err := repo.GetTask(context.Background(), "task-instructions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return task
+}
+
 func seedInstructionBindingTask(t *testing.T, repo *Repository) {
 	t.Helper()
 	ctx := context.Background()
@@ -107,6 +178,15 @@ func seedInstructionBindingTask(t *testing.T, repo *Repository) {
 	if err := repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
 		ID: "env-instructions", TaskID: "task-instructions", OwnershipGeneration: 1,
 		ExecutorType: string(models.ExecutorTypeLocal), Status: models.TaskEnvironmentStatusCreating,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	task := taskForInstructionBinding(t, repo)
+	if _, err := repo.ChangeTaskManagementClaim(ctx, models.TaskManagementClaimChange{
+		Action: models.TaskManagementClaimAcquire, TaskID: task.ID, WorkspaceID: task.WorkspaceID,
+		ExpectedTaskResourceVersion: task.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		InstallationID:              "installation-instructions", InstanceKey: "instance-instructions",
+		ActorID: "plugin:installation-instructions", ActorInstallationID: "installation-instructions", ActorInstanceKey: "instance-instructions",
 	}); err != nil {
 		t.Fatal(err)
 	}

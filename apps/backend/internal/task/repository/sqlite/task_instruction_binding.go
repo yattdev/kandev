@@ -73,7 +73,8 @@ func (r *Repository) PutTaskInstructionBindingExact(ctx context.Context, request
 func newTaskInstructionBinding(request taskinstructions.WriteRequest, now time.Time) *taskinstructions.DurableBinding {
 	return &taskinstructions.DurableBinding{
 		TaskID: request.TaskID, WorkspaceID: request.WorkspaceID, EnvironmentID: request.EnvironmentID,
-		OwnershipGeneration: request.ExpectedOwnershipGeneration, Version: 1,
+		OwnershipGeneration: request.ExpectedOwnershipGeneration,
+		OwnerInstallationID: request.ManagementInstallationID, OwnerInstanceKey: request.ManagementInstanceKey, Version: 1,
 		Content: request.Content, Digest: request.Digest, ControlPath: request.ControlPath,
 		GuardKind: request.GuardKind, CreatedAt: now, UpdatedAt: now,
 	}
@@ -83,10 +84,11 @@ func (r *Repository) insertTaskInstructionBinding(ctx context.Context, tx *sqlx.
 	_, err := tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_instruction_bindings (
 			task_id, workspace_id, task_environment_id, ownership_generation, version,
-			content, content_sha256, control_path, guard_kind, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			owner_installation_id, owner_instance_key, content, content_sha256, control_path, guard_kind, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`), binding.TaskID, binding.WorkspaceID, binding.EnvironmentID, binding.OwnershipGeneration,
-		binding.Version, binding.Content, binding.Digest, binding.ControlPath, string(binding.GuardKind), binding.CreatedAt, binding.UpdatedAt)
+		binding.Version, binding.OwnerInstallationID, binding.OwnerInstanceKey, binding.Content, binding.Digest,
+		binding.ControlPath, string(binding.GuardKind), binding.CreatedAt, binding.UpdatedAt)
 	return err
 }
 
@@ -96,12 +98,14 @@ func (r *Repository) updateTaskInstructionBinding(
 ) error {
 	current.Version++
 	current.Content, current.Digest, current.ControlPath, current.GuardKind = request.Content, request.Digest, request.ControlPath, request.GuardKind
+	current.OwnerInstallationID, current.OwnerInstanceKey = request.ManagementInstallationID, request.ManagementInstanceKey
 	current.UpdatedAt = now
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_instruction_bindings
-		SET version = ?, content = ?, content_sha256 = ?, control_path = ?, guard_kind = ?, updated_at = ?
+		SET version = ?, owner_installation_id = ?, owner_instance_key = ?, content = ?, content_sha256 = ?, control_path = ?, guard_kind = ?, updated_at = ?
 		WHERE task_id = ? AND version = ?
-	`), current.Version, current.Content, current.Digest, current.ControlPath, string(current.GuardKind), current.UpdatedAt, current.TaskID, request.ExpectedVersion)
+	`), current.Version, current.OwnerInstallationID, current.OwnerInstanceKey, current.Content, current.Digest,
+		current.ControlPath, string(current.GuardKind), current.UpdatedAt, current.TaskID, request.ExpectedVersion)
 	if err != nil {
 		return err
 	}
@@ -115,12 +119,27 @@ func (r *Repository) updateTaskInstructionBinding(
 }
 
 func (r *Repository) validateInstructionBindingScope(ctx context.Context, tx *sqlx.Tx, request taskinstructions.WriteRequest) error {
-	taskQuery := `SELECT workspace_id FROM tasks WHERE id = ?`
+	if err := r.validateInstructionTaskScope(ctx, tx, request); err != nil {
+		return err
+	}
+	if err := r.validateInstructionManagementClaim(ctx, tx, request); err != nil {
+		return err
+	}
+	return r.validateInstructionEnvironmentScope(ctx, tx, request)
+}
+
+func (r *Repository) validateInstructionTaskScope(ctx context.Context, tx *sqlx.Tx, request taskinstructions.WriteRequest) error {
+	expectedTaskVersion, err := time.Parse(time.RFC3339Nano, request.ExpectedTaskResourceVersion)
+	if err != nil {
+		return fmt.Errorf("invalid task resource version: %w", err)
+	}
+	taskQuery := completionGateTaskVersionQuery
 	if dialect.IsPostgres(r.db.DriverName()) {
 		taskQuery += forUpdateClause
 	}
 	var workspaceID string
-	if err := tx.QueryRowContext(ctx, r.db.Rebind(taskQuery), request.TaskID).Scan(&workspaceID); err != nil {
+	var taskVersion time.Time
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(taskQuery), request.TaskID).Scan(&workspaceID, &taskVersion); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return taskinstructions.ErrBindingNotFound
 		}
@@ -129,6 +148,26 @@ func (r *Repository) validateInstructionBindingScope(ctx context.Context, tx *sq
 	if workspaceID != request.WorkspaceID {
 		return taskinstructions.ErrBindingNotFound
 	}
+	if !taskVersion.Equal(expectedTaskVersion) {
+		return taskinstructions.ErrTaskChanged
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
+		UPDATE tasks SET updated_at = updated_at
+		WHERE id = ? AND workspace_id = ? AND updated_at = ?
+	`), request.TaskID, request.WorkspaceID, taskVersion)
+	if err != nil {
+		return err
+	}
+	if rows, err := result.RowsAffected(); err != nil || rows != 1 {
+		if err != nil {
+			return err
+		}
+		return taskinstructions.ErrTaskChanged
+	}
+	return nil
+}
+
+func (r *Repository) validateInstructionEnvironmentScope(ctx context.Context, tx *sqlx.Tx, request taskinstructions.WriteRequest) error {
 	var taskID string
 	var generation int64
 	environmentQuery := `SELECT task_id, ownership_generation FROM task_environments WHERE id = ?`
@@ -147,6 +186,18 @@ func (r *Repository) validateInstructionBindingScope(ctx context.Context, tx *sq
 	return nil
 }
 
+func (r *Repository) validateInstructionManagementClaim(ctx context.Context, tx *sqlx.Tx, request taskinstructions.WriteRequest) error {
+	claim, found, err := readTaskManagementClaimInTx(ctx, tx, r.db.Rebind, request.TaskID, dialect.IsPostgres(r.db.DriverName()))
+	if err != nil {
+		return err
+	}
+	if !found || claim.InstallationID != request.ManagementInstallationID ||
+		claim.InstanceKey != request.ManagementInstanceKey || claim.Generation != request.ExpectedClaimGeneration {
+		return taskinstructions.ErrManagementClaimChanged
+	}
+	return nil
+}
+
 type taskInstructionQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
@@ -156,7 +207,7 @@ func readTaskInstructionBinding(
 	taskID string, lock bool, driver string,
 ) (*taskinstructions.DurableBinding, bool, error) {
 	query := `SELECT task_id, workspace_id, task_environment_id, ownership_generation, version,
-		content, content_sha256, control_path, guard_kind, created_at, updated_at
+		owner_installation_id, owner_instance_key, content, content_sha256, control_path, guard_kind, created_at, updated_at
 		FROM task_instruction_bindings WHERE task_id = ?`
 	if lock && dialect.IsPostgres(driver) {
 		query += forUpdateClause
@@ -165,7 +216,8 @@ func readTaskInstructionBinding(
 	var guardKind string
 	err := queryer.QueryRowContext(ctx, rebind(query), taskID).Scan(
 		&binding.TaskID, &binding.WorkspaceID, &binding.EnvironmentID, &binding.OwnershipGeneration, &binding.Version,
-		&binding.Content, &binding.Digest, &binding.ControlPath, &guardKind, &binding.CreatedAt, &binding.UpdatedAt,
+		&binding.OwnerInstallationID, &binding.OwnerInstanceKey, &binding.Content, &binding.Digest,
+		&binding.ControlPath, &guardKind, &binding.CreatedAt, &binding.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil

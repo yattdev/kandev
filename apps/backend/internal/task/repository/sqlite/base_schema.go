@@ -1225,6 +1225,8 @@ func (r *Repository) initTaskInstructionBindingsSchema() error {
 		task_environment_id TEXT NOT NULL,
 		ownership_generation INTEGER NOT NULL,
 		version BIGINT NOT NULL,
+		owner_installation_id TEXT NOT NULL,
+		owner_instance_key TEXT NOT NULL,
 		content TEXT NOT NULL,
 		content_sha256 TEXT NOT NULL,
 		control_path TEXT NOT NULL DEFAULT '',
