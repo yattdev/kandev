@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/task/models"
 )
 
@@ -65,14 +66,8 @@ func (r *Repository) RearmPreparedWorkflowSession(ctx context.Context, taskID st
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), route.DestinationID); err != nil {
-		return false, err
-	}
-	if err := lockAgentDeliveryWrites(ctx, tx, r.db.DriverName(), []string{route.DestinationID}, nil); err != nil {
-		return false, err
-	}
-	// Match turn admission and reconstruction: turn, delivery, then task.
-	if err := r.managedDeletionBarrierTx(ctx, tx, taskID); err != nil {
+	locked, err := r.tryPreparedWorkflowAdmissionLocks(ctx, tx, taskID, route.DestinationID)
+	if err != nil || !locked {
 		return false, err
 	}
 	valid, err := r.preparedWorkflowRouteCurrentTx(ctx, tx, taskID, route)
@@ -155,3 +150,25 @@ const preparedWorkflowRearmQuery = `
  AND NOT EXISTS (SELECT 1 FROM agent_delivery_submissions WHERE session_id = task_sessions.id)
  AND NOT EXISTS (SELECT 1 FROM session_recovery_blocks WHERE session_id = task_sessions.id)
  `
+
+// Recovery never waits on admission while holding the task row: existing turn
+// writers take turn then task, while runtime admission takes task then turn.
+// Yielding releases this transaction's locks and preserves a later exact retry.
+func (r *Repository) tryPreparedWorkflowAdmissionLocks(ctx context.Context, tx *sqlx.Tx, taskID, sessionID string) (bool, error) {
+	if err := r.managedDeletionBarrierTx(ctx, tx, taskID); err != nil {
+		return false, err
+	}
+	if !dialect.IsPostgres(r.db.DriverName()) {
+		return true, nil
+	}
+	for _, namespace := range []string{sessionTurnLockNamespace, agentDeliverySessionLockNamespace} {
+		var acquired bool
+		if err := tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))`, namespace+sessionID).Scan(&acquired); err != nil {
+			return false, err
+		}
+		if !acquired {
+			return false, nil
+		}
+	}
+	return true, nil
+}

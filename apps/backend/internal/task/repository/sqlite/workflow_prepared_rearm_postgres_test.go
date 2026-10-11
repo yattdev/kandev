@@ -13,9 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The held turn lock is the first boundary shared by actual turn creation and
-// reconstruction. Rearm must not hold the task row while waiting at it.
+// Recovery must yield unchanged to either admission owner without holding the
+// task row while waiting for an advisory lock used by turn/runtime writers.
 func TestPreparedWorkflowRearmTurnLockOrderPostgres(t *testing.T) {
+	for _, namespace := range []string{sessionTurnLockNamespace, agentDeliverySessionLockNamespace} {
+		t.Run(namespace, func(t *testing.T) { testPreparedWorkflowRearmYieldsToAdmissionOwner(t, namespace) })
+	}
+}
+
+func testPreparedWorkflowRearmYieldsToAdmissionOwner(t *testing.T, namespace string) {
 	dsn := testutil.PostgresDSNFromEnv(t)
 	database := openIsolatedPostgresMultiConn(t, dsn, 4)
 	repo, err := NewWithDB(database, database, nil)
@@ -23,36 +29,41 @@ func TestPreparedWorkflowRearmTurnLockOrderPostgres(t *testing.T) {
 	taskID, route := seedPreparedWorkflowRearm(t, repo)
 	writer := openWorkflowPostgresConnection(t, database, dsn)
 	writerRepo := NewWithInitializedDB(writer, writer, nil)
-	var pid int
-	require.NoError(t, writer.Get(&pid, `SELECT pg_backend_pid()`))
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	turnOwner, err := database.BeginTxx(ctx, nil)
+	owner, err := database.BeginTxx(ctx, nil)
 	require.NoError(t, err)
-	defer func() { _ = turnOwner.Rollback() }()
-	require.NoError(t, lockSessionTurnWrites(ctx, turnOwner, database.DriverName(), route.DestinationID))
-	outcome := make(chan error, 1)
-	go func() { _, err := writerRepo.RearmPreparedWorkflowSession(ctx, taskID, route); outcome <- err }()
-	require.Eventually(t, func() bool {
-		var waiting bool
-		if err := database.GetContext(ctx, &waiting, `SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = $1`, pid); err != nil {
-			return false
-		}
-		return waiting
-	}, 3*time.Second, 10*time.Millisecond, "actual rearm must reach the held turn boundary")
-	var lockedTask string
-	err = turnOwner.QueryRowContext(ctx, database.Rebind(`SELECT id FROM tasks WHERE id = ? FOR UPDATE NOWAIT`), taskID).Scan(&lockedTask)
-	// On the old task -> turn implementation this errors with SQLSTATE 55P03,
-	// proving the opposing turn -> task writer would close a deadlock cycle.
-	if err != nil {
-		_ = turnOwner.Rollback()
-		<-outcome
-		require.NoError(t, err, "rearm must not own the task row before the turn lock")
-		return
+	defer func() { _ = owner.Rollback() }()
+	_, err = owner.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, namespace+route.DestinationID)
+	require.NoError(t, err)
+	type result struct {
+		changed bool
+		err     error
 	}
+	outcome := make(chan result, 1)
+	go func() {
+		changed, err := writerRepo.RearmPreparedWorkflowSession(ctx, taskID, route)
+		outcome <- result{changed, err}
+	}()
+	select {
+	case result := <-outcome:
+		require.NoError(t, result.err)
+		require.False(t, result.changed)
+	case <-time.After(time.Second):
+		_ = owner.Rollback()
+		<-outcome
+		t.Fatal("rearm waited at an owned advisory boundary instead of yielding unchanged")
+	}
+	var lockedTask string
+	require.NoError(t, owner.QueryRowContext(ctx, database.Rebind(`SELECT id FROM tasks WHERE id = ? FOR UPDATE NOWAIT`), taskID).Scan(&lockedTask))
 	require.Equal(t, taskID, lockedTask)
-	require.NoError(t, turnOwner.Rollback())
-	require.NoError(t, <-outcome)
+	destination, err := repo.GetTaskSession(ctx, route.DestinationID)
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateFailed, destination.State)
+	require.NoError(t, owner.Rollback())
+	changed, err := writerRepo.RearmPreparedWorkflowSession(ctx, taskID, route)
+	require.NoError(t, err)
+	require.True(t, changed, "released admission ownership permits a later exact retry")
 }
 
 func TestPreparedWorkflowRearmRacesActualTurnAdmissionPostgres(t *testing.T) {
@@ -194,4 +205,83 @@ func TestPreparedWorkflowPromotionAndPendingPromptPostgres(t *testing.T) {
 	finished, ok := models.LoadWorkflowSessionRoute(task.Metadata)
 	require.True(t, ok)
 	require.False(t, finished.FirstPromptPending)
+}
+
+func TestPreparedWorkflowRearmRuntimeLockOrderPostgres(t *testing.T) {
+	dsn := testutil.PostgresDSNFromEnv(t)
+	database := openIsolatedPostgresMultiConn(t, dsn, 4)
+	repo, err := NewWithDB(database, database, nil)
+	require.NoError(t, err)
+	taskID, route := seedPreparedWorkflowRearm(t, repo)
+	writer := openWorkflowPostgresConnection(t, database, dsn)
+	writerRepo := NewWithInitializedDB(writer, writer, nil)
+	var pid int
+	require.NoError(t, writer.Get(&pid, `SELECT pg_backend_pid()`))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	runtimeOwner, err := database.BeginTxx(ctx, nil)
+	require.NoError(t, err)
+	defer func() { _ = runtimeOwner.Rollback() }()
+	// Exact first lock used by managedSessionStateWriter and CreateExecutorRunning.
+	require.NoError(t, repo.managedSessionDeletionBarrierTx(ctx, runtimeOwner, route.DestinationID))
+	outcome := make(chan error, 1)
+	go func() { _, err := writerRepo.RearmPreparedWorkflowSession(ctx, taskID, route); outcome <- err }()
+	require.Eventually(t, func() bool {
+		var waiting bool
+		return database.GetContext(ctx, &waiting, `SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = $1`, pid) == nil && waiting
+	}, 3*time.Second, 10*time.Millisecond)
+	var turnAvailable bool
+	require.NoError(t, runtimeOwner.QueryRowContext(ctx,
+		`SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))`, sessionTurnLockNamespace+route.DestinationID).Scan(&turnAvailable))
+	require.NoError(t, runtimeOwner.Rollback())
+	require.NoError(t, <-outcome)
+	require.True(t, turnAvailable, "runtime admission owns task row; rearm must not own turn lock while waiting on that row")
+}
+
+func TestPreparedWorkflowRearmRacesRuntimeAdmissionPostgres(t *testing.T) {
+	for _, admission := range []string{"state", "executor"} {
+		t.Run(admission, func(t *testing.T) { testPreparedWorkflowRuntimeAdmission(t, admission) })
+	}
+}
+
+func testPreparedWorkflowRuntimeAdmission(t *testing.T, admission string) {
+	dsn := testutil.PostgresDSNFromEnv(t)
+	database := openIsolatedPostgresMultiConn(t, dsn, 4)
+	repo, err := NewWithDB(database, database, nil)
+	require.NoError(t, err)
+	taskID, route := seedPreparedWorkflowRearm(t, repo)
+	runtimeDB := openWorkflowPostgresConnection(t, database, dsn)
+	runtimeRepo := NewWithInitializedDB(runtimeDB, runtimeDB, nil)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	start := make(chan struct{})
+	outcomes := make(chan error, 2)
+	go func() { <-start; _, err := repo.RearmPreparedWorkflowSession(ctx, taskID, route); outcomes <- err }()
+	go func() {
+		<-start
+		var err error
+		if admission == "state" {
+			err = runtimeRepo.UpdateTaskSessionState(ctx, route.DestinationID, models.TaskSessionStateStarting, "")
+		} else {
+			err = runtimeRepo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
+				TaskID: taskID, SessionID: route.DestinationID, ResumeToken: "native-owner", Status: models.ExecutorRunningStatusRunning,
+			})
+		}
+		outcomes <- err
+	}()
+	close(start)
+	require.NoError(t, <-outcomes, "runtime and retry must serialize without deadlock aborts")
+	require.NoError(t, <-outcomes)
+	changed, err := repo.RearmPreparedWorkflowSession(ctx, taskID, route)
+	require.NoError(t, err)
+	require.False(t, changed, "persisted runtime/state ownership fences a subsequent retry")
+	if admission == "state" {
+		destination, err := repo.GetTaskSession(ctx, route.DestinationID)
+		require.NoError(t, err)
+		require.Equal(t, models.TaskSessionStateStarting, destination.State)
+	} else {
+		var token string
+		require.NoError(t, database.GetContext(ctx, &token, database.Rebind(`SELECT resume_token FROM executors_running WHERE session_id = ?`), route.DestinationID))
+		require.Equal(t, "native-owner", token)
+	}
 }

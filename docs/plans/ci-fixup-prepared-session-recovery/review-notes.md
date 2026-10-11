@@ -30,12 +30,14 @@ Round 1 on 897f6c37ab: REVIEW e9b5f63c-e85a-4515-9f40-73fca2a5760f and QA 42e8c3
 
 - R1 / QA-001: promotion-before-first-prompt crash stranded CREATED destination. Permanent RED reproduced zero turns. Correction records optional pending-first-prompt intent in the same recovery promotion transaction. Only the exact current marked CREATED destination can finish; FAILED committed or existing-turn/submission/generation/recovery owners cannot be replayed. Permanent startup, no-pending-intent and existing-first-turn controls are GREEN.
 - MAIN-003: startup needed to resolve the current effective step profile, not trust the recorded profile. RED changed profile incorrectly reached STARTING; correction refuses before rearm. GREEN preserves FAILED destination and no turn.
-- R2: real PostgreSQL RED demonstrated task-row ownership while actual rearm waited on the turn advisory boundary (SQLSTATE 55P03). Rearm now takes turn and delivery locks before the managed-deletion task lock, matching turn admission/reconstruction. The deterministic lock-order regression and actual competing turn/delivery methods pass.
+- R2: original task-to-turn wait conflicted with turn admission. Round-2 turn-to-task correction fixed that direction but Review demonstrated the inverse cycle against runtime admission. Superseded both blocking orders. Recovery retains the managed task barrier and only tries the exact turn/delivery advisory locks; an existing owner returns unchanged and releases the transaction, permitting a later exact retry. This keeps runtime, deletion, turn and delivery fences without changing their unrelated admission paths. Permanent RED proved the previous candidate waited on each held advisory; nonblocking correction is covered by deterministic lock-footprint and actual runtime/state, turn and delivery competition.
 - QA-002: five actual PostgreSQL tests passed three repetitions without skips: lock footprint, turn race, delivery race, concurrent exact promotion/pending first prompt, and atomic state changes. The initial fixture lacked its workspace row and failed before the tested behavior; that test fixture was corrected before the R2 RED. Logs and signed-package provenance remain in ignored task artifacts. Independent QA must verify the final candidate.
 
 Correction-round race selector passed all three packages with PostgreSQL configured (1.843s, 1.103s, 5.795s). Changed-code golangci-lint reports 0 issues; specification lint, documentation catalog validation and diff whitespace checks pass.
 
-Both sessions finished the first round and are WFI. Reuse the same two sessions for the committed successor and real PG evidence; final-candidate re-verification is still pending.
+Round-3 PostgreSQL tests passed all seven top-level tests, including both held advisory boundaries and both actual runtime admission methods, with -race -count=3 (40.883s). The opposing runtime lock-footprint probe also passes. Final focused three-package race selector passed (2.103s, 1.136s, 11.818s), changed-code lint reports 0 issues, and docs/spec/diff checks pass.
+
+Round-2 QA passed a0a76c483e; Review found the remaining R2 runtime cycle. Both finished and are WFI. MAIN corrected it only after the round ended. Reuse the same two sessions for the next committed successor; final-candidate re-verification is still pending.
 
 ## Follow-up tasks created
 
