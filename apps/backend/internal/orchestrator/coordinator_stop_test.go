@@ -304,6 +304,40 @@ func TestStopTaskForCoordinatorOperation_PersistsEmptyCaptureOutcome(t *testing.
 	require.Equal(t, CoordinatorTaskStopStatusNotRunning, lookup.Status)
 }
 
+// @covers AC-STOP-FENCE-006
+func TestGetCoordinatorStopReceiptReturnsPendingRequestBeforeCandidateProcessing(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	const parentID = "parent-pending-receipt"
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: parentID, Title: "parent"}))
+	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), &mockAgentManager{})
+
+	for _, test := range []struct {
+		name       string
+		operation  string
+		withActive bool
+	}{
+		{name: "captured active candidate", operation: "pending-active", withActive: true},
+		{name: "captured empty candidate set", operation: "pending-empty"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			taskID := "task-" + test.operation
+			require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: taskID, Title: "child", ParentID: parentID}))
+			if test.withActive {
+				seedStopRetrySession(t, repo, taskID, "pending-session", "pending-turn", "pending-execution")
+			}
+			_, _, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentID, OperationID: test.operation})
+			require.NoError(t, err)
+
+			lookup, err := svc.GetCoordinatorStopReceipt(ctx, taskID, parentID, test.operation)
+			require.NoError(t, err)
+			require.Equal(t, CoordinatorTaskStopStatusIncomplete, lookup.Status)
+			require.Empty(t, lookup.Receipts)
+			require.Empty(t, lookup.SessionFences)
+		})
+	}
+}
+
 type coordinatorStopCallOutcome struct {
 	result CoordinatorTaskStopResult
 	err    error

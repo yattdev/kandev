@@ -304,7 +304,10 @@ func (s *Service) GetCoordinatorStopReceipt(ctx context.Context, taskID, parentT
 			return CoordinatorTaskStopResult{Status: status, SessionFences: fences}, nil
 		}
 		if !request.Complete {
-			return CoordinatorTaskStopResult{}, errors.New("coordinator stop receipt not found")
+			// The request and its candidate inventory commit before any session
+			// processing. A caller that times out at that boundary must be able to
+			// recover its exact pending operation without enumerating task state.
+			return CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatusIncomplete}, nil
 		}
 		return CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatus(request.ResultStatus)}, nil
 	}
