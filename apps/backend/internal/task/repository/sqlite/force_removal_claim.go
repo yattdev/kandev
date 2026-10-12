@@ -275,3 +275,32 @@ func ensureForceRemovalMessageAvailableTx(ctx context.Context, db *sqlx.DB, tx *
 	}
 	return ensureForceRemovalTaskAvailableTx(ctx, db, tx, taskID)
 }
+
+// validateForceRemovalQuiescenceClaimTx locks and validates the one claim that
+// authorizes the private session-quiescence transition. Ordinary writers must
+// continue to reject every claimed task.
+func validateForceRemovalQuiescenceClaimTx(ctx context.Context, db *sqlx.DB, tx *sqlx.Tx, taskID, workspaceID, operationID string, generation time.Time) error {
+	query := forceRemovalTaskGenerationQuery
+	if dialect.IsPostgres(db.DriverName()) {
+		query += forUpdateClause
+	}
+	var current time.Time
+	if err := tx.QueryRowContext(ctx, db.Rebind(query), taskID, workspaceID).Scan(&current); err != nil || !current.Equal(generation) {
+		return ErrForceRemovalClaimStale
+	}
+	result, err := tx.ExecContext(ctx, db.Rebind(`
+		UPDATE task_force_removal_claims SET updated_at = updated_at
+		WHERE task_id = ? AND workspace_id = ? AND operation_id = ? AND task_generation = ?
+	`), taskID, workspaceID, operationID, generation)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return ErrForceRemovalClaimStale
+	}
+	return nil
+}

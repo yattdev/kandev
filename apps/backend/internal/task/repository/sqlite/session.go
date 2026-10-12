@@ -2576,6 +2576,53 @@ func (r *Repository) CancelActiveTaskSessionsByTaskID(ctx context.Context, taskI
 	return sessions, nil
 }
 
+// cancelActiveTaskSessionsForForceRemoval is the sole claim-authorized
+// exception to the ordinary held-task cancellation guard. It preserves every
+// non-session resource and only runs after the exact claim is locked.
+func (r *Repository) CancelActiveTaskSessionsForForceRemoval(ctx context.Context, taskID, workspaceID, operationID string, generation time.Time, reason string) ([]*models.TaskSession, error) {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	tx, err := r.db.BeginTxx(writeCtx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := validateForceRemovalQuiescenceClaimTx(writeCtx, r.db, tx, taskID, workspaceID, operationID, generation); err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	rows, err := tx.QueryContext(writeCtx, r.db.Rebind(`
+		UPDATE task_sessions
+		SET state = ?, error_message = ?, completed_at = ?, updated_at = ?
+		WHERE task_id = ?
+			AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
+		RETURNING id, agent_profile_id, agent_profile_snapshot, is_passthrough, name,
+			review_status, metadata, task_environment_id, state, updated_at, is_primary
+	`), string(models.TaskSessionStateCancelled), reason, now, now, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var sessions []*models.TaskSession
+	for rows.Next() {
+		session, err := scanCancelledTaskSessionRow(rows, taskID)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, session)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
 // ListStaleRunningSessionsOnUnarchivedTasks returns every STARTING/RUNNING
 // session of an unarchived task whose updated_at is older than staleBefore.
 // It is the candidate list for the orphan-session reconciliation sweep (see
