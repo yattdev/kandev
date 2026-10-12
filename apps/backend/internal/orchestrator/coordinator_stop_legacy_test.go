@@ -134,8 +134,12 @@ func TestCoordinatorStopExactCandidatePositiveControlCompletes(t *testing.T) {
 
 func newLegacyStopFixture(t *testing.T) (*sqlite.Repository, *Service, *atomic.Int32) {
 	t.Helper()
+	return newLegacyStopFixtureWithRepo(t, setupTestRepo(t))
+}
+
+func newLegacyStopFixtureWithRepo(t *testing.T, repo *sqlite.Repository) (*sqlite.Repository, *Service, *atomic.Int32) {
+	t.Helper()
 	ctx := context.Background()
-	repo := setupTestRepo(t)
 	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "legacy-parent", Title: "parent"}))
 	seedStopRetrySession(t, repo, "legacy-task", "legacy-session", "legacy-turn", "legacy-execution")
 	stops := &atomic.Int32{}

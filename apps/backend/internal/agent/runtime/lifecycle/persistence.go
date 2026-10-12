@@ -325,6 +325,9 @@ func (m *Manager) persistExecutorRunningResult(ctx context.Context, execution *A
 			return err
 		}
 	}
+	if prior != nil && prior.AgentctlGeneration > 0 && execution.recoveredGenerationUnknown {
+		return models.ErrExecutionRotated
+	}
 	if execution.AgentProfileID == "" && prior != nil {
 		execution.AgentProfileID = prior.ExecutionProfileID
 	}

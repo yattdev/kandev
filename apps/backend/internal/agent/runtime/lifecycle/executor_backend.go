@@ -697,6 +697,8 @@ type ExecutorInstance struct {
 	// AgentctlInstanceID is the control-server instance identity. It can differ
 	// from the lifecycle execution ID after a runtime reconnect.
 	AgentctlInstanceID string
+	// AgentctlGeneration is retained only after runtime and durable identities match during recovery.
+	AgentctlGeneration uint64
 
 	// Runtime-specific identifiers (only one set is populated)
 	ContainerID          string // Docker

@@ -347,7 +347,9 @@ type AgentExecution struct {
 	// This state has its own mutex because stream setup can run while
 	// promptLifecycleMu is held by workspace rebind waiting for readiness.
 	startupAttemptGeneration uint64
-	startupRecoveryStarted   bool
+	// Recovery cannot replace a known durable generation with unverified runtime identity.
+	recoveredGenerationUnknown bool
+	startupRecoveryStarted     bool
 	// startupAttemptIDs preserves the recovery identity for each startup
 	// generation. The execution ID can be reused by managed-runtime repair, so
 	// callbacks must use their captured generation identity instead of the

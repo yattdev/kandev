@@ -1133,7 +1133,8 @@ type Service struct {
 	// callers that don't need the reaper (most tests, ephemeral
 	// orchestrator instances) leave it nil and startIdleSessionReaper
 	// / stopIdleSessionReaper no-op. See idle_session_reaper.go.
-	idleReaper *idleSessionReaper
+	idleReaper                *idleSessionReaper
+	coordinatorStopReconciler *coordinatorStopWorker
 
 	// lspLeases pins an execution while a browser-independent language-server
 	// lease owns its task-host stream. The gateway is wired through this narrow
@@ -1728,6 +1729,7 @@ func NewService(
 		dynamicSuccessorCancel:       dynamicSuccessorCancel,
 		idleReaper:                   newIdleSessionReaper(),
 		ceilingSweeper:               newCeilingSweeper(),
+		coordinatorStopReconciler:    &coordinatorStopWorker{},
 		sessionCeiling:               newSessionCeilingForRepo(repo, cfg.SessionCapacity, svcLogger.Zap()),
 		backgroundProbeConfig:        LoadBackgroundProbeConfig(svcLogger),
 		parkedStates:                 make(map[string]*parkedSessionState),
@@ -3298,6 +3300,7 @@ func (s *Service) Start(ctx context.Context) error {
 	// before tearing down repo / agentManager.
 	s.startIdleSessionReaper(ctx)
 	s.startCeilingSweeper(ctx)
+	s.coordinatorStopReconciler.start(ctx, s.reconcileCoordinatorStopsOnce)
 
 	s.logger.Info("orchestrator service started successfully")
 	return nil
@@ -3348,6 +3351,7 @@ func (s *Service) Stop() error {
 	// Stop components in reverse order
 	var errs []error
 	s.stopIdleSessionReaper()
+	s.coordinatorStopReconciler.stop()
 	s.stopCeilingSweeper()
 	s.stopReservedPromptCallbacks()
 
@@ -3818,6 +3822,10 @@ func (s *Service) handleTerminalSessionOnStartup(ctx context.Context, session *m
 	sessionID := session.ID
 	switch previousState {
 	case models.TaskSessionStateCompleted, models.TaskSessionStateCancelled:
+		// An unresolved exact stop owns teardown; ordinary startup cleanup cannot replace its proof.
+		if s.hasUnresolvedCoordinatorStop(ctx, session.TaskID, sessionID) {
+			return true
+		}
 		s.logger.Info("session in terminal state; stopping runtime before cleaning up executor record",
 			zap.String("session_id", sessionID),
 			zap.String("task_id", session.TaskID),

@@ -618,6 +618,7 @@ func (r *StandaloneExecutor) buildRecoveredInstances(
 		var taskID, workspacePath string
 		var metadata map[string]interface{}
 		var agentProfileID string
+		var generation uint64
 		if record != nil {
 			taskID = record.TaskID
 			workspacePath = record.WorktreePath
@@ -626,6 +627,10 @@ func (r *StandaloneExecutor) buildRecoveredInstances(
 			// source is the recovery-inventory record's execution-profile
 			// column -- never the adopted instance.
 			agentProfileID = record.ExecutionProfileID
+			if record.AgentctlGeneration > 0 && inst.ID == record.AgentExecutionID &&
+				inst.ExecutionID == record.AgentExecutionID && inst.AgentctlGeneration == record.AgentctlGeneration {
+				generation = record.AgentctlGeneration
+			}
 		}
 
 		recovered = append(recovered, &ExecutorInstance{
@@ -635,6 +640,9 @@ func (r *StandaloneExecutor) buildRecoveredInstances(
 			AgentProfileID:       agentProfileID,
 			RuntimeName:          r.Name(),
 			Client:               client,
+			ControlClient:        r.ctl,
+			AgentctlInstanceID:   inst.ID,
+			AgentctlGeneration:   generation,
 			StandaloneInstanceID: inst.ID,
 			StandalonePort:       inst.Port,
 			WorkspacePath:        workspacePath,
