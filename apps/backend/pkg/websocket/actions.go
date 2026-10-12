@@ -555,6 +555,8 @@ const (
 	ActionMCPArchiveTask                 = "mcp.archive_task"
 	ActionMCPUpdateTaskState             = "mcp.update_task_state"
 	ActionMCPMessageTask                 = "mcp.message_task"
+	ActionMCPGetTaskMessageStatus        = "mcp.get_task_message_status"
+	ActionMCPContinueTaskMessage         = "mcp.continue_task_message"
 	ActionMCPStopTask                    = "mcp.stop_task"
 	ActionMCPSpawnSession                = "mcp.spawn_session"
 	ActionMCPGetTaskConversation         = "mcp.get_task_conversation"

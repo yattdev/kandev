@@ -541,6 +541,8 @@ func (h *Handlers) registerTaskMutationHandlers(d *guardedMCPDispatcher) {
 	d.RegisterFunc(ws.ActionMCPUpdateRepositoryBaseBranch, h.handleUpdateRepositoryBaseBranch)
 	d.RegisterFunc(ws.ActionMCPStepComplete, h.handleStepComplete)
 	d.RegisterFunc(ws.ActionMCPMessageTask, h.handleMessageTask)
+	d.RegisterFunc(ws.ActionMCPGetTaskMessageStatus, h.handleGetTaskMessageStatus)
+	d.RegisterFunc(ws.ActionMCPContinueTaskMessage, h.handleGetTaskMessageStatus)
 	d.RegisterFunc(ws.ActionMCPStopTask, h.handleStopTask)
 	d.RegisterFunc(ws.ActionMCPSpawnSession, h.handleSpawnSession)
 }
@@ -2674,9 +2676,13 @@ func (h *Handlers) handleMessageTask(ctx context.Context, msg *ws.Message) (*ws.
 		SenderSessionID   string `json:"sender_session_id"`
 		DeliveryMode      string `json:"delivery_mode"`
 		ReplyToQuestionID string `json:"reply_to_question_id"`
+		IntentID          string `json:"intent_id"`
 	}
 	if err := json.Unmarshal(msg.Payload, &req); err != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "Invalid payload: "+err.Error(), nil)
+	}
+	if req.IntentID != "" {
+		return h.handleReceiptTaskMessage(ctx, msg)
 	}
 	if req.TaskID == "" {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "task_id is required", nil)
@@ -3623,7 +3629,13 @@ func (h *Handlers) ensureTaskInProgressForTaskMessage(ctx context.Context, taskI
 	if task.IsFromOffice {
 		return rollback, nil
 	}
-	if _, err := h.taskSvc.UpdateTaskState(ctx, taskID, v1.TaskStateInProgress); err != nil {
+	if err := retryTaskMessageWrite(ctx, func() error {
+		updated, err := h.taskSvc.UpdateTaskStateIfCurrentIn(ctx, taskID, v1.TaskStateInProgress, []v1.TaskState{v1.TaskStateReview})
+		if err == nil && !updated {
+			return errors.New("task review transition superseded")
+		}
+		return err
+	}); err != nil {
 		return taskMessageReviewRollback{}, fmt.Errorf("failed to transition task from REVIEW to IN_PROGRESS for task message: %w", err)
 	}
 	h.logger.Info("task transitioned from REVIEW to IN_PROGRESS for task message",

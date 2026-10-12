@@ -1213,6 +1213,7 @@ func (s *Server) registerDiagnosticBundleTool() {
 }
 
 func (s *Server) registerKanbanTools() {
+	s.registerTaskMessageReceiptTools()
 	// Use NewToolWithRawSchema for parameter-less tools to ensure the schema
 	// includes "properties": {}. The default ToolInputSchema type in mcp-go uses
 	// omitempty which drops empty properties maps, causing OpenAI API validation
@@ -1312,6 +1313,7 @@ func (s *Server) registerKanbanTools() {
 			mcp.WithString("task_id", mcp.Required(), mcp.Description("The target task's full UUID (not a truncated prefix)")),
 			mcp.WithString("session_id", mcp.Description("Optional target session ID (must belong to task_id). Omit to message the task's primary session. Required when messaging a sibling session on your OWN task (task_id may then be your own task ID) — e.g. a session you spawned with spawn_session_kandev.")),
 			mcp.WithString("prompt", mcp.Required(), mcp.Description("The message to deliver to the task's agent")),
+			mcp.WithString("intent_id", mcp.Description("Optional stable sender intent ID. With an explicit session_id and queued delivery, atomically persists one transcript and durable FIFO receipt, returns before startup, and deduplicates identical retries. Read get_task_message_status_kandev before retry after a timeout; continue_task_message_kandev only rechecks the original queue. Does not move a workflow step. Omit for legacy delivery.")),
 			mcp.WithString("delivery_mode",
 				mcp.Enum("queued", "interrupt"),
 				mcp.DefaultString("queued"),
