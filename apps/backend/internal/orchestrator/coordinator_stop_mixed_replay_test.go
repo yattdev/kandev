@@ -33,6 +33,8 @@ func TestCoordinatorStopMixedLaunchFenceRetriesUnboundExactCandidate(t *testing.
 			queued, err := svc.messageQueue.QueueMessage(ctx, "a-launch", request.TaskID, "successor message", "", messagequeue.QueuedByAgent, false, nil)
 			require.NoError(t, err)
 			beforeA := mustGetSession(t, repo, "a-launch")
+			pendingA, revisionA := svc.CancellationPendingSnapshot("a-launch")
+			require.False(t, pendingA)
 			require.NoError(t, repo.UpsertExecutorRunning(ctx, running))
 			if startup {
 				require.NoError(t, svc.reconcilePendingCoordinatorStopRequestsOnStartup(ctx))
@@ -48,6 +50,9 @@ func TestCoordinatorStopMixedLaunchFenceRetriesUnboundExactCandidate(t *testing.
 			require.Equal(t, "legacy-execution", lookup.Receipts[0].ExecutionID)
 			require.Equal(t, first.SessionFences, lookup.SessionFences)
 			require.Equal(t, beforeA, mustGetSession(t, repo, "a-launch"))
+			pendingAfter, revisionAfter := svc.CancellationPendingSnapshot("a-launch")
+			require.False(t, pendingAfter)
+			require.Equal(t, revisionA, revisionAfter, "replay must skip covered candidates before acquiring cancellation ownership")
 			afterQueue, err := svc.messageQueue.GetEntry(ctx, "a-launch", queued.ID)
 			require.NoError(t, err)
 			require.Equal(t, queued, afterQueue)

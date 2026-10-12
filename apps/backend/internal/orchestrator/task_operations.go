@@ -240,11 +240,18 @@ func (s *Service) captureCoordinatorStopRequest(
 }
 
 func (s *Service) captureCoordinatorStopRequestSessions(ctx context.Context, result *CoordinatorTaskStopResult, taskID, operationID string, candidates []models.CoordinatorStopRequestCandidate) (int, bool, error) {
+	fences, err := s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
+	if err != nil {
+		return 0, false, err
+	}
 	accepted := 0
 	incomplete := false
 	for _, candidate := range candidates {
 		if candidate.SessionID == "" {
 			return 0, false, errors.New("coordinator stop: active session candidate has an empty ID")
+		}
+		if coordinatorStopCandidateHasFence(fences, candidate.SessionID) {
+			continue
 		}
 		stopResult, sessionIncomplete, stopErr := s.stopTaskSessionForCoordinatorCandidate(ctx, taskID, candidate, operationID)
 		if stopErr != nil {
