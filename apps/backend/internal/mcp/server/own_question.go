@@ -15,16 +15,26 @@ const ownQuestionReceiptOutputSchema = `{
  "properties":{
   "task_id":{"type":"string"},"session_id":{"type":"string"},
   "pending_id":{"type":"string"},
-  "status":{"type":"string","enum":["not_created","pending","answered","rejected","expired","cancelled","unknown"]},
+  "status":{"type":"string","enum":["not_created","pending","answered","rejected","expired","cancelled","unknown","mixed"]},
   "retry_allowed":{"type":"boolean"},
-  "questions":{"type":"array","maxItems":4,"items":{"type":"object"}}
+  "questions":{"type":"array","minItems":1,"maxItems":4,"items":{
+   "type":"object","required":["question_id","status","retry_allowed"],
+   "properties":{
+    "question_id":{"type":"string"},"pending_id":{"type":"string"},
+    "message_id":{"type":"string"},"requesting_turn_id":{"type":"string"},
+    "status":{"type":"string","enum":["not_created","pending","answered","rejected","expired","cancelled","unknown"]},
+    "retry_allowed":{"type":"boolean"},"created_at":{"type":"string"},
+    "updated_at":{"type":"string"},"agent_disconnected":{"type":"boolean"},
+    "question_sha256":{"type":"string"},"answer":{"type":"object"}
+   },"additionalProperties":false
+  }}
  },
  "additionalProperties":false
 }`
 
 func (s *Server) registerOwnQuestionStatusTool() {
 	s.mcpServer.AddTool(mcp.NewTool("get_own_question_status_kandev",
-		mcp.WithDescription("Read durable lifecycle metadata and recorded answers for 1-4 exact stable question IDs on this caller's own active task/session. Returns not_created, pending, answered, rejected, expired, cancelled, or unknown. No question prompts, other messages, acknowledgement, retry, or policy change. Correlate the original ID before retry; an existing identity cannot be recreated."),
+		mcp.WithDescription("Read durable lifecycle metadata and recorded answers for 1-4 exact stable question IDs on this caller's own active task/session. Each ID returns its status and retry_allowed; only not_created permits retry. Batch status is mixed when statuses differ; batch retry_allowed requires every ID to be absent. No question prompts, other messages, acknowledgement, retry, or policy change. Correlate the original ID before retry; an existing identity cannot be recreated."),
 		mcp.WithRawOutputSchema(json.RawMessage(ownQuestionReceiptOutputSchema)),
 		mcp.WithReadOnlyHintAnnotation(true), mcp.WithDestructiveHintAnnotation(false), mcp.WithIdempotentHintAnnotation(true), mcp.WithOpenWorldHintAnnotation(false),
 		mcp.WithArray("question_ids", mcp.Required(), mcp.MinItems(1), mcp.MaxItems(4), mcp.Items(map[string]any{"type": "string", "minLength": 1, "maxLength": 128}))),

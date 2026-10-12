@@ -34,13 +34,15 @@ type ownQuestionRequest struct {
 
 type ownQuestionItem struct {
 	QuestionID        string                `json:"question_id"`
-	MessageID         string                `json:"message_id"`
-	TurnID            string                `json:"requesting_turn_id"`
+	PendingID         string                `json:"pending_id,omitempty"`
+	RetryAllowed      bool                  `json:"retry_allowed"`
+	MessageID         string                `json:"message_id,omitempty"`
+	TurnID            string                `json:"requesting_turn_id,omitempty"`
 	Status            string                `json:"status"`
-	CreatedAt         time.Time             `json:"created_at"`
-	UpdatedAt         time.Time             `json:"updated_at"`
-	AgentDisconnected bool                  `json:"agent_disconnected"`
-	QuestionSHA256    string                `json:"question_sha256"`
+	CreatedAt         time.Time             `json:"created_at,omitzero"`
+	UpdatedAt         time.Time             `json:"updated_at,omitzero"`
+	AgentDisconnected bool                  `json:"agent_disconnected,omitempty"`
+	QuestionSHA256    string                `json:"question_sha256,omitempty"`
 	Answer            *clarification.Answer `json:"answer,omitempty"`
 }
 
@@ -112,21 +114,44 @@ func (h *Handlers) readOwnQuestion(ctx context.Context, taskID, sessionID string
 		return nil, nil, err
 	}
 	receipt := &ownQuestionReceipt{TaskID: taskID, SessionID: sessionID, Status: "not_created", RetryAllowed: true, Questions: []ownQuestionItem{}}
-	if len(messages) == 0 {
-		return receipt, messages, nil
-	}
-	receipt.RetryAllowed = false
 	seen := map[string]bool{}
+	for _, id := range ids {
+		seen[id] = false
+	}
 	for _, m := range messages {
 		if err := addOwnQuestionItem(receipt, m, seen, taskID, sessionID); err != nil {
 			return nil, nil, err
 		}
 	}
-	if len(seen) != len(ids) {
-		return nil, nil, errors.New("incomplete question identity")
-	}
-	receipt.Status = ownBundleStatus(receipt.Questions)
+	completeOwnQuestionBatch(receipt, ids)
 	return receipt, messages, nil
+}
+
+// Every requested ID has one result, in caller order. A missing ID has no
+// durable identity; existing IDs retain their own immutable bundle identity.
+func completeOwnQuestionBatch(r *ownQuestionReceipt, ids []string) {
+	byID := make(map[string]ownQuestionItem, len(r.Questions))
+	bundles := map[string]bool{}
+	for _, item := range r.Questions {
+		byID[item.QuestionID] = item
+		bundles[item.PendingID] = true
+	}
+	r.Questions = make([]ownQuestionItem, 0, len(ids))
+	for _, id := range ids {
+		item, exists := byID[id]
+		if !exists {
+			item = ownQuestionItem{QuestionID: id, Status: "not_created", RetryAllowed: true}
+		} else {
+			r.RetryAllowed = false
+		}
+		r.Questions = append(r.Questions, item)
+	}
+	if len(bundles) == 1 {
+		for pending := range bundles {
+			r.PendingID = pending
+		}
+	}
+	r.Status = ownBundleStatus(r.Questions)
 }
 
 func addOwnQuestionItem(r *ownQuestionReceipt, m *models.Message, seen map[string]bool, taskID, sessionID string) error {
@@ -135,11 +160,10 @@ func addOwnQuestionItem(r *ownQuestionReceipt, m *models.Message, seen map[strin
 	}
 	id, _ := m.Metadata["question_id"].(string)
 	pending, _ := m.Metadata["pending_id"].(string)
-	if id == "" || pending == "" || seen[id] || (r.PendingID != "" && r.PendingID != pending) {
+	if _, requested := seen[id]; !requested || id == "" || pending == "" || seen[id] {
 		return errors.New("ambiguous question identity")
 	}
 	seen[id] = true
-	r.PendingID = pending
 	raw, err := json.Marshal(m.Metadata)
 	if err != nil || len(raw) > 65536 {
 		return errors.New("question metadata exceeds bound")
@@ -151,7 +175,7 @@ func addOwnQuestionItem(r *ownQuestionReceipt, m *models.Message, seen map[strin
 	digest := sha256.Sum256(question)
 	status, _ := m.Metadata["status"].(string)
 	disconnected, _ := m.Metadata["agent_disconnected"].(bool)
-	item := ownQuestionItem{QuestionID: id, MessageID: m.ID, TurnID: m.TurnID, Status: status, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt, AgentDisconnected: disconnected, QuestionSHA256: hex.EncodeToString(digest[:])}
+	item := ownQuestionItem{QuestionID: id, PendingID: pending, MessageID: m.ID, TurnID: m.TurnID, Status: status, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt, AgentDisconnected: disconnected, QuestionSHA256: hex.EncodeToString(digest[:])}
 	item.Answer, item.Status, err = projectOwnAnswer(status, m.Metadata["response"], id)
 	if err != nil {
 		return err
@@ -161,18 +185,10 @@ func addOwnQuestionItem(r *ownQuestionReceipt, m *models.Message, seen map[strin
 }
 
 func ownBundleStatus(items []ownQuestionItem) string {
-	status := string(clarification.StatusAnswered)
+	status := items[0].Status
 	for _, item := range items {
-		switch item.Status {
-		case string(clarification.StatusRejected):
-			return string(clarification.StatusRejected)
-		case string(clarification.StatusPending), "":
-			status = string(clarification.StatusPending)
-		case string(clarification.StatusAnswered):
-		case string(clarification.StatusExpired), string(clarification.StatusCancelled):
-			return item.Status
-		default:
-			return "unknown"
+		if item.Status != status {
+			return "mixed"
 		}
 	}
 	return status
@@ -195,6 +211,9 @@ func (h *Handlers) prepareOwnQuestion(ctx context.Context, taskID, sessionID str
 		return "", nil, err
 	}
 	if len(messages) > 0 {
+		if len(messages) != len(ids) || receipt.PendingID == "" {
+			return "", nil, errors.New("incomplete or distinct question request identities")
+		}
 		if err := matchOwnQuestionRetry(messages, questions, questionContext); err != nil {
 			return "", nil, err
 		}
@@ -319,6 +338,11 @@ func recordedOwnAnswer(raw any, id string) (*clarification.Answer, error) {
 func projectOwnAnswer(status string, raw any, id string) (*clarification.Answer, string, error) {
 	if status == "" {
 		status = string(clarification.StatusPending)
+	}
+	switch status {
+	case string(clarification.StatusPending), string(clarification.StatusAnswered), string(clarification.StatusRejected), string(clarification.StatusExpired), string(clarification.StatusCancelled):
+	default:
+		status = "unknown"
 	}
 	if status != string(clarification.StatusAnswered) {
 		return nil, status, nil

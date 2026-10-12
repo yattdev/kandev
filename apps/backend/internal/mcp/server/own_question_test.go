@@ -1,11 +1,35 @@
 package mcp
 
 import (
+	"encoding/json"
 	"testing"
 
 	ws "github.com/kandev/kandev/pkg/websocket"
 	"github.com/stretchr/testify/require"
 )
+
+func TestOwnQuestionMixedBatchSchemaAndForwarding(t *testing.T) {
+	batch := map[string]interface{}{
+		"task_id": "own-task", "session_id": "own-session", "status": "mixed", "retry_allowed": false,
+		"questions": []any{
+			map[string]any{"question_id": "original", "pending_id": "original-pending", "message_id": "original-message", "status": "pending", "retry_allowed": false},
+			map[string]any{"question_id": "missing", "status": "not_created", "retry_allowed": true},
+		},
+	}
+	backend := &testBackend{response: batch}
+	s := newTaskModeServer(t, backend, "own-task")
+	result := callTool(t, s, "get_own_question_status_kandev", map[string]interface{}{"question_ids": []string{"original", "missing"}})
+	require.False(t, result.IsError)
+	require.Equal(t, batch, result.StructuredContent)
+	require.Equal(t, []string{"original", "missing"}, backend.lastPayload.(map[string]interface{})["question_ids"])
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal(s.mcpServer.ListTools()["get_own_question_status_kandev"].Tool.RawOutputSchema, &schema))
+	properties := schema["properties"].(map[string]any)
+	require.Contains(t, properties["status"].(map[string]any)["enum"], "mixed")
+	items := properties["questions"].(map[string]any)["items"].(map[string]any)
+	require.Contains(t, items["required"], "retry_allowed")
+	require.Contains(t, items["properties"], "pending_id")
+}
 
 func TestOwnQuestionReceiptSchemaForwardingAndStatus(t *testing.T) {
 	backend := &testBackend{response: map[string]interface{}{"status": "pending", "pending_id": "synthetic-pending", "retry_allowed": false, "questions": []any{}}}
