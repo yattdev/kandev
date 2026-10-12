@@ -639,9 +639,13 @@ func (m *Manager) recordActivity(execution *AgentExecution, event agentctl.Agent
 	// AgentRunning. In practice the adapter always emits agent_capabilities
 	// during Initialize (before MarkBootReady), so firstActivityOnce fires
 	// while Status is still Running — this is defensive hardening.
-	if execution.Status != v1.AgentStatusReady {
+	payload, ok := m.activityEventSnapshot(execution)
+	if !ok {
+		return
+	}
+	if payload.Status != string(v1.AgentStatusReady) {
 		execution.firstActivityOnce.Do(func() {
-			m.eventPublisher.PublishAgentEvent(context.Background(), events.AgentRunning, execution)
+			m.eventPublisher.publishAgentEventPayload(context.Background(), events.AgentRunning, payload)
 		})
 		return
 	}
@@ -664,7 +668,20 @@ func (m *Manager) recordActivity(execution *AgentExecution, event agentctl.Agent
 		zap.String("execution_id", execution.ID),
 		zap.String("session_id", execution.SessionID),
 		zap.String("trigger_event_type", event.Type))
-	m.eventPublisher.PublishAgentEvent(context.Background(), events.AgentRunning, execution)
+	if payload, ok := m.activityEventSnapshot(execution); ok {
+		m.eventPublisher.publishAgentEventPayload(context.Background(), events.AgentRunning, payload)
+	}
+}
+
+func (m *Manager) activityEventSnapshot(execution *AgentExecution) (AgentEventPayload, bool) {
+	if m.executionStore == nil {
+		return newAgentEventPayload(execution), true
+	}
+	var payload AgentEventPayload
+	err := m.executionStore.WithRLock(execution.ID, func(current *AgentExecution) {
+		payload = newAgentEventPayload(current)
+	})
+	return payload, err == nil
 }
 
 // handleStreamDisconnect handles unexpected updates stream disconnections.

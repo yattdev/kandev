@@ -55,12 +55,16 @@ func TestCoordinatorStopUnboundIncompleteRequestRetriesRestoredExactExecutor(t *
 func TestStopTaskForCoordinatorOperationRejectsRegistrationAfterSnapshot(t *testing.T) {
 	for _, withTurn := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before turn reservation", true: "reserved launch turn"}[withTurn], func(t *testing.T) {
-			assertCoordinatorStopRegistrationAfterSnapshot(t, withTurn)
+			assertCoordinatorStopRegistrationAfterSnapshot(t, withTurn, false)
 		})
 	}
 }
 
-func assertCoordinatorStopRegistrationAfterSnapshot(t *testing.T, withTurn bool) {
+func TestStopTaskForCoordinatorOperationRejectsTurnReservationAfterSnapshot(t *testing.T) {
+	assertCoordinatorStopRegistrationAfterSnapshot(t, false, true)
+}
+
+func assertCoordinatorStopRegistrationAfterSnapshot(t *testing.T, withTurn, reserveAfterSnapshot bool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -87,13 +91,23 @@ func assertCoordinatorStopRegistrationAfterSnapshot(t *testing.T, withTurn bool)
 		t.Fatal("stop request did not reach the committed capture barrier")
 	}
 	running := &models.ExecutorRunning{ID: "launch-session", SessionID: "launch-session", TaskID: "launch-task", ExecutorID: "executor", Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: "late-execution", AgentctlGeneration: 1, Status: models.ExecutorRunningStatusRunning}
-	registrationErr := repo.UpsertExecutorRunning(ctx, running)
+	var reservationErr, registrationErr error
+	if reserveAfterSnapshot {
+		now := time.Now().UTC()
+		reservationErr = repo.CreateTurn(ctx, &models.Turn{ID: "late-launch-turn", TaskID: "launch-task", TaskSessionID: "launch-session", StartedAt: now, CreatedAt: now, UpdatedAt: now})
+	} else {
+		registrationErr = repo.UpsertExecutorRunning(ctx, running)
+	}
 	barrier.once.Do(func() { close(barrier.release) })
 	var outcome coordinatorStopCallOutcome
 	select {
 	case outcome = <-done:
 	case <-ctx.Done():
 		t.Fatal("stop request did not finish after capture barrier release")
+	}
+	if reserveAfterSnapshot {
+		registrationErr = repo.UpsertExecutorRunning(ctx, running)
+		require.ErrorIs(t, reservationErr, models.ErrExecutionStopFenced, "the original launch cannot reserve a turn after its blank-turn snapshot")
 	}
 	require.ErrorIs(t, registrationErr, models.ErrExecutionStopFenced)
 	require.NoError(t, outcome.err)

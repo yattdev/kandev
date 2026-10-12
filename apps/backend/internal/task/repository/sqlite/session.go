@@ -45,7 +45,7 @@ func (r *Repository) CreateTurn(ctx context.Context, turn *models.Turn) error {
 func (r *Repository) CreateTurnWithStepStamp(ctx context.Context, turn *models.Turn) (bool, error) {
 	stampTurnDefaults(turn)
 
-	tx, err := r.db.BeginTx(ctx, nil)
+	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return false, r.insertTurnWithSessionLock(ctx, turn)
 	}
@@ -56,6 +56,9 @@ func (r *Repository) CreateTurnWithStepStamp(ctx context.Context, turn *models.T
 		}
 	}()
 
+	if err := r.lockCoordinatorTurnAdmissionTx(ctx, tx, turn); err != nil {
+		return false, err
+	}
 	if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), turn.TaskSessionID); err != nil {
 		return false, err
 	}
@@ -140,6 +143,9 @@ func (r *Repository) insertTurnWithSessionLock(ctx context.Context, turn *models
 		return fmt.Errorf("begin turn creation: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.lockCoordinatorTurnAdmissionTx(ctx, tx, turn); err != nil {
+		return err
+	}
 	if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), turn.TaskSessionID); err != nil {
 		return err
 	}
