@@ -86,14 +86,12 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
-	if request.Complete && len(receipts) == 0 {
+	if request.Complete && request.ResultStatus != string(CoordinatorTaskStopStatusIncomplete) && len(receipts) == 0 {
 		fences, err := s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
 		if err != nil {
 			return CoordinatorTaskStopResult{}, err
 		}
-		if request.ResultStatus != string(CoordinatorTaskStopStatusIncomplete) || len(fences) > 0 {
-			return CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatus(request.ResultStatus), SessionFences: fences}, nil
-		}
+		return CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatus(request.ResultStatus), SessionFences: fences}, nil
 	}
 	result := CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatusIncomplete}
 	if len(receipts) == 0 {
@@ -5231,6 +5229,12 @@ func (s *Service) stopTaskSessionForCoordinatorLocked(
 	}
 	if session.TaskID != taskID {
 		return executor.SessionStopResult{}, false, false, fmt.Errorf("coordinator stop: session %q belongs to task %q, not %q", sessionID, session.TaskID, taskID)
+	}
+	if requestOperationID != "" {
+		fences, fenceErr := s.coordinatorStopRequestSessionFences(ctx, taskID, requestOperationID)
+		if fenceErr != nil || coordinatorStopCandidateHasFence(fences, sessionID) {
+			return executor.SessionStopResult{FinalState: session.State}, false, true, fenceErr
+		}
 	}
 	if requestOperationID != "" && (candidate == nil || candidate.QueueIncarnationID == "") {
 		return executor.SessionStopResult{FinalState: session.State}, false, true, nil

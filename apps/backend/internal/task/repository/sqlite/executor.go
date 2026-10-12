@@ -345,16 +345,21 @@ func (r *Repository) ensureExecutorRegistrationNotFencedTx(ctx context.Context, 
 }
 
 func (r *Repository) ensurePendingCoordinatorLaunchNotFencedTx(ctx context.Context, tx *sqlx.Tx, sessionID string) error {
-	var found int
-	err := tx.QueryRowContext(ctx, r.db.Rebind(`
+	predicate, orderBy := currentTurnAuthority(r.db.DriverName(), "turn_row")
+	query := fmt.Sprintf(`
 		SELECT 1 FROM task_stop_request_candidates c
 		JOIN task_stop_requests q ON q.task_id = c.task_id AND q.operation_id = c.operation_id
 		JOIN task_sessions s ON s.id = c.session_id AND s.task_id = c.task_id
 		WHERE c.session_id = ? AND q.complete = ? AND c.queue_incarnation_id <> ''
 			AND c.queue_incarnation_id = s.queue_incarnation_id
 			AND c.execution_id = '' AND c.agentctl_generation = 0
+			AND (c.turn_id = '' OR c.turn_id = COALESCE((SELECT turn_row.id FROM task_session_turns turn_row
+				WHERE turn_row.task_session_id = c.session_id AND turn_row.completed_at IS NULL AND %s
+				ORDER BY %s LIMIT 1), ''))
 		LIMIT 1
-	`), sessionID, false).Scan(&found)
+	`, predicate, orderBy)
+	var found int
+	err := tx.QueryRowContext(ctx, r.db.Rebind(query), sessionID, false).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

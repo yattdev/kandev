@@ -37,6 +37,47 @@ func TestPostgresCoordinatorStopLaunchFenceRequiresCapturedTurnAndQueue(t *testi
 	assertCoordinatorStopLaunchFenceIdentity(t, repo)
 }
 
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-007
+func TestCoordinatorStopBoundLaunchFenceRepeatPreservesSuccessor(t *testing.T) {
+	assertCoordinatorStopBoundLaunchFenceRepeat(t, newRepoForSessionTests(t))
+}
+
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-007, AC-STOP-FENCE-008
+func TestPostgresCoordinatorStopBoundLaunchFenceRepeatPreservesSuccessor(t *testing.T) {
+	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
+	repo, err := NewWithDB(db, db, nil)
+	require.NoError(t, err)
+	assertCoordinatorStopBoundLaunchFenceRepeat(t, repo)
+}
+
+func assertCoordinatorStopBoundLaunchFenceRepeat(t *testing.T, repo *Repository) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "bound-launch-task", Title: "launch"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "bound-launch-parent", Title: "parent"}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "bound-launch-session", TaskID: "bound-launch-task", State: models.TaskSessionStateStarting}))
+	request := models.CoordinatorStopRequest{TaskID: "bound-launch-task", ParentTaskID: "bound-launch-parent", OperationID: "bound-launch-stop"}
+	_, _, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, request)
+	require.NoError(t, err)
+	changed, err := repo.FenceCoordinatorStopSessionForRequest(ctx, request.TaskID, "bound-launch-session", request.OperationID)
+	require.NoError(t, err)
+	require.True(t, changed)
+	fences, err := repo.ListCoordinatorStopRequestSessionFences(ctx, request.TaskID, request.OperationID)
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateTaskSessionState(ctx, "bound-launch-session", models.TaskSessionStateStarting, ""))
+	before, err := repo.GetTaskSession(ctx, "bound-launch-session")
+	require.NoError(t, err)
+	changed, err = repo.FenceCoordinatorStopSessionForRequest(ctx, request.TaskID, "bound-launch-session", request.OperationID)
+	require.NoError(t, err)
+	require.False(t, changed, "a persisted request fence cannot cancel an authorized successor")
+	after, err := repo.GetTaskSession(ctx, "bound-launch-session")
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	retryFences, err := repo.ListCoordinatorStopRequestSessionFences(ctx, request.TaskID, request.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, fences, retryFences)
+}
+
 func assertCoordinatorStopLaunchFenceIdentity(t *testing.T, repo *Repository) {
 	t.Helper()
 	ctx := context.Background()
@@ -133,9 +174,14 @@ func assertCoordinatorStopPendingLaunchRegistration(t *testing.T, repo *Reposito
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateStarting, session.State)
 	require.Equal(t, "captured-launch", session.QueueIncarnationID)
+	_, err = repo.db.ExecContext(ctx, repo.db.Rebind(`UPDATE task_session_turns SET completed_at = ? WHERE id = ?`), now, "launch-turn")
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: "successor-launch-turn", TaskID: "launch-task", TaskSessionID: "launch-session", StartedAt: now.Add(time.Second), CreatedAt: now, UpdatedAt: now}))
+	running.AgentExecutionID, running.AgentctlGeneration = "same-queue-successor", 2
+	require.NoError(t, repo.UpsertExecutorRunning(ctx, running), "a new authoritative turn on the same queue is independent of the captured launch")
 	_, err = repo.db.ExecContext(ctx, repo.db.Rebind(`UPDATE task_sessions SET queue_incarnation_id = ? WHERE id = ?`), "successor-launch", session.ID)
 	require.NoError(t, err)
-	running.AgentExecutionID, running.AgentctlGeneration = "independent-successor", 2
+	running.AgentExecutionID, running.AgentctlGeneration = "independent-successor", 3
 	require.NoError(t, repo.UpsertExecutorRunning(ctx, running), "a different immutable launch incarnation remains admissible")
 	_, retryCandidates, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, request)
 	require.NoError(t, err)

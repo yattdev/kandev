@@ -301,6 +301,8 @@ func (r *Repository) coordinatorStopLaunchCandidateMatchesTx(ctx context.Context
 		WHERE c.task_id = ? AND c.session_id = ? AND c.operation_id = ?
 			AND c.queue_incarnation_id <> '' AND c.queue_incarnation_id = s.queue_incarnation_id
 			AND c.execution_id = '' AND c.agentctl_generation = 0
+			AND NOT EXISTS (SELECT 1 FROM task_stop_request_fence_receipts f
+				WHERE f.task_id = c.task_id AND f.operation_id = c.operation_id AND f.session_id = c.session_id)
 			AND NOT EXISTS (SELECT 1 FROM executors_running e WHERE e.session_id = c.session_id)
 			AND c.turn_id = COALESCE((SELECT turn_row.id FROM task_session_turns turn_row
 				WHERE turn_row.task_session_id = c.session_id AND turn_row.completed_at IS NULL AND %s
