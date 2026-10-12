@@ -317,6 +317,9 @@ func (r *Repository) ensureExecutorGenerationDoesNotRegressTx(ctx context.Contex
 // any session still held behind a coordinator launch fence. An explicit
 // session restart clears the latter before its new execution is registered.
 func (r *Repository) ensureExecutorRegistrationNotFencedTx(ctx context.Context, tx *sqlx.Tx, running *models.ExecutorRunning) error {
+	if err := r.ensurePendingCoordinatorLaunchNotFencedTx(ctx, tx, running.SessionID); err != nil {
+		return err
+	}
 	var sessionFence int
 	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT 1 FROM task_stop_session_fences WHERE session_id = ?`), running.SessionID).Scan(&sessionFence); err == nil {
 		return models.ErrExecutionStopFenced
@@ -337,6 +340,26 @@ func (r *Repository) ensureExecutorRegistrationNotFencedTx(ctx context.Context, 
 	}
 	if err != nil {
 		return fmt.Errorf("check executor registration fence: %w", err)
+	}
+	return models.ErrExecutionStopFenced
+}
+
+func (r *Repository) ensurePendingCoordinatorLaunchNotFencedTx(ctx context.Context, tx *sqlx.Tx, sessionID string) error {
+	var found int
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT 1 FROM task_stop_request_candidates c
+		JOIN task_stop_requests q ON q.task_id = c.task_id AND q.operation_id = c.operation_id
+		JOIN task_sessions s ON s.id = c.session_id AND s.task_id = c.task_id
+		WHERE c.session_id = ? AND q.complete = ? AND c.queue_incarnation_id <> ''
+			AND c.queue_incarnation_id = s.queue_incarnation_id
+			AND c.execution_id = '' AND c.agentctl_generation = 0
+		LIMIT 1
+	`), sessionID, false).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check pending coordinator launch fence: %w", err)
 	}
 	return models.ErrExecutionStopFenced
 }

@@ -31,8 +31,6 @@ func TestCoordinatorStopLegacyCandidateRefusesSuccessorCapture(t *testing.T) {
 			request := models.CoordinatorStopRequest{TaskID: "legacy-task", ParentTaskID: "legacy-parent", OperationID: "legacy-request"}
 			_, _, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, request)
 			require.NoError(t, err)
-			_, err = repo.DB().ExecContext(ctx, "UPDATE task_stop_request_candidates SET "+test.missing+" WHERE task_id = ? AND operation_id = ?", request.TaskID, request.OperationID)
-			require.NoError(t, err)
 			if test.name != "execution missing" {
 				installLegacyStopSuccessorTurn(t, repo)
 			}
@@ -44,8 +42,8 @@ func TestCoordinatorStopLegacyCandidateRefusesSuccessorCapture(t *testing.T) {
 			}
 			beforeSession := mustGetSession(t, repo, "legacy-session")
 			if test.name == "generation missing" || test.name == "launch identity missing" {
-				beforeSession.QueueIncarnationID = "successor-queue"
-				require.NoError(t, repo.UpdateTaskSession(ctx, beforeSession))
+				_, err = repo.DB().ExecContext(ctx, "UPDATE task_sessions SET queue_incarnation_id = ? WHERE id = ?", "successor-queue", beforeSession.ID)
+				require.NoError(t, err)
 				beforeSession = mustGetSession(t, repo, "legacy-session")
 			}
 			if test.name == "runtime identity missing without executor" {
@@ -59,6 +57,8 @@ func TestCoordinatorStopLegacyCandidateRefusesSuccessorCapture(t *testing.T) {
 				require.NoError(t, err)
 			}
 			beforeTurn, err := repo.GetActiveTurnBySessionID(ctx, "legacy-session")
+			require.NoError(t, err)
+			_, err = repo.DB().ExecContext(ctx, "UPDATE task_stop_request_candidates SET "+test.missing+" WHERE task_id = ? AND operation_id = ?", request.TaskID, request.OperationID)
 			require.NoError(t, err)
 			_, beforeCandidates, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, request)
 			require.NoError(t, err)

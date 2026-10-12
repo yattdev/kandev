@@ -86,7 +86,7 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
-	if request.Complete && len(receipts) == 0 {
+	if request.Complete && request.ResultStatus != string(CoordinatorTaskStopStatusIncomplete) && len(receipts) == 0 {
 		fences, err := s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
 		if err != nil {
 			return CoordinatorTaskStopResult{}, err
