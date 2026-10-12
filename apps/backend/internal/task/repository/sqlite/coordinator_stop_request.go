@@ -115,6 +115,14 @@ func (r *Repository) GetCoordinatorStopRequest(ctx context.Context, taskID, oper
 	return &request, nil
 }
 
+// ListPendingCoordinatorStopRequests returns durable requests that a process
+// restart must resume without waiting for the parent to retry its MCP call.
+func (r *Repository) ListPendingCoordinatorStopRequests(ctx context.Context) ([]models.CoordinatorStopRequest, error) {
+	var requests []models.CoordinatorStopRequest
+	err := r.ro.SelectContext(ctx, &requests, r.ro.Rebind(`SELECT task_id, operation_id, parent_task_id, complete, result_status, created_at, updated_at FROM task_stop_requests WHERE complete = ? ORDER BY created_at ASC, task_id ASC, operation_id ASC`), false)
+	return requests, err
+}
+
 func (r *Repository) BindCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID string, receiptIDs []string) error {
 	if len(receiptIDs) == 0 {
 		return nil

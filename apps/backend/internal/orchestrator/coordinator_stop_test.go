@@ -161,6 +161,38 @@ func TestStopTaskForCoordinatorOperation_RetryDoesNotCaptureLaterLiveSession(t *
 	require.Equal(t, models.TaskSessionStateRunning, mustGetSession(t, repo, "second-session").State)
 }
 
+// @covers AC-STOP-FENCE-005, AC-STOP-FENCE-008
+func TestReconcilePendingCoordinatorStopRequestsOnStartupResumesCapturedRequest(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	const taskID, parentID, sessionID = "task-restart-stop", "parent-restart-stop", "session-restart-stop"
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: parentID, Title: "parent"}))
+	seedStopRetrySession(t, repo, taskID, sessionID, "turn-restart-stop", "execution-restart-stop")
+	_, _, created, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, models.CoordinatorStopRequest{TaskID: taskID, ParentTaskID: parentID, OperationID: "crash-before-processing"})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	manager := &mockAgentManager{repoForExecutionLookup: repo}
+	var stops atomic.Int32
+	manager.closeExecutionAdmissionFunc = func(_ context.Context, executionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
+		require.Equal(t, "execution-restart-stop", executionID)
+		require.Equal(t, uint64(1), generation)
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true}, nil
+	}
+	manager.stopAgentWithReasonFunc = func(context.Context, string, string, bool) error {
+		stops.Add(1)
+		return nil
+	}
+	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), manager)
+
+	require.NoError(t, svc.reconcilePendingCoordinatorStopRequestsOnStartup(ctx))
+	require.EqualValues(t, 1, stops.Load())
+	receipt, err := svc.GetCoordinatorStopReceipt(ctx, taskID, parentID, "crash-before-processing")
+	require.NoError(t, err)
+	require.Len(t, receipt.Receipts, 1)
+	require.Equal(t, CoordinatorTaskStopStatusIncomplete, receipt.Status)
+}
+
 func seedStopRetrySession(t *testing.T, repo *sqlite.Repository, taskID, sessionID, turnID, executionID string) {
 	t.Helper()
 	ctx := context.Background()

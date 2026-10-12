@@ -576,6 +576,7 @@ type CoordinatorStopRequestRepository interface {
 	BindCoordinatorStopRequestReceipt(ctx context.Context, taskID, operationID, receiptID string) error
 	BindCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID string, receiptIDs []string) error
 	ListCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID, parentTaskID string) ([]models.CoordinatorStopOperation, error)
+	ListPendingCoordinatorStopRequests(ctx context.Context) ([]models.CoordinatorStopRequest, error)
 }
 
 type CoordinatorStopSessionFencer interface {

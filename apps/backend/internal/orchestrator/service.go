@@ -3164,6 +3164,13 @@ func (s *Service) Start(ctx context.Context) error {
 		s.mu.Unlock()
 		return err
 	}
+	if err := s.reconcilePendingCoordinatorStopRequestsOnStartup(ctx); err != nil {
+		s.logger.Error("failed to reconcile pending coordinator stops on startup", zap.Error(err))
+		s.mu.Lock()
+		s.running = false
+		s.mu.Unlock()
+		return err
+	}
 	s.resetParkedSamplingWorkers()
 	// Reconcile session state from persisted runtime state on startup.
 	// This does NOT launch any agent processes — sessions are recovered lazily
