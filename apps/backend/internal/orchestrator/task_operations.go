@@ -5384,7 +5384,7 @@ func (s *Service) resumeCoordinatorStopOperation(ctx context.Context, op *models
 	if !ok {
 		return nil, errors.New("coordinator stop repository is unavailable")
 	}
-	if err := s.stopWithCoordinatorFence(context.WithoutCancel(ctx), op); err != nil {
+	if err := s.stopWithCoordinatorFence(ctx, op); err != nil {
 		if _, _, markErr := repo.MarkCoordinatorStopOperationIncomplete(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration, "graceful_teardown_failed"); markErr != nil {
 			return nil, fmt.Errorf("mark graceful teardown failure: %w", markErr)
 		}

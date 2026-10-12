@@ -847,10 +847,15 @@ type agentctlFenceController interface {
 // work or alter task/session state, so callers must keep the result incomplete
 // until their own turn and executor-row settlement checks succeed.
 func (ae *AgentExecution) CloseExecutionAdmission(ctx context.Context, generation uint64) (*agentctl.ExecutionFenceReceipt, error) {
-	if ae == nil || generation == 0 || ae.startupAttemptSnapshot() != generation {
-		return nil, fmt.Errorf("execution generation mismatch")
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	ae.agentctlLifecycleMu.RLock()
+	if err := ae.validateExactStopGeneration(generation); err != nil {
+		return nil, err
+	}
+	if !ae.agentctlLifecycleMu.TryRLock() {
+		return nil, errors.New("exact agentctl lifecycle is busy; retry fence")
+	}
 	control, ok := ae.agentctlControl.(agentctlFenceController)
 	instanceID := ae.agentctlInstanceID
 	ae.agentctlLifecycleMu.RUnlock()
@@ -872,16 +877,35 @@ func (ae *AgentExecution) CloseExecutionAdmission(ctx context.Context, generatio
 // StopAgentctlGracefully stops only the exact currently retained agentctl
 // client. A timeout leaves lifecycle ownership intact for a retry.
 func (ae *AgentExecution) StopAgentctlGracefully(ctx context.Context, generation uint64) error {
-	ae.agentctlLifecycleMu.Lock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !ae.agentctlLifecycleMu.TryLock() {
+		return errors.New("exact agentctl lifecycle is busy; retry stop")
+	}
 	defer ae.agentctlLifecycleMu.Unlock()
-	if generation == 0 || ae.startupAttemptGeneration != generation {
-		return errors.New("agentctl generation mismatch")
+	if err := ae.validateExactStopGeneration(generation); err != nil {
+		return err
 	}
 	client := ae.currentAgentCtlClient()
 	if client == nil {
 		return errors.New("agentctl client is unavailable")
 	}
 	return client.StopGracefully(ctx)
+}
+
+func (ae *AgentExecution) validateExactStopGeneration(generation uint64) error {
+	if ae == nil || generation == 0 {
+		return errors.New("execution generation mismatch")
+	}
+	if !ae.startupLifecycleMu.TryLock() {
+		return errors.New("exact execution generation is busy; retry stop")
+	}
+	defer ae.startupLifecycleMu.Unlock()
+	if ae.startupAttemptGeneration != generation {
+		return errors.New("execution generation mismatch")
+	}
+	return nil
 }
 
 // replaceAgentctlClient atomically publishes a replacement connection while

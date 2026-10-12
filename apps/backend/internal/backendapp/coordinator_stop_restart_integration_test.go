@@ -33,7 +33,7 @@ import (
 )
 
 func TestCoordinatorStopRealServiceRestartResumesDurableBoundaries(t *testing.T) {
-	for _, boundary := range []string{"captured request", "settled turn intent", "lost fence acknowledgement", "terminal process missing proof", "terminal proof missing final receipt", "changed generation", "unknown generation"} {
+	for _, boundary := range []string{"captured request", "settled turn intent", "lost fence acknowledgement", "terminal process missing proof", "terminal proof missing final receipt", "changed generation", "unknown generation", "canceled admission", "deadline admission"} {
 		t.Run(boundary, func(t *testing.T) { assertCoordinatorRealRestart(t, boundary) })
 	}
 }
@@ -148,6 +148,9 @@ func assertCoordinatorRealRestart(t *testing.T, boundary string) {
 	svc := orchestrator.NewService(orchestrator.DefaultServiceConfig(), bus.NewMemoryEventBus(log), newLifecycleAdapter(recovered, reg, log), &taskRepositoryAdapter{repo: reopened, svc: newCoordinatorRestartTaskService(reopened, log)}, reopened, nil, nil, nil, log)
 	svc.SetTurnService(newTurnServiceAdapter(newCoordinatorRestartTaskService(reopened, log)))
 	svc.SetRetrackedSessionChecker(recovered.WasSessionRetracked)
+	if boundary == "canceled admission" || boundary == "deadline admission" {
+		assertCoordinatorRestartAdmissionCancellation(t, ctx, svc, reopened, pm, request, candidates, boundary == "deadline admission")
+	}
 	startErr := svc.Start(ctx)
 	if boundary == "unknown generation" {
 		require.ErrorContains(t, startErr, "identity")
@@ -173,6 +176,11 @@ func assertCoordinatorRealRestart(t *testing.T, boundary string) {
 		return
 	}
 	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		var retryErr error
+		result, retryErr = svc.StopTaskForCoordinatorOperation(ctx, request.TaskID, request.ParentTaskID, request.OperationID)
+		return retryErr == nil && result.Status == orchestrator.CoordinatorTaskStopStatusStopped
+	}, 3*time.Second, time.Millisecond, "startup and original immutable retry must complete after transient runtime ownership is released")
 	require.Equal(t, orchestrator.CoordinatorTaskStopStatusStopped, result.Status, "real startup must complete only original persisted identity")
 	require.Len(t, result.Receipts, 1)
 	require.Equal(t, execution.ID, result.Receipts[0].ExecutionID)
@@ -231,4 +239,47 @@ func newCoordinatorRestartTaskService(repo *taskrepo.Repository, log *logger.Log
 	svc.SetWorkspaceBootstrapper(repo)
 	svc.SetWorkspacePolicyAttacher(testWorkspacePolicyAttacher{})
 	return svc
+}
+
+func assertCoordinatorRestartAdmissionCancellation(t *testing.T, ctx context.Context, svc *orchestrator.Service, repo *taskrepo.Repository, pm *process.Manager, request models.CoordinatorStopRequest, candidates []models.CoordinatorStopRequestCandidate, deadline bool) {
+	release, err := pm.BeginAdapterOperation()
+	require.NoError(t, err)
+	defer release()
+	ownerCtx, cancel := context.WithCancel(ctx)
+	if deadline {
+		cancel()
+		ownerCtx, cancel = context.WithTimeout(ctx, 500*time.Millisecond)
+	}
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- svc.Start(ownerCtx) }()
+	require.Eventually(t, func() bool {
+		releaseProbe, err := pm.BeginAdapterOperation()
+		if err == nil {
+			releaseProbe()
+		}
+		return err != nil
+	}, 3*time.Second, time.Millisecond, "actual agentctl admission must close before owner cancellation")
+	if !deadline {
+		cancel()
+	}
+	bounded := false
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		bounded = true
+	case <-time.After(time.Second):
+		release()
+		<-done
+	}
+	require.True(t, bounded, "owner cancellation must interrupt the actual replay drain without releasing its admitted operation")
+	operations, err := repo.ListCoordinatorStopOperations(ctx, request.TaskID)
+	require.NoError(t, err)
+	require.Len(t, operations, 1)
+	require.NotEqual(t, models.CoordinatorStopOperationStatusStopped, operations[0].Status)
+	require.Equal(t, models.CoordinatorStopProofScopePending, operations[0].ProofScope)
+	_, saved, _, err := repo.CaptureCoordinatorStopRequestWithCandidates(ctx, request)
+	require.NoError(t, err)
+	require.Equal(t, candidates, saved)
+	release()
 }

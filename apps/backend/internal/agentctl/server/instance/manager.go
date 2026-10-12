@@ -384,7 +384,12 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, instanceID string
 		return nil, fmt.Errorf("%w: %s", ErrInstanceNotFound, instanceID)
 	}
 
-	inst.stopMu.Lock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !inst.stopMu.TryLock() {
+		return nil, errors.New("exact instance lifecycle is busy; retry fence")
+	}
 	defer inst.stopMu.Unlock()
 	inst.identityMu.RLock()
 	defer inst.identityMu.RUnlock()

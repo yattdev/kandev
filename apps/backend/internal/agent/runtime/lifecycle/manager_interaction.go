@@ -1165,7 +1165,12 @@ func (m *Manager) StopExecutionWithFence(
 	if !exists || execution.ID != executionID {
 		return fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
 	}
-	execution.remoteInstanceLifecycleMu.Lock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !execution.remoteInstanceLifecycleMu.TryLock() {
+		return errors.New("exact execution lifecycle is busy; retry stop")
+	}
 	defer execution.remoteInstanceLifecycleMu.Unlock()
 	if current, currentExists := m.executionStore.Get(executionID); !currentExists || current != execution {
 		return fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
