@@ -191,6 +191,8 @@ func TestReconcilePendingCoordinatorStopRequestsOnStartupResumesCapturedRequest(
 	require.NoError(t, err)
 	require.Len(t, receipt.Receipts, 1)
 	require.Equal(t, CoordinatorTaskStopStatusIncomplete, receipt.Status)
+	require.NoError(t, svc.reconcilePendingCoordinatorStopRequestsOnStartup(ctx))
+	require.EqualValues(t, 2, stops.Load(), "persisted incomplete request must replay after restart")
 }
 
 func seedStopRetrySession(t *testing.T, repo *sqlite.Repository, taskID, sessionID, turnID, executionID string) {

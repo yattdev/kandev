@@ -155,6 +155,9 @@ func (s *Service) coordinatorStopRequestHasPendingCandidate(
 	fences []models.CoordinatorStopSessionFenceReceipt,
 ) (bool, error) {
 	for _, candidate := range candidates {
+		if candidate.QueueIncarnationID == "" || candidate.TurnID == "" || candidate.ExecutionID == "" || candidate.AgentctlGeneration == 0 {
+			return true, nil
+		}
 		if coordinatorStopCandidateHasReceipt(receipts, candidate.SessionID) || coordinatorStopCandidateHasFence(fences, candidate.SessionID) {
 			continue
 		}
@@ -5178,7 +5181,11 @@ func (s *Service) stopTaskSessionForCoordinatorCandidate(ctx context.Context, ta
 	lock, release := s.acquireCancelInFlightGuard(sessionID)
 	lock.Lock()
 
-	result, teardownClaimed, incomplete, err := s.stopTaskSessionForCoordinatorLocked(ctx, taskID, sessionID, requestOperationID, &candidate)
+	var capturedCandidate *models.CoordinatorStopRequestCandidate
+	if requestOperationID != "" {
+		capturedCandidate = &candidate
+	}
+	result, teardownClaimed, incomplete, err := s.stopTaskSessionForCoordinatorLocked(ctx, taskID, sessionID, requestOperationID, capturedCandidate)
 	lock.Unlock()
 	release()
 	// The detached teardown callback is allowed to observe coordinator state;
@@ -5222,6 +5229,9 @@ func (s *Service) stopTaskSessionForCoordinatorLocked(
 	}
 	if session.TaskID != taskID {
 		return executor.SessionStopResult{}, false, false, fmt.Errorf("coordinator stop: session %q belongs to task %q, not %q", sessionID, session.TaskID, taskID)
+	}
+	if requestOperationID != "" && (candidate == nil || candidate.QueueIncarnationID == "") {
+		return executor.SessionStopResult{FinalState: session.State}, false, true, nil
 	}
 	if candidate != nil && candidate.QueueIncarnationID != "" && session.QueueIncarnationID != candidate.QueueIncarnationID {
 		return executor.SessionStopResult{FinalState: session.State}, false, false, nil
@@ -5381,7 +5391,8 @@ func (s *Service) captureCoordinatorStopExecution(ctx context.Context, session *
 	}
 	running, err := s.repo.GetExecutorRunningBySessionID(ctx, session.ID)
 	if errors.Is(err, models.ErrExecutorRunningNotFound) || (err == nil && running == nil) {
-		return nil, nil, false, nil
+		handled, missingErr := s.coordinatorStopMissingExecutor(ctx, session.ID, candidate)
+		return nil, nil, handled, missingErr
 	}
 	if err != nil {
 		return nil, nil, true, fmt.Errorf("read executor identity for session %q: %w", session.ID, err)
@@ -5410,13 +5421,27 @@ func (s *Service) captureCoordinatorStopExecution(ctx context.Context, session *
 	return op, repo, true, err
 }
 
+func (s *Service) coordinatorStopMissingExecutor(ctx context.Context, sessionID string, candidate *models.CoordinatorStopRequestCandidate) (bool, error) {
+	if candidate == nil {
+		return false, nil
+	}
+	if candidate.ExecutionID != "" || candidate.TurnID != "" || candidate.AgentctlGeneration != 0 {
+		return true, nil
+	}
+	turn, err := s.repo.GetActiveTurnBySessionID(ctx, sessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return turn != nil || err != nil, err
+}
+
 func coordinatorStopCandidateMatchesExecution(candidate *models.CoordinatorStopRequestCandidate, running *models.ExecutorRunning) bool {
-	return candidate == nil || candidate.ExecutionID == "" ||
-		(running.AgentExecutionID == candidate.ExecutionID && running.AgentctlGeneration == candidate.AgentctlGeneration)
+	return candidate == nil || (candidate.ExecutionID != "" && candidate.AgentctlGeneration != 0 &&
+		running.AgentExecutionID == candidate.ExecutionID && running.AgentctlGeneration == candidate.AgentctlGeneration)
 }
 
 func coordinatorStopCandidateMatchesTurn(candidate *models.CoordinatorStopRequestCandidate, turn *models.Turn) bool {
-	return candidate == nil || candidate.TurnID == "" || turn.ID == candidate.TurnID
+	return candidate == nil || (candidate.TurnID != "" && turn.ID == candidate.TurnID)
 }
 
 func validCoordinatorStopExecutor(running *models.ExecutorRunning) bool {
