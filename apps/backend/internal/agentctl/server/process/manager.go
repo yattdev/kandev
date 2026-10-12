@@ -293,12 +293,13 @@ type Manager struct {
 	// created so the flag always describes the current channel — a Start that
 	// fails before reaching that point must not leave the flag describing a
 	// channel that no longer exists.
-	stopChClosed     atomic.Bool
-	groupAliveFn     func(int) bool
-	terminateGroupFn func(int) error
-	killGroupFn      func(int) error
-	waitGroupExitFn  func(context.Context, int) bool
-	managerWaitFn    func(context.Context, <-chan struct{}, time.Duration) bool
+	stopChClosed         atomic.Bool
+	groupAliveFn         func(int) bool
+	terminateGroupFn     func(int) error
+	killGroupFn          func(int) error
+	waitGroupExitFn      func(context.Context, int) bool
+	managerWaitFn        func(context.Context, <-chan struct{}, time.Duration) bool
+	beforeAdmissionClose func()
 }
 
 // ErrManagerStopping indicates that process admission is closed for teardown.
@@ -343,11 +344,11 @@ func (m *Manager) CloseAdmission() {
 
 // CloseAdmissionGracefully rejects later work while allowing already admitted
 // owners to reach their own terminal boundary without cancellation side effects.
-func (m *Manager) CloseAdmissionGracefully() {
-	m.closeAdmission(false)
+func (m *Manager) CloseAdmissionGracefully() time.Time {
+	return m.closeAdmission(false)
 }
 
-func (m *Manager) closeAdmission(cancelOwned bool) {
+func (m *Manager) closeAdmission(cancelOwned bool) time.Time {
 	m.comparisonTargetOpsMu.Lock()
 	m.comparisonTargetOpsStopping = true
 	m.comparisonTargetOpsPermanent = true
@@ -357,9 +358,13 @@ func (m *Manager) closeAdmission(cancelOwned bool) {
 		}
 	}
 	m.comparisonTargetOpsMu.Unlock()
+	if m.beforeAdmissionClose != nil {
+		m.beforeAdmissionClose()
+	}
 
 	m.admissionMu.Lock()
 	m.stopping = true
+	cutoff := time.Now().UTC()
 	var lifetimeCancel context.CancelFunc
 	if cancelOwned {
 		lifetimeCancel = m.lifetimeCancel
@@ -374,6 +379,7 @@ func (m *Manager) closeAdmission(cancelOwned bool) {
 	if m.shellMgr != nil {
 		m.shellMgr.BeginStop()
 	}
+	return cutoff
 }
 
 // BeginOwnedOperation admits instance-scoped work and returns a context that

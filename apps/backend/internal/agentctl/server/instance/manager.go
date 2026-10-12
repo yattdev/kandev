@@ -397,8 +397,7 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, instanceID string
 		return nil, fmt.Errorf("instance %s has no process manager", instanceID)
 	}
 
-	cutoff := time.Now().UTC()
-	procMgr.CloseAdmissionGracefully()
+	cutoff := procMgr.CloseAdmissionGracefully()
 	if err := procMgr.WaitForAdmission(ctx); err != nil {
 		return nil, fmt.Errorf("wait for command admission to drain: %w", err)
 	}

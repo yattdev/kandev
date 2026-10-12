@@ -31,7 +31,7 @@ type processManager interface {
 }
 
 type executionFenceProcessManager interface {
-	CloseAdmissionGracefully()
+	CloseAdmissionGracefully() time.Time
 	WaitForAdmission(context.Context) error
 	ListProcesses(sessionID string) []process.ProcessInfo
 	Status() process.Status
