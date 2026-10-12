@@ -124,6 +124,10 @@ func TestTaskMessageReceiptLegacyUnknownAndScope(t *testing.T) {
 	response, err = h.handleGetTaskMessageStatus(ctx, makeWSMessage(t, ws.ActionMCPGetTaskMessageStatus, caseMismatch))
 	require.NoError(t, err)
 	require.Equal(t, "not_created", messageReceiptResponse(t, response).Status, "legacy correlation is byte-exact")
+	caseMismatch["intent_id"] = strings.TrimSuffix(req["intent_id"].(string), "1")
+	response, err = h.handleGetTaskMessageStatus(ctx, makeWSMessage(t, ws.ActionMCPGetTaskMessageStatus, caseMismatch))
+	require.NoError(t, err)
+	require.Equal(t, ws.MessageTypeError, response.Type, "partial legacy markers cannot prove absence")
 	lookup := map[string]any{"sender_task_id": req["sender_task_id"], "sender_session_id": "sender-sess-1", "message_id": id}
 	response, err = h.handleGetTaskMessageStatus(ctx, makeWSMessage(t, ws.ActionMCPContinueTaskMessage, lookup))
 	require.NoError(t, err)
@@ -211,8 +215,10 @@ func TestTaskMessageWriteBoundedLockRetry(t *testing.T) {
 
 func TestTaskMessageReceiptFullQueueAndTerminalAdmissionPreserveState(t *testing.T) {
 	h, repo, ctx, req, notifier := taskMessageReceiptFixture(t)
+	turnsBefore, err := repo.ListTurnsBySession(ctx, req["session_id"].(string))
+	require.NoError(t, err)
 	notifier.queue.SetMaxPerSession(1)
-	_, err := notifier.queue.QueueMessageWithMetadata(ctx, req["session_id"].(string), req["task_id"].(string), "existing FIFO sentinel", "", messagequeue.QueuedByUser, false, nil, nil)
+	_, err = notifier.queue.QueueMessageWithMetadata(ctx, req["session_id"].(string), req["task_id"].(string), "existing FIFO sentinel", "", messagequeue.QueuedByUser, false, nil, nil)
 	require.NoError(t, err)
 	response, err := h.handleMessageTask(ctx, makeWSMessage(t, ws.ActionMCPMessageTask, req))
 	require.NoError(t, err)
@@ -220,6 +226,9 @@ func TestTaskMessageReceiptFullQueueAndTerminalAdmissionPreserveState(t *testing
 	require.Equal(t, "not_created", denied.Status)
 	require.True(t, denied.RetryAllowed)
 	require.Equal(t, "admission_unavailable", denied.AdmissionError)
+	turnsAfter, err := repo.ListTurnsBySession(ctx, req["session_id"].(string))
+	require.NoError(t, err)
+	require.Equal(t, turnsBefore, turnsAfter, "failed admission cannot create an orphan turn")
 	_, err = repo.GetMessage(ctx, denied.IntentMessageID)
 	require.Error(t, err, "failed queue transaction cannot leave a transcript")
 	require.NoError(t, repo.UpdateTaskSessionState(ctx, req["session_id"].(string), models.TaskSessionStateCancelled, ""))
@@ -231,4 +240,28 @@ func TestTaskMessageReceiptFullQueueAndTerminalAdmissionPreserveState(t *testing
 	require.Equal(t, v1.TaskStateReview, task.State)
 	require.Empty(t, notifier.promptCalls)
 	require.Empty(t, notifier.startCreatedCalls)
+}
+
+func TestTaskMessageReceiptPreservesPendingHumanInput(t *testing.T) {
+	h, repo, ctx, req, notifier := taskMessageReceiptFixture(t)
+	turn := &models.Turn{ID: "synthetic-human-turn", TaskID: req["task_id"].(string), TaskSessionID: req["session_id"].(string), StartedAt: time.Now().UTC()}
+	require.NoError(t, repo.CreateTurn(ctx, turn))
+	question := &models.Message{ID: uuid.NewString(), TaskID: turn.TaskID, TaskSessionID: turn.TaskSessionID, TurnID: turn.ID, AuthorType: models.MessageAuthorAgent, Type: models.MessageTypeClarificationRequest, Content: "Synthetic Human-input fixture", RequestsInput: true, Metadata: map[string]any{"status": "pending", "pending_id": "synthetic-pending", "question_id": "synthetic-human-question"}}
+	require.NoError(t, repo.CreateMessage(ctx, question))
+	response, err := h.handleMessageTask(ctx, makeWSMessage(t, ws.ActionMCPMessageTask, req))
+	require.NoError(t, err)
+	denied := messageReceiptResponse(t, response)
+	require.Equal(t, "not_created", denied.Status)
+	require.Equal(t, "human_input_pending", denied.AdmissionError)
+	turns, err := repo.ListTurnsBySession(ctx, turn.TaskSessionID)
+	require.NoError(t, err)
+	require.Len(t, turns, 1)
+	require.Equal(t, turn.ID, turns[0].ID)
+	original, err := repo.GetMessage(ctx, question.ID)
+	require.NoError(t, err)
+	require.Equal(t, "pending", original.Metadata["status"])
+	require.Equal(t, "synthetic-pending", original.Metadata["pending_id"])
+	_, err = repo.GetMessage(ctx, denied.IntentMessageID)
+	require.Error(t, err)
+	require.Zero(t, notifier.notifications)
 }

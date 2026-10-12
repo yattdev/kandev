@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"github.com/google/uuid"
+	"time"
 
 	"github.com/kandev/kandev/internal/events"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
@@ -10,7 +12,7 @@ import (
 )
 
 type taskMessageQueueWriter interface {
-	CreateTaskMessageAndQueue(context.Context, *models.Message, *messagequeue.QueuedMessage, models.TaskSessionState, int) error
+	CreateTaskMessageAndQueue(context.Context, *models.Message, *messagequeue.QueuedMessage, *models.Turn, models.TaskSessionState, int) error
 }
 
 // CreateTaskMessageQueuedIdempotent uses the existing message admission lease
@@ -35,10 +37,8 @@ func (s *Service) CreateTaskMessageQueuedIdempotent(ctx context.Context, id stri
 	if err != nil {
 		return nil, err
 	}
-	message, err := s.buildMessage(ctx, id, req, session)
-	if err != nil {
-		return nil, err
-	}
+	message := &models.Message{ID: id, TaskID: session.TaskID, TaskSessionID: session.ID, AuthorType: models.MessageAuthorUser, AuthorID: s.resolveAuthorID(ctx, models.MessageAuthorUser, req.AuthorID), Content: req.Content, Type: models.MessageTypeMessage, Metadata: req.Metadata}
+	turn := &models.Turn{ID: uuid.NewString(), TaskID: session.TaskID, TaskSessionID: session.ID, ExecutionProfileID: session.ExecutionProfileID, RouteGeneration: session.RouteGeneration, StartedAt: time.Now().UTC(), Metadata: turnStartRuntimeMetadata(session)}
 	queued.ID = id
 	queued.TaskID = message.TaskID
 	queued.SessionID = message.TaskSessionID
@@ -48,8 +48,11 @@ func (s *Service) CreateTaskMessageQueuedIdempotent(ctx context.Context, id stri
 	if !ok {
 		return nil, errors.New("atomic task message admission unavailable")
 	}
-	if err := writer.CreateTaskMessageAndQueue(ctx, message, queued, req.ExpectedSessionState, max); err != nil {
+	if err := writer.CreateTaskMessageAndQueue(ctx, message, queued, turn, req.ExpectedSessionState, max); err != nil {
 		return nil, err
+	}
+	if message.TurnID == turn.ID {
+		_ = s.PublishTurnStarted(ctx, turn)
 	}
 	_ = s.publishMessageEvent(ctx, events.MessageAdded, message)
 	return message, nil

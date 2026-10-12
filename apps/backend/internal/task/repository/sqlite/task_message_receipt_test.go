@@ -47,7 +47,7 @@ func verifyTaskMessageAtomicFences(t *testing.T, repo *Repository) {
 		return message, queued
 	}
 	message, queued := makePair()
-	require.NoError(t, repo.CreateTaskMessageAndQueue(ctx, message, queued, session.State, 1))
+	require.NoError(t, repo.CreateTaskMessageAndQueue(ctx, message, queued, nil, session.State, 1))
 	require.True(t, queued.IsDurableDelivery(), "uses existing reserve/attempt/ack lifecycle")
 	records, err := repo.FindOwnTaskMessageRecords(ctx, "receipt-workspace", "receipt-sender", "receipt-sender-session", "receipt-task", "receipt-session", "synthetic-exact-intent", "")
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func verifyTaskMessageAtomicFences(t *testing.T, repo *Repository) {
 		require.Empty(t, hidden)
 	}
 	rejected, rejectedQueue := makePair()
-	require.ErrorIs(t, repo.CreateTaskMessageAndQueue(ctx, rejected, rejectedQueue, session.State, 1), messagequeue.ErrQueueFull)
+	require.ErrorIs(t, repo.CreateTaskMessageAndQueue(ctx, rejected, rejectedQueue, nil, session.State, 1), messagequeue.ErrQueueFull)
 	_, err = repo.GetMessage(ctx, rejected.ID)
 	require.Error(t, err, "queue failure rolls back transcript")
 	entries, err := queueRepo.ListBySession(ctx, "receipt-session")
@@ -71,7 +71,7 @@ func verifyTaskMessageAtomicFences(t *testing.T, repo *Repository) {
 	require.Equal(t, message.ID, entries[0].ID)
 	changed, changedQueue := makePair()
 	changed.Metadata["task_message_target_step"] = "different-human-step"
-	require.Error(t, repo.CreateTaskMessageAndQueue(ctx, changed, changedQueue, session.State, 10))
+	require.Error(t, repo.CreateTaskMessageAndQueue(ctx, changed, changedQueue, nil, session.State, 10))
 	_, err = repo.GetMessage(ctx, changed.ID)
 	require.Error(t, err)
 	task, err := repo.GetTask(ctx, "receipt-task")
@@ -79,7 +79,7 @@ func verifyTaskMessageAtomicFences(t *testing.T, repo *Repository) {
 	require.Equal(t, v1.TaskStateReview, task.State)
 	require.NoError(t, repo.UpdateTaskSessionState(ctx, "receipt-session", models.TaskSessionStateCancelled, ""))
 	stopped, stoppedQueue := makePair()
-	require.Error(t, repo.CreateTaskMessageAndQueue(ctx, stopped, stoppedQueue, session.State, 10))
+	require.Error(t, repo.CreateTaskMessageAndQueue(ctx, stopped, stoppedQueue, nil, session.State, 10))
 	_, err = repo.GetMessage(ctx, stopped.ID)
 	require.Error(t, err)
 }

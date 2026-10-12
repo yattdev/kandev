@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jmoiron/sqlx"
 	"regexp"
 
 	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository/plancommenttx"
+	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 )
 
 // FindOwnTaskMessageRecords reads only messages sent by one authenticated
@@ -88,7 +90,7 @@ func scanOwnTaskMessageRecords(rows *sql.Rows, kind, intentID string) ([]models.
 			return nil, err
 		}
 		if legacyMarker != nil && record.Metadata["task_message_intent_id"] != intentID && !legacyMarker.MatchString(content) {
-			continue
+			return nil, errors.New("ambiguous legacy task message marker")
 		}
 		digest := sha256.Sum256([]byte(content))
 		record.ContentSHA256 = hex.EncodeToString(digest[:])
@@ -102,7 +104,7 @@ func scanOwnTaskMessageRecords(rows *sql.Rows, kind, intentID string) ([]models.
 
 // CreateTaskMessageAndQueue commits one transcript and durable delivery receipt
 // under the existing task -> session writer fences, without a workflow move.
-func (r *Repository) CreateTaskMessageAndQueue(ctx context.Context, message *models.Message, queued *messagequeue.QueuedMessage, expectedState models.TaskSessionState, max int) (err error) {
+func (r *Repository) CreateTaskMessageAndQueue(ctx context.Context, message *models.Message, queued *messagequeue.QueuedMessage, turn *models.Turn, expectedState models.TaskSessionState, max int) (err error) {
 	fields, err := prepareQueuedPlanCommentMessage(message, queued)
 	if err != nil {
 		return err
@@ -136,6 +138,12 @@ func (r *Repository) CreateTaskMessageAndQueue(ctx context.Context, message *mod
 	if step != message.Metadata["task_message_target_step"] || incarnation != message.Metadata["task_message_target_incarnation"] {
 		return errors.New("task message route changed")
 	}
+	if err := r.guardTaskMessageInputTx(ctx, tx, message); err != nil {
+		return err
+	}
+	if err := r.bindTaskMessageTurnTx(ctx, tx, message, turn, step); err != nil {
+		return err
+	}
 	normalizedTime := dialect.NormalizedMicrosecond(r.db.DriverName(), "created_at")
 	if err := r.assignUserMessageBoundary(ctx, tx, message, r.db.DriverName(), normalizedTime); err != nil {
 		return err
@@ -147,4 +155,49 @@ func (r *Repository) CreateTaskMessageAndQueue(ctx context.Context, message *mod
 		return err
 	}
 	return tx.Commit()
+}
+
+// Turn binding and a successor turn, when needed, share queue admission's
+// transaction. A rejected queue cannot leave a turn or displace pending input.
+func (r *Repository) bindTaskMessageTurnTx(ctx context.Context, tx *sqlx.Tx, message *models.Message, turn *models.Turn, step string) error {
+	if message.TurnID != "" {
+		return nil
+	}
+	predicate, order := currentTurnAuthority(r.db.DriverName(), "turn_row")
+	query := fmt.Sprintf(`SELECT id FROM task_session_turns turn_row WHERE task_session_id=? AND completed_at IS NULL AND %s ORDER BY %s LIMIT 1`, predicate, order)
+	err := tx.QueryRowContext(ctx, r.db.Rebind(query), message.TaskSessionID).Scan(&message.TurnID)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if turn == nil || turn.TaskID != message.TaskID || turn.TaskSessionID != message.TaskSessionID {
+		return errors.New("task message turn candidate unavailable")
+	}
+	stampTurnDefaults(turn)
+	if step != "" {
+		if turn.Metadata == nil {
+			turn.Metadata = map[string]any{}
+		}
+		turn.Metadata[models.TurnMetaKeyWorkflowStepIDAtStart] = step
+	}
+	if err := r.insertTurnRow(ctx, tx, turn); err != nil {
+		return err
+	}
+	message.TurnID = turn.ID
+	return nil
+}
+
+func (r *Repository) guardTaskMessageInputTx(ctx context.Context, tx *sqlx.Tx, message *models.Message) error {
+	status := dialect.JSONExtract(r.db.DriverName(), "metadata", "status")
+	query := fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM task_session_messages WHERE task_id=? AND task_session_id=? AND author_type='agent' AND type IN ('clarification_request','permission_request') AND COALESCE(%s,'pending') IN ('pending','unknown'))`, status)
+	var pending bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(query), message.TaskID, message.TaskSessionID).Scan(&pending); err != nil {
+		return err
+	}
+	if pending {
+		return repoerrors.ErrTaskMessageInputPending
+	}
+	return nil
 }

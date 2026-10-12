@@ -141,3 +141,6 @@ var ErrStepChanged = errors.New("step_changed")
 // duplicate id list, or an id that names a task outside the named step/band.
 // Unlike ErrStepChanged this implies nothing about the persisted order.
 var ErrInvalidReorder = errors.New("invalid_reorder")
+
+// ErrTaskMessageInputPending preserves an existing clarification or permission owner.
+var ErrTaskMessageInputPending = errors.New("task message has pending Human input")

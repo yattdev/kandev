@@ -14,6 +14,7 @@ import (
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/plancomments"
+	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 	"github.com/kandev/kandev/internal/task/service"
 	ws "github.com/kandev/kandev/pkg/websocket"
 )
@@ -278,7 +279,7 @@ func (h *Handlers) handleReceiptTaskMessage(ctx context.Context, msg *ws.Message
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "task message admission unconfirmed; read original intent before retry", nil)
 	}
 	if err != nil {
-		receipt.AdmissionError = "admission_unavailable"
+		receipt.AdmissionError = taskMessageAdmissionError(err)
 	} else if receipt.ContinueAllowed {
 		_ = h.continueTaskMessageReceipt(readCtx, p, receipt, readRecords)
 	}
@@ -341,4 +342,11 @@ func retryTaskMessageWrite(ctx context.Context, write func() error) error {
 		}
 	}
 	return err
+}
+
+func taskMessageAdmissionError(err error) string {
+	if errors.Is(err, repoerrors.ErrTaskMessageInputPending) {
+		return "human_input_pending"
+	}
+	return "admission_unavailable"
 }
