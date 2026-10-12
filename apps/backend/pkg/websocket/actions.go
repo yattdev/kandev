@@ -479,6 +479,7 @@ const (
 	ActionMCPUpdateRepositoryBaseBranch            = "mcp.update_repository_base_branch"
 	ActionMCPStepComplete                          = "mcp.step_complete" // ADR 0015: agent-emitted explicit completion signal
 	ActionMCPAskUserQuestion                       = "mcp.ask_user_question"
+	ActionMCPGetOwnQuestionStatus                  = "mcp.get_own_question_status"
 	ActionMCPAskParentQuestion                     = "mcp.ask_parent_question"
 	ActionMCPListPendingQuestions                  = "mcp.list_pending_questions"
 	ActionMCPAnswerQuestion                        = "mcp.answer_question"

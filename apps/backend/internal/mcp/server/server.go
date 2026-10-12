@@ -1868,26 +1868,33 @@ func (s *Server) stepCompleteHandler() server.ToolHandlerFunc {
 	}
 }
 
-const askUserQuestionOutputSchema = `{
-  "type": "object",
-  "properties": {
-    "rejected": {"type": "boolean", "description": "True when the user rejected the question bundle."},
-    "reject_reason": {"type": "string", "description": "Optional reason supplied when the bundle was rejected."}
+const askUserQuestionLegacyOutputSchema = `{
+  "type":"object",
+  "properties":{
+    "rejected":{"type":"boolean"},
+    "reject_reason":{"type":"string"}
   },
-  "additionalProperties": {
-    "type": "object",
-    "description": "Answer keyed by question id.",
-    "properties": {
-      "selected_option": {"type": "string"},
-      "custom_text": {"type": "string"},
-      "answered": {"type": "boolean"},
-      "rejected": {"type": "boolean"}
+  "additionalProperties":{
+    "type":"object",
+    "properties":{
+      "selected_option":{"type":"string"},
+      "custom_text":{"type":"string"},
+      "answered":{"type":"boolean"},
+      "rejected":{"type":"boolean"}
     },
-    "additionalProperties": false
+    "additionalProperties":false
   }
 }`
 
+const askUserQuestionOutputSchema = `{
+ "type":"object",
+ "properties":{"rejected":{"type":"boolean"},"reject_reason":{"type":"string"}},
+ "additionalProperties":true,
+ "anyOf":[` + askUserQuestionLegacyOutputSchema + `,` + ownQuestionReceiptOutputSchema + `]
+}`
+
 func (s *Server) registerInteractionTools() {
+	s.registerOwnQuestionStatusTool()
 	s.mcpServer.AddTool(
 		mcp.NewTool("ask_user_question_kandev",
 			mcp.WithDescription(`Ask the user 1-4 related questions and wait for all answers. Each question requires a prompt and 2-6 concrete options with short labels and descriptions; use a stable id when response keys matter. Call only when required input cannot be inferred, and bundle related questions in one call. Returns answers keyed by question id; a rejected bundle includes rejected=true and may include reject_reason.`),
@@ -1899,6 +1906,7 @@ func (s *Server) registerInteractionTools() {
 				mcp.MaxItems(4),
 				mcp.Items(buildQuestionSchemaItem()),
 			),
+			mcp.WithString("return_mode", mcp.Description("Use receipt to durably publish and return immediately without waiting for Human input. Requires explicit stable question IDs. A pending receipt is not an answer; end the turn and read get_own_question_status_kandev before any retry."), mcp.Enum("receipt")),
 			mcp.WithString("context", mcp.Description("Optional single block of shared background information. Preserved verbatim; use context_paragraphs for multiple paragraphs.")),
 			mcp.WithArray(contextParagraphsArg,
 				mcp.Description("Optional shared background as separate paragraphs. Preferred for multiline context; when non-empty, overrides context and is joined with blank lines."),

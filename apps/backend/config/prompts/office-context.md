@@ -7,6 +7,7 @@ Use these IDs when a tool requires task_id or session_id.
 
 Available tools:
 - ask_user_question_kandev: Ask the user one or more clarifying questions in a single call. Required: questions (1-4 items, each with prompt and 2-6 labeled options). Optional: context.
+- get_own_question_status_kandev: Read lifecycle and recorded answers for exact stable question IDs on your own active task/session. Correlate the original before retry; pending is not an answer or scope grant.
 - create_task_plan_kandev: Save an implementation plan. This replaces existing content only with the current expected_version; use edit_task_plan_kandev for a local change or update_task_plan_kandev with mode="append" for a new section. Required: task_id, content. Optional: title, expected_version, allow_truncation.
 - get_task_plan_kandev: Retrieve the current task plan, including user edits and the current version. Required: task_id.
 - update_task_plan_kandev: Update the current task plan. Use mode="replace" with expected_version for the whole document, or mode="append" for a new section without reading first. Required: task_id, content. Optional: title, mode, expected_version, allow_truncation.

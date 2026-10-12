@@ -83,6 +83,7 @@ TASK TOOLS:
 
 INTERACTION:
 - ask_user_question_kandev: Ask the user one or more clarifying questions in a single tool call. Required: questions (array of 1-4 question objects; each has prompt and options (2-6 {label, description})). Optional: context.
+- get_own_question_status_kandev: Read lifecycle and recorded answers for exact stable question IDs on your own active task/session. Correlate the original before retry; pending is not an answer or scope grant.
 
 EXAMPLE REQUESTS the user might ask:
 - "Create a new workflow called 'Feature Development'"

@@ -565,6 +565,7 @@ func (h *Handlers) registerTaskPlanHandlers(d *guardedMCPDispatcher) {
 
 func (h *Handlers) registerTaskQuestionHandlers(d *guardedMCPDispatcher) {
 	d.RegisterFunc(ws.ActionMCPAskUserQuestion, h.handleAskUserQuestion)
+	d.RegisterFunc(ws.ActionMCPGetOwnQuestionStatus, h.handleGetOwnQuestionStatus)
 	d.RegisterFunc(ws.ActionMCPAskParentQuestion, h.handleAskParentQuestion)
 	d.RegisterFunc(ws.ActionMCPClarificationTimeout, h.handleClarificationTimeout)
 	if h.diagnosticBundles != nil && h.diagnosticMaterializer != nil {
@@ -4073,13 +4074,20 @@ func (h *Handlers) publishQueueStatusEvent(
 // the event-based fallback in the orchestrator handles resuming with a new turn.
 func (h *Handlers) handleAskUserQuestion(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
 	var req struct {
-		SessionID string                   `json:"session_id"`
-		TaskID    string                   `json:"task_id"`
-		Questions []clarification.Question `json:"questions"`
-		Context   string                   `json:"context"`
+		SessionID  string                   `json:"session_id"`
+		TaskID     string                   `json:"task_id"`
+		Questions  []clarification.Question `json:"questions"`
+		Context    string                   `json:"context"`
+		ReturnMode string                   `json:"return_mode"`
 	}
 	if err := json.Unmarshal(msg.Payload, &req); err != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "Invalid payload: "+err.Error(), nil)
+	}
+	if req.ReturnMode == "receipt" {
+		return h.handleReceiptUserQuestion(ctx, msg, req.TaskID, req.SessionID, req.Questions, req.Context)
+	}
+	if req.ReturnMode != "" {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "return_mode must be receipt or omitted", nil)
 	}
 	if req.SessionID == "" {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "session_id is required", nil)
@@ -4104,32 +4112,12 @@ func (h *Handlers) handleAskUserQuestion(ctx context.Context, msg *ws.Message) (
 		}
 	}
 
-	// Create the clarification request
-	clarificationReq := &clarification.Request{
-		SessionID: req.SessionID,
-		TaskID:    taskID,
-		Questions: req.Questions,
-		Context:   req.Context,
+	pendingID, existing, err := h.prepareQuestionPublication(ctx, taskID, req.SessionID, req.Questions, req.Context)
+	if err != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "question publication failed or conflicted; correlate own status before retry", nil)
 	}
-	pendingID, isNew := h.clarificationSvc.CreateRequest(clarificationReq)
-
-	// Create one chat message per question (triggers WS events to frontend).
-	// If the create fails, the in-store pending entry must be cancelled too —
-	// otherwise the agent's WaitForResponse would block for the full 2-hour
-	// timeout while the user never sees clarification cards.
-	// When dedup fires (isNew=false) the messages already exist, so skip creation.
-	if isNew && h.messageCreator != nil {
-		if _, err := h.messageCreator.CreateClarificationRequestMessages(
-			ctx, taskID, req.SessionID, pendingID, req.Questions, req.Context,
-		); err != nil {
-			h.logger.Error("failed to create clarification request messages",
-				zap.String("pending_id", pendingID),
-				zap.String("session_id", req.SessionID),
-				zap.Error(err))
-			h.clarificationSvc.CancelRequest(pendingID)
-			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError,
-				"failed to create clarification messages: "+err.Error(), nil)
-		}
+	if existing != nil {
+		return ws.NewResponse(msg.ID, msg.Action, existing)
 	}
 
 	// Update session and task states to waiting for input

@@ -961,6 +961,12 @@ func copyOptionalMessageTypesArg(payload map[string]interface{}, req mcp.CallToo
 
 func (s *Server) askUserQuestionHandler() server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if mode := req.GetString("return_mode", ""); mode != "" {
+			if mode != "receipt" {
+				return mcp.NewToolResultError("return_mode must be receipt or omitted"), nil
+			}
+			return s.receiptQuestionHandler(ctx, req)
+		}
 		questions, errResult := parseQuestions(req)
 		if errResult != nil {
 			return errResult, nil
@@ -995,6 +1001,9 @@ func (s *Server) askUserQuestionHandler() server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
+		if _, ok := result["status"]; ok {
+			return ownQuestionToolResult(result), nil
+		}
 		return extractQuestionAnswers(result, questions), nil
 	}
 }
