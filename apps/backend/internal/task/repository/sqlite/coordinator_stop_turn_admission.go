@@ -14,7 +14,11 @@ import (
 // lockCoordinatorTurnAdmissionTx shares the snapshot's task lock before any
 // session lock, so a fresh launch cannot reserve its first turn after capture.
 func (r *Repository) lockCoordinatorTurnAdmissionTx(ctx context.Context, tx *sqlx.Tx, turn *models.Turn) error {
-	if err := db.LockTaskRowInTx(ctx, tx, r.db.DriverName(), turn.TaskID); err != nil {
+	var ownerTaskID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT task_id FROM task_sessions WHERE id = ?`), turn.TaskSessionID).Scan(&ownerTaskID); err != nil {
+		return fmt.Errorf("read turn session owner: %w", err)
+	}
+	if err := db.LockTaskRowInTx(ctx, tx, r.db.DriverName(), ownerTaskID); err != nil {
 		return err
 	}
 	if turn.CompletedAt != nil {
@@ -30,7 +34,7 @@ func (r *Repository) lockCoordinatorTurnAdmissionTx(ctx context.Context, tx *sql
 		JOIN task_sessions s ON s.id = c.session_id AND s.task_id = c.task_id
 		WHERE c.session_id = ? AND c.task_id = ? AND q.complete = ?
 			AND c.queue_incarnation_id <> '' AND c.queue_incarnation_id = s.queue_incarnation_id
-			AND c.turn_id = '' AND c.execution_id = '' AND c.agentctl_generation = 0 LIMIT 1`), turn.TaskSessionID, turn.TaskID, false).Scan(&found)
+			AND c.turn_id = '' AND c.execution_id = '' AND c.agentctl_generation = 0 LIMIT 1`), turn.TaskSessionID, ownerTaskID, false).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
