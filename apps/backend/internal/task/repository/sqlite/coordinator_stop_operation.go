@@ -244,6 +244,12 @@ func (r *Repository) fenceCoordinatorStopSession(ctx context.Context, taskID, se
 	if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), sessionID); err != nil {
 		return false, err
 	}
+	if operationID != "" {
+		matches, matchErr := r.coordinatorStopLaunchCandidateMatchesTx(ctx, tx, taskID, sessionID, operationID)
+		if matchErr != nil || !matches {
+			return false, matchErr
+		}
+	}
 	now := time.Now().UTC()
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_sessions SET state = ?, completed_at = ?, updated_at = ? WHERE id = ? AND task_id = ? AND state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')`), string(models.TaskSessionStateCancelled), now, now, sessionID, taskID)
 	if err != nil {
@@ -254,15 +260,8 @@ func (r *Repository) fenceCoordinatorStopSession(ctx context.Context, taskID, se
 		return false, err
 	}
 	if changed == 1 {
-		var turnID string
-		turnErr := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT id FROM task_session_turns WHERE task_session_id = ? AND completed_at IS NULL ORDER BY started_at DESC LIMIT 1`), sessionID).Scan(&turnID)
-		if turnErr != nil && !errors.Is(turnErr, sql.ErrNoRows) {
-			return false, turnErr
-		}
-		if turnID != "" {
-			if _, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_session_turns SET completed_at = ?, updated_at = ? WHERE id = ? AND task_session_id = ? AND completed_at IS NULL`), now, now, turnID, sessionID); err != nil {
-				return false, err
-			}
+		if err := r.closeCoordinatorLaunchTurnTx(ctx, tx, taskID, sessionID, operationID, now); err != nil {
+			return false, err
 		}
 	}
 	if _, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_session_fences(task_id, session_id, created_at) VALUES (?, ?, ?) ON CONFLICT(task_id, session_id) DO NOTHING`), taskID, sessionID, now); err != nil {
@@ -277,6 +276,39 @@ func (r *Repository) fenceCoordinatorStopSession(ctx context.Context, taskID, se
 		return false, err
 	}
 	return changed == 1, nil
+}
+
+func (r *Repository) closeCoordinatorLaunchTurnTx(ctx context.Context, tx *sqlx.Tx, taskID, sessionID, operationID string, now time.Time) error {
+	var turnID string
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT id FROM task_session_turns WHERE task_session_id = ? AND completed_at IS NULL
+		AND (? = '' OR id = (SELECT turn_id FROM task_stop_request_candidates WHERE task_id = ? AND session_id = ? AND operation_id = ?))
+		ORDER BY started_at DESC LIMIT 1`), sessionID, operationID, taskID, sessionID, operationID).Scan(&turnID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`UPDATE task_session_turns SET completed_at = ?, updated_at = ? WHERE id = ? AND task_session_id = ? AND completed_at IS NULL`), now, now, turnID, sessionID)
+	return err
+}
+
+func (r *Repository) coordinatorStopLaunchCandidateMatchesTx(ctx context.Context, tx *sqlx.Tx, taskID, sessionID, operationID string) (bool, error) {
+	predicate, orderBy := currentTurnAuthority(r.db.DriverName(), "turn_row")
+	query := fmt.Sprintf(`SELECT EXISTS (
+		SELECT 1 FROM task_stop_request_candidates c
+		JOIN task_sessions s ON s.id = c.session_id AND s.task_id = c.task_id
+		WHERE c.task_id = ? AND c.session_id = ? AND c.operation_id = ?
+			AND c.queue_incarnation_id <> '' AND c.queue_incarnation_id = s.queue_incarnation_id
+			AND c.execution_id = '' AND c.agentctl_generation = 0
+			AND NOT EXISTS (SELECT 1 FROM executors_running e WHERE e.session_id = c.session_id)
+			AND c.turn_id = COALESCE((SELECT turn_row.id FROM task_session_turns turn_row
+				WHERE turn_row.task_session_id = c.session_id AND turn_row.completed_at IS NULL AND %s
+				ORDER BY %s LIMIT 1), '')
+	)`, predicate, orderBy)
+	var matches bool
+	err := tx.QueryRowContext(ctx, r.db.Rebind(query), taskID, sessionID, operationID).Scan(&matches)
+	return matches, err
 }
 
 func bindCoordinatorStopRequestFenceTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, taskID, sessionID, operationID string, createdAt time.Time) error {

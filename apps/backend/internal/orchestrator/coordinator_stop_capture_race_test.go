@@ -53,11 +53,24 @@ func TestCoordinatorStopUnboundIncompleteRequestRetriesRestoredExactExecutor(t *
 
 // @covers AC-STOP-FENCE-002, AC-STOP-FENCE-005, AC-STOP-FENCE-007, AC-STOP-FENCE-008
 func TestStopTaskForCoordinatorOperationRejectsRegistrationAfterSnapshot(t *testing.T) {
+	for _, withTurn := range []bool{false, true} {
+		t.Run(map[bool]string{false: "before turn reservation", true: "reserved launch turn"}[withTurn], func(t *testing.T) {
+			assertCoordinatorStopRegistrationAfterSnapshot(t, withTurn)
+		})
+	}
+}
+
+func assertCoordinatorStopRegistrationAfterSnapshot(t *testing.T, withTurn bool) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	repo := setupTestRepo(t)
 	seedTaskAndSession(t, repo, "launch-task", "launch-session", models.TaskSessionStateStarting)
 	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "launch-parent", Title: "parent"}))
+	if withTurn {
+		now := time.Now().UTC()
+		require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: "launch-turn", TaskID: "launch-task", TaskSessionID: "launch-session", StartedAt: now, CreatedAt: now, UpdatedAt: now}))
+	}
 	barrier := &coordinatorStopCaptureBarrier{Repository: repo, captured: make(chan struct{}), release: make(chan struct{})}
 	t.Cleanup(func() { barrier.once.Do(func() { close(barrier.release) }) })
 	taskRepo := newMockTaskRepo()
@@ -90,6 +103,9 @@ func TestStopTaskForCoordinatorOperationRejectsRegistrationAfterSnapshot(t *test
 	_, err := repo.GetExecutorRunningBySessionID(ctx, "launch-session")
 	require.ErrorIs(t, err, models.ErrExecutorRunningNotFound)
 	require.NoError(t, repo.UpdateTaskSessionState(ctx, "launch-session", models.TaskSessionStateStarting, ""))
+	_, err = svc.StopTaskForCoordinatorOperation(ctx, "launch-task", "launch-parent", "launch-request")
+	require.NoError(t, err)
+	require.Equal(t, models.TaskSessionStateStarting, mustGetSession(t, repo, "launch-session").State, "retry must not recapture an authorized restart before its registration")
 	running.AgentExecutionID, running.AgentctlGeneration = "authorized-successor", 2
 	require.NoError(t, repo.UpsertExecutorRunning(ctx, running), "an explicit restart is independent of the completed launch request")
 	_, err = svc.StopTaskForCoordinatorOperation(ctx, "launch-task", "launch-parent", "launch-request")

@@ -86,12 +86,14 @@ func (s *Service) StopTaskForCoordinatorOperation(ctx context.Context, taskID, p
 	if err != nil {
 		return CoordinatorTaskStopResult{}, err
 	}
-	if request.Complete && request.ResultStatus != string(CoordinatorTaskStopStatusIncomplete) && len(receipts) == 0 {
+	if request.Complete && len(receipts) == 0 {
 		fences, err := s.coordinatorStopRequestSessionFences(ctx, taskID, operationID)
 		if err != nil {
 			return CoordinatorTaskStopResult{}, err
 		}
-		return CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatus(request.ResultStatus), SessionFences: fences}, nil
+		if request.ResultStatus != string(CoordinatorTaskStopStatusIncomplete) || len(fences) > 0 {
+			return CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatus(request.ResultStatus), SessionFences: fences}, nil
+		}
 	}
 	result := CoordinatorTaskStopResult{Status: CoordinatorTaskStopStatusIncomplete}
 	if len(receipts) == 0 {
@@ -5425,14 +5427,20 @@ func (s *Service) coordinatorStopMissingExecutor(ctx context.Context, sessionID 
 	if candidate == nil {
 		return false, nil
 	}
-	if candidate.ExecutionID != "" || candidate.TurnID != "" || candidate.AgentctlGeneration != 0 {
+	if candidate.ExecutionID != "" || candidate.AgentctlGeneration != 0 {
 		return true, nil
 	}
 	turn, err := s.repo.GetActiveTurnBySessionID(ctx, sessionID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+		return candidate.TurnID != "", nil
 	}
-	return turn != nil || err != nil, err
+	if err != nil {
+		return true, err
+	}
+	if turn == nil {
+		return candidate.TurnID != "", nil
+	}
+	return !coordinatorStopCandidateMatchesTurn(candidate, turn), nil
 }
 
 func coordinatorStopCandidateMatchesExecution(candidate *models.CoordinatorStopRequestCandidate, running *models.ExecutorRunning) bool {

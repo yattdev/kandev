@@ -62,14 +62,16 @@ func (r *Repository) CaptureCoordinatorStopRequestWithCandidates(ctx context.Con
 			}
 		}
 		var candidates []models.CoordinatorStopRequestCandidate
-		if err := tx.SelectContext(ctx, &candidates, r.db.Rebind(`
+		predicate, orderBy := currentTurnAuthority(r.db.DriverName(), "t")
+		query := fmt.Sprintf(`
 			SELECT s.id AS session_id, s.queue_incarnation_id,
-				COALESCE((SELECT t.id FROM task_session_turns t WHERE t.task_session_id = s.id AND t.completed_at IS NULL ORDER BY t.started_at DESC LIMIT 1), '') AS turn_id,
+				COALESCE((SELECT t.id FROM task_session_turns t WHERE t.task_session_id = s.id AND t.completed_at IS NULL AND %s ORDER BY %s LIMIT 1), '') AS turn_id,
 				COALESCE(e.agent_execution_id, '') AS execution_id, COALESCE(e.agentctl_generation, 0) AS agentctl_generation
 			FROM task_sessions s
 			LEFT JOIN executors_running e ON e.session_id = s.id
 			WHERE s.task_id = ? AND s.state IN ('CREATED', 'STARTING', 'RUNNING', 'WAITING_FOR_INPUT')
-			ORDER BY s.started_at DESC`), request.TaskID); err != nil {
+			ORDER BY s.started_at DESC`, predicate, orderBy)
+		if err := tx.SelectContext(ctx, &candidates, r.db.Rebind(query), request.TaskID); err != nil {
 			return nil, nil, false, err
 		}
 		for _, candidate := range candidates {
