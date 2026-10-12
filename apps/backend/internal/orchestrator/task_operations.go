@@ -5181,12 +5181,22 @@ func (s *Service) stopTaskSessionForCoordinator(ctx context.Context, taskID, ses
 }
 
 func (s *Service) stopTaskSessionForCoordinatorCandidate(ctx context.Context, taskID string, candidate models.CoordinatorStopRequestCandidate, requestOperationID string) (executor.SessionStopResult, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return executor.SessionStopResult{}, true, err
+	}
 	sessionID := candidate.SessionID
 	endCancel := s.beginCancelInFlight(sessionID)
 	defer endCancel()
 
 	lock, release := s.acquireCancelInFlightGuard(sessionID)
-	lock.Lock()
+	if requestOperationID != "" {
+		if !lock.TryLock() {
+			release()
+			return executor.SessionStopResult{}, true, errors.New("coordinator session cancellation is busy; retry stop")
+		}
+	} else {
+		lock.Lock()
+	}
 
 	var capturedCandidate *models.CoordinatorStopRequestCandidate
 	if requestOperationID != "" {

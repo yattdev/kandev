@@ -47,17 +47,28 @@ func (m *cancellationProofManager) StopExecutionWithFence(ctx context.Context, i
 
 // @covers AC-STOP-FENCE-005, AC-STOP-FENCE-008
 func TestCoordinatorStopPeriodicRealAdmissionShutdown(t *testing.T) {
-	assertCoordinatorPeriodicRealAdmissionShutdown(t, setupTestRepo(t))
+	assertCoordinatorPeriodicRealAdmissionShutdown(t, setupTestRepo(t), false)
 }
 
 func TestPostgresCoordinatorStopPeriodicRealAdmissionShutdown(t *testing.T) {
 	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
 	repo, err := sqlite.NewWithDB(db, db, nil)
 	require.NoError(t, err)
-	assertCoordinatorPeriodicRealAdmissionShutdown(t, repo)
+	assertCoordinatorPeriodicRealAdmissionShutdown(t, repo, false)
 }
 
-func assertCoordinatorPeriodicRealAdmissionShutdown(t *testing.T, repo *sqlite.Repository) {
+func TestCoordinatorStopPeriodicRealSessionGuardShutdown(t *testing.T) {
+	assertCoordinatorPeriodicRealAdmissionShutdown(t, setupTestRepo(t), true)
+}
+
+func TestPostgresCoordinatorStopPeriodicRealSessionGuardShutdown(t *testing.T) {
+	db := openCoordinatorGuardPostgres(t)
+	repo, err := sqlite.NewWithDB(db, db, nil)
+	require.NoError(t, err)
+	assertCoordinatorPeriodicRealAdmissionShutdown(t, repo, true)
+}
+
+func assertCoordinatorPeriodicRealAdmissionShutdown(t *testing.T, repo *sqlite.Repository, competingCaller bool) {
 	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
 	defer cancel()
 	_, prior, _ := newLegacyStopFixtureWithRepo(t, repo)
@@ -114,8 +125,9 @@ func assertCoordinatorPeriodicRealAdmissionShutdown(t *testing.T, repo *sqlite.R
 	require.NoError(t, err)
 	require.NoError(t, repo.DeleteExecutorRunningBySessionID(ctx, "legacy-session"))
 	manager := &cancellationProofManager{mockAgentManager: prior.agentManager.(*mockAgentManager), real: real}
+	observed := &coordinatorGuardObservedRepo{Repository: repo, entered: make(chan struct{}, 1)}
 	newService := func() *Service {
-		svc := NewService(DefaultServiceConfig(), bus.NewMemoryEventBus(log), manager, prior.taskRepo, repo, nil, nil, nil, log)
+		svc := NewService(DefaultServiceConfig(), bus.NewMemoryEventBus(log), manager, prior.taskRepo, observed, nil, nil, nil, log)
 		svc.SetTurnService(&repoTurnService{repo: repo})
 		return svc
 	}
@@ -132,7 +144,16 @@ func assertCoordinatorPeriodicRealAdmissionShutdown(t *testing.T, repo *sqlite.R
 	require.NoError(t, err)
 	defer release()
 	require.NoError(t, repo.UpsertExecutorRunning(ctx, running))
-	ticks <- time.Now()
+	var parentStopDone chan error
+	if competingCaller {
+		parentStopDone = make(chan error, 1)
+		go func() {
+			_, err := svc.StopTaskForCoordinatorOperation(ctx, request.TaskID, request.ParentTaskID, request.OperationID)
+			parentStopDone <- err
+		}()
+	} else {
+		ticks <- time.Now()
+	}
 	require.Eventually(t, func() bool {
 		probeRelease, err := pm.BeginAdapterOperation()
 		if err == nil {
@@ -140,6 +161,18 @@ func assertCoordinatorPeriodicRealAdmissionShutdown(t *testing.T, repo *sqlite.R
 		}
 		return err != nil
 	}, 3*time.Second, time.Millisecond, "periodic production replay must close real admission")
+	if competingCaller {
+		observed.observe.Store(true)
+		ticks <- time.Now()
+		select {
+		case <-observed.entered:
+		case <-time.After(3 * time.Second):
+			release()
+			<-parentStopDone
+			require.NoError(t, svc.Stop())
+			t.Fatal("periodic replay did not revisit the captured candidate")
+		}
+	}
 	done := make(chan error, 1)
 	go func() { done <- svc.Stop() }()
 	joined := false
@@ -165,6 +198,10 @@ func assertCoordinatorPeriodicRealAdmissionShutdown(t *testing.T, repo *sqlite.R
 	require.NoError(t, err)
 	require.Equal(t, captured, saved)
 	release()
+	if competingCaller {
+		require.NoError(t, <-parentStopDone)
+	}
+	observed.observe.Store(false)
 	retry := newService()
 	require.NoError(t, retry.Start(ctx))
 	t.Cleanup(func() { require.NoError(t, retry.Stop()) })
