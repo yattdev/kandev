@@ -32,6 +32,10 @@ func TestCloseAdmissionGracefullyCapturesCutoffAtGateClosure(t *testing.T) {
 	if cutoff.Before(admittedAt) {
 		t.Fatalf("cutoff %s precedes admitted operation %s", cutoff, admittedAt)
 	}
+	mgr.beforeAdmissionClose = nil
+	if repeated := mgr.CloseAdmissionGracefully(); !repeated.Equal(cutoff) {
+		t.Fatalf("repeated cutoff %s, want original %s", repeated, cutoff)
+	}
 	if _, err := mgr.admitStart(); !errors.Is(err, ErrManagerStopping) {
 		t.Fatalf("admission after closure = %v, want ErrManagerStopping", err)
 	}

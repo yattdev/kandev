@@ -285,6 +285,7 @@ type Manager struct {
 	admissionCount        int
 	admissionDrained      chan struct{}
 	stopping              bool
+	admissionCutoff       time.Time
 	lifetimeCtx           context.Context
 	lifetimeCancel        context.CancelFunc
 	mainReapPending       atomic.Bool
@@ -364,7 +365,10 @@ func (m *Manager) closeAdmission(cancelOwned bool) time.Time {
 
 	m.admissionMu.Lock()
 	m.stopping = true
-	cutoff := time.Now().UTC()
+	if m.admissionCutoff.IsZero() {
+		m.admissionCutoff = time.Now().UTC()
+	}
+	cutoff := m.admissionCutoff
 	var lifetimeCancel context.CancelFunc
 	if cancelOwned {
 		lifetimeCancel = m.lifetimeCancel
