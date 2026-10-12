@@ -35,6 +35,11 @@ Migration remains in progress while legacy source detail is extracted from the
 canonical requirement and system-design documents. Use the catalog command to
 find current sources.
 
+## Current specifications
+
+- [Foreign Git pointer recovery evidence requirements](requirements/foreign-git-pointer-recovery.md)
+- [Foreign Git pointer recovery evidence design](system-design/foreign-git-pointer-recovery.md)
+
 ## Related systems
 
 - [Tasks](../tasks/README.md): consumes workspace repositories and worktrees.
