@@ -24,8 +24,8 @@ func seedPostgresTaskSession(t *testing.T, repo *Repository, taskID, sessionID s
 	now := time.Now().UTC()
 	if _, err := repo.db.Exec(repo.db.Rebind(`
 		INSERT INTO tasks (id, workspace_id, title, created_at, updated_at)
-		VALUES (?, '', 'test task', ?, ?)
-	`), taskID, now, now); err != nil {
+		VALUES (?, ?, 'test task', ?, ?)
+	`), taskID, "ws-"+taskID, now, now); err != nil {
 		t.Fatalf("seed task %s: %v", taskID, err)
 	}
 	if _, err := repo.db.Exec(repo.db.Rebind(`

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -37,6 +38,37 @@ func TestPostgresForceRemovalClaimRejectsStaleAndReplaysExactRequest(t *testing.
 	require.ErrorIs(t, repo.AppendForceRemovalReceipt(ctx, claim.OperationID, receipt), ErrForceRemovalClaimConflict)
 }
 
+func TestPostgresForceRemovalGrantClaimRollbackPreservesGrant(t *testing.T) {
+	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
+	repo, err := NewWithDB(db, db, nil)
+	require.NoError(t, err)
+	ctx := context.Background()
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "force-grant-pg-ws", Name: "Force grant"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "force-grant-pg-task", WorkspaceID: "force-grant-pg-ws", Title: "Force grant"}))
+	task, err := repo.GetTask(ctx, "force-grant-pg-task")
+	require.NoError(t, err)
+	grant, err := repo.IssueForceRemovalGrant(ctx, &models.ForceRemovalGrant{
+		TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt,
+		CallerTaskID: "caller", CallerSessionID: "session", IssuedByUserID: "admin", ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+
+	first := &models.ForceRemovalClaim{
+		TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt,
+		AdmissionGeneration: "admission", OperationID: "existing", RequestDigest: "request", PreviewDigest: "preview",
+	}
+	_, _, err = repo.ClaimForceRemoval(ctx, first)
+	require.NoError(t, err)
+	conflict := *first
+	conflict.OperationID = "conflicting-operation"
+	_, _, err = repo.ClaimForceRemovalWithGrant(ctx, grant.ID, "caller", "session", &conflict, nil)
+	require.ErrorIs(t, err, ErrForceRemovalClaimConflict)
+
+	consumed, err := repo.ConsumeForceRemovalGrant(ctx, grant.ID, task.ID, task.WorkspaceID, "caller", "session", task.UpdatedAt)
+	require.NoError(t, err)
+	require.NotNil(t, consumed.ConsumedAt)
+}
+
 func TestPostgresClaimForceRemovalBlocksAbsentSessionMetadataKey(t *testing.T) {
 	db := testutil.OpenIsolatedPostgres(t, testutil.PostgresDSNFromEnv(t))
 	repo, err := NewWithDB(db, db, nil)
@@ -47,6 +79,7 @@ func TestPostgresClaimForceRemovalBlocksAbsentSessionMetadataKey(t *testing.T) {
 
 	heldTask, err := repo.GetTask(ctx, "held-absent-session-pg")
 	require.NoError(t, err)
+	require.NotEmpty(t, heldTask.WorkspaceID)
 	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
 		TaskID:              heldTask.ID,
 		WorkspaceID:         heldTask.WorkspaceID,
@@ -89,6 +122,7 @@ func TestPostgresClaimForceRemovalBlocksDifferentStepSessionMetadataKey(t *testi
 
 	heldTask, err := repo.GetTask(ctx, "held-step-session-pg")
 	require.NoError(t, err)
+	require.NotEmpty(t, heldTask.WorkspaceID)
 	_, _, err = repo.ClaimForceRemoval(ctx, &models.ForceRemovalClaim{
 		TaskID: heldTask.ID, WorkspaceID: heldTask.WorkspaceID, TaskGeneration: heldTask.UpdatedAt,
 		AdmissionGeneration: "admission", OperationID: "step-session-metadata-pg",
