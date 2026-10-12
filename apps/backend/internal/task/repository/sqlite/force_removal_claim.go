@@ -304,3 +304,15 @@ func validateForceRemovalQuiescenceClaimTx(ctx context.Context, db *sqlx.DB, tx 
 	}
 	return nil
 }
+
+// ValidateForceRemovalQuiescenceClaim performs the side-effect-free half of
+// quiescence admission. The cancellation writer repeats this validation in its
+// own transaction immediately before changing sessions.
+func (r *Repository) ValidateForceRemovalQuiescenceClaim(ctx context.Context, taskID, workspaceID, operationID string, generation time.Time) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	return validateForceRemovalQuiescenceClaimTx(ctx, r.db, tx, taskID, workspaceID, operationID, generation)
+}

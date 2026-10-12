@@ -39,6 +39,11 @@ type forceRemovalGrantAdmissionStore interface {
 	ClaimForceRemovalWithGrant(context.Context, string, string, string, *models.ForceRemovalClaim, []models.ExactRetirementPredicateReceipt) (*models.ForceRemovalClaim, bool, error)
 }
 
+type forceRemovalQuiescenceStore interface {
+	ValidateForceRemovalQuiescenceClaim(context.Context, string, string, string, time.Time) error
+	CancelActiveTaskSessionsForForceRemoval(context.Context, string, string, string, time.Time, string) ([]*models.TaskSession, error)
+}
+
 // AdmitForceRemoval installs the durable fence and its identity receipt only.
 // It never hides a task or invokes cleanup.
 func (s *Service) AdmitForceRemoval(ctx context.Context, req ForceRemovalAdmissionRequest) (*models.ForceRemovalClaim, bool, error) {
@@ -98,6 +103,45 @@ func (s *Service) AdmitForceRemovalWithGrant(ctx context.Context, req ForceRemov
 	claim := &models.ForceRemovalClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, TaskGeneration: task.UpdatedAt, AdmissionGeneration: req.AdmissionGeneration, OperationID: req.OperationID, RequestDigest: req.RequestDigest, PreviewDigest: req.PreviewDigest}
 	receipt := models.ExactRetirementPredicateReceipt{Predicate: models.ExactRetirementIdentityPredicate, Status: models.ExactRetirementReceiptPass, ReasonCode: "EXACT_TASK_CLAIMED", ResourceID: task.ID, ObservedGeneration: exactRetirementGeneration(task), EvidenceDigest: exactRetirementDigest(task.ID, task.WorkspaceID, req.ExpectedTaskGeneration, req.PreviewDigest)}
 	return store.ClaimForceRemovalWithGrant(ctx, grantID, caller.TaskID, caller.SessionID, claim, []models.ExactRetirementPredicateReceipt{receipt})
+}
+
+// QuiesceForceRemoval terminates only the active sessions owned by an already
+// admitted exact claim. It neither archives the task nor schedules cleanup.
+func (s *Service) QuiesceForceRemoval(ctx context.Context, req ForceRemovalAdmissionRequest) ([]*models.TaskSession, error) {
+	if err := s.AuthorizeTaskScope(ctx, req.TaskID, authz.ScopeTaskWrite); err != nil {
+		return nil, err
+	}
+	identity, ok := authn.IdentityFromContext(ctx)
+	if !ok || !identity.IsAdmin() {
+		return nil, ErrForbidden
+	}
+	task, err := s.GetTask(ctx, req.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.WorkspaceID != req.WorkspaceID || exactRetirementGeneration(task) != req.ExpectedTaskGeneration {
+		return nil, ErrForceRemovalAdmissionStale
+	}
+	store, ok := s.tasks.(forceRemovalQuiescenceStore)
+	if !ok {
+		return nil, ErrForceRemovalAdmissionStale
+	}
+	if err := store.ValidateForceRemovalQuiescenceClaim(ctx, task.ID, task.WorkspaceID, req.OperationID, task.UpdatedAt); err != nil {
+		return nil, err
+	}
+	active, err := s.sessions.ListActiveTaskSessionsByTaskID(ctx, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	targets, err := s.buildStopTargets(ctx, task.ID, active)
+	if err != nil {
+		return nil, err
+	}
+	outcome := s.stopTaskRuntimeTargetsWithTaskDeleted(ctx, task.ID, targets, "force removal", "force removal stop failed", false, true)
+	if len(outcome.failed) != 0 {
+		return nil, ErrForceRemovalAdmissionStale
+	}
+	return store.CancelActiveTaskSessionsForForceRemoval(ctx, task.ID, task.WorkspaceID, req.OperationID, task.UpdatedAt, "force removal")
 }
 
 func forceRemovalPreviewDigest(task *models.Task) string {

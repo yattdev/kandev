@@ -111,3 +111,27 @@ func TestPreviewForceRemovalDerivesFreshDigestAndRejectsStaleInput(t *testing.T)
 	_, err = svc.PreviewForceRemoval(ctx, task.ID, task.WorkspaceID, "stale")
 	require.ErrorIs(t, err, ErrForceRemovalAdmissionStale)
 }
+
+func TestQuiesceForceRemovalRequiresExactClaimBeforeStoppingSessions(t *testing.T) {
+	ctx := ctxSynthetic()
+	svc, _, repo := createTestService(t)
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "quiesce-service-ws", Name: "Force"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "quiesce-service-task", WorkspaceID: "quiesce-service-ws", Title: "Force"}))
+	require.NoError(t, repo.CreateTaskSession(ctx, &models.TaskSession{ID: "quiesce-service-session", TaskID: "quiesce-service-task", State: models.TaskSessionStateRunning}))
+	task, err := repo.GetTask(ctx, "quiesce-service-task")
+	require.NoError(t, err)
+	req := ForceRemovalAdmissionRequest{TaskID: task.ID, WorkspaceID: task.WorkspaceID, ExpectedTaskGeneration: exactRetirementGeneration(task), AdmissionGeneration: "admission", OperationID: "quiesce-operation", RequestDigest: "request", PreviewDigest: forceRemovalPreviewDigest(task)}
+	stopper := &synchronousStubStopper{}
+	svc.executionStopper = stopper
+	_, err = svc.QuiesceForceRemoval(ctx, req)
+	require.ErrorIs(t, err, sqlite.ErrForceRemovalClaimStale)
+	require.Zero(t, stopper.synchronousSessionCalls)
+
+	_, _, err = svc.AdmitForceRemoval(ctx, req)
+	require.NoError(t, err)
+	cancelled, err := svc.QuiesceForceRemoval(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, cancelled, 1)
+	require.Equal(t, models.TaskSessionStateCancelled, cancelled[0].State)
+	require.Equal(t, 1, stopper.synchronousSessionCalls)
+}
