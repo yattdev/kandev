@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	storageworkspaces "github.com/kandev/kandev/internal/system/storage/workspaces"
 )
 
 // @covers AC-FOREIGN-GIT-01, AC-FOREIGN-GIT-02, AC-FOREIGN-GIT-03, AC-FOREIGN-GIT-05
@@ -54,9 +56,9 @@ func TestInspectForeignGitWorktreeCapturesForeignPointerWithoutFollowingAdmin(t 
 	updatedAt := time.Date(2026, time.September, 26, 23, 0, 0, 0, time.UTC)
 	store.worktrees["original-worktree"] = &Worktree{
 		ID: "original-worktree", TaskID: "original-task", TaskEnvironmentID: "original-environment",
-		RepositoryID: "repository", RepositoryPath: repository, Path: checkout, UpdatedAt: updatedAt,
+		TaskDirName: filepath.Base(filepath.Dir(checkout)), RepositoryID: "repository", RepositoryPath: repository, Path: checkout, UpdatedAt: updatedAt,
 	}
-	mgr, err := NewManager(newTestConfig(t), store, newTestLogger())
+	mgr, err := NewManager(prepareInspectionRoot(t, checkout, "original-task"), store, newTestLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,8 +106,8 @@ func TestInspectForeignGitWorktreeRejectsStaleGenerationAndNonreciprocalPointer(
 	}
 	updatedAt := time.Date(2026, time.September, 26, 23, 0, 0, 0, time.UTC)
 	store := newMockStore()
-	store.worktrees["original-worktree"] = &Worktree{ID: "original-worktree", TaskID: "original-task", RepositoryID: "repository", Path: checkout, UpdatedAt: updatedAt}
-	mgr, err := NewManager(newTestConfig(t), store, newTestLogger())
+	store.worktrees["original-worktree"] = &Worktree{ID: "original-worktree", TaskID: "original-task", TaskDirName: filepath.Base(filepath.Dir(checkout)), RepositoryID: "repository", Path: checkout, UpdatedAt: updatedAt}
+	mgr, err := NewManager(prepareInspectionRoot(t, checkout, "original-task"), store, newTestLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,8 +150,8 @@ func TestInspectForeignGitWorktreeMarksNestedGitBoundaryIncomplete(t *testing.T)
 	}
 	updatedAt := time.Date(2026, time.September, 26, 23, 0, 0, 0, time.UTC)
 	store := newMockStore()
-	store.worktrees["original-worktree"] = &Worktree{ID: "original-worktree", TaskID: "original-task", RepositoryID: "repository", Path: checkout, UpdatedAt: updatedAt}
-	mgr, err := NewManager(newTestConfig(t), store, newTestLogger())
+	store.worktrees["original-worktree"] = &Worktree{ID: "original-worktree", TaskID: "original-task", TaskDirName: filepath.Base(filepath.Dir(checkout)), RepositoryID: "repository", Path: checkout, UpdatedAt: updatedAt}
+	mgr, err := NewManager(prepareInspectionRoot(t, checkout, "original-task"), store, newTestLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,18 +208,68 @@ func TestInspectForeignGitWorktreeMarksCanceledWalkIncomplete(t *testing.T) {
 	}
 }
 
+// @covers AC-FOREIGN-GIT-03
+func TestInspectForeignGitWorktreeRequiresPinnedTaskRootOwnership(t *testing.T) {
+	tasksBase := t.TempDir()
+	checkout := filepath.Join(tasksBase, "original-task-dir", "repo")
+	if err := os.MkdirAll(checkout, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	updatedAt := time.Date(2026, time.September, 26, 23, 0, 0, 0, time.UTC)
+	store := newMockStore()
+	store.worktrees["original-worktree"] = &Worktree{ID: "original-worktree", TaskID: "original-task", TaskDirName: "original-task-dir", RepositoryID: "repository", Path: checkout, UpdatedAt: updatedAt}
+	manager, err := NewManager(Config{Enabled: true, TasksBasePath: tasksBase, BranchPrefix: "kandev/"}, store, newTestLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := manager.InspectForeignGitWorktree(context.Background(), ForeignGitInspectionRequest{RequestID: "inspection-marker", TaskID: "original-task", WorktreeID: "original-worktree", ExpectedWorktreeGeneration: updatedAt.Format(time.RFC3339Nano)})
+	if err != nil {
+		t.Fatalf("InspectForeignGitWorktree: %v", err)
+	}
+	if receipt.Complete || receipt.Overall != ForeignGitInspectionUnknown || !hasReason(receipt.ReasonCodes, "TASK_ROOT_OWNERSHIP_UNKNOWN") {
+		t.Fatalf("missing ownership receipt = %+v", receipt)
+	}
+}
+
+// @covers AC-FOREIGN-GIT-03
+func TestInspectForeignGitWorktreeBoundsPointerFile(t *testing.T) {
+	checkout := t.TempDir()
+	if err := os.WriteFile(filepath.Join(checkout, ".git"), make([]byte, foreignGitInspectionPointerByteLimit+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, generation := inspectionManager(t, checkout)
+	receipt, err := manager.InspectForeignGitWorktree(context.Background(), ForeignGitInspectionRequest{RequestID: "inspection-pointer-bound", TaskID: "original-task", WorktreeID: "original-worktree", ExpectedWorktreeGeneration: generation})
+	if err != nil {
+		t.Fatalf("InspectForeignGitWorktree: %v", err)
+	}
+	if receipt.Complete || !hasReason(receipt.ReasonCodes, "GIT_POINTER_UNAVAILABLE") {
+		t.Fatalf("oversized pointer receipt = %+v", receipt)
+	}
+}
+
 func inspectionManager(t *testing.T, checkout string) (*Manager, string) {
 	t.Helper()
 	updatedAt := time.Date(2026, time.September, 26, 23, 0, 0, 0, time.UTC)
 	store := newMockStore()
 	store.worktrees["original-worktree"] = &Worktree{
-		ID: "original-worktree", TaskID: "original-task", RepositoryID: "repository", Path: checkout, UpdatedAt: updatedAt,
+		ID: "original-worktree", TaskID: "original-task", TaskDirName: filepath.Base(filepath.Dir(checkout)), RepositoryID: "repository", Path: checkout, UpdatedAt: updatedAt,
 	}
-	manager, err := NewManager(newTestConfig(t), store, newTestLogger())
+	manager, err := NewManager(prepareInspectionRoot(t, checkout, "original-task"), store, newTestLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
 	return manager, updatedAt.Format(time.RFC3339Nano)
+}
+
+func prepareInspectionRoot(t *testing.T, checkout, taskID string) Config {
+	t.Helper()
+	taskRoot := filepath.Dir(checkout)
+	if err := storageworkspaces.WriteOwnershipMarker(taskRoot, storageworkspaces.OwnershipMarker{
+		TaskID: taskID, TaskDirName: filepath.Base(taskRoot), LayoutVersion: storageworkspaces.LayoutVersionSemantic,
+	}); err != nil {
+		t.Fatalf("write inspection ownership marker: %v", err)
+	}
+	return Config{Enabled: true, TasksBasePath: filepath.Dir(taskRoot), BranchPrefix: "kandev/"}
 }
 
 // @covers AC-WORKSPACES-FOREIGN-GIT-RECOVERY-002.2

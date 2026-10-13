@@ -83,6 +83,8 @@ type ForeignGitInspectionReceipt struct {
 const foreignGitInspectionEntryLimit = 100_000
 const foreignGitInspectionFileByteLimit int64 = 1 << 30
 const foreignGitInspectionTotalByteLimit int64 = 4 << 30
+const foreignGitInspectionPointerByteLimit int64 = 64 << 10
+const foreignGitInspectionForeignAdminUnauthorized = "FOREIGN_ADMIN_UNAUTHORIZED"
 
 // InspectForeignGitWorktree performs the internal evidence-only half of a
 // recovery. It never invokes Git, opens the foreign admin target, or mutates
@@ -94,6 +96,10 @@ func (m *Manager) InspectForeignGitWorktree(ctx context.Context, request Foreign
 		return nil, err
 	}
 	receipt := newForeignGitInspectionReceipt(request, wt, generation)
+	if err := m.foreignGitInspectionTaskRootOwner(wt); err != nil {
+		receipt.addReason("TASK_ROOT_OWNERSHIP_UNKNOWN")
+		return receipt, nil
+	}
 	root, err := openArchiveSourceDirectory(filepath.Dir(wt.Path), wt.Path)
 	if err != nil {
 		receipt.addReason("CHECKOUT_OPEN_FAILED")
@@ -101,7 +107,59 @@ func (m *Manager) InspectForeignGitWorktree(ctx context.Context, request Foreign
 	}
 	defer func() { _ = root.Close() }()
 	foreignGitInspectionCapture(ctx, root, wt.Path, receipt)
+	if current, currentGeneration, reloadErr := m.foreignGitInspectionWorktree(ctx, request); reloadErr != nil || !foreignGitInspectionSameWorktree(wt, current) || currentGeneration != generation {
+		receipt.addReason("WORKTREE_GENERATION_CHANGED")
+		receipt.Complete = false
+		receipt.Overall = ForeignGitInspectionUnknown
+	}
 	return receipt, nil
+}
+
+func (m *Manager) foreignGitInspectionTaskRootOwner(wt *Worktree) error {
+	taskRoot, err := m.foreignGitInspectionTaskRoot(wt)
+	if err != nil {
+		return err
+	}
+	handle, err := openArchiveSourceDirectory(filepath.Dir(taskRoot), taskRoot)
+	if err != nil {
+		return fmt.Errorf("open task-root ownership marker: %w", err)
+	}
+	defer func() { _ = handle.Close() }()
+	marker, found, err := storageworkspaces.ReadOwnershipMarkerNoFollow(handle)
+	if err != nil || !found {
+		if err != nil {
+			return fmt.Errorf("read task-root ownership marker: %w", err)
+		}
+		return errors.New("task-root ownership marker is missing")
+	}
+	if marker.TaskID != wt.TaskID || marker.TaskDirName != wt.TaskDirName {
+		return errors.New("task-root ownership marker conflicts with worktree record")
+	}
+	return handle.VerifyPath(taskRoot)
+}
+
+func (m *Manager) foreignGitInspectionTaskRoot(wt *Worktree) (string, error) {
+	if wt == nil || strings.TrimSpace(wt.TaskDirName) == "" {
+		return "", errors.New("worktree task-root ownership is unavailable")
+	}
+	tasksBase, err := m.config.ExpandedTasksBasePath()
+	if err != nil {
+		return "", fmt.Errorf("resolve tasks base path: %w", err)
+	}
+	tasksBase = filepath.Clean(tasksBase)
+	relative, err := filepath.Rel(tasksBase, wt.Path)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", errors.New("worktree path lies outside the task root")
+	}
+	parts := strings.Split(relative, string(filepath.Separator))
+	if len(parts) < 2 || parts[0] != wt.TaskDirName {
+		return "", errors.New("worktree path conflicts with its recorded task root")
+	}
+	return filepath.Join(tasksBase, parts[0]), nil
+}
+
+func foreignGitInspectionSameWorktree(expected, current *Worktree) bool {
+	return current != nil && expected.ID == current.ID && expected.TaskID == current.TaskID && expected.TaskDirName == current.TaskDirName && expected.Path == current.Path && expected.RepositoryID == current.RepositoryID && expected.TaskEnvironmentID == current.TaskEnvironmentID
 }
 
 func (m *Manager) foreignGitInspectionWorktree(ctx context.Context, request ForeignGitInspectionRequest) (*Worktree, string, error) {
@@ -133,39 +191,56 @@ func newForeignGitInspectionReceipt(request ForeignGitInspectionRequest, wt *Wor
 }
 
 func foreignGitInspectionCapture(ctx context.Context, root storageworkspaces.DirectoryHandle, checkout string, receipt *ForeignGitInspectionReceipt) {
-	pointerErr := foreignGitInspectionPointer(root, checkout, &receipt.Pointer)
+	pointerErr := foreignGitInspectionPointer(ctx, root, checkout, &receipt.Pointer)
 	if pointerErr != nil {
 		receipt.Pointer.ReasonCode = "GIT_POINTER_UNAVAILABLE"
 		receipt.addReason("GIT_POINTER_UNAVAILABLE")
 	} else {
-		receipt.Pointer.ReasonCode = "FOREIGN_ADMIN_UNAUTHORIZED"
-		receipt.addReason("FOREIGN_ADMIN_UNAUTHORIZED")
+		receipt.Pointer.ReasonCode = foreignGitInspectionForeignAdminUnauthorized
+		receipt.addReason(foreignGitInspectionForeignAdminUnauthorized)
 	}
 	var sourceBytes int64
-	walkErr := foreignGitInspectionWalk(ctx, root, "", &receipt.Entries, receipt, &sourceBytes)
+	walkErr := foreignGitInspectionWalk(ctx, root, "", checkout, &receipt.Entries, receipt, &sourceBytes)
 	if walkErr != nil {
 		receipt.addReason("SOURCE_WALK_INCOMPLETE")
 	}
 	pathErr := root.VerifyPath(checkout)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		pathErr = ctxErr
+	}
 	if pathErr != nil {
 		receipt.addReason("CHECKOUT_CHANGED")
 	}
 	receipt.Complete = pointerErr == nil && walkErr == nil && pathErr == nil && !foreignGitInspectionHasReason(receipt.ReasonCodes, "NESTED_GIT_BOUNDARY")
 	sort.Slice(receipt.Entries, func(i, j int) bool { return receipt.Entries[i].Path < receipt.Entries[j].Path })
 	receipt.TreeSHA256 = foreignGitInspectionTreeDigest(receipt.Entries)
-	if receipt.Complete && len(receipt.ReasonCodes) == 1 && receipt.ReasonCodes[0] == "FOREIGN_ADMIN_UNAUTHORIZED" {
+	if receipt.Complete && len(receipt.ReasonCodes) == 1 && receipt.ReasonCodes[0] == foreignGitInspectionForeignAdminUnauthorized {
 		receipt.Overall = ForeignGitInspectionBlocked
 	} else {
 		receipt.Overall = ForeignGitInspectionUnknown
 	}
 }
 
-func foreignGitInspectionPointer(root storageworkspaces.DirectoryHandle, checkout string, pointer *ForeignGitPointerReceipt) error {
+func foreignGitInspectionPointer(ctx context.Context, root storageworkspaces.DirectoryHandle, checkout string, pointer *ForeignGitPointerReceipt) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	mode, err := root.LstatEntry(recoveryGitDirName)
 	if err != nil || !mode.IsRegular() {
 		return fmt.Errorf("checkout .git pointer is unavailable")
 	}
-	contents, err := root.ReadFile(recoveryGitDirName)
+	file, err := root.OpenFile(recoveryGitDirName)
+	if err != nil {
+		return err
+	}
+	contents, err := foreignGitInspectionReadFile(ctx, file, foreignGitInspectionPointerByteLimit)
+	if err == nil {
+		err = root.VerifyFileEntry(recoveryGitDirName, file)
+	}
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		return err
 	}
@@ -178,9 +253,19 @@ func foreignGitInspectionPointer(root storageworkspaces.DirectoryHandle, checkou
 	return nil
 }
 
-func foreignGitInspectionWalk(ctx context.Context, directory storageworkspaces.DirectoryHandle, prefix string, entries *[]ForeignGitInspectionEntry, receipt *ForeignGitInspectionReceipt, sourceBytes *int64) error {
-	children, err := directory.ReadDir()
+func foreignGitInspectionWalk(ctx context.Context, directory storageworkspaces.DirectoryHandle, prefix, physicalPath string, entries *[]ForeignGitInspectionEntry, receipt *ForeignGitInspectionReceipt, sourceBytes *int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	children, err := directory.ReadDirN(foreignGitInspectionEntryLimit + 1)
 	if err != nil {
+		return err
+	}
+	if len(children) > foreignGitInspectionEntryLimit {
+		receipt.addReason("SOURCE_ENTRY_LIMIT")
+		return fmt.Errorf("foreign Git inspection directory entry limit reached")
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	sort.Slice(children, func(i, j int) bool { return children[i].Name() < children[j].Name() })
@@ -188,14 +273,37 @@ func foreignGitInspectionWalk(ctx context.Context, directory storageworkspaces.D
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := foreignGitInspectionWalkChild(ctx, directory, child.Name(), prefix, entries, receipt, sourceBytes); err != nil {
+		if err := foreignGitInspectionWalkChild(ctx, directory, child.Name(), prefix, physicalPath, entries, receipt, sourceBytes); err != nil {
 			return err
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	current, err := directory.ReadDirN(foreignGitInspectionEntryLimit + 1)
+	if err != nil {
+		return err
+	}
+	if len(current) > foreignGitInspectionEntryLimit || !foreignGitInspectionSameDirectoryEntries(children, current) {
+		return errors.New("foreign Git inspection directory changed during capture")
 	}
 	return nil
 }
 
-func foreignGitInspectionWalkChild(ctx context.Context, directory storageworkspaces.DirectoryHandle, name, prefix string, entries *[]ForeignGitInspectionEntry, receipt *ForeignGitInspectionReceipt, sourceBytes *int64) error {
+func foreignGitInspectionSameDirectoryEntries(expected, current []os.DirEntry) bool {
+	if len(expected) != len(current) {
+		return false
+	}
+	sort.Slice(current, func(i, j int) bool { return current[i].Name() < current[j].Name() })
+	for index := range expected {
+		if expected[index].Name() != current[index].Name() || expected[index].Type() != current[index].Type() {
+			return false
+		}
+	}
+	return true
+}
+
+func foreignGitInspectionWalkChild(ctx context.Context, directory storageworkspaces.DirectoryHandle, name, prefix, physicalPath string, entries *[]ForeignGitInspectionEntry, receipt *ForeignGitInspectionReceipt, sourceBytes *int64) error {
 	if prefix == "" && name == recoveryGitDirName {
 		return nil
 	}
@@ -208,7 +316,7 @@ func foreignGitInspectionWalkChild(ctx context.Context, directory storageworkspa
 		return err
 	}
 	path := foreignGitInspectionChildPath(prefix, name, receipt)
-	entry, descend, err := foreignGitInspectionEntry(directory, name, path, mode, foreignGitInspectionRemainingBytes(*sourceBytes, receipt))
+	entry, descend, err := foreignGitInspectionEntry(ctx, directory, name, path, mode, foreignGitInspectionRemainingBytes(*sourceBytes, receipt))
 	if err != nil {
 		if errors.Is(err, errForeignGitInspectionByteLimit) {
 			receipt.addReason("SOURCE_BYTE_LIMIT")
@@ -220,9 +328,18 @@ func foreignGitInspectionWalkChild(ctx context.Context, directory storageworkspa
 	}
 	*entries = append(*entries, entry)
 	if !descend {
+		if _, err := directory.LstatEntry(name); err != nil {
+			return err
+		}
+		if entry.Kind == archiveSourceManifestKindSymlink {
+			target, err := directory.ReadLink(name)
+			if err != nil || foreignGitInspectionSHA256([]byte(target)) != entry.LinkSHA256 {
+				return errors.New("foreign Git inspection symbolic link changed during capture")
+			}
+		}
 		return nil
 	}
-	return foreignGitInspectionWalkSubdirectory(ctx, directory, name, path, entries, receipt, sourceBytes)
+	return foreignGitInspectionWalkSubdirectory(ctx, directory, name, path, filepath.Join(physicalPath, name), entries, receipt, sourceBytes)
 }
 
 func foreignGitInspectionChildPath(prefix, name string, receipt *ForeignGitInspectionReceipt) string {
@@ -243,24 +360,28 @@ func foreignGitInspectionRemainingBytes(sourceBytes int64, receipt *ForeignGitIn
 	return remaining
 }
 
-func foreignGitInspectionWalkSubdirectory(ctx context.Context, directory storageworkspaces.DirectoryHandle, name, path string, entries *[]ForeignGitInspectionEntry, receipt *ForeignGitInspectionReceipt, sourceBytes *int64) error {
+func foreignGitInspectionWalkSubdirectory(ctx context.Context, directory storageworkspaces.DirectoryHandle, name, path, physicalPath string, entries *[]ForeignGitInspectionEntry, receipt *ForeignGitInspectionReceipt, sourceBytes *int64) error {
 	next, err := directory.OpenSubdirectory(name)
 	if err != nil {
 		return err
 	}
-	walkErr := foreignGitInspectionWalk(ctx, next, path, entries, receipt, sourceBytes)
+	walkErr := foreignGitInspectionWalk(ctx, next, path, physicalPath, entries, receipt, sourceBytes)
+	verifyErr := next.VerifyPath(physicalPath)
 	closeErr := next.Close()
 	if walkErr != nil {
 		return walkErr
 	}
+	if verifyErr != nil {
+		return verifyErr
+	}
 	return closeErr
 }
 
-func foreignGitInspectionEntry(directory storageworkspaces.DirectoryHandle, name, path string, mode os.FileMode, remainingBytes int64) (ForeignGitInspectionEntry, bool, error) {
+func foreignGitInspectionEntry(ctx context.Context, directory storageworkspaces.DirectoryHandle, name, path string, mode os.FileMode, remainingBytes int64) (ForeignGitInspectionEntry, bool, error) {
 	entry := ForeignGitInspectionEntry{Path: path, Mode: mode, Size: 0}
 	switch {
 	case mode.IsDir():
-		entry.Kind = "directory"
+		entry.Kind = archiveSourceManifestKindDirectory
 		return entry, true, nil
 	case mode.IsRegular():
 		file, err := directory.OpenFile(name)
@@ -271,7 +392,14 @@ func foreignGitInspectionEntry(directory storageworkspaces.DirectoryHandle, name
 		if remainingBytes < limit {
 			limit = remainingBytes
 		}
-		digest, size, err := foreignGitInspectionDigestFileLimit(file, limit)
+		digest, size, err := foreignGitInspectionDigestFileLimit(ctx, file, limit)
+		if err == nil {
+			err = directory.VerifyFileEntry(name, file)
+		}
+		closeErr := file.Close()
+		if err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			return ForeignGitInspectionEntry{}, false, err
 		}
@@ -282,7 +410,7 @@ func foreignGitInspectionEntry(directory storageworkspaces.DirectoryHandle, name
 		if err != nil {
 			return ForeignGitInspectionEntry{}, false, err
 		}
-		entry.Kind, entry.LinkSHA256, entry.Size = "symlink", foreignGitInspectionSHA256([]byte(target)), int64(len(target))
+		entry.Kind, entry.LinkSHA256, entry.Size = archiveSourceManifestKindSymlink, foreignGitInspectionSHA256([]byte(target)), int64(len(target))
 		return entry, false, nil
 	default:
 		return ForeignGitInspectionEntry{}, false, fmt.Errorf("unsupported source file type at %q", path)
@@ -290,30 +418,31 @@ func foreignGitInspectionEntry(directory storageworkspaces.DirectoryHandle, name
 }
 
 func foreignGitInspectionDigestFile(file io.ReadCloser) (string, int64, error) {
-	return foreignGitInspectionDigestFileLimit(file, foreignGitInspectionFileByteLimit)
+	digest, size, err := foreignGitInspectionDigestFileLimit(context.Background(), file, foreignGitInspectionFileByteLimit)
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
+	return digest, size, err
 }
 
 var errForeignGitInspectionByteLimit = fmt.Errorf("foreign Git inspection byte limit exceeded")
 
-func foreignGitInspectionDigestFileLimit(file io.ReadCloser, byteLimit int64) (string, int64, error) {
+func foreignGitInspectionDigestFileLimit(ctx context.Context, file io.ReadCloser, byteLimit int64) (string, int64, error) {
 	statFile, ok := file.(interface{ Stat() (os.FileInfo, error) })
 	if !ok {
-		_ = file.Close()
 		return "", 0, fmt.Errorf("foreign Git inspection cannot verify file identity")
 	}
 	before, statErr := statFile.Stat()
 	if statErr != nil {
-		_ = file.Close()
 		return "", 0, statErr
 	}
 	if before.Size() > byteLimit {
-		_ = file.Close()
 		return "", 0, errForeignGitInspectionByteLimit
 	}
 	h := sha256.New()
-	size, copyErr := io.Copy(h, io.LimitReader(file, byteLimit+1))
+	size, copyErr := foreignGitInspectionCopyContext(ctx, h, file, byteLimit+1)
 	after, afterErr := statFile.Stat()
-	closeErr := file.Close()
 	if copyErr != nil {
 		return "", 0, copyErr
 	}
@@ -323,13 +452,63 @@ func foreignGitInspectionDigestFileLimit(file io.ReadCloser, byteLimit int64) (s
 	if afterErr != nil {
 		return "", 0, afterErr
 	}
-	if closeErr != nil {
-		return "", 0, closeErr
-	}
 	if !os.SameFile(before, after) || before.Size() != after.Size() || before.ModTime() != after.ModTime() || size != after.Size() {
 		return "", 0, fmt.Errorf("foreign Git inspection file changed during capture")
 	}
 	return hex.EncodeToString(h.Sum(nil)), size, nil
+}
+
+func foreignGitInspectionReadFile(ctx context.Context, file io.ReadCloser, limit int64) ([]byte, error) {
+	statFile, ok := file.(interface{ Stat() (os.FileInfo, error) })
+	if !ok {
+		return nil, fmt.Errorf("foreign Git inspection cannot verify file identity")
+	}
+	before, err := statFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if before.Size() > limit {
+		return nil, errForeignGitInspectionByteLimit
+	}
+	var contents strings.Builder
+	contents.Grow(int(before.Size()))
+	if _, err := foreignGitInspectionCopyContext(ctx, &contents, file, limit+1); err != nil {
+		return nil, err
+	}
+	after, err := statFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(before, after) || before.Size() != after.Size() || before.ModTime() != after.ModTime() || int64(contents.Len()) != after.Size() {
+		return nil, errors.New("foreign Git inspection file changed during capture")
+	}
+	return []byte(contents.String()), nil
+}
+
+func foreignGitInspectionCopyContext(ctx context.Context, dst io.Writer, src io.Reader, limit int64) (int64, error) {
+	buffer := make([]byte, 32<<10)
+	var total int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
+		n, readErr := src.Read(buffer)
+		if n > 0 {
+			total += int64(n)
+			if total > limit {
+				return total, errForeignGitInspectionByteLimit
+			}
+			if _, err := dst.Write(buffer[:n]); err != nil {
+				return total, err
+			}
+		}
+		if readErr == io.EOF {
+			return total, nil
+		}
+		if readErr != nil {
+			return total, readErr
+		}
+	}
 }
 
 func foreignGitInspectionTreeDigest(entries []ForeignGitInspectionEntry) string {

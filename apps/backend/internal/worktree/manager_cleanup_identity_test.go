@@ -91,6 +91,14 @@ func (h *postRemovalSwapDirectoryHandle) ReadDir() ([]os.DirEntry, error) {
 	return nil, os.ErrNotExist
 }
 
+func (h *postRemovalSwapDirectoryHandle) ReadDirN(int) ([]os.DirEntry, error) {
+	return nil, os.ErrNotExist
+}
+
+func (h *postRemovalSwapDirectoryHandle) VerifyFileEntry(string, io.ReadCloser) error {
+	return os.ErrNotExist
+}
+
 func (h *postRemovalSwapDirectoryHandle) WriteFile(string, []byte, os.FileMode) error {
 	return errors.New("fake directory handle does not support writes")
 }

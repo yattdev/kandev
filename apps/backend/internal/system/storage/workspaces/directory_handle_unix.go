@@ -303,6 +303,65 @@ func (h *unixDirectoryHandle) ReadDir() ([]os.DirEntry, error) {
 	return entries, closeErr
 }
 
+func (h *unixDirectoryHandle) ReadDirN(n int) ([]os.DirEntry, error) {
+	if h == nil || h.targetFD < 0 {
+		return nil, errors.New("directory handle is closed")
+	}
+	if n <= 0 {
+		return nil, fmt.Errorf("directory entry limit must be positive")
+	}
+	fd, err := unix.Openat(h.targetFD, ".", dependencyDirectoryOpenFlags, 0)
+	if err != nil {
+		return nil, err
+	}
+	directory := os.NewFile(uintptr(fd), "worktree-directory")
+	if directory == nil {
+		_ = unix.Close(fd)
+		return nil, errors.New("create directory reader from handle")
+	}
+	entries, readErr := directory.ReadDir(n)
+	closeErr := directory.Close()
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		return nil, readErr
+	}
+	return entries, closeErr
+}
+
+func (h *unixDirectoryHandle) VerifyFileEntry(name string, expected io.ReadCloser) error {
+	if err := validateDirectoryEntryName(name); err != nil {
+		return err
+	}
+	expectedStat, ok := expected.(interface{ Stat() (os.FileInfo, error) })
+	if !ok {
+		return errors.New("file identity requires stat-capable descriptor")
+	}
+	expectedInfo, err := expectedStat.Stat()
+	if err != nil {
+		return err
+	}
+	current, err := h.OpenFile(name)
+	if err != nil {
+		return err
+	}
+	currentStat, ok := current.(interface{ Stat() (os.FileInfo, error) })
+	if !ok {
+		_ = current.Close()
+		return errors.New("file identity requires stat-capable descriptor")
+	}
+	currentInfo, statErr := currentStat.Stat()
+	closeErr := current.Close()
+	if statErr != nil {
+		return statErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if !os.SameFile(expectedInfo, currentInfo) {
+		return errors.New("directory entry changed while pinned file was read")
+	}
+	return nil
+}
+
 func (h *unixDirectoryHandle) WriteFile(name string, data []byte, mode os.FileMode) error {
 	if h == nil || h.targetFD < 0 {
 		return errors.New("directory handle is closed")

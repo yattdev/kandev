@@ -25,8 +25,38 @@ type DirectoryHandle interface {
 	LstatEntry(name string) (os.FileMode, error)
 	ReadLink(name string) (string, error)
 	ReadDir() ([]os.DirEntry, error)
+	// ReadDirN returns at most n entries from a duplicate pinned directory
+	// handle. It lets read-only callers enforce their own allocation limit.
+	ReadDirN(n int) ([]os.DirEntry, error)
+	// VerifyFileEntry confirms that name still names the opened regular file.
+	VerifyFileEntry(name string, file io.ReadCloser) error
 	ReadFile(name string) ([]byte, error)
 	WriteFile(name string, data []byte, mode os.FileMode) error
+}
+
+// ReadOwnershipMarkerNoFollow reads and validates a marker through an already
+// pinned directory handle. Callers that require ownership proof must reject a
+// missing marker rather than relying on legacy compatibility behavior.
+func ReadOwnershipMarkerNoFollow(handle DirectoryHandle) (OwnershipMarker, bool, error) {
+	if handle == nil {
+		return OwnershipMarker{}, false, errors.New("workspace ownership marker requires an opened directory")
+	}
+	encoded, err := handle.ReadFile(OwnershipMarkerFilename)
+	if errors.Is(err, os.ErrNotExist) {
+		return OwnershipMarker{}, false, nil
+	}
+	if err != nil {
+		return OwnershipMarker{}, false, err
+	}
+	var marker OwnershipMarker
+	if err := json.Unmarshal(encoded, &marker); err != nil {
+		return OwnershipMarker{}, false, fmt.Errorf("decode workspace ownership marker: %w", err)
+	}
+	if marker.TaskID == "" || marker.TaskDirName == "" ||
+		(marker.LayoutVersion != LayoutVersionSemantic && marker.LayoutVersion != LayoutVersionScratch) {
+		return OwnershipMarker{}, false, errors.New("invalid workspace ownership marker fields")
+	}
+	return marker, true, nil
 }
 
 // WriteOwnershipMarkerNoFollow writes an ownership marker through an already
