@@ -101,7 +101,18 @@ func TestInspectForeignGitWorktreeRejectsStaleGenerationAndNonreciprocalPointer(
 	if err := os.WriteFile(filepath.Join(foreignAdmin, "gitdir"), []byte(filepath.Join(t.TempDir(), "other", ".git")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(filepath.Join(foreignAdmin, "refs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range map[string]string{"index": "foreign staging bytes", "refs/head": "foreign ref bytes"} {
+		if err := os.WriteFile(filepath.Join(foreignAdmin, name), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.WriteFile(filepath.Join(checkout, ".git"), []byte("gitdir: "+foreignAdmin+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, "original-source"), []byte("preserve original source"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	updatedAt := time.Date(2026, time.September, 26, 23, 0, 0, 0, time.UTC)
@@ -111,6 +122,7 @@ func TestInspectForeignGitWorktreeRejectsStaleGenerationAndNonreciprocalPointer(
 	if err != nil {
 		t.Fatal(err)
 	}
+	before := fixtureDigest(t, checkout, foreignAdmin)
 
 	if _, err := mgr.InspectForeignGitWorktree(context.Background(), ForeignGitInspectionRequest{
 		RequestID: "inspection-1", TaskID: "original-task", WorktreeID: "original-worktree", ExpectedWorktreeGeneration: "stale",
@@ -129,6 +141,9 @@ func TestInspectForeignGitWorktreeRejectsStaleGenerationAndNonreciprocalPointer(
 	}
 	if receipt.Pointer.ReasonCode != "FOREIGN_ADMIN_UNAUTHORIZED" {
 		t.Fatalf("pointer reason code = %q, want FOREIGN_ADMIN_UNAUTHORIZED", receipt.Pointer.ReasonCode)
+	}
+	if after := fixtureDigest(t, checkout, foreignAdmin); after != before {
+		t.Fatalf("nonreciprocal inspection mutated original/foreign source, pointer, index or refs: before %s, after %s", before, after)
 	}
 }
 

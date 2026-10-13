@@ -60,6 +60,19 @@ live-target invocation. A later comparison operation owns candidate commits,
 provider verification, queue inventory, foreign-owner/backlink confirmation, and
 independent recheck before any repair or retirement.
 
+Existing comparison metadata cannot supply that historical admission:
+`ComparisonTarget` identifies current repository/branch bindings, `PRBase.OID`
+is a transient base consistency check, and `RemoteContribution` validates an
+open provider change. The comparison-only head ref captures an observed commit,
+without accepted-state, tree, original-task, or generation attestation. Archive
+source manifests hash changed paths and require reciprocal registration; they
+are neither full accepted trees nor an immutable provider ledger. Current rows,
+caller completeness/authentication claims, and matching hashes therefore leave
+historical comparison unavailable. An owner-produced immutable accepted-head/tree
+receipt bound to the original task generation needs its own reviewed contract
+before composition; the existing unavailable comparison and exact-retirement
+UNKNOWN projections remain in force meanwhile.
+
 ## Requirement mapping
 
 | Criteria | Design evidence |

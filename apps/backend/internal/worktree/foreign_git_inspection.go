@@ -255,6 +255,9 @@ func foreignGitInspectionCopyContext(ctx context.Context, dst io.Writer, src io.
 			return total, err
 		}
 		n, readErr := src.Read(buffer)
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
 		if n > 0 {
 			total += int64(n)
 			if total > limit {
