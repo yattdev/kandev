@@ -332,6 +332,10 @@ func (h *windowsDirectoryHandle) ReadLink(name string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = windows.CloseHandle(handle) }()
+	return readWindowsLinkHandle(handle)
+}
+
+func readWindowsLinkHandle(handle windows.Handle) (string, error) {
 	buffer := make([]byte, windows.MAXIMUM_REPARSE_DATA_BUFFER_SIZE)
 	var returned uint32
 	if err := windows.DeviceIoControl(

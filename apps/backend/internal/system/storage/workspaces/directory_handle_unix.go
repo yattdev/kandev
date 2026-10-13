@@ -237,31 +237,7 @@ func (h *unixDirectoryHandle) LstatEntry(name string) (os.FileMode, error) {
 	if err := unix.Fstatat(h.targetFD, name, &info, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return 0, err
 	}
-	mode := os.FileMode(info.Mode & 0o777)
-	switch info.Mode & unix.S_IFMT {
-	case unix.S_IFDIR:
-		mode |= os.ModeDir
-	case unix.S_IFLNK:
-		mode |= os.ModeSymlink
-	case unix.S_IFIFO:
-		mode |= os.ModeNamedPipe
-	case unix.S_IFSOCK:
-		mode |= os.ModeSocket
-	case unix.S_IFCHR:
-		mode |= os.ModeDevice | os.ModeCharDevice
-	case unix.S_IFBLK:
-		mode |= os.ModeDevice
-	}
-	if info.Mode&0o4000 != 0 {
-		mode |= os.ModeSetuid
-	}
-	if info.Mode&0o2000 != 0 {
-		mode |= os.ModeSetgid
-	}
-	if info.Mode&0o1000 != 0 {
-		mode |= os.ModeSticky
-	}
-	return mode, nil
+	return unixSnapshotMode(uint64(info.Mode)), nil
 }
 
 func (h *unixDirectoryHandle) ReadLink(name string) (string, error) {

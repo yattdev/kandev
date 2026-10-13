@@ -41,6 +41,18 @@ The receipt has only `PASS`, `BLOCKED`, and `UNKNOWN` values. This slice cannot
 produce `PASS`: a successfully parsed pointer is `BLOCKED` because foreign admin
 access is unauthorized; malformed or incomplete observations are `UNKNOWN`.
 
+Ownership admission retains the authenticated task-root and marker descriptors,
+then descends to the checkout through relative no-follow directory handles. The
+chain stays open through capture, marker revalidation, and the persisted-generation
+reload. A final bounded walk compares every observed path, native object identity,
+mode, size, change metadata, and content or link digest, including the `.git`
+pointer. File metadata comes from the opened descriptor; link targets are bound
+to no-follow link identity. Unsupported native identity fails closed. Snapshots
+stay in memory and are omitted from the redacted receipt. Each walk retains the
+same entry and byte limits. These observations detect replacements visible at
+the checks; they do not prove filesystem quiescence, every transient replacement,
+or index, queue, or provider provenance.
+
 ## Non-goals and follow-up
 
 The seam has no Git subprocess, route registration, persistence, mutation, or
