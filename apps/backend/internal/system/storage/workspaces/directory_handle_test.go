@@ -77,6 +77,30 @@ func TestDirectoryHandleReadsEntriesFromPinnedDirectory(t *testing.T) {
 	}
 }
 
+func TestReadOwnershipMarkerNoFollowContextBoundsAndCancels(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "task")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, OwnershipMarkerFilename), make([]byte, 1024), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	handle, err := OpenDirectoryNoFollow(parent, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = handle.Close() }()
+	if _, _, err := ReadOwnershipMarkerNoFollowContext(context.Background(), handle, 32); err == nil {
+		t.Fatal("accepted oversized marker")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := ReadOwnershipMarkerNoFollowContext(ctx, handle, 2048); err == nil {
+		t.Fatal("read canceled marker")
+	}
+}
+
 func TestDirectoryHandlePinsWorktreeAcrossPathReplacement(t *testing.T) {
 	parent := t.TempDir()
 	original := filepath.Join(parent, "original")

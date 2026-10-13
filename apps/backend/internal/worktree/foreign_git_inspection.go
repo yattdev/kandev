@@ -96,8 +96,11 @@ func (m *Manager) InspectForeignGitWorktree(ctx context.Context, request Foreign
 		return nil, err
 	}
 	receipt := newForeignGitInspectionReceipt(request, wt, generation)
-	if err := m.foreignGitInspectionTaskRootOwner(wt); err != nil {
+	if err := m.foreignGitInspectionTaskRootOwner(ctx, wt); err != nil {
 		receipt.addReason("TASK_ROOT_OWNERSHIP_UNKNOWN")
+		if ctx.Err() != nil {
+			receipt.addReason("SOURCE_WALK_INCOMPLETE")
+		}
 		return receipt, nil
 	}
 	root, err := openArchiveSourceDirectory(filepath.Dir(wt.Path), wt.Path)
@@ -115,7 +118,7 @@ func (m *Manager) InspectForeignGitWorktree(ctx context.Context, request Foreign
 	return receipt, nil
 }
 
-func (m *Manager) foreignGitInspectionTaskRootOwner(wt *Worktree) error {
+func (m *Manager) foreignGitInspectionTaskRootOwner(ctx context.Context, wt *Worktree) error {
 	taskRoot, err := m.foreignGitInspectionTaskRoot(wt)
 	if err != nil {
 		return err
@@ -125,7 +128,7 @@ func (m *Manager) foreignGitInspectionTaskRootOwner(wt *Worktree) error {
 		return fmt.Errorf("open task-root ownership marker: %w", err)
 	}
 	defer func() { _ = handle.Close() }()
-	marker, found, err := storageworkspaces.ReadOwnershipMarkerNoFollow(handle)
+	marker, found, err := storageworkspaces.ReadOwnershipMarkerNoFollowContext(ctx, handle, foreignGitInspectionPointerByteLimit)
 	if err != nil || !found {
 		if err != nil {
 			return fmt.Errorf("read task-root ownership marker: %w", err)

@@ -38,14 +38,40 @@ type DirectoryHandle interface {
 // pinned directory handle. Callers that require ownership proof must reject a
 // missing marker rather than relying on legacy compatibility behavior.
 func ReadOwnershipMarkerNoFollow(handle DirectoryHandle) (OwnershipMarker, bool, error) {
+	return ReadOwnershipMarkerNoFollowContext(context.Background(), handle, 64<<10)
+}
+
+// ReadOwnershipMarkerNoFollowContext bounds and cancels a marker read through
+// a pinned task-root handle.
+func ReadOwnershipMarkerNoFollowContext(ctx context.Context, handle DirectoryHandle, limit int64) (OwnershipMarker, bool, error) {
 	if handle == nil {
 		return OwnershipMarker{}, false, errors.New("workspace ownership marker requires an opened directory")
 	}
-	encoded, err := handle.ReadFile(OwnershipMarkerFilename)
+	if err := ctx.Err(); err != nil {
+		return OwnershipMarker{}, false, err
+	}
+	file, err := handle.OpenFile(OwnershipMarkerFilename)
 	if errors.Is(err, os.ErrNotExist) {
 		return OwnershipMarker{}, false, nil
 	}
 	if err != nil {
+		return OwnershipMarker{}, false, err
+	}
+	defer func() { _ = file.Close() }()
+	if limit < 1 {
+		return OwnershipMarker{}, false, errors.New("workspace ownership marker limit is invalid")
+	}
+	encoded, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return OwnershipMarker{}, false, err
+	}
+	if int64(len(encoded)) > limit {
+		return OwnershipMarker{}, false, errors.New("workspace ownership marker exceeds limit")
+	}
+	if err := ctx.Err(); err != nil {
+		return OwnershipMarker{}, false, err
+	}
+	if err := handle.VerifyFileEntry(OwnershipMarkerFilename, file); err != nil {
 		return OwnershipMarker{}, false, err
 	}
 	var marker OwnershipMarker
