@@ -178,7 +178,9 @@ func (h *unixDirectoryHandle) OpenFile(name string) (io.ReadCloser, error) {
 	if err := validateDirectoryEntryName(name); err != nil {
 		return nil, err
 	}
-	fd, err := unix.Openat(h.targetFD, name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	// Reject special entries before a read; O_NONBLOCK also covers replacement
+	// with a FIFO between path admission and this descriptor open.
+	fd, err := unix.Openat(h.targetFD, name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}

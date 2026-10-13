@@ -50,6 +50,9 @@ func ReadOwnershipMarkerNoFollowContext(ctx context.Context, handle DirectoryHan
 	if err := ctx.Err(); err != nil {
 		return OwnershipMarker{}, false, err
 	}
+	if limit < 1 {
+		return OwnershipMarker{}, false, errors.New("workspace ownership marker limit is invalid")
+	}
 	file, err := handle.OpenFile(OwnershipMarkerFilename)
 	if errors.Is(err, os.ErrNotExist) {
 		return OwnershipMarker{}, false, nil
@@ -58,20 +61,8 @@ func ReadOwnershipMarkerNoFollowContext(ctx context.Context, handle DirectoryHan
 		return OwnershipMarker{}, false, err
 	}
 	defer func() { _ = file.Close() }()
-	if limit < 1 {
-		return OwnershipMarker{}, false, errors.New("workspace ownership marker limit is invalid")
-	}
-	encoded, err := io.ReadAll(io.LimitReader(file, limit+1))
+	encoded, err := readStableOwnershipMarker(ctx, handle, file, limit)
 	if err != nil {
-		return OwnershipMarker{}, false, err
-	}
-	if int64(len(encoded)) > limit {
-		return OwnershipMarker{}, false, errors.New("workspace ownership marker exceeds limit")
-	}
-	if err := ctx.Err(); err != nil {
-		return OwnershipMarker{}, false, err
-	}
-	if err := handle.VerifyFileEntry(OwnershipMarkerFilename, file); err != nil {
 		return OwnershipMarker{}, false, err
 	}
 	var marker OwnershipMarker
