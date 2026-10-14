@@ -182,19 +182,27 @@ func addOwnQuestionItem(r *ownQuestionReceipt, m *models.Message, seen map[strin
 	if err != nil {
 		return err
 	}
-	if rawReceipt := m.Metadata[ownanswer.OwnAnswerReceiptKey]; rawReceipt != nil {
-		data, e := json.Marshal(rawReceipt)
-		if e != nil {
-			return e
-		}
-		var parsed ownanswer.OwnAnswerReceipt
-		if e = json.Unmarshal(data, &parsed); e != nil {
-			return e
-		}
-		item.AnswerReceipt = &parsed
+	item.AnswerReceipt, err = projectOwnAnswerReceipt(m.Metadata[ownanswer.OwnAnswerReceiptKey])
+	if err != nil {
+		return err
 	}
 	r.Questions = append(r.Questions, item)
 	return nil
+}
+
+func projectOwnAnswerReceipt(raw any) (*ownanswer.OwnAnswerReceipt, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var parsed ownanswer.OwnAnswerReceipt
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return nil, err
+	}
+	return &parsed, nil
 }
 
 func ownBundleStatus(items []ownQuestionItem) string {

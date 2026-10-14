@@ -82,7 +82,11 @@ func (s *Server) ownQuestionBackendCall(ctx context.Context, action string, payl
 	if err := s.backend.RequestPayload(ctx, action, payload, &result); err != nil {
 		return mcp.NewToolResultError("own-question operation failed; correlate original status before retry"), nil
 	}
-	return ownQuestionToolResult(result), nil
+	toolResult := ownQuestionToolResult(result)
+	if action == ws.ActionMCPReconcileOwnQuestionAnswer && result["status"] == "not_reconciled" {
+		toolResult.IsError = true
+	}
+	return toolResult, nil
 }
 
 func ownQuestionToolResult(result map[string]interface{}) *mcp.CallToolResult {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/kandev/kandev/internal/clarification"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	mcpscope "github.com/kandev/kandev/internal/mcp/scope"
@@ -17,12 +18,16 @@ type ownAnswerWriter interface {
 }
 
 func (h *Handlers) handleReconcileOwnAnswer(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
-	var b ownanswer.OwnAnswerBinding
+	var request struct {
+		ownanswer.OwnAnswerBinding
+		ResultMode string `json:"result_mode,omitempty"`
+	}
 	decoder := json.NewDecoder(bytes.NewReader(msg.Payload))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&b) != nil || b.Validate() != nil {
+	if decoder.Decode(&request) != nil || request.Validate() != nil || !validOwnAnswerMode(request.ResultMode) {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "exact question and Human message identities/hashes required", nil)
 	}
+	b := request.OwnAnswerBinding
 	caller, err := h.authorizeOwnQuestion(ctx, ownQuestionRequest{TaskID: b.TaskID, SessionID: b.SessionID})
 	if err != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "exact own-task/session answer reconciliation required", nil)
@@ -47,6 +52,9 @@ func (h *Handlers) handleReconcileOwnAnswer(ctx context.Context, msg *ws.Message
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "question still has a live waiter", nil)
 	}
 	rows, changed, err := writer.ReconcileOwnQuestionAnswer(ctx, b)
+	if errors.Is(err, ownanswer.ErrAnswerFormatUnsupported) && request.ResultMode == ownanswer.DispositionMode {
+		return ws.NewResponse(msg.ID, msg.Action, unsupportedOwnAnswerDisposition(b))
+	}
 	if err != nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "stored evidence cannot be securely correlated; preserve the original question and Human message", nil)
 	}
@@ -57,4 +65,8 @@ func (h *Handlers) handleReconcileOwnAnswer(ctx context.Context, msg *ws.Message
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "answer durably bound; read own status before retry", nil)
 	}
 	return ws.NewResponse(msg.ID, msg.Action, map[string]any{"receipt": receipt, "changed": changed, "publication_pending": publishErr != nil})
+}
+
+func validOwnAnswerMode(mode string) bool {
+	return mode == "" || mode == ownanswer.DispositionMode
 }

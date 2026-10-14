@@ -15,6 +15,16 @@ import (
 const OwnAnswerReceiptKey = "own_question_answer_receipt"
 const OwnAnswerBindingKey = "own_question_answer_binding"
 
+// DispositionMode is injected by updated MCP clients, never tool arguments.
+// Older clients keep receiving errors rather than a refusal they might mistake
+// for successful answer reconciliation.
+const DispositionMode = "explicit_disposition_v1"
+
+// ErrAnswerFormatUnsupported never implies permission to select an option or
+// retire the original question. Repositories expose it only after provenance,
+// disconnected/unclaimed state and ambiguity checks have also passed.
+var ErrAnswerFormatUnsupported = errors.New("ANSWER_FORMAT_UNSUPPORTED")
+
 // OwnAnswerBinding names persisted evidence, never a caller-supplied answer.
 type OwnAnswerBinding struct {
 	TaskID            string `json:"task_id"`
@@ -119,7 +129,7 @@ func exactHumanOption(m *models.Message, q Question, contextText string) (string
 		}
 	}
 	if selected == "" {
-		return "", errors.New("human answer does not exactly match the recorded single-choice envelope")
+		return "", ErrAnswerFormatUnsupported
 	}
 	return selected, nil
 }

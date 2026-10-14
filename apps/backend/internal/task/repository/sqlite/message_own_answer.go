@@ -37,6 +37,9 @@ func (r *Repository) ReconcileOwnQuestionAnswer(ctx context.Context, b ownanswer
 		return nil, false, err
 	}
 	answer, receipt, err := ownanswer.CorrelateOwnAnswer(b, qm, am, r.nowUTC())
+	if errors.Is(err, ownanswer.ErrAnswerFormatUnsupported) {
+		return nil, false, r.unsupportedOwnAnswerDisposition(ctx, tx, b, qm, am)
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -59,6 +62,22 @@ func (r *Repository) ReconcileOwnQuestionAnswer(ctx context.Context, b ownanswer
 		return nil, false, err
 	}
 	return []*models.Message{qm}, true, tx.Commit()
+}
+
+// Format alone proves no Human authority. Before reporting a non-retryable
+// disposition, require all the normal read-only guards. Rollback leaves both
+// messages and every queue/session/task record untouched.
+func (r *Repository) unsupportedOwnAnswerDisposition(ctx context.Context, tx *sqlx.Tx, b ownanswer.OwnAnswerBinding, qm, am *models.Message) error {
+	if err := r.verifyOwnHumanAdmission(ctx, tx, b, am, &ownanswer.OwnAnswerReceipt{}); err != nil {
+		return err
+	}
+	if err := guardOwnAnswerUnclaimed(qm, am); err != nil {
+		return err
+	}
+	if err := r.guardOwnAnswerAmbiguity(ctx, tx, b, qm, am); err != nil {
+		return err
+	}
+	return ownanswer.ErrAnswerFormatUnsupported
 }
 
 func ownAnswerReplayMatches(prior any, am *models.Message, want *ownanswer.OwnAnswerReceipt, answer *ownanswer.Answer, qm *models.Message) bool {
