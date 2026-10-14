@@ -206,7 +206,8 @@ type StepDefinition struct {
 	// StageType mirrors WorkflowStep.StageType for templates so the office
 	// default + coordination workflows can declare their UX role
 	// ("work", "review", "approval", "custom") in YAML.
-	StageType StageType `json:"stage_type,omitempty"`
+	StageType            StageType            `json:"stage_type,omitempty"`
+	CompletionGatePolicy CompletionGatePolicy `json:"completion_gate_policy,omitempty" yaml:"completion_gate_policy,omitempty"`
 	// AutoAdvanceRequiresSignal gates on_turn_complete transitions on an
 	// explicit `step_complete_kandev` MCP signal from the agent (ADR 0015).
 	AutoAdvanceRequiresSignal bool `json:"auto_advance_requires_signal,omitempty" yaml:"auto_advance_requires_signal,omitempty"`
@@ -241,7 +242,8 @@ type WorkflowStep struct {
 	// ("work", "review", "approval", "custom"). The engine does not branch
 	// on it. Stored as TEXT in workflow_steps.stage_type, defaulting to
 	// "custom" so existing rows remain unchanged.
-	StageType StageType `json:"stage_type,omitempty"`
+	StageType            StageType            `json:"stage_type,omitempty"`
+	CompletionGatePolicy CompletionGatePolicy `json:"completion_gate_policy,omitempty" yaml:"completion_gate_policy,omitempty"`
 	// AutoAdvanceRequiresSignal gates on_turn_complete transitions on an
 	// explicit `step_complete_kandev` MCP signal from the agent (ADR 0015).
 	// When true, bare turn-end does NOT trigger the step's transition

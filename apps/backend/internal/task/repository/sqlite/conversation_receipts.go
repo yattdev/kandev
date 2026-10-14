@@ -375,6 +375,9 @@ func (r *Repository) CreateTurnWithStepStampConversationReceipt(ctx context.Cont
 			turn.Metadata = map[string]interface{}{}
 		}
 		turn.Metadata[models.TurnMetaKeyWorkflowStepIDAtStart] = stepID
+		if err := r.stampCompletionGeneration(ctx, tx, turn); err != nil {
+			return false, nil, err
+		}
 		stamped = true
 	}
 	if err := r.insertTurnRow(ctx, tx, turn); err != nil {

@@ -373,6 +373,7 @@ func stepMatchesDefinition(existing, desired *models.WorkflowStep) bool {
 		models.EqualWorkflowSessionTarget(existing.SessionTarget, desired.SessionTarget) &&
 		existing.WIPLimit == desired.WIPLimit &&
 		existing.PullFromStepID == desired.PullFromStepID &&
+		existing.CompletionGatePolicy == desired.CompletionGatePolicy &&
 		existing.AutoAdvanceRequiresSignal == desired.AutoAdvanceRequiresSignal &&
 		existing.CancelTriggersTurnComplete == desired.CancelTriggersTurnComplete &&
 		existing.CompleteTaskOnEnter == desired.CompleteTaskOnEnter &&

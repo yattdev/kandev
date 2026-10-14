@@ -125,6 +125,7 @@ func (s *Server) registerConfigWorkflowStepTools() {
 			mcp.WithBoolean("is_start_step", mcp.Description("Whether this is the start step")),
 			mcp.WithBoolean("allow_manual_move", mcp.Description("Allow manual task moves into this step (default: false)")),
 			mcp.WithBoolean("show_in_command_panel", mcp.Description("Show this step in the command panel")),
+			mcp.WithString("completion_gate_policy", mcp.Enum("none", "review", "qa"), mcp.Description("Persisted completion gate. Review and QA require an explicit PASS bound to the current turn.")),
 			mcp.WithBoolean("auto_advance_requires_signal", mcp.Description("Require step_complete_kandev before on_turn_complete auto-advance transitions run")),
 			mcp.WithBoolean("cancel_triggers_turn_complete", mcp.Description("Run on_turn_complete actions when an explicit user cancellation occurs")),
 			mcp.WithBoolean("complete_task_on_enter", mcp.Description("Complete the task when it enters this final workflow step")),
@@ -149,6 +150,7 @@ func (s *Server) registerConfigWorkflowStepTools() {
 			mcp.WithBoolean("allow_manual_move", mcp.Description("Allow manual task moves into this step")),
 			mcp.WithBoolean("show_in_command_panel", mcp.Description("Show this step in the command panel")),
 			mcp.WithNumber("auto_archive_after_hours", mcp.Description("Auto-archive tasks after N hours in this step (0 to disable)")),
+			mcp.WithString("completion_gate_policy", mcp.Enum("none", "review", "qa"), mcp.Description("Persisted completion gate. Review and QA require an explicit PASS bound to the current turn.")),
 			mcp.WithBoolean("auto_advance_requires_signal", mcp.Description("Require step_complete_kandev before on_turn_complete auto-advance transitions run")),
 			mcp.WithBoolean("cancel_triggers_turn_complete", mcp.Description("Run on_turn_complete actions when an explicit user cancellation occurs")),
 			mcp.WithBoolean("complete_task_on_enter", mcp.Description("Complete the task when it enters this final workflow step")),
@@ -521,7 +523,7 @@ func (s *Server) createWorkflowStepHandler() server.ToolHandlerFunc {
 			payload["prompt"] = prompt
 		}
 		args := req.GetArguments()
-		copyWorkflowStepArguments(payload, args, "position", "is_start_step", "allow_manual_move", "show_in_command_panel", "agent_profile_id", "profile_session_start_policy", "profile_session_end_policy", "auto_advance_requires_signal", "cancel_triggers_turn_complete", "complete_task_on_enter", "wip_limit", "pull_from_step_id", "events")
+		copyWorkflowStepArguments(payload, args, "position", "is_start_step", "allow_manual_move", "show_in_command_panel", "agent_profile_id", "profile_session_start_policy", "profile_session_end_policy", "completion_gate_policy", "auto_advance_requires_signal", "cancel_triggers_turn_complete", "complete_task_on_enter", "wip_limit", "pull_from_step_id", "events")
 		return s.forwardToBackend(ctx, ws.ActionMCPCreateWorkflowStep, payload)
 	}
 }
@@ -543,7 +545,7 @@ func (s *Server) updateWorkflowStepHandler() server.ToolHandlerFunc {
 			payload["prompt"] = prompt
 		}
 		args := req.GetArguments()
-		copyWorkflowStepArguments(payload, args, "is_start_step", "allow_manual_move", "show_in_command_panel", "agent_profile_id", "profile_session_start_policy", "profile_session_end_policy", "auto_archive_after_hours", "auto_advance_requires_signal", "cancel_triggers_turn_complete", "complete_task_on_enter", "wip_limit", "pull_from_step_id", "events")
+		copyWorkflowStepArguments(payload, args, "is_start_step", "allow_manual_move", "show_in_command_panel", "agent_profile_id", "profile_session_start_policy", "profile_session_end_policy", "auto_archive_after_hours", "completion_gate_policy", "auto_advance_requires_signal", "cancel_triggers_turn_complete", "complete_task_on_enter", "wip_limit", "pull_from_step_id", "events")
 		return s.forwardToBackend(ctx, ws.ActionMCPUpdateWorkflowStep, payload)
 	}
 }

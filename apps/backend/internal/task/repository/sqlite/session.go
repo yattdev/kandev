@@ -72,6 +72,9 @@ func (r *Repository) CreateTurnWithStepStamp(ctx context.Context, turn *models.T
 			turn.Metadata = map[string]interface{}{}
 		}
 		turn.Metadata[models.TurnMetaKeyWorkflowStepIDAtStart] = stepID
+		if err := r.stampCompletionGeneration(ctx, tx, turn); err != nil {
+			return false, err
+		}
 		stamped = true
 	}
 
@@ -2984,12 +2987,20 @@ func (r *Repository) SetSessionMetadataKeyIfAbsentOrDifferentStepIfTaskAtStep(
 		}
 	}()
 
+	if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), sessionID); err != nil {
+		return false, err
+	}
+
 	_, currentStepID, found, err := r.readTaskStepInTx(ctx, tx, taskID)
 	if err != nil {
 		return false, err
 	}
 	if !found || currentStepID != stepID {
 		return false, nil
+	}
+
+	if err := r.validateCompletionClaimTurn(ctx, tx, taskID, sessionID, value); err != nil {
+		return false, err
 	}
 
 	var sessionTaskID string
@@ -3005,23 +3016,11 @@ func (r *Repository) SetSessionMetadataKeyIfAbsentOrDifferentStepIfTaskAtStep(
 		return false, nil
 	}
 
-	now := time.Now().UTC()
-	driver := r.db.DriverName()
-	path := key
-	stepPath := key
-	if !dialect.IsPostgres(driver) {
-		path = "$." + key
-		stepPath = path + ".step_id"
-	}
-	result, err := tx.ExecContext(ctx, r.db.Rebind(setSessionMetadataKeyIfAbsentOrDifferentStepQuery(driver)),
-		path, string(valueJSON), now, sessionID, stepPath, stepID)
+	rows, err := r.writeCompletionClaim(ctx, tx, sessionID, key, stepID, value, valueJSON)
 	if err != nil {
 		return false, err
 	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
+
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}

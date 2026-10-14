@@ -2370,7 +2370,7 @@ func (s *Service) WorkflowStepRequiresCompletionSignal(ctx context.Context, step
 	if err != nil || step == nil {
 		return false
 	}
-	return step.AutoAdvanceRequiresSignal
+	return step.AutoAdvanceRequiresSignal || step.CompletionGatePolicy.RequiresVerdict()
 }
 
 // SetWorkflowStepGetter sets the workflow step getter for prompt building.

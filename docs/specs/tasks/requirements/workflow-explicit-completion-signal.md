@@ -207,3 +207,15 @@ The pending completion signal continues to use `TaskSession.Metadata` as specifi
   cancelled-turn completion spec.
 - Adding vendor-specific eager-load metadata; agents are expected to use normal MCP tool discovery.
 - Implementing a generic MCP proxy or replacing the ACP bridge.
+
+### REQ-TASKS-WORKFLOW-EXPLICIT-COMPLETION-SIGNAL-004: Durable Review and QA admission
+
+**Intent:** A blocked, failed, absent, or stale gate verdict cannot admit the next workflow step.
+
+#### Acceptance criteria
+
+- **AC-TASKS-WORKFLOW-EXPLICIT-COMPLETION-SIGNAL-004.1:** Review and QA gate identity shall persist independently of display names, including rename, restart, template creation, and workflow import/export.
+- **AC-TASKS-WORKFLOW-EXPLICIT-COMPLETION-SIGNAL-004.2:** Both completion paths shall require a blocker-free explicit PASS bound to the current task, session, step and immutable calling turn. Turn termination alone, an absent verdict, BLOCKED and FAILED shall not admit a successor.
+- **AC-TASKS-WORKFLOW-EXPLICIT-COMPLETION-SIGNAL-004.3:** Explicit user cancellation shall preserve Review and QA verdict requirements, including when cancellation-driven completion is enabled or the separate signal setting is disabled.
+- **AC-TASKS-WORKFLOW-EXPLICIT-COMPLETION-SIGNAL-004.4:** A same-step retry shall invalidate an older turn's completion. Duplicate signals shall preserve the first verdict in the same turn; a fresh turn may replace the prior turn's signal. Rejection shall not publish an advancement event.
+- **AC-TASKS-WORKFLOW-EXPLICIT-COMPLETION-SIGNAL-004.5:** Existing non-gate completion, handoff delivery, source history and pending-move behavior shall remain available. Explicit operator moves remain separate from automatic completion admission.

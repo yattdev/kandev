@@ -14,6 +14,9 @@ import (
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 )
 
+// ErrStaleCompletionTurn rejects signals from a superseded turn or step generation.
+var ErrStaleCompletionTurn = errors.New("calling turn is stale")
+
 // ErrExecutorRunningNotFound is returned when no executor running record exists for a session.
 var ErrExecutorRunningNotFound = errors.New("executor running not found")
 
@@ -715,6 +718,9 @@ const TurnMetaKeyRuntimeConfigSnapshot = "runtime_config_snapshot"
 // was in when the turn started. Absent when the task held no step.
 const TurnMetaKeyWorkflowStepIDAtStart = "workflow_step_id_at_start"
 
+// TurnMetaKeyStepGenerationAtStart identifies the immutable step-ledger generation.
+const TurnMetaKeyStepGenerationAtStart = "workflow_step_generation_at_start"
+
 // TurnMetaKeyLifecycleOnly marks a turn created only to parent a lifecycle
 // message (for example the agent_boot script_execution message on resume).
 // A lifecycle turn never reflects real agent work and must never be current-
@@ -1164,6 +1170,7 @@ const (
 // that the orchestrator should consume to drive a workflow step transition.
 // See ADR 0015 for the lifecycle (set → read → clear).
 type PendingStepCompletionSignal struct {
+	TurnID     string    `json:"turn_id,omitempty"`
 	StepID     string    `json:"step_id"`
 	Source     string    `json:"source"`
 	Summary    string    `json:"summary"`
@@ -1294,6 +1301,7 @@ func LoadPendingStepSignal(metadata map[string]interface{}) (PendingStepCompleti
 	case map[string]interface{}:
 		out := PendingStepCompletionSignal{
 			StepID:   StringFromAny(v["step_id"]),
+			TurnID:   StringFromAny(v["turn_id"]),
 			Source:   StringFromAny(v["source"]),
 			Summary:  StringFromAny(v["summary"]),
 			Handoff:  StringFromAny(v["handoff"]),

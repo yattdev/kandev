@@ -245,24 +245,7 @@ func (s *Service) shouldRunLegacyTurnCompletion(
 	if s.turnCompleteBlockedByUserInput(ctx, task.ID, session.ID, session) {
 		return false
 	}
-	if cause != turnCompletionCauseUserCancellation && currentStep.AutoAdvanceRequiresSignal {
-		signal, has := models.LoadPendingStepSignal(session.Metadata)
-		if !has || signal.StepID != currentStep.ID {
-			s.logger.Debug("on_turn_complete gated on explicit signal (legacy path)",
-				zap.String("step_id", currentStep.ID))
-			s.setSessionWaitingForInput(ctx, task.ID, session.ID, session)
-			return false
-		}
-		if strings.TrimSpace(signal.Blockers) != "" || (completionVerdictRequired(currentStep.Name) && signal.Verdict != models.StepCompletionVerdictPass) {
-			s.logger.Info("on_turn_complete gated on blocked completion signal (legacy path)",
-				zap.String("task_id", task.ID),
-				zap.String("session_id", session.ID),
-				zap.String("step_id", currentStep.ID))
-			s.setSessionWaitingForInput(ctx, task.ID, session.ID, session)
-			return false
-		}
-	}
-	return true
+	return s.allowEngineSignalCompletion(ctx, task.ID, session, currentStep, cause)
 }
 
 func (s *Service) resolveTransitionTargetStep(ctx context.Context, taskID, sessionID string, currentStep *wfmodels.WorkflowStep, action *wfmodels.OnTurnCompleteAction) (string, bool) {
@@ -6123,7 +6106,7 @@ func (s *Service) injectAutoStartRuntimeContext(
 		return recordedPrompt, dispatchPrompt
 	}
 	configMode, _ := state.session.Metadata["config_mode"].(bool)
-	requiresSignal := state.step != nil && state.step.AutoAdvanceRequiresSignal
+	requiresSignal := state.step != nil && (state.step.AutoAdvanceRequiresSignal || state.step.CompletionGatePolicy.RequiresVerdict())
 	referenceContext := EntityReferenceContext(state.references)
 	if isOfficeTask {
 		return sysprompt.InjectOfficeContextWithOptions(
@@ -7669,7 +7652,7 @@ func (s *Service) allowEngineSignalCompletion(
 	currentStep *wfmodels.WorkflowStep,
 	cause turnCompletionCause,
 ) bool {
-	if cause == turnCompletionCauseUserCancellation || !currentStep.AutoAdvanceRequiresSignal {
+	if !currentStep.CompletionGatePolicy.RequiresVerdict() && (cause == turnCompletionCauseUserCancellation || !currentStep.AutoAdvanceRequiresSignal) {
 		return true
 	}
 	signal, has := models.LoadPendingStepSignal(session.Metadata)
@@ -7681,7 +7664,7 @@ func (s *Service) allowEngineSignalCompletion(
 		s.setSessionWaitingForInput(ctx, taskID, session.ID, session)
 		return false
 	}
-	if strings.TrimSpace(signal.Blockers) != "" || (completionVerdictRequired(currentStep.Name) && signal.Verdict != models.StepCompletionVerdictPass) {
+	if strings.TrimSpace(signal.Blockers) != "" || (currentStep.CompletionGatePolicy.RequiresVerdict() && (signal.Verdict != models.StepCompletionVerdictPass || !s.completionSignalMatchesTurn(ctx, session, signal))) {
 		s.logger.Info("on_turn_complete gated on blocked completion signal",
 			zap.String("task_id", taskID),
 			zap.String("session_id", session.ID),
@@ -7698,15 +7681,6 @@ func (s *Service) allowEngineSignalCompletion(
 	// applyEngineTransition's stamp + clear), so don't clear here —
 	// otherwise a failed transition would lose the signal.
 	return true
-}
-
-func completionVerdictRequired(stepName string) bool {
-	switch strings.ToLower(strings.TrimSpace(stepName)) {
-	case models.StepCompletionReviewStepName, models.StepCompletionQAStepName:
-		return true
-	default:
-		return false
-	}
 }
 
 // transitionLifecycleMode identifies the caller-owned part of a transition.

@@ -4,6 +4,7 @@ system: tasks
 requirements:
   - REQ-TASKS-WORKFLOW-EXPLICIT-COMPLETION-SIGNAL-001
   - REQ-TASKS-WORKFLOW-EXPLICIT-COMPLETION-SIGNAL-003
+  - REQ-TASKS-WORKFLOW-EXPLICIT-COMPLETION-SIGNAL-004
 ---
 
 # Completion signal recovery system design
@@ -11,8 +12,8 @@ requirements:
 ## Purpose and boundaries
 
 The tasks system owns completion eligibility and its recovery instructions.
-This design adds diagnostics to the existing completion contract.
-It preserves the current turn stamp, signal claim, and workflow transition rules.
+This design defines completion diagnostics and durable Review/QA admission.
+Gate policy and immutable turn identity constrain the existing signal claim and transition paths.
 
 ## Requirement mapping
 
@@ -119,3 +120,40 @@ omits both fields.
 ## Implementation plans
 
 - [Issue 3772 recovery package](../../../plans/step-completion-stale-turn-recovery/plan.md)
+
+## Durable gate admission
+
+`WorkflowStep.CompletionGatePolicy` persists `none`, `review`, or `qa` in
+`workflow_steps.completion_gate_policy`, and crosses controller, template,
+portable export/import and step-event boundaries. Initial creation/import and
+migration infer Review/QA from the legacy normalized names only when policy is
+absent. Stored policy survives renames; an explicit `none` remains `none`.
+Migration fills only missing policies, so replay preserves operator choices.
+An unknown nonempty policy requires a verdict rather than bypassing admission.
+
+Turn creation stamps the current task step-transition ledger ID in the same transaction as its launch-step stamp. Admission compares that generation with the current ledger, rejecting an older visit even after the task returns to the same step. Missing generation metadata requires a fresh turn.
+
+Gate prompts include the reserved immutable turn ID. The MCP `turn_id` argument
+carries that exact ID, without looking up and substituting a later turn at the
+transport boundary. The handler rejects a missing gate turn ID or a supplied
+ID different from the latest session turn. The persisted signal includes the
+turn ID and verdict. Its claim acquires the session turn-write lock and task-row
+lock, then verifies the latest turn and current step before writing. Same-turn
+claims remain first-wins; a newer turn may replace an older generation's signal.
+
+Both legacy and engine admission require a matching step, no blockers, PASS,
+and the latest session turn with the same immutable launch-step stamp. Missing
+turn identity fails closed. These checks also apply to user cancellation and
+to gate steps with `auto_advance_requires_signal=false`. The flag retains its
+existing behavior for `none` steps. Existing transition, handoff and pending
+move machinery remains responsible for side effects after admission.
+
+This chooses durable policy over name-based runtime dispatch, and explicit
+calling-turn identity over inferring the caller from the latest database row.
+The latter inference cannot distinguish a delayed call from a same-step retry.
+The distinction is an ordering boundary, not a new permission to move tasks.
+
+Verification covers renamed Review and QA gates across both completion paths,
+cancellation, PASS/absent/BLOCKED/FAILED, stale persisted signals, same-step
+handler retries, prompt dispatch, portable projections, restart and SQLite/
+PostgreSQL claim parity under the race detector.

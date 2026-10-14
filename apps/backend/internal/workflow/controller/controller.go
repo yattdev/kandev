@@ -125,26 +125,27 @@ func (c *Controller) CreateStepsFromTemplate(ctx context.Context, req CreateStep
 
 // CreateStepRequest is the request for creating a single workflow step.
 type CreateStepRequest struct {
-	WorkflowID                  string             `json:"workflow_id"`
-	Name                        string             `json:"name"`
-	Position                    int                `json:"position"`
-	Color                       string             `json:"color"`
-	StageType                   *models.StageType  `json:"stage_type,omitempty"`
-	Prompt                      string             `json:"prompt,omitempty"`
-	AgentProfileID              *string            `json:"agent_profile_id,omitempty"`
-	Events                      *models.StepEvents `json:"events,omitempty"`
-	AllowManualMove             bool               `json:"allow_manual_move"`
-	IsStartStep                 *bool              `json:"is_start_step,omitempty"`
-	ShowInCommandPanel          *bool              `json:"show_in_command_panel,omitempty"`
-	AutoAdvanceRequiresSignal   *bool              `json:"auto_advance_requires_signal,omitempty"`
-	CancelTriggersTurnComplete  *bool              `json:"cancel_triggers_turn_complete,omitempty"`
-	CompleteTaskOnEnter         *bool              `json:"complete_task_on_enter,omitempty"`
-	ProfileSessionStartPolicy   *string            `json:"profile_session_start_policy,omitempty"`
-	ProfileSessionEndPolicy     *string            `json:"profile_session_end_policy,omitempty"`
-	DisableUnclassifiedFallback *bool              `json:"disable_unclassified_fallback,omitempty"`
-	SessionTarget               SessionTargetPatch `json:"session_target,omitempty"`
-	WIPLimit                    *int               `json:"wip_limit,omitempty"`
-	PullFromStepID              *string            `json:"pull_from_step_id,omitempty"`
+	WorkflowID                  string                       `json:"workflow_id"`
+	Name                        string                       `json:"name"`
+	Position                    int                          `json:"position"`
+	Color                       string                       `json:"color"`
+	CompletionGatePolicy        *models.CompletionGatePolicy `json:"completion_gate_policy,omitempty"`
+	StageType                   *models.StageType            `json:"stage_type,omitempty"`
+	Prompt                      string                       `json:"prompt,omitempty"`
+	AgentProfileID              *string                      `json:"agent_profile_id,omitempty"`
+	Events                      *models.StepEvents           `json:"events,omitempty"`
+	AllowManualMove             bool                         `json:"allow_manual_move"`
+	IsStartStep                 *bool                        `json:"is_start_step,omitempty"`
+	ShowInCommandPanel          *bool                        `json:"show_in_command_panel,omitempty"`
+	AutoAdvanceRequiresSignal   *bool                        `json:"auto_advance_requires_signal,omitempty"`
+	CancelTriggersTurnComplete  *bool                        `json:"cancel_triggers_turn_complete,omitempty"`
+	CompleteTaskOnEnter         *bool                        `json:"complete_task_on_enter,omitempty"`
+	ProfileSessionStartPolicy   *string                      `json:"profile_session_start_policy,omitempty"`
+	ProfileSessionEndPolicy     *string                      `json:"profile_session_end_policy,omitempty"`
+	DisableUnclassifiedFallback *bool                        `json:"disable_unclassified_fallback,omitempty"`
+	SessionTarget               SessionTargetPatch           `json:"session_target,omitempty"`
+	WIPLimit                    *int                         `json:"wip_limit,omitempty"`
+	PullFromStepID              *string                      `json:"pull_from_step_id,omitempty"`
 }
 
 func rejectNullStepBooleanFields(data []byte) error {
@@ -220,6 +221,9 @@ func (c *Controller) CreateStep(ctx context.Context, req CreateStepRequest) (*Ge
 	if req.SessionTarget.Set {
 		step.SessionTarget = models.CloneWorkflowSessionTarget(req.SessionTarget.Target)
 	}
+	if req.CompletionGatePolicy != nil {
+		step.CompletionGatePolicy = *req.CompletionGatePolicy
+	}
 	if req.AutoAdvanceRequiresSignal != nil {
 		step.AutoAdvanceRequiresSignal = *req.AutoAdvanceRequiresSignal
 	}
@@ -253,27 +257,28 @@ func (c *Controller) CreateStep(ctx context.Context, req CreateStepRequest) (*Ge
 
 // UpdateStepRequest is the request for updating a workflow step.
 type UpdateStepRequest struct {
-	ID                          string             `json:"id"`
-	Name                        *string            `json:"name,omitempty"`
-	Position                    *int               `json:"position,omitempty"`
-	Color                       *string            `json:"color,omitempty"`
-	StageType                   *models.StageType  `json:"stage_type,omitempty"`
-	Prompt                      *string            `json:"prompt,omitempty"`
-	Events                      *models.StepEvents `json:"events,omitempty"`
-	AllowManualMove             *bool              `json:"allow_manual_move,omitempty"`
-	IsStartStep                 *bool              `json:"is_start_step,omitempty"`
-	ShowInCommandPanel          *bool              `json:"show_in_command_panel,omitempty"`
-	AutoArchiveAfterHours       *int               `json:"auto_archive_after_hours,omitempty"`
-	AgentProfileID              *string            `json:"agent_profile_id,omitempty"`
-	AutoAdvanceRequiresSignal   *bool              `json:"auto_advance_requires_signal,omitempty"`
-	CancelTriggersTurnComplete  *bool              `json:"cancel_triggers_turn_complete,omitempty"`
-	CompleteTaskOnEnter         *bool              `json:"complete_task_on_enter,omitempty"`
-	ProfileSessionStartPolicy   *string            `json:"profile_session_start_policy,omitempty"`
-	ProfileSessionEndPolicy     *string            `json:"profile_session_end_policy,omitempty"`
-	DisableUnclassifiedFallback *bool              `json:"disable_unclassified_fallback,omitempty"`
-	SessionTarget               SessionTargetPatch `json:"session_target,omitempty"`
-	WIPLimit                    *int               `json:"wip_limit,omitempty"`
-	PullFromStepID              *string            `json:"pull_from_step_id,omitempty"`
+	ID                          string                       `json:"id"`
+	Name                        *string                      `json:"name,omitempty"`
+	Position                    *int                         `json:"position,omitempty"`
+	Color                       *string                      `json:"color,omitempty"`
+	CompletionGatePolicy        *models.CompletionGatePolicy `json:"completion_gate_policy,omitempty"`
+	StageType                   *models.StageType            `json:"stage_type,omitempty"`
+	Prompt                      *string                      `json:"prompt,omitempty"`
+	Events                      *models.StepEvents           `json:"events,omitempty"`
+	AllowManualMove             *bool                        `json:"allow_manual_move,omitempty"`
+	IsStartStep                 *bool                        `json:"is_start_step,omitempty"`
+	ShowInCommandPanel          *bool                        `json:"show_in_command_panel,omitempty"`
+	AutoArchiveAfterHours       *int                         `json:"auto_archive_after_hours,omitempty"`
+	AgentProfileID              *string                      `json:"agent_profile_id,omitempty"`
+	AutoAdvanceRequiresSignal   *bool                        `json:"auto_advance_requires_signal,omitempty"`
+	CancelTriggersTurnComplete  *bool                        `json:"cancel_triggers_turn_complete,omitempty"`
+	CompleteTaskOnEnter         *bool                        `json:"complete_task_on_enter,omitempty"`
+	ProfileSessionStartPolicy   *string                      `json:"profile_session_start_policy,omitempty"`
+	ProfileSessionEndPolicy     *string                      `json:"profile_session_end_policy,omitempty"`
+	DisableUnclassifiedFallback *bool                        `json:"disable_unclassified_fallback,omitempty"`
+	SessionTarget               SessionTargetPatch           `json:"session_target,omitempty"`
+	WIPLimit                    *int                         `json:"wip_limit,omitempty"`
+	PullFromStepID              *string                      `json:"pull_from_step_id,omitempty"`
 }
 
 // UnmarshalJSON rejects null while preserving omission semantics for updates.
@@ -343,6 +348,9 @@ func (c *Controller) UpdateStep(ctx context.Context, req UpdateStepRequest) (*Ge
 	}
 	if req.SessionTarget.Set {
 		step.SessionTarget = models.CloneWorkflowSessionTarget(req.SessionTarget.Target)
+	}
+	if req.CompletionGatePolicy != nil {
+		step.CompletionGatePolicy = *req.CompletionGatePolicy
 	}
 	if req.AutoAdvanceRequiresSignal != nil {
 		step.AutoAdvanceRequiresSignal = *req.AutoAdvanceRequiresSignal

@@ -971,7 +971,7 @@ func (s *Service) startCreatedSession(
 	launchOptions := executor.LaunchOptions{
 		AgentProfileID:       effectiveProfileID,
 		ExecutorID:           executorID,
-		Prompt:               effectivePrompt,
+		Prompt:               s.completionTurnPrompt(ctx, taskID, initialTurnID, effectivePrompt),
 		StartAgent:           true,
 		RefuseIfAgentRunning: options.refuseIfAgentRunning,
 		McpMode:              mcpMode,
@@ -1882,7 +1882,7 @@ func (s *Service) startTask(ctx context.Context, taskID string, agentProfileID s
 		OfficeAgentProfileID: officeAgentProfileID,
 		ExecutorID:           executorID,
 		TurnID:               initialTurnID,
-		Prompt:               effectivePrompt,
+		Prompt:               s.completionTurnPrompt(ctx, taskID, initialTurnID, effectivePrompt),
 		WorkflowStepID:       workflowStepID,
 		StartAgent:           true,
 		McpMode:              mcpMode,
@@ -6399,7 +6399,7 @@ func (s *Service) runPromptTurn(
 		resumeAttempt,
 	)
 	result, execErr := s.executor.PromptWithAdmissionCallback(
-		promptCtx, taskID, sessionID, effectivePrompt, attachments, dispatchOnly,
+		promptCtx, taskID, sessionID, s.completionTurnPrompt(promptCtx, taskID, rollback.turnID, effectivePrompt), attachments, dispatchOnly,
 		beforeAdmission, onDispatched, session,
 	)
 	return s.finishPromptExecutorDispatch(

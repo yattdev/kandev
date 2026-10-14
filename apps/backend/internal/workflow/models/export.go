@@ -74,6 +74,7 @@ type StepPortable struct {
 	ProfileSessionEndPolicy      taskmodels.WorkflowProfileSessionEndPolicy   `json:"profile_session_end_policy,omitempty" yaml:"profile_session_end_policy,omitempty"`
 	DisableUnclassifiedFallback  bool                                         `json:"disable_unclassified_fallback" yaml:"disable_unclassified_fallback"`
 	AutoAdvanceRequiresSignal    bool                                         `json:"auto_advance_requires_signal" yaml:"auto_advance_requires_signal"`
+	CompletionGatePolicy         CompletionGatePolicy                         `json:"completion_gate_policy" yaml:"completion_gate_policy"`
 	CancelTriggersTurnComplete   bool                                         `json:"cancel_triggers_turn_complete" yaml:"cancel_triggers_turn_complete"`
 	CompleteTaskOnEnter          bool                                         `json:"complete_task_on_enter" yaml:"complete_task_on_enter"`
 	WIPLimit                     int                                          `json:"wip_limit,omitempty" yaml:"wip_limit,omitempty"`
@@ -220,6 +221,7 @@ func buildWorkflowPortable(wf *taskmodels.Workflow, steps []*WorkflowStep, resol
 			DisableUnclassifiedFallback: s.DisableUnclassifiedFallback,
 			SessionTarget:               sessionTarget,
 			AutoAdvanceRequiresSignal:   s.AutoAdvanceRequiresSignal,
+			CompletionGatePolicy:        NormalizeCompletionGatePolicy(s.CompletionGatePolicy, s.Name),
 			CancelTriggersTurnComplete:  s.CancelTriggersTurnComplete,
 			CompleteTaskOnEnter:         s.CompleteTaskOnEnter,
 			WIPLimit:                    s.WIPLimit,

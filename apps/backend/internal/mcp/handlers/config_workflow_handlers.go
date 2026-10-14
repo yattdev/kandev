@@ -162,6 +162,7 @@ func (h *Handlers) handleCreateWorkflowStep(ctx context.Context, msg *ws.Message
 		IsStartStep                *bool                           `json:"is_start_step"`
 		AllowManualMove            *bool                           `json:"allow_manual_move"`
 		ShowInCommandPanel         *bool                           `json:"show_in_command_panel"`
+		CompletionGatePolicy       *wfmodels.CompletionGatePolicy  `json:"completion_gate_policy"`
 		AutoAdvanceRequiresSignal  *bool                           `json:"auto_advance_requires_signal"`
 		CancelTriggersTurnComplete *bool                           `json:"cancel_triggers_turn_complete"`
 		CompleteTaskOnEnter        json.RawMessage                 `json:"complete_task_on_enter"`
@@ -195,6 +196,7 @@ func (h *Handlers) handleCreateWorkflowStep(ctx context.Context, msg *ws.Message
 		ProfileSessionEndPolicy:    req.ProfileSessionEndPolicy,
 		IsStartStep:                req.IsStartStep,
 		ShowInCommandPanel:         req.ShowInCommandPanel,
+		CompletionGatePolicy:       req.CompletionGatePolicy,
 		AutoAdvanceRequiresSignal:  req.AutoAdvanceRequiresSignal,
 		CancelTriggersTurnComplete: req.CancelTriggersTurnComplete,
 		CompleteTaskOnEnter:        completeTaskOnEnter,
@@ -244,6 +246,7 @@ func (h *Handlers) handleUpdateWorkflowStep(ctx context.Context, msg *ws.Message
 		AllowManualMove            *bool                           `json:"allow_manual_move"`
 		ShowInCommandPanel         *bool                           `json:"show_in_command_panel"`
 		AutoArchiveAfterHours      *int                            `json:"auto_archive_after_hours"`
+		CompletionGatePolicy       *wfmodels.CompletionGatePolicy  `json:"completion_gate_policy"`
 		AutoAdvanceRequiresSignal  *bool                           `json:"auto_advance_requires_signal"`
 		CancelTriggersTurnComplete *bool                           `json:"cancel_triggers_turn_complete"`
 		CompleteTaskOnEnter        json.RawMessage                 `json:"complete_task_on_enter"`
@@ -275,6 +278,7 @@ func (h *Handlers) handleUpdateWorkflowStep(ctx context.Context, msg *ws.Message
 		AllowManualMove:            req.AllowManualMove,
 		ShowInCommandPanel:         req.ShowInCommandPanel,
 		AutoArchiveAfterHours:      req.AutoArchiveAfterHours,
+		CompletionGatePolicy:       req.CompletionGatePolicy,
 		AutoAdvanceRequiresSignal:  req.AutoAdvanceRequiresSignal,
 		CancelTriggersTurnComplete: req.CancelTriggersTurnComplete,
 		CompleteTaskOnEnter:        completeTaskOnEnter,

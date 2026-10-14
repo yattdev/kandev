@@ -116,14 +116,17 @@ func TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceLegacyGate(t *testing.
 		t.Helper()
 		repo := setupTestRepo(t)
 		seedSession(t, repo, "task-legacy-gate", "session-legacy-gate", currentStep)
+		if _, err := repo.CreateTurnWithStepStamp(ctx, &models.Turn{ID: "session-legacy-gate-turn", TaskID: "task-legacy-gate", TaskSessionID: "session-legacy-gate"}); err != nil {
+			t.Fatal(err)
+		}
 		stepGetter := newMockStepGetter()
 		stepGetter.steps["review"] = &wfmodels.WorkflowStep{
-			ID: "review", WorkflowID: "wf1", Name: "Review", Position: 1,
+			ID: "review", WorkflowID: "wf1", Name: "Review", Position: 1, CompletionGatePolicy: wfmodels.CompletionGatePolicyReview,
 			AutoAdvanceRequiresSignal: true,
 			Events:                    wfmodels.StepEvents{OnTurnComplete: []wfmodels.OnTurnCompleteAction{{Type: wfmodels.OnTurnCompleteMoveToNext}}},
 		}
 		stepGetter.steps["qa"] = &wfmodels.WorkflowStep{
-			ID: "qa", WorkflowID: "wf1", Name: "QA", Position: 2,
+			ID: "qa", WorkflowID: "wf1", Name: "QA", Position: 2, CompletionGatePolicy: wfmodels.CompletionGatePolicyQA,
 			AutoAdvanceRequiresSignal: true,
 			Events:                    wfmodels.StepEvents{OnTurnComplete: []wfmodels.OnTurnCompleteAction{{Type: wfmodels.OnTurnCompleteMoveToNext}}},
 		}
@@ -142,7 +145,7 @@ func TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceLegacyGate(t *testing.
 			verdict = "BLOCKED"
 		}
 		if err := svc.repo.SetSessionMetadataKey(ctx, "session-legacy-gate", models.SessionMetaKeyPendingStepCompletion, models.PendingStepCompletionSignal{
-			StepID: stepID, Source: models.StepCompletionSourceAgent, Summary: summary, Blockers: blockers, Verdict: verdict, SignaledAt: time.Now().UTC(),
+			TurnID: "session-legacy-gate-turn", StepID: stepID, Source: models.StepCompletionSourceAgent, Summary: summary, Blockers: blockers, Verdict: verdict, SignaledAt: time.Now().UTC(),
 		}); err != nil {
 			t.Fatalf("seed completion signal: %v", err)
 		}
@@ -232,14 +235,17 @@ func TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceGate(t *testing.T) {
 		t.Helper()
 		repo := setupTestRepo(t)
 		seedSession(t, repo, "task-gate", "session-gate", currentStep)
+		if _, err := repo.CreateTurnWithStepStamp(ctx, &models.Turn{ID: "session-gate-turn", TaskID: "task-gate", TaskSessionID: "session-gate"}); err != nil {
+			t.Fatal(err)
+		}
 		stepGetter := newMockStepGetter()
 		stepGetter.steps["review"] = &wfmodels.WorkflowStep{
-			ID: "review", WorkflowID: "wf1", Name: "Review", Position: 1,
+			ID: "review", WorkflowID: "wf1", Name: "Review", Position: 1, CompletionGatePolicy: wfmodels.CompletionGatePolicyReview,
 			AutoAdvanceRequiresSignal: true,
 			Events:                    wfmodels.StepEvents{OnTurnComplete: []wfmodels.OnTurnCompleteAction{{Type: wfmodels.OnTurnCompleteMoveToNext}}},
 		}
 		stepGetter.steps["qa"] = &wfmodels.WorkflowStep{
-			ID: "qa", WorkflowID: "wf1", Name: "QA", Position: 2,
+			ID: "qa", WorkflowID: "wf1", Name: "QA", Position: 2, CompletionGatePolicy: wfmodels.CompletionGatePolicyQA,
 			AutoAdvanceRequiresSignal: true,
 			Events:                    wfmodels.StepEvents{OnTurnComplete: []wfmodels.OnTurnCompleteAction{{Type: wfmodels.OnTurnCompleteMoveToNext}}},
 		}
@@ -258,7 +264,7 @@ func TestProcessOnTurnComplete_BlockedSignalDoesNotAdvanceGate(t *testing.T) {
 			verdict = "BLOCKED"
 		}
 		if err := svc.repo.SetSessionMetadataKey(ctx, "session-gate", models.SessionMetaKeyPendingStepCompletion, models.PendingStepCompletionSignal{
-			StepID: stepID, Source: models.StepCompletionSourceAgent, Summary: summary, Blockers: blockers, Verdict: verdict, SignaledAt: time.Now().UTC(),
+			TurnID: "session-gate-turn", StepID: stepID, Source: models.StepCompletionSourceAgent, Summary: summary, Blockers: blockers, Verdict: verdict, SignaledAt: time.Now().UTC(),
 		}); err != nil {
 			t.Fatalf("seed completion signal: %v", err)
 		}

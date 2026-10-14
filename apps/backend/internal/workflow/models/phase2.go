@@ -44,6 +44,14 @@ const (
 // frontend; the engine itself does not branch on it.
 type StageType string
 
+type CompletionGatePolicy string
+
+const (
+	CompletionGatePolicyNone   CompletionGatePolicy = "none"
+	CompletionGatePolicyReview CompletionGatePolicy = "review"
+	CompletionGatePolicyQA     CompletionGatePolicy = "qa"
+)
+
 const (
 	StageTypeWork     StageType = "work"
 	StageTypeReview   StageType = "review"

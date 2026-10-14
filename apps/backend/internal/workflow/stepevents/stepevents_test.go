@@ -107,6 +107,7 @@ func TestPublishCarriesEveryStepField(t *testing.T) {
 		"profile_session_end_policy":    string(step.ProfileSessionEndPolicy),
 		"disable_unclassified_fallback": step.DisableUnclassifiedFallback,
 		"stage_type":                    string(step.StageType),
+		"completion_gate_policy":        string(step.CompletionGatePolicy),
 		"auto_advance_requires_signal":  step.AutoAdvanceRequiresSignal,
 		"cancel_triggers_turn_complete": step.CancelTriggersTurnComplete,
 		"complete_task_on_enter":        step.CompleteTaskOnEnter,
