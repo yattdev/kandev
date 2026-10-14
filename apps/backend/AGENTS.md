@@ -86,6 +86,7 @@ apps/backend/
 │   ├── secrets/          # Secret management
 │   ├── sprites/          # Sprites AI integration
 │   ├── sysprompt/        # System prompt injection
+│   ├── taskpreview/      # Operator-registered exact-container HTTPS previews; absent registry fails closed
 │   ├── tools/            # Tool integrations
 │   ├── user/             # User management
 │   ├── utility/          # Shared utility functions
@@ -287,7 +288,6 @@ Every built-in SQL schema owner needs a descriptor in `internal/persistence/requ
 For persistence changes, run `go run ./cmd/sqlguard ./internal` and `go test -race ./internal/persistence/storeconformance -count=1`; set `KANDEV_TEST_POSTGRES_DSN` for PostgreSQL coverage and update the explicit-tag upgrade fixture and manifest when schema history changes.
 
 ## Code-quality limits
-
 Enforced by `apps/backend/.golangci.yml` (errors on new code only):
 - Functions: ≤80 lines, ≤50 statements · Cyclomatic complexity: ≤15 · Cognitive complexity: ≤30 · Nesting depth: ≤5 · Naked returns only in functions ≤30 lines · No duplicated blocks (≥150 tokens) · Repeated strings → constants (≥3 occurrences) · Revive's 800-effective-line file limit also applies to test files; put new tests in a new file instead of appending to an already-large test file.
 

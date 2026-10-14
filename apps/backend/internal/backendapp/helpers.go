@@ -1335,6 +1335,7 @@ func registerRoutes(p routeParams) {
 	if p.authSvc != nil {
 		authhttpapi.RegisterRoutes(p.router, p.authSvc, p.services.SessionHostnameResolver, p.log)
 	}
+	registerTaskPreviewRoutes(p)
 
 	// /health is a liveness probe: it answers 200 unconditionally, matching
 	// the bootstrap handler's /health contract (internal/backendapp/

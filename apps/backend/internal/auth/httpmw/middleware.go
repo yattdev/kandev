@@ -302,6 +302,10 @@ func BearerToken(r *http.Request) string {
 // only plugins.Controller.webhook can read; see isPluginWebhookPath below.
 func isPublicPath(method, path string) bool {
 	switch path {
+	case "/api/v1/task-preview/check":
+		// Exact preview key/binding digest and live user/task ACL authenticate
+		// this handler; browser cookies and personal tokens are not used.
+		return method == http.MethodPost
 	case "/health":
 		// CLI + desktop liveness probes poll before any session can exist.
 		return method == http.MethodGet
