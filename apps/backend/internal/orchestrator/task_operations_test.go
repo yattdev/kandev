@@ -2683,6 +2683,11 @@ func TestQueueAndInterruptForPeerMessageRejectsReplacementIncarnationWhileWaitin
 	coordinatorStopWaitForGuardRefs(t, svc, original.ID, 2)
 
 	require.NoError(t, repo.DeleteTaskSession(ctx, original))
+	_, err = repo.DB().ExecContext(ctx, `
+		DELETE FROM agent_delivery_cleanup_jobs
+		WHERE session_id = ? AND incarnation_id = ?
+	`, original.ID, original.QueueIncarnationID)
+	require.NoError(t, err)
 	replacement := &models.TaskSession{
 		ID: original.ID, TaskID: original.TaskID, State: models.TaskSessionStateRunning,
 		StartedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
@@ -4873,6 +4878,23 @@ func (m *mockMessageCreator) CreateSessionMessageIdempotent(_ context.Context, m
 	return nil
 }
 
+func (m *mockMessageCreator) CreateLifecycleSessionMessage(_ context.Context, taskID, content, sessionID, messageType string, metadata map[string]interface{}) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionMessageAttempts++
+	if m.sessionMessageErr != nil {
+		return m.sessionMessageErr
+	}
+	m.sessionMessages = append(m.sessionMessages, mockSessionMessage{
+		taskID:      taskID,
+		content:     content,
+		sessionID:   sessionID,
+		messageType: messageType,
+		metadata:    metadata,
+	})
+	return nil
+}
+
 func (m *mockMessageCreator) CreatePermissionRequestMessage(ctx context.Context, taskID, sessionID, requestID, pendingID, toolCallID, title, turnID string, options []map[string]interface{}, actionType string, actionDetails map[string]interface{}, decision *models.PermissionDecision) (string, error) {
 	m.permissionMessageDecision = decision
 	m.permissionMessageWrites++
@@ -5440,6 +5462,58 @@ func TestStartTask_OfficeWithoutRuntimeEnvFailsClosed(t *testing.T) {
 	assert.Contains(t, err.Error(), "office runtime context")
 	assert.Contains(t, err.Error(), "start or wake the task through Office")
 	assert.False(t, launchCalled)
+}
+
+func TestStartTask_OfficeRecoveryBlockStopsAutonomousLaunch(t *testing.T) {
+	ctx := context.Background()
+	repo := setupTestRepo(t)
+	seedTaskAndSession(t, repo, "task1", "session1", models.TaskSessionStateRunning)
+
+	task, err := repo.GetTask(ctx, "task1")
+	require.NoError(t, err)
+	task.ProjectID = "office-project"
+	require.NoError(t, repo.UpdateTask(ctx, task))
+	session, err := repo.GetTaskSession(ctx, "session1")
+	require.NoError(t, err)
+	session.AgentProfileID = "office-runner"
+	require.NoError(t, repo.UpdateTaskSession(ctx, session))
+	incarnationID := session.QueueIncarnationID
+	if incarnationID == "" {
+		incarnationID = session.ID
+	}
+	require.NoError(t, repo.UpsertSessionRecoveryBlock(ctx, &models.SessionRecoveryBlock{
+		ID:                 "block-1",
+		SessionID:          "session1",
+		IncarnationID:      incarnationID,
+		ExpectedGeneration: 0,
+		Reason:             "native_state_missing",
+		State:              models.RecoveryBlockOpen,
+	}))
+
+	taskRepo := newMockTaskRepo()
+	taskRepo.tasks["task1"] = &v1.Task{
+		ID: "task1", Title: "Office task", State: v1.TaskStateInProgress,
+	}
+	launchCalled := false
+	agentMgr := &mockAgentManager{
+		launchAgentFunc: func(_ context.Context, _ *executor.LaunchAgentRequest) (*executor.LaunchAgentResponse, error) {
+			launchCalled = true
+			return &executor.LaunchAgentResponse{AgentExecutionID: "exec-1"}, nil
+		},
+	}
+	svc := createTestServiceWithScheduler(repo, newMockStepGetter(), taskRepo, agentMgr)
+
+	_, err = svc.StartTaskWithEnv(
+		ctx, "task1", "office-runner", "", "", "", "Do the work",
+		"", false, false, nil, validOfficeRuntimeEnv(),
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSessionRecoveryRequired)
+	assert.False(t, launchCalled)
+
+	block, err := repo.GetOpenSessionRecoveryBlock(ctx, "session1", incarnationID, 0)
+	require.NoError(t, err)
+	assert.Equal(t, "block-1", block.ID)
 }
 
 func TestStartTaskPublishesCreatedSessionBeforeLaunch(t *testing.T) {
@@ -6011,6 +6085,7 @@ func TestResumeTaskSession_FailedKeepsResumeToken(t *testing.T) {
 // without turning it into a fresh session or provider conversation. Worktree
 // materialization itself is covered by the lifecycle tests; this boundary test
 // verifies the request that reaches that materializer.
+// @covers AC-TASKS-WORKTREE-METADATA-RECOVERY-004.9
 func TestRecoverSession_ResumeNewBranchPreservesSessionAndProviderIdentity(t *testing.T) {
 	ctx := context.Background()
 	repo := setupTestRepo(t)
@@ -6064,6 +6139,20 @@ func TestRecoverSession_ResumeNewBranchPreservesSessionAndProviderIdentity(t *te
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}))
+	const recoveryEnvironmentID = "environment-recover-new-branch"
+	worktreePath := filepath.Join(t.TempDir(), "tasks", "task-recover-new-branch", "backend")
+	require.NoError(t, repo.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
+		ID: recoveryEnvironmentID, TaskID: "task-recover-new-branch",
+		ExecutorType: string(models.ExecutorTypeWorktree), ExecutorID: models.ExecutorIDWorktree,
+		Status: models.TaskEnvironmentStatusReady, WorkspacePath: filepath.Dir(worktreePath),
+		TaskDirName: "task-recover-new-branch", OwnershipGeneration: 1,
+		Repos: []*models.TaskEnvironmentRepo{{
+			ID: "environment-repo-recover-new-branch", TaskEnvironmentID: recoveryEnvironmentID,
+			RepositoryID: "repo-recover-new-branch",
+			BranchSlug:   "main", WorktreeID: "worktree-recover-new-branch", WorktreePath: worktreePath,
+			WorktreeBranch: "main", Status: "active", Position: 0,
+		}}, CreatedAt: now, UpdatedAt: now,
+	}))
 
 	session, err := repo.GetTaskSession(ctx, "session-recover-new-branch")
 	require.NoError(t, err)
@@ -6071,6 +6160,7 @@ func TestRecoverSession_ResumeNewBranchPreservesSessionAndProviderIdentity(t *te
 	session.ExecutorID = "executor-recover-new-branch"
 	session.RepositoryID = "repo-recover-new-branch"
 	session.BaseBranch = "main"
+	session.TaskEnvironmentID = recoveryEnvironmentID
 	require.NoError(t, repo.UpdateTaskSession(ctx, session))
 	require.NoError(t, repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
 		ID:               "running-recover-new-branch",
@@ -6083,6 +6173,11 @@ func TestRecoverSession_ResumeNewBranchPreservesSessionAndProviderIdentity(t *te
 		UpdatedAt:        now,
 	}))
 
+	var preflightRequests []worktree.RecoveryAdmissionRequest
+	svc.executor.SetSelectedWorktreeRecoveryAdmission(func(_ context.Context, req worktree.RecoveryAdmissionRequest) (*worktree.RecoveryAdmission, error) {
+		preflightRequests = append(preflightRequests, req)
+		return nil, nil
+	})
 	response, err := svc.RecoverSession(ctx, "task-recover-new-branch", "session-recover-new-branch", "resume_new_branch")
 	require.NoError(t, err)
 	require.NotNil(t, response)
@@ -6092,6 +6187,11 @@ func TestRecoverSession_ResumeNewBranchPreservesSessionAndProviderIdentity(t *te
 	require.Equal(t, "session-recover-new-branch", captured.SessionID)
 	require.Equal(t, "acp-session-recover-new-branch", captured.ACPSessionID)
 	require.True(t, captured.AllowBranchReplacement)
+	require.NotEmpty(t, preflightRequests, "explicit recovery action must reach selected-environment preflight")
+	for _, request := range preflightRequests {
+		require.True(t, request.AllowBranchReplacement, "resume_new_branch preflight must retain its explicit authorization")
+		require.Equal(t, recoveryEnvironmentID, request.TaskEnvironmentID)
+	}
 	require.True(t, captured.UseWorktree)
 	require.Equal(t, "main", captured.Branch)
 	require.Equal(t, "main", captured.BaseBranch)
@@ -6142,6 +6242,19 @@ func TestRecoverSessionDirtyCloneRefusalPreservesResumeTokenAndStampsRepairActio
 		ResumeToken: "provider-conversation-1", Resumable: true, CreatedAt: now, UpdatedAt: now,
 	}))
 	preflightCalls := 0
+	svc.SetWorkspaceRecoveryErrorReporter(workspaceRecoveryErrorReporterFunc(func(
+		reportCtx context.Context,
+		observation models.WorkspaceRecoveryErrorObservation,
+	) (string, error) {
+		projected := models.LastAgentError{
+			Message: "workspace needs explicit relocation", OccurredAt: time.Now().UTC(),
+			Scope: models.ErrorScopeSession, Phase: models.LaunchErrorPhaseBootstrap,
+			Code:            models.LaunchErrorCategoryManagedCloneRelocationRequired,
+			RecoveryActions: []string{models.RecoveryActionRelocateAndResume}, StampValue: "dirty-recovery-test-stamp",
+		}
+		_, stamp, err := repo.CommitWorkspaceRecoveryErrorIfCurrent(reportCtx, observation, projected)
+		return stamp, err
+	}))
 	svc.executor.SetSelectedWorktreeRecoveryAdmission(func(_ context.Context, req worktree.RecoveryAdmissionRequest) (*worktree.RecoveryAdmission, error) {
 		preflightCalls++
 		if req.TaskEnvironmentID != "env-dirty-recovery" || len(req.Slots) != 1 {

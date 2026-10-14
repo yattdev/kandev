@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/kandev/kandev/pkg/pluginsdk"
@@ -16,6 +17,9 @@ import (
 )
 
 func TestPluginExecutorFixtureContract(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Setenv("KANDEV_PLUGIN_FIXTURE_TEST_LOOPBACK", "1")
+	}
 	plugin := newFixturePluginAt(t.TempDir())
 	t.Cleanup(func() { require.NoError(t, plugin.Close()) })
 	profile := &pluginsdk.ExecutorProfileSnapshot{
@@ -71,6 +75,12 @@ func TestPluginExecutorFixtureContract(t *testing.T) {
 	response := fixtureHTTPSRequest(t, plugin, connection.GetLease(), "fixture-request-one")
 	require.Equal(t, "fixture-request-one", response)
 
+	instanceLease, err := plugin.ResolveExecutorConnection(context.Background(), &pluginsdk.ResolveExecutorConnectionRequest{
+		Context: ctx, Resource: provisioned.GetResource(), Purpose: "agentctl", RuntimePort: 41001,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, instanceLease.GetLease(), "agentctl instance ports must be leasable")
+
 	rotated, err := plugin.ResolveExecutorConnection(context.Background(), connectionRequest)
 	require.NoError(t, err)
 	require.NotEqual(t, connection.GetLease().GetGeneration(), rotated.GetLease().GetGeneration())
@@ -95,6 +105,9 @@ func TestPluginExecutorFixtureContract(t *testing.T) {
 }
 
 func TestPluginExecutorFixtureRecoversLostProvisionReplyWithoutAllocatingAgain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Setenv("KANDEV_PLUGIN_FIXTURE_TEST_LOOPBACK", "1")
+	}
 	dir := t.TempDir()
 	t.Setenv(fixtureExecutorBarrierEnv, fixtureBarrierLoseProvisionReplyOnce)
 	profile := &pluginsdk.ExecutorProfileSnapshot{ProfileId: "profile-1", Config: map[string]string{"region": "eu-west-1"}}
@@ -138,6 +151,9 @@ func TestPluginExecutorFixtureReportsAbsentForUnknownOperation(t *testing.T) {
 }
 
 func TestPluginExecutorFixtureFailureBarriersAreRetryable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Setenv("KANDEV_PLUGIN_FIXTURE_TEST_LOOPBACK", "1")
+	}
 	plugin := newFixturePluginAt(t.TempDir())
 	t.Cleanup(func() { require.NoError(t, plugin.Close()) })
 	ctx := &pluginsdk.ExecutorProviderRequestContext{
@@ -150,7 +166,7 @@ func TestPluginExecutorFixtureFailureBarriersAreRetryable(t *testing.T) {
 
 	t.Setenv(fixtureExecutorBarrierEnv, fixtureBarrierUnavailableLeaseOnce)
 	request := &pluginsdk.ResolveExecutorConnectionRequest{
-		Context: ctx, Resource: provisioned.GetResource(), Purpose: "agentctl", RuntimePort: fixtureRuntimePort,
+		Context: ctx, Resource: provisioned.GetResource(), Purpose: "agentctl", RuntimePort: 8765,
 	}
 	blocked, err := plugin.ResolveExecutorConnection(context.Background(), request)
 	require.NoError(t, err)

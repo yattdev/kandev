@@ -51,8 +51,8 @@ type SessionObservationSnapshot struct {
 	ErrorsObserved   bool
 }
 
-// SessionObservationLoader rehydrates session, activity, and error source
-// observations for one task.
+// SessionObservationLoader rehydrates the complete session, activity, and
+// error source observations for one task.
 type SessionObservationLoader func(context.Context, string) (SessionObservationSnapshot, error)
 
 // TaskLaunchErrorObservation reports whether the task-owned launch-error key
@@ -163,6 +163,7 @@ type projectionState struct {
 	queuedCount       int
 	lastActivityAt    *time.Time
 	sessions          map[string]sessionObservation
+	sessionsObserved  bool
 	pending           map[string]string
 	pendingRequests   map[string]pendingRequestIdentity
 	taskPending       string
@@ -202,21 +203,27 @@ type pendingRequestIdentity struct {
 }
 
 type pullRequestObservation struct {
-	state                 string
-	number                int
-	url                   string
-	reviewState           string
-	checksState           string
-	mergeableState        string
-	hasMergeConflicts     *bool
-	mergeQueueState       string
-	unresolvedReviewCount int
-	pendingReviewCount    int
-	requiredReviews       int
-	checksTotal           int
-	checksPassing         int
-	autoFixEnabled        bool
-	autoMergeEnabled      bool
+	state                    string
+	owner                    string
+	repo                     string
+	number                   int
+	url                      string
+	reviewState              string
+	checksState              string
+	mergeableState           string
+	hasMergeConflicts        *bool
+	mergeQueueState          string
+	unresolvedReviewCount    int
+	pendingReviewCount       int
+	requiredReviews          int
+	checksTotal              int
+	checksPassing            int
+	autoFixEnabled           bool
+	autoMergeEnabled         bool
+	headSHA                  string
+	workflowAttentionState   string
+	workflowAttentionHeadSHA string
+	workflowAttentionStale   bool
 }
 
 func NewProjector(cfg ProjectorConfig) *Projector {
@@ -318,6 +325,7 @@ func (p *Projector) Start(ctx context.Context) error {
 		events.TaskUpdated,
 		events.TaskStateChanged,
 		events.TaskSessionStateChanged,
+		events.SessionRemoved,
 		events.TaskSessionActivityChanged,
 		events.TaskSessionErrorChanged,
 		events.MessageAdded,
@@ -453,7 +461,7 @@ func (p *Projector) handleEvent(ctx context.Context, event *bus.Event) error {
 		}
 	}
 	launchQueueChanged := false
-	if p.loadLaunchQueue != nil {
+	if p.loadLaunchQueue != nil && (!state.launchQueueObserved || isLaunchQueueRefreshEvent(event.Type)) {
 		nextQueue, loadErr := p.loadLaunchQueue(ctx, taskID)
 		if loadErr != nil {
 			if event.Type == events.MessageQueueStatusChanged && isMissingTaskLookupErr(loadErr) {
@@ -465,7 +473,8 @@ func (p *Projector) handleEvent(ctx context.Context, event *bus.Event) error {
 			}
 			return fmt.Errorf("load launch queue for task status summary %q: %w", taskID, loadErr)
 		}
-		launchQueueChanged = !state.launchQueueObserved || !equalLaunchQueue(state.launchQueue, nextQueue)
+		launchQueueChanged = state.current == nil || !state.launchQueueObserved ||
+			!equalLaunchQueue(state.launchQueue, nextQueue) || !equalLaunchQueue(state.current.LaunchQueue, nextQueue)
 		state.launchQueue = cloneLaunchQueue(nextQueue)
 		state.launchQueueObserved = true
 	}

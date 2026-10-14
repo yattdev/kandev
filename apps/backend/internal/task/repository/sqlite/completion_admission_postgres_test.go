@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -33,18 +32,16 @@ func checkConcurrentCompletionRevisit(t *testing.T, cas bool) {
 	require.NoError(t, db.GetContext(ctx, &writerPID, `SELECT pg_backend_pid()`))
 	task, err := repo.GetTask(ctx, "commit-task")
 	require.NoError(t, err)
-	metadata, err := json.Marshal(task.Metadata)
-	require.NoError(t, err)
 	tx, err := mover.BeginTx(ctx, nil)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback() }()
 	_, _, _, err = repo.readTaskStepInTx(ctx, tx, task.ID)
 	require.NoError(t, err)
 	task.WorkflowStepID = "other"
-	_, _, err = repo.updateTaskTx(ctx, tx, task, metadata, "", true, false, nil)
+	_, _, err = repo.updateTaskTx(ctx, tx, task, "", true, false, nil)
 	require.NoError(t, err)
 	task.WorkflowStepID = "gate"
-	_, _, err = repo.updateTaskTx(ctx, tx, task, metadata, "", true, false, nil)
+	_, _, err = repo.updateTaskTx(ctx, tx, task, "", true, false, nil)
 	require.NoError(t, err)
 	result := make(chan error, 1)
 	done := make(chan struct{})

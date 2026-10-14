@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { test, expect } from "../../fixtures/test-base";
-import { KanbanPage } from "../../pages/kanban-page";
+import { waitForSessionAgentctlReady } from "../../helpers/session-store";
 import { SessionPage } from "../../pages/session-page";
 
 const TERMINAL_STATES = ["COMPLETED", "FAILED", "CANCELLED"];
@@ -60,9 +60,7 @@ async function preventWorkspaceRestore(page: Page, sessionId: string) {
 }
 
 test.describe("terminal on an ended session", () => {
-  // testPage, not page: it is the fixture that points baseURL at the worker's
-  // own frontend. With the default page, KanbanPage.goto()'s relative "/" has
-  // nothing to resolve against and Playwright rejects it as an invalid URL.
+  // testPage is the fixture that points baseURL at the worker's own frontend.
   for (const restore of [false, true]) {
     test(
       restore
@@ -108,15 +106,12 @@ test.describe("terminal on an ended session", () => {
 
         const endedState = await state();
         const statusReceived = restore ? null : await preventWorkspaceRestore(testPage, sessionId!);
-        const kanban = new KanbanPage(testPage);
-        await kanban.goto();
-        const card = kanban.taskCardByTitle(title);
-        await expect(card).toBeVisible({ timeout: 15_000 });
-        await card.click();
-        await expect(testPage).toHaveURL(/\/t\//, { timeout: 15_000 });
+        await testPage.goto(`/t/${task.id}`);
+        await expect(testPage).toHaveURL(new RegExp(`/t/${task.id}$`));
 
         const session = new SessionPage(testPage);
         await session.waitForLoad();
+        if (restore) await waitForSessionAgentctlReady(testPage, sessionId as string);
 
         const terminalPanel = testPage.getByTestId("terminal-panel").first();
         await expect(terminalPanel).toBeVisible({ timeout: 15_000 });
@@ -131,6 +126,8 @@ test.describe("terminal on an ended session", () => {
               }, sessionId!),
             )
             .toBe("ready");
+          await session.expectTerminalConnected(30_000);
+          await expect(terminalPanel.getByTestId("workspace-unavailable")).toBeHidden();
           await expect
             .poll(() =>
               terminalPanel.locator(".xterm").evaluate((element) => {

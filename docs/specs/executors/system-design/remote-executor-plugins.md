@@ -9,6 +9,7 @@ requirements:
   - REQ-EXECUTORS-PLUGIN-005
   - REQ-EXECUTORS-PLUGIN-006
   - REQ-EXECUTORS-PLUGIN-007
+  - REQ-EXECUTORS-PORT-COLLISION-SAFETY-001
 ---
 
 # Remote executor plugins system design
@@ -36,6 +37,7 @@ It does not implement chat, terminal, files, Git, or another agent protocol.
 | REQ-EXECUTORS-PLUGIN-005 | Plugin lifecycle |
 | REQ-EXECUTORS-PLUGIN-006 | Effective capabilities and expiry |
 | REQ-EXECUTORS-PLUGIN-007 | User interfaces |
+| REQ-EXECUTORS-PORT-COLLISION-SAFETY-001 | Bootstrap and reverse connectivity (loopback probe for Windows test listeners and the task-process port allocator) |
 
 ## Registration and profiles
 
@@ -64,6 +66,10 @@ Keep `ExecutorProfile.Config` as `map[string]string`. The initial schema accepts
 enums, and secret references. Boolean and number values have canonical string encodings.
 Nested provider objects and custom form JavaScript are excluded from this first contract.
 Use existing plugin secret storage for secret fields. Persist references, never secret values.
+A profile may also carry Kandev-owned keys shared with the other remote executors:
+`remote_credentials`, `remote_auth_secrets`, `agent_config_bundles`, `remote_auth_target_home`,
+`git_user_name`, and `git_user_email`. Kandev validates them, never sends them to the provider, and
+treats an empty value as removal. A provider schema that declares one of these names is invalid.
 Redacted reads return presence, not vault IDs or values; updates distinguish unchanged, replace, and clear.
 References are bound to the owning plugin and profile; arbitrary global secret lookup is not allowed.
 
@@ -89,7 +95,7 @@ They use typed envelopes, not generic browser actions.
 | `RecoverExecutorOperation` | Original operation identity and profile snapshot | `found`, `absent`, or `unknown`; resolves lost provision responses |
 | `AttachExecutorEnvironment` | Recorded handle/state, session identity, expected runtime identity | Same environment descriptor; never provisions a replacement |
 | `InspectExecutorEnvironment` | Recorded handle/state | `running`, `suspended`, `terminated`, `absent`, or `unknown`, reason and expiry |
-| `ResolveExecutorConnection` | Recorded handle, purpose `agentctl`, runtime port | Transient connection lease |
+| `ResolveExecutorConnection` | Recorded handle, purpose `agentctl`, runtime port (control or instance) | Transient connection lease |
 | `DestroyExecutorEnvironment` | Recorded handle or unresolved operation identity, cleanup reason and claim | Confirmed absent or retryable failure; idempotent |
 
 Every call carries host-derived plugin installation identity, workspace/task/session/environment IDs,
@@ -127,15 +133,36 @@ The plugin verifies the digest before execution. The fixture transfers it direct
 
 The bootstrap descriptor carries host-selected startup configuration, a one-time nonce, and runtime
 port allocation constraints. It is transient and never included in checkpoints or progress messages.
+The provider starts agentctl with its control server on `runtime_port` and the nonce as its bootstrap
+nonce. agentctl serves each session instance on a separate port that it assigns, so the provider must
+issue leases for the control port and for any instance port the host requests.
 Core owns the existing handshake and encrypted agentctl token persistence. Agent credentials and
-repository credentials follow existing host-to-agentctl setup after authenticated readiness.
+repository credentials follow existing host-to-agentctl setup after authenticated readiness: once
+the session instance is healthy, core writes the credential files and configuration bundles
+selected on the profile through agentctl processes, with contents in the process environment and
+never in the command line, and runs the setup scripts of selected environment-variable methods.
+Upload is best-effort and does not fail the launch, as for the other remote executors.
 Do not put session secrets into reusable image configuration.
 
 The first version requires a Kandev runtime API URL reachable from the remote network.
-Reuse the configured runtime API address and scoped task credentials; reject loopback-only or missing
-addresses before provisioning. Structural validation is not a reachability guarantee.
+It is `githubCredentialBroker.publicBaseUrl` followed by `/api/v1`, the externally reachable address
+already configured for remote executors, and replaces any launch-supplied value. Use scoped task
+credentials; reject loopback-only or missing addresses before provisioning. Structural validation is not a reachability guarantee.
 Bootstrap performs a bounded authenticated callback probe; failure rolls back provisioning.
 Use a fake non-loopback address and controlled transport in unit tests, not a production bypass.
+On Windows the fixture's own unit tests advertise a loopback address
+(`KANDEV_PLUGIN_FIXTURE_TEST_LOOPBACK=1`) so the ephemeral test binary binds loopback instead of
+a non-loopback interface and does not request Firewall access. The fixture's default advertised
+address and listener are unchanged outside tests. This mapping is scoped to the loopback probe: the
+loopback-only regression policy also covers the launcher's Windows port-occupied regression test,
+which holds the probed port with a loopback listener, while production port probing and backend
+port ownership remain owned by the
+[port collision and backend ownership safety](../requirements/port-collision-safety.md) requirement.
+The task-process port allocator (`portutil.AllocatePort`) only needs a port number, so its probe
+binds `127.0.0.1:0` rather than a wildcard address, the same loopback availability signal.
+It closes the probe before returning. The caller must bind the port and may lose
+that race; the result is neither a reservation nor a guarantee of uniqueness or
+availability on wildcard or non-loopback interfaces.
 No new public relay or tunnel broker is introduced.
 
 ## Connection leases
@@ -199,7 +226,9 @@ Provider lifecycle and task-session state remain separate concepts.
    session; never borrow another session's resource or overwrite a shared environment binding.
 3. Claim the session launch and persist `allocating` with operation identity before any provider call.
 4. Invoke provision. The provider checkpoints its handle immediately after allocation.
-5. Transfer/bootstrap agentctl. Resolve the connection lease and perform host authenticated readiness.
+5. Transfer/bootstrap agentctl. Lease the control port, perform the handshake, and create the session
+   instance. Record the instance port in inventory, lease it, and perform authenticated readiness.
+   Recovery and retained reattach lease the recorded instance port.
 6. Materialize credential-free repository locators through existing workspace APIs. Resolve credentials
    through existing secret/Git broker paths and preserve origin scrubbing.
 7. Configure and start the agent through core. Commit ready inventory before publishing success.
@@ -235,6 +264,11 @@ An unsupported state version requires a compatible plugin; the host does not rei
 
 Ordinary agent Stop uses core agentctl behavior and detaches transient transport as appropriate.
 Backend shutdown closes local connections and stops plugin processes without destroying remote compute.
+It must also preserve the remote agentctl and its active agent process. Stopping a local proxy or plugin host must not terminate its remote children.
+This remote lifetime rule is independent of `features.agentSurvival`, which remains an opt-in for local/worktree processes and defaults to off.
+Normal local/worktree shutdown therefore stops local agents by default; remote shutdown detaches transport and preserves ongoing work.
+Startup obtains fresh connection credentials, verifies recorded ownership, and reattaches to the same remote execution.
+The [durable delivery contract](../../platform/requirements/durable-agent-delivery.md) owns long-outage output retention and replay.
 Archive, delete, reset, and failed-launch rollback use host-authorized resource destruction.
 Acquire the existing cleanup claim for environment owner and generation before external teardown.
 Late callbacks and stale claims cannot mutate inventory or destroy a successor resource.

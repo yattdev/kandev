@@ -13,7 +13,17 @@ import (
 	"go.uber.org/zap"
 )
 
-const acpUserRole = "user"
+const (
+	acpUserRole                         = "user"
+	availableCommandKindSkill           = "skill"
+	codexPlanCommandName                = "plan"
+	codexSetConfigOptionActionKind      = "setConfigOption"
+	codexCollaborationModeConfigID      = "collaboration_mode"
+	codexPlanModeValue                  = "plan"
+	codexDefaultModeValue               = "default"
+	codexPlanModePresentation           = "state"
+	normalizedSetConfigOptionActionKind = "set_config_option"
+)
 
 // notifWork is the item type carried on notifQueue. notif is populated for a
 // real SDK notification (the common case); sync identifies a barrier and may
@@ -101,12 +111,20 @@ func (a *Adapter) startUpdateWorker() {
 // matching the SDK's own serial delivery contract.
 func (a *Adapter) runUpdateWorker() {
 	defer a.workerWg.Done()
+	defer a.discardShellSnapshot()
+	var snapshotTick <-chan time.Time
+	if a.shellSnapshotTimer != nil {
+		snapshotTick = a.shellSnapshotTimer.C
+	}
 	for {
 		select {
 		case <-a.lifetimeCtx.Done():
 			return
+		case <-snapshotTick:
+			a.flushDueShellSnapshot()
 		case item := <-a.notifQueue:
 			if item.sync != nil {
+				a.flushShellSnapshot()
 				if item.afterBarrier != nil && a.lifetimeCtx.Err() == nil {
 					item.afterBarrier()
 				}
@@ -164,6 +182,9 @@ func (a *Adapter) handleACPUpdate(
 			return
 		}
 	}
+
+	a.observeContinuationSafety(n, promptGeneration)
+	a.observeCapacityContinuation(n, promptGeneration)
 
 	// Marshal once for both debug logging and tracing.
 	rawData, _ := json.Marshal(n)
@@ -229,6 +250,7 @@ func (a *Adapter) handleACPUpdate(
 			}
 		}
 	}
+	a.stampSessionSettingsReports(sessionID, leadingEvent, event)
 	if leadingEvent != nil {
 		shared.LogNormalizedEvent(shared.ProtocolACP, a.agentID, sessionID, leadingEvent)
 		shared.TraceProtocolEvent(a.getPromptTraceCtx(), shared.ProtocolACP, a.agentID,
@@ -247,7 +269,11 @@ func (a *Adapter) handleACPUpdate(
 		shared.LogNormalizedEvent(shared.ProtocolACP, a.agentID, sessionID, event)
 		shared.TraceProtocolEvent(a.getPromptTraceCtx(), shared.ProtocolACP, a.agentID,
 			event.Type, rawData, event)
-		a.sendUpdate(*event)
+		if shellSnapshotEligible(n, event) {
+			a.sendShellSnapshot(*event, promptGeneration)
+		} else {
+			a.sendUpdate(*event)
+		}
 		a.maybeScheduleAsyncTurnComplete(*event)
 	} else if !handled {
 		if updateJSON, err := json.Marshal(n.Update); err == nil {
@@ -262,6 +288,31 @@ func (a *Adapter) handleACPUpdate(
 			shared.LogNormalizedEvent(shared.ProtocolACP, a.agentID, sessionID, supplemental)
 		}
 	}
+}
+
+func (a *Adapter) stampSessionSettingsReports(sessionID string, events ...*AgentEvent) {
+	needsStamp := false
+	for _, event := range events {
+		if event != nil && (event.Type == streams.EventTypeSessionMode || event.Type == streams.EventTypeSessionModels) {
+			needsStamp = true
+			break
+		}
+	}
+	if !needsStamp {
+		return
+	}
+	a.mu.Lock()
+	if a.sessionID == sessionID && !a.closed {
+		a.sessionSettingsGeneration++
+		for _, event := range events {
+			if event == nil || (event.Type != streams.EventTypeSessionMode && event.Type != streams.EventTypeSessionModels) {
+				continue
+			}
+			event.SessionSettingsPolicy = providerRestoredPolicy(a.sessionSettingsPolicy)
+			event.SessionSettingsGeneration = a.sessionSettingsGeneration
+		}
+	}
+	a.mu.Unlock()
 }
 
 func (a *Adapter) observesResponseAttemptReset(promptGeneration uint64, event *AgentEvent) bool {
@@ -283,7 +334,12 @@ func (a *Adapter) observeCursorRetriableEvidence(promptGeneration uint64, event 
 	}
 	if event.Type == streams.EventTypeMessageChunk && event.Role != acpUserRole &&
 		isCursorRetriableStreamReset(event.Text) {
-		turn.setCursorRetriable()
+		sanitized := streams.SanitizeProviderMessage(event.Text)
+		if sanitized == "" {
+			sanitized = "Error: RetriableError: Provider error"
+		}
+		complete := streams.IsCompleteProviderDiagnostic(event.Text)
+		turn.setCursorRetriable(sanitized, complete)
 		return true
 	}
 	if cursorProviderProgress(event) {
@@ -772,6 +828,7 @@ func (a *Adapter) convertAvailableCommands(sessionID string, update *acp.Session
 			Name:        cmd.Name,
 			Description: acpcompat.NormalizeCommandDescription(a.agentID, cmd.Description),
 		}
+		ac.Kind, ac.Action = normalizeAvailableCommandMetadata(a.agentID, cmd)
 		if cmd.Input != nil && cmd.Input.Unstructured != nil {
 			ac.InputHint = cmd.Input.Unstructured.Hint
 		}
@@ -782,4 +839,37 @@ func (a *Adapter) convertAvailableCommands(sessionID string, update *acp.Session
 		SessionID:         sessionID,
 		AvailableCommands: commands,
 	}
+}
+
+func normalizeAvailableCommandMetadata(agentID string, cmd acp.AvailableCommand) (string, *streams.AvailableCommandAction) {
+	if agentID != codexAgentID {
+		return "", nil
+	}
+	if strings.HasPrefix(cmd.Name, "$") && len(cmd.Name) > 1 {
+		return availableCommandKindSkill, nil
+	}
+	if cmd.Name != codexPlanCommandName {
+		return "", nil
+	}
+	metadata, ok := cmd.Meta["commandAction"].(map[string]any)
+	if !ok {
+		return "", nil
+	}
+	if !isCodexPlanCommandAction(metadata) {
+		return "", nil
+	}
+	return "", &streams.AvailableCommandAction{
+		Kind:       normalizedSetConfigOptionActionKind,
+		ConfigID:   codexCollaborationModeConfigID,
+		Value:      codexPlanModeValue,
+		ResetValue: codexDefaultModeValue,
+	}
+}
+
+func isCodexPlanCommandAction(metadata map[string]any) bool {
+	return metadata["kind"] == codexSetConfigOptionActionKind &&
+		metadata["configId"] == codexCollaborationModeConfigID &&
+		metadata["value"] == codexPlanModeValue &&
+		metadata["resetValue"] == codexDefaultModeValue &&
+		metadata["presentation"] == codexPlanModePresentation
 }

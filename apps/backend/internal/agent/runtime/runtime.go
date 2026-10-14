@@ -36,6 +36,13 @@ type AgentStreamEventPayload = lifecycle.AgentStreamEventPayload
 type AgentExecution = lifecycle.AgentExecution
 type CachedModeState = lifecycle.CachedModeState
 type IdleSuspensionIdentity = lifecycle.IdleSuspensionIdentity
+type DeliveryRecordEvidenceRequest = lifecycle.DeliveryRecordEvidenceRequest
+type DeliveryRecordEvidence = lifecycle.DeliveryRecordEvidence
+type DeliveryRecordSubmissionRequest = lifecycle.DeliveryRecordSubmissionRequest
+type DeliveryRecordSubmission = lifecycle.DeliveryRecordSubmission
+type RetainedPromptFailureError = lifecycle.RetainedPromptFailureError
+type RemoteRecoverySnapshot = lifecycle.RemoteRecoverySnapshot
+type WorkspaceRecoveryProjectionError = lifecycle.WorkspaceRecoveryProjectionError
 type BackgroundWorkloadProbeResult = client.ProbeResult
 
 const (
@@ -44,8 +51,21 @@ const (
 	BackgroundWorkloadProbeResultUnknown = client.ProbeResultUnknown
 )
 
+type CursorMCPAuthenticationSpec = lifecycle.CursorMCPAuthenticationSpec
+type CursorMCPRetryResult = lifecycle.CursorMCPRetryResult
+
 // ErrNoExecutionForSession reports that a session has no live execution.
-var ErrNoExecutionForSession = lifecycle.ErrNoExecutionForSession
+var (
+	ErrNoExecutionForSession              = lifecycle.ErrNoExecutionForSession
+	ErrCursorMCPAuthenticationUnsupported = lifecycle.ErrCursorMCPAuthenticationUnsupported
+	ErrCursorMCPRecoverySessionBusy       = lifecycle.ErrCursorMCPRecoverySessionBusy
+	ErrCursorMCPRecoveryUnavailable       = lifecycle.ErrCursorMCPRecoveryUnavailable
+	ErrDeliveryRecordEvidenceTruncated    = lifecycle.ErrDeliveryRecordEvidenceTruncated
+	ErrDeliveryRecordEvidenceAmbiguous    = lifecycle.ErrDeliveryRecordEvidenceAmbiguous
+	ErrDeliveryRecordEvidenceStale        = lifecycle.ErrDeliveryRecordEvidenceStale
+	ErrDeliveryRecordEvidenceConflict     = lifecycle.ErrDeliveryRecordEvidenceConflict
+	ErrDeliveryRecordEvidenceUnsupported  = lifecycle.ErrDeliveryRecordEvidenceUnsupported
+)
 
 // SessionExecutionControl is the runtime seam for looking up an execution by
 // session and applying a provider-supported session mode.
@@ -80,6 +100,14 @@ type Runtime interface {
 
 	// Resume sends a follow-up prompt to an existing execution.
 	Resume(ctx context.Context, executionID string, prompt string) error
+
+	// InspectDeliveryRecordEvidence returns bounded retained delivery metadata
+	// for one SQL-owned session generation without prompting or mutating it.
+	InspectDeliveryRecordEvidence(ctx context.Context, request DeliveryRecordEvidenceRequest) (*DeliveryRecordEvidence, error)
+
+	// ReadDeliveryRecordSubmission fetches one uniquely selected immutable
+	// payload through the backend-only runtime boundary.
+	ReadDeliveryRecordSubmission(ctx context.Context, request DeliveryRecordSubmissionRequest) (*DeliveryRecordSubmission, error)
 
 	// Stop terminates an execution and records the supplied reason.
 	Stop(ctx context.Context, executionID string, reason string) error

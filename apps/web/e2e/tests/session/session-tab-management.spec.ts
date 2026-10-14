@@ -64,7 +64,6 @@ async function createTaskWithTwoSessions(
   // the session route so this setup does not depend on the board projection
   // catching up with the task creation.
   await testPage.goto(`/t/${task.id}`);
-
   const session = new SessionPage(testPage);
   await session.waitForLoad();
   await expect(session.chat.getByText("simple mock response", { exact: false })).toBeVisible({
@@ -100,7 +99,71 @@ function starInTab(session: SessionPage, sessionId: string) {
 }
 
 test.describe("Session tab management — close behavior", () => {
-  test("tab close button shows delete confirmation and removes session on confirm", async ({
+  test("opt-in tab close hides a panel through reload until explicit reopen", async ({
+    testPage,
+    apiClient,
+    seedData,
+  }) => {
+    test.setTimeout(150_000);
+    const { task, session, session1Id, session2Id } = await createTaskWithTwoSessions(
+      testPage,
+      apiClient,
+      seedData,
+      "Opt-in tab close hides panel",
+    );
+
+    try {
+      await apiClient.saveUserSettings({ agent_tab_close_behavior: "hide_panel" });
+      await expect
+        .poll(async () => (await apiClient.getUserSettings()).settings.agent_tab_close_behavior)
+        .toBe("hide_panel");
+      await testPage.reload();
+      await session.waitForLoad();
+
+      await session.sessionTabBySessionId(session1Id).click();
+      await expect(session.sessionTabCloseButton(session1Id)).toHaveAccessibleName("Hide panel");
+      await session.sessionTabCloseButton(session1Id).click();
+      await expect(session.alertDialog()).not.toBeVisible();
+      await expect
+        .poll(() =>
+          testPage.evaluate(
+            "window.__KANDEV_E2E_STORE__?.getState().tasks.activeSessionId ?? null",
+          ),
+        )
+        .toBe(session2Id);
+      await expect(session.sessionTabBySessionId(session1Id)).not.toBeVisible({ timeout: 5_000 });
+      await expect(session.sessionTabBySessionId(session2Id)).toBeVisible();
+
+      await testPage.reload();
+      await session.waitForLoad();
+      await expect(session.sessionTabBySessionId(session1Id)).not.toBeVisible({ timeout: 5_000 });
+      expect((await apiClient.listTaskSessions(task.id)).sessions).toHaveLength(2);
+
+      await testPage.goto("/");
+      await testPage.reload();
+      await testPage.goto(`/t/${task.id}`);
+      await session.waitForLoad();
+      await expect(session.sessionTabBySessionId(session1Id)).not.toBeVisible();
+      await expect(session.sessionTabBySessionId(session2Id)).toBeVisible();
+      await expect(session.sessionTabCloseButton(session2Id)).not.toBeVisible();
+      await expect
+        .poll(() =>
+          testPage.evaluate(
+            "window.__KANDEV_E2E_STORE__?.getState().tasks.activeSessionId ?? null",
+          ),
+        )
+        .toBe(session2Id);
+
+      await session.addPanelButton().click();
+      await expect(session.sessionReopenItem(session1Id)).toBeVisible();
+      await session.sessionReopenItem(session1Id).click();
+      await expect(session.sessionTabBySessionId(session1Id)).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await apiClient.saveUserSettings({ agent_tab_close_behavior: "delete_session" });
+    }
+  });
+
+  test("tab close button preserves cancellation, then deletes the session on confirm", async ({
     testPage,
     apiClient,
     seedData,
@@ -122,6 +185,14 @@ test.describe("Session tab management — close behavior", () => {
     const dialog = session.alertDialog();
     await expect(dialog).toBeVisible({ timeout: 5_000 });
     await expect(dialog).toContainText("Delete session?");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
+    await expect(session.sessionTabBySessionId(session1Id)).toBeVisible();
+    expect((await apiClient.listTaskSessions(task.id)).sessions).toHaveLength(2);
+
+    await session.sessionTabCloseButton(session1Id).click();
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await expect(dialog).toContainText("Delete session?");
     await dialog.getByRole("button", { name: "Delete" }).click();
     await expect(
       testPage.getByTestId("toast-message").filter({ hasText: "Deleting session" }),
@@ -135,34 +206,6 @@ test.describe("Session tab management — close behavior", () => {
 
     const { sessions } = await apiClient.listTaskSessions(task.id);
     expect(sessions.map((s) => s.id)).toEqual([session2Id]);
-  });
-
-  test("tab close button delete confirmation can be cancelled", async ({
-    testPage,
-    apiClient,
-    seedData,
-  }) => {
-    test.setTimeout(120_000);
-
-    const { task, session, session1Id } = await createTaskWithTwoSessions(
-      testPage,
-      apiClient,
-      seedData,
-      "Tab Close Cancel Delete",
-    );
-
-    await session.sessionTabBySessionId(session1Id).click();
-    await expect(session.sessionTabCloseButton(session1Id)).toBeVisible({ timeout: 5_000 });
-    await session.sessionTabCloseButton(session1Id).click();
-
-    const dialog = session.alertDialog();
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
-    await dialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
-
-    await expect(session.sessionTabBySessionId(session1Id)).toBeVisible();
-    const { sessions } = await apiClient.listTaskSessions(task.id);
-    expect(sessions).toHaveLength(2);
   });
 
   test("deleting a non-active session removes its tab and stays gone", async ({

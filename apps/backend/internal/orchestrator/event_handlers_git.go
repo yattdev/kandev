@@ -29,6 +29,8 @@ const gitSnapshotPersistInterval = 30 * time.Second
 
 const gitSnapshotTriggeredByAgentCompleted = "agent_completed"
 
+const gitSnapshotStatusReady = "ready"
+
 const automaticPermissionMessageWriteMaxAttempts = 3
 
 // gitSnapshotCacheMaxEntries bounds the in-memory throttle map so a long-lived
@@ -120,9 +122,10 @@ func (c *gitSnapshotCache) forget(taskEnvironmentID string) {
 
 func gitStatusHash(s *lifecycle.GitStatusData) string {
 	h := sha256.New()
-	_, _ = fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%d",
+	_, _ = fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s|%s|%s|%t|%s|%d|%d|%d|%d|%d|%d",
 		s.RepositoryName, s.Branch, s.RemoteBranch, s.HeadCommit, s.BaseCommit,
 		s.ComparisonTarget, s.ComparisonStatus, s.ComparisonErrorCode,
+		s.StatusState, s.FilesComplete, s.DetailState, s.TrackerEpoch, s.SnapshotRevision,
 		s.Ahead, s.Behind, s.BranchAdditions, s.BranchDeletions)
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -184,7 +187,9 @@ func (s *Service) handleGitStatusUpdate(ctx context.Context, data watcher.GitEve
 	s.syncPRWatchBranch(ctx, data.TaskID, data.SessionID, data.Status.RepositoryName, data.Status.Branch)
 
 	// Push detection: when ahead goes from >0 to 0, a push happened
-	s.trackPushAndAssociatePR(ctx, data)
+	if gitStatusDetailsAreKnown(data.Status) {
+		s.trackPushAndAssociatePR(ctx, data)
+	}
 
 	// Persist a throttled cache of the live status so the sidebar diff badge
 	// works for tasks whose executor isn't currently running (and across
@@ -197,6 +202,9 @@ func (s *Service) handleGitStatusUpdate(ctx context.Context, data watcher.GitEve
 // appendDBSnapshotGitStatus when no live execution is available.
 func (s *Service) persistGitStatusSnapshot(ctx context.Context, data watcher.GitEventData) {
 	if s.repo == nil || data.SessionID == "" || data.Status == nil {
+		return
+	}
+	if !gitStatusDetailsAreKnown(data.Status) {
 		return
 	}
 	if s.gitSnapshotCache == nil {
@@ -239,6 +247,9 @@ func (s *Service) persistGitStatusSnapshot(ctx context.Context, data watcher.Git
 			"untracked":             st.Untracked,
 			"renamed":               st.Renamed,
 			"timestamp":             data.Timestamp,
+			"status_state":          gitSnapshotStatusReady,
+			"files_complete":        false,
+			"detail_state":          gitSnapshotStatusReady,
 		},
 	}
 	if err := s.repo.UpsertLatestLiveGitSnapshot(ctx, snapshot); err != nil {
@@ -247,6 +258,11 @@ func (s *Service) persistGitStatusSnapshot(ctx context.Context, data watcher.Git
 			zap.String("session_id", data.SessionID),
 			zap.Error(err))
 	}
+}
+
+func gitStatusDetailsAreKnown(status *lifecycle.GitStatusData) bool {
+	return status != nil && (status.StatusState == "" || status.StatusState == gitSnapshotStatusReady) &&
+		(status.DetailState == "" || status.DetailState == gitSnapshotStatusReady)
 }
 
 func (s *Service) resolveGitSnapshotEnvironmentID(ctx context.Context, sessionID string) (string, bool) {
@@ -815,8 +831,9 @@ func (s *Service) handlePermissionRequest(ctx context.Context, data watcher.Perm
 		s.setSessionWaitingForInput(ctx, data.TaskID, data.TaskSessionID)
 	}
 
+	turnID := s.getActiveTurnID(data.TaskSessionID)
+	permissionStored := false
 	if s.messageCreator != nil {
-		turnID := s.getActiveTurnID(data.TaskSessionID)
 		attempts := 0
 		var err error
 	permissionWrite:
@@ -870,6 +887,7 @@ func (s *Service) handlePermissionRequest(ctx context.Context, data watcher.Perm
 				return
 			}
 		} else {
+			permissionStored = true
 			s.logger.Debug("created permission request message",
 				zap.String("task_id", data.TaskID),
 				zap.String("pending_id", data.PendingID))
@@ -905,6 +923,10 @@ func (s *Service) handlePermissionRequest(ctx context.Context, data watcher.Perm
 	}
 	if autoApproved {
 		return
+	}
+
+	if permissionStored && s.unattendedPermissionHandler != nil {
+		s.unattendedPermissionHandler(ctx, data.TaskID, data.TaskSessionID, data.PendingID, turnID)
 	}
 
 	// Automation tasks are hidden from the kanban, so there is no UI for the
@@ -966,11 +988,8 @@ func (s *Service) failAutomationRunOnPermission(ctx context.Context, data watche
 			zap.Error(err))
 	}
 
-	errMsg := fmt.Sprintf("Permission required: %s — automation runs cannot answer prompts", data.Title)
-	if err := s.automationService.MarkRunFailedByTaskID(ctx, data.TaskID, errMsg); err != nil {
-		s.logger.Warn("failed to mark automation run failed after permission prompt",
-			zap.String("task_id", data.TaskID), zap.Error(err))
-	}
+	errMsg := fmt.Sprintf("permission required: %s; automation runs cannot answer prompts", data.Title)
+	s.markAutomationRunTerminal(ctx, data.TaskID, false, errMsg)
 }
 
 // pickRejectOption returns the first option_id with a reject-kind, or "" if
