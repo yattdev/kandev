@@ -263,9 +263,8 @@ func parseStepCompletionEvent(event *bus.Event) (taskID, sessionID, stepID strin
 }
 
 // stepIsSignalGated reports whether the given workflow step opts in to
-// the ADR-0015 explicit-signal gate. False on a missing step-getter or
-// any lookup error — those land the subscriber on the safe side (don't
-// auto-advance a step we can't classify).
+// the explicit-signal gate or a persisted verdict gate. Missing step getters
+// and lookup errors block advancement when the step cannot be classified.
 func (s *Service) stepIsSignalGated(ctx context.Context, stepID string) bool {
 	if s.workflowStepGetter == nil {
 		return false
@@ -276,7 +275,7 @@ func (s *Service) stepIsSignalGated(ctx context.Context, stepID string) bool {
 			zap.String("step_id", stepID), zap.Error(err))
 		return false
 	}
-	if !currentStep.AutoAdvanceRequiresSignal {
+	if !currentStep.AutoAdvanceRequiresSignal && !currentStep.CompletionGatePolicy.RequiresVerdict() {
 		s.logger.Debug("onStepCompletionSignaled: step is not signal-gated, ignoring",
 			zap.String("step_id", currentStep.ID))
 		return false

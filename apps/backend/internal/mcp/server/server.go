@@ -1765,8 +1765,8 @@ func (s *Server) updateRepositoryBaseBranchHandler() server.ToolHandlerFunc {
 // explicit completion signal. The tool is bound to the current (task, session)
 // and writes a pending-signal entry on the session's metadata bag; the
 // orchestrator consumes that signal to drive the workflow's on_turn_complete
-// transitions. Steps with `auto_advance_requires_signal=false` (the legacy
-// default) ignore the signal entirely.
+// transitions. Steps without a signal requirement or persisted verdict gate
+// ignore the signal entirely.
 func (s *Server) registerStepCompleteTool() {
 	s.mcpServer.AddTool(
 		mcp.NewTool("step_complete_kandev",

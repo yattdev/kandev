@@ -2486,8 +2486,8 @@ func classifyAddBranchError(err error) string {
 //     drive the subscriber.
 //   - Publishes events.WorkflowStepCompletionSignaled so the orchestrator
 //     subscriber can drive the on_turn_complete transition for steps with
-//     AutoAdvanceRequiresSignal=true. Steps that don't opt in ignore the
-//     signal entirely; the bag entry is cleared on the next turn start
+//     AutoAdvanceRequiresSignal=true or a persisted verdict gate. Other steps
+//     ignore the signal entirely; the bag entry is cleared on the next turn start
 //     (no separate audit trail is persisted).
 //
 // Idempotency is intentionally lossy — a second call within the same step
@@ -2612,8 +2612,8 @@ func (h *Handlers) handleStepComplete(ctx context.Context, msg *ws.Message) (*ws
 // resolveStepCompletionAdvances reports whether the just-recorded signal will
 // actually move the task, alongside the accepted:true response
 // handleStepComplete always returns. accepted only means the signal was
-// durably recorded — a step whose AutoAdvanceRequiresSignal is false never
-// reads it, so the caller can accept a signal that changes nothing. ok is
+// durably recorded. A step without either a signal requirement or verdict
+// gate ignores it, so the caller can accept a signal that changes nothing. ok is
 // false (both other return values ignored) when the current step cannot be
 // resolved: the caller must never guess this field into existence.
 func (h *Handlers) resolveStepCompletionAdvances(ctx context.Context, workflowStepID, blockers, verdict string) (advances bool, note string, ok bool) {
