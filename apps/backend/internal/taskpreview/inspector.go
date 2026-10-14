@@ -22,7 +22,7 @@ type DockerInspector struct {
 func (d DockerInspector) Validate(ctx context.Context, g Grant) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	format := `{"id":{{json .Id}},"image":{{json .Image}},"running":{{json .State.Running}},"labels":{"com.docker.compose.project":{{json (index .Config.Labels "com.docker.compose.project")}},"com.docker.compose.service":{{json (index .Config.Labels "com.docker.compose.service")}}},"ports":{{json .NetworkSettings.Ports}}}`
+	format := `{"id":{{json .Id}},"image":{{json .Image}},"running":{{json .State.Running}},"started_at":{{json .State.StartedAt}},"labels":{"com.docker.compose.project":{{json (index .Config.Labels "com.docker.compose.project")}},"com.docker.compose.service":{{json (index .Config.Labels "com.docker.compose.service")}}},"ports":{{json .NetworkSettings.Ports}}}`
 	command := exec.CommandContext(ctx, d.Binary, "inspect", "--type", "container", "--format", format, g.ContainerID)
 	command.Env = []string{"PATH=/usr/bin:/bin", "DOCKER_HOST=unix:///var/run/docker.sock", "DOCKER_CONFIG=/run/kandev-preview-empty-docker-config"}
 	b, err := command.Output()
@@ -39,16 +39,17 @@ func (d DockerInspector) Validate(ctx context.Context, g Grant) error {
 }
 func ValidateInspection(b []byte, g Grant) error {
 	var record struct {
-		ID      string            `json:"id"`
-		Image   string            `json:"image"`
-		Running bool              `json:"running"`
-		Labels  map[string]string `json:"labels"`
-		Ports   map[string][]struct {
+		ID        string            `json:"id"`
+		Image     string            `json:"image"`
+		Running   bool              `json:"running"`
+		StartedAt string            `json:"started_at"`
+		Labels    map[string]string `json:"labels"`
+		Ports     map[string][]struct {
 			HostIP   string `json:"HostIp"`
 			HostPort string `json:"HostPort"`
 		} `json:"ports"`
 	}
-	if json.Unmarshal(b, &record) != nil || record.ID != g.ContainerID || record.Image != g.ImageID || !record.Running ||
+	if json.Unmarshal(b, &record) != nil || record.ID != g.ContainerID || record.Image != g.ImageID || !record.Running || record.StartedAt != g.ContainerStartedAt ||
 		record.Labels["com.docker.compose.project"] != g.Project || record.Labels["com.docker.compose.service"] != g.Service {
 		return ErrDenied
 	}

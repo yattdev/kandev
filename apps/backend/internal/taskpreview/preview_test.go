@@ -66,6 +66,7 @@ func newFixture(t *testing.T) *fixture {
 	port, _ := strconv.Atoi(u.Port())
 	f.grant = Grant{ID: "85278886-f97b-4219-b7ba-9182f7059c69", ApprovalID: "5047d7b6-8074-4e24-a025-7912eb4223d8", TaskID: "afdb2ef3-06ca-4cd5-a074-c4e691679da9", WorkspaceID: "2e62401b-5ffe-4050-bc1b-d49ea5d5dbcd", UserID: "owner", TaskRoot: "/data/tasks/fixture", CWD: "/data/tasks/fixture/ct", ContainerID: strings.Repeat("a", 64), ImageID: "sha256:" + strings.Repeat("b", 64), Project: "kd_" + strings.Repeat("c", 24), Service: "core", HostPort: port, ContainerPort: 59430, MainOrigin: "https://main.example.test", PreviewOrigin: "https://isolated.example.test:59433", IssuedAt: f.clock.Load(), ExpiresAt: f.clock.Load() + 86400}
 	f.grant.ApprovalSHA256 = strings.Repeat("a", 64)
+	f.grant.ContainerStartedAt = time.Unix(f.clock.Load()-60, 0).UTC().Format(time.RFC3339Nano)
 	f.grant.EnvironmentID = "0e3a05ec-e777-42a1-bdca-7dd4a8e75dbb"
 	f.grant.ListenAddress = "127.0.0.1:59433"
 	model, _ := json.Marshal(map[string]string{"task_root": f.grant.TaskRoot, "cwd": f.grant.CWD, "project": f.grant.Project})
@@ -112,7 +113,7 @@ func newFixture(t *testing.T) *fixture {
 		if !f.container.Load() {
 			return ErrDenied
 		}
-		b, _ := json.Marshal(map[string]any{"id": g.ContainerID, "image": g.ImageID, "running": true, "labels": map[string]string{"com.docker.compose.project": g.Project, "com.docker.compose.service": g.Service}, "ports": map[string]any{"59430/tcp": []map[string]string{{"HostIp": "127.0.0.1", "HostPort": strconv.Itoa(g.HostPort)}}}})
+		b, _ := json.Marshal(map[string]any{"id": g.ContainerID, "image": g.ImageID, "running": true, "started_at": g.ContainerStartedAt, "labels": map[string]string{"com.docker.compose.project": g.Project, "com.docker.compose.service": g.Service}, "ports": map[string]any{"59430/tcp": []map[string]string{{"HostIp": "127.0.0.1", "HostPort": strconv.Itoa(g.HostPort)}}}})
 		if err := ValidateInspection(b, g); err != nil {
 			return err
 		}

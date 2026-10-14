@@ -66,7 +66,7 @@ func TestWebSocketAuthorizedThenExpiredOrRevoked(t *testing.T) {
 
 func TestInspectionRejectsTargetSubstitution(t *testing.T) {
 	f := newFixture(t)
-	valid := `{"id":"` + f.grant.ContainerID + `","image":"` + f.grant.ImageID + `","running":true,"labels":{"com.docker.compose.project":"` + f.grant.Project + `","com.docker.compose.service":"core"},"ports":{"59430/tcp":[{"HostIp":"127.0.0.1","HostPort":"` + strconv.Itoa(f.grant.HostPort) + `"}]}}`
+	valid := `{"id":"` + f.grant.ContainerID + `","image":"` + f.grant.ImageID + `","running":true,"started_at":"` + f.grant.ContainerStartedAt + `","labels":{"com.docker.compose.project":"` + f.grant.Project + `","com.docker.compose.service":"core"},"ports":{"59430/tcp":[{"HostIp":"127.0.0.1","HostPort":"` + strconv.Itoa(f.grant.HostPort) + `"}]}}`
 	if ValidateInspection([]byte(valid), f.grant) != nil {
 		t.Fatal("valid inspection denied")
 	}
