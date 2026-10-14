@@ -105,3 +105,44 @@ func (r *Repository) CompletionTurnCurrent(ctx context.Context, taskID, sessionI
 	err = r.validateCompletionClaimTurn(ctx, tx, taskID, sessionID, models.PendingStepCompletionSignal{TurnID: turnID})
 	return err == nil, err
 }
+
+func (r *Repository) lockStepCompletionAdmission(ctx context.Context, tx *sql.Tx) error {
+	admission, ok := models.StepCompletionAdmissionFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	if admission.SessionID == "" {
+		return models.ErrStaleCompletionTurn
+	}
+	return lockSessionTurnWrites(ctx, tx, r.db.DriverName(), admission.SessionID)
+}
+
+func (r *Repository) validateStepCompletionAdmission(ctx context.Context, tx *sql.Tx, taskID, stepID string) error {
+	admission, ok := models.StepCompletionAdmissionFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	if admission.TaskID != taskID || admission.StepID != stepID || admission.TurnID == "" {
+		return models.ErrStaleCompletionTurn
+	}
+	query := `SELECT task_id,metadata FROM task_sessions WHERE id = ?`
+	if dialect.IsPostgres(r.db.DriverName()) {
+		query += forUpdateSuffix
+	}
+	var sessionTaskID string
+	var metadata sql.NullString
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(query), admission.SessionID).Scan(&sessionTaskID, &metadata); err != nil {
+		return err
+	}
+	var bag map[string]interface{}
+	if metadata.Valid {
+		if err := json.Unmarshal([]byte(metadata.String), &bag); err != nil {
+			return err
+		}
+	}
+	signal, has := models.LoadPendingStepSignal(bag)
+	if sessionTaskID != taskID || !has || signal.StepID != stepID || signal.TurnID != admission.TurnID || signal.Verdict != models.StepCompletionVerdictPass || strings.TrimSpace(signal.Blockers) != "" {
+		return models.ErrStaleCompletionTurn
+	}
+	return r.validateCompletionClaimTurn(ctx, tx, taskID, admission.SessionID, signal)
+}

@@ -401,6 +401,7 @@ func (s *workflowStore) applyTransition(
 	// carry old_workflow_id on the task.updated payload — the frontend uses
 	// that field to remove the task from its previous workflow's snapshot
 	// instead of leaving a stale duplicate until reload.
+	ctx = models.WithoutStepCompletionAdmission(ctx)
 	s.publishTaskUpdated(ctx, task, oldWorkflowID)
 
 	if deferredMove == nil && task.QueuedForStepID == "" {
@@ -522,6 +523,7 @@ func (s *workflowStore) applyTransitionIfAtStep(
 		return false, nil
 	}
 
+	ctx = models.WithoutStepCompletionAdmission(ctx)
 	s.publishTaskUpdated(ctx, task, oldWorkflowID)
 
 	if task.QueuedForStepID == "" {

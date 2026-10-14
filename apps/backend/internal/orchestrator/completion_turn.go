@@ -6,6 +6,7 @@ import (
 
 	"github.com/kandev/kandev/internal/sysprompt"
 	"github.com/kandev/kandev/internal/task/models"
+	wfmodels "github.com/kandev/kandev/internal/workflow/models"
 )
 
 type completionTurnReader interface {
@@ -51,4 +52,12 @@ func (s *Service) completionTurnPrompt(ctx context.Context, taskID, turnID, prom
 		return prompt
 	}
 	return sysprompt.Wrap(fmt.Sprintf("Kandev completion turn ID: %s. Pass this exact ID as turn_id to step_complete_kandev. A Review or QA gate requires verdict PASS; absent or failed verdicts do not advance.", turnID)) + "\n\n" + prompt
+}
+
+func completionAdmissionContext(ctx context.Context, step *wfmodels.WorkflowStep, session *models.TaskSession) context.Context {
+	if step == nil || !step.CompletionGatePolicy.RequiresVerdict() {
+		return ctx
+	}
+	signal, _ := models.LoadPendingStepSignal(session.Metadata)
+	return models.WithStepCompletionAdmission(ctx, models.StepCompletionAdmission{TaskID: session.TaskID, SessionID: session.ID, StepID: step.ID, TurnID: signal.TurnID})
 }

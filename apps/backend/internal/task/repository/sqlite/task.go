@@ -1960,6 +1960,10 @@ func (r *Repository) updateTaskWithWorkflowStepAdmissionAttempt(
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if err := r.lockStepCompletionAdmission(ctx, tx); err != nil {
+		return false, false, err
+	}
+
 	if exactOperation != nil {
 		var storedWorkspaceID, storedTaskID, storedDigest, resultVersion string
 		replayErr := tx.QueryRowContext(ctx, r.db.Rebind(`
@@ -2026,6 +2030,9 @@ func (r *Repository) updateTaskWithWorkflowStepAdmissionAttempt(
 	}
 	if !found {
 		return false, false, fmt.Errorf("%w: %s", ErrTaskNotFound, task.ID)
+	}
+	if err := r.validateStepCompletionAdmission(ctx, tx, task.ID, actualSourceStepID); err != nil {
+		return false, false, err
 	}
 	if actualSourceStepID != sourceStepID {
 		if workflowChangeSource != nil {

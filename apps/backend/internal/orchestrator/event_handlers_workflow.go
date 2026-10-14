@@ -176,7 +176,7 @@ func (s *Service) processOnTurnCompleteWithCause(
 	if cause == turnCompletionCauseUserCancellation {
 		ctx = cancellationTransitionAttribution(ctx)
 	}
-	s.executeStepTransition(ctx, taskID, sessionID, currentStep, targetStepID, true)
+	s.executeStepTransition(completionAdmissionContext(ctx, currentStep, session), taskID, sessionID, currentStep, targetStepID, true)
 	return true
 }
 
@@ -522,6 +522,7 @@ func (s *Service) executeStepTransition(ctx context.Context, taskID, sessionID s
 		legacyTrigger = engine.TriggerOnTurnComplete
 	}
 	transitionCtx := engineTransitionAttribution(ctx, sessionID, legacyTrigger)
+	ctx = models.WithoutStepCompletionAdmission(ctx)
 	fromStepID := ""
 	if fromStep != nil {
 		fromStepID = fromStep.ID
@@ -7928,6 +7929,9 @@ func (s *Service) applyEngineTransitionWithCommitMode(
 	if mode == transitionLifecycleWithOnEnter {
 		stepEntry = &stepentry.AllocationResult{}
 		applyCtx = stepentry.WithResultHolder(applyCtx, stepEntry)
+	}
+	if trigger == engine.TriggerOnTurnComplete {
+		applyCtx = completionAdmissionContext(applyCtx, fromStep, session)
 	}
 	applied, err := commit(applyCtx)
 	if err != nil {

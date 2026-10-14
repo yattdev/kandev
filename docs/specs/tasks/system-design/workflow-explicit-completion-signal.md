@@ -157,3 +157,33 @@ Verification covers renamed Review and QA gates across both completion paths,
 cancellation, PASS/absent/BLOCKED/FAILED, stale persisted signals, same-step
 handler retries, prompt dispatch, portable projections, restart and SQLite/
 PostgreSQL claim parity under the race detector.
+
+## Atomic completion transition
+
+The standalone turn check is preflight, not final admission authority. A task
+can leave and return to the same step after that check while retaining the
+same step ID. Process-local session guards do not serialize an idle task's
+manual moves.
+
+Automatic gate transitions carry a `StepCompletionAdmission` containing the
+accepted task, session, step and turn identity to the repository write. The
+legacy path preserves the originally admitted session snapshot; the engine
+binds that same snapshot at its commit callback. This context is scoped to the
+source write and removed before destination lifecycle work, so it cannot
+silently authorize a later move.
+
+The shared capacity/CAS transition transaction acquires the session turn-write
+lock before workspace/step/task locks. With the task row locked, it locks and
+reads the session metadata, verifies the matching blocker-free durable PASS,
+and compares the latest turn's immutable step-ledger generation with the
+current task ledger. The same transaction then commits the step change or
+queued arrival. A stale proof rejects the write without consuming its signal,
+creating destination state or a transition receipt. Both completion funnels
+use this boundary; ordinary manual and non-gate moves carry no such proof.
+
+A deterministic event-subscriber test schedules real away/return writes after
+real preflight has returned and before the move commits, across both gate
+policies and both funnels. Repository parity tests cover valid, revisited,
+new-turn, blocked and cleared-signal proofs in SQLite and PostgreSQL. Separate
+PostgreSQL connections hold a real task-row move transaction open and verify
+completion waits on the server lock, then rejects its superseded generation.
