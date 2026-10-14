@@ -283,6 +283,9 @@ func inspectLinkedWorktree(path string) linkedWorktreeInspection {
 
 	gitFile := filepath.Join(path, ".git")
 	gitInfo, err := os.Lstat(gitFile)
+	if err == nil && gitInfo.IsDir() {
+		return inspectAdoptedCheckout(path, gitInfo, verifyOperatorAdoption)
+	}
 	if err != nil || !gitInfo.Mode().IsRegular() {
 		return linkedWorktreeInspection{class: linkedWorktreeAmbiguous, reason: "checkout git pointer is not a regular file"}
 	}

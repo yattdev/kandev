@@ -15,6 +15,7 @@ import (
 	"github.com/kandev/kandev/internal/clarification"
 	mcpscope "github.com/kandev/kandev/internal/mcp/scope"
 	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/task/ownanswer"
 	ws "github.com/kandev/kandev/pkg/websocket"
 )
 
@@ -33,17 +34,18 @@ type ownQuestionRequest struct {
 }
 
 type ownQuestionItem struct {
-	QuestionID        string                `json:"question_id"`
-	PendingID         string                `json:"pending_id,omitempty"`
-	RetryAllowed      bool                  `json:"retry_allowed"`
-	MessageID         string                `json:"message_id,omitempty"`
-	TurnID            string                `json:"requesting_turn_id,omitempty"`
-	Status            string                `json:"status"`
-	CreatedAt         time.Time             `json:"created_at,omitzero"`
-	UpdatedAt         time.Time             `json:"updated_at,omitzero"`
-	AgentDisconnected bool                  `json:"agent_disconnected,omitempty"`
-	QuestionSHA256    string                `json:"question_sha256,omitempty"`
-	Answer            *clarification.Answer `json:"answer,omitempty"`
+	QuestionID        string                      `json:"question_id"`
+	PendingID         string                      `json:"pending_id,omitempty"`
+	RetryAllowed      bool                        `json:"retry_allowed"`
+	MessageID         string                      `json:"message_id,omitempty"`
+	TurnID            string                      `json:"requesting_turn_id,omitempty"`
+	Status            string                      `json:"status"`
+	CreatedAt         time.Time                   `json:"created_at,omitzero"`
+	UpdatedAt         time.Time                   `json:"updated_at,omitzero"`
+	AgentDisconnected bool                        `json:"agent_disconnected,omitempty"`
+	QuestionSHA256    string                      `json:"question_sha256,omitempty"`
+	Answer            *clarification.Answer       `json:"answer,omitempty"`
+	AnswerReceipt     *ownanswer.OwnAnswerReceipt `json:"answer_receipt,omitempty"`
 }
 
 type ownQuestionReceipt struct {
@@ -179,6 +181,17 @@ func addOwnQuestionItem(r *ownQuestionReceipt, m *models.Message, seen map[strin
 	item.Answer, item.Status, err = projectOwnAnswer(status, m.Metadata["response"], id)
 	if err != nil {
 		return err
+	}
+	if rawReceipt := m.Metadata[ownanswer.OwnAnswerReceiptKey]; rawReceipt != nil {
+		data, e := json.Marshal(rawReceipt)
+		if e != nil {
+			return e
+		}
+		var parsed ownanswer.OwnAnswerReceipt
+		if e = json.Unmarshal(data, &parsed); e != nil {
+			return e
+		}
+		item.AnswerReceipt = &parsed
 	}
 	r.Questions = append(r.Questions, item)
 	return nil

@@ -25,7 +25,7 @@ const ownQuestionReceiptOutputSchema = `{
     "status":{"type":"string","enum":["not_created","pending","answered","rejected","expired","cancelled","unknown"]},
     "retry_allowed":{"type":"boolean"},"created_at":{"type":"string"},
     "updated_at":{"type":"string"},"agent_disconnected":{"type":"boolean"},
-    "question_sha256":{"type":"string"},"answer":{"type":"object"}
+    "question_sha256":{"type":"string"},"answer":{"type":"object"},"answer_receipt":{"type":"object"}
    },"additionalProperties":false
   }}
  },

@@ -1897,6 +1897,9 @@ const askUserQuestionOutputSchema = `{
 
 func (s *Server) registerInteractionTools() {
 	s.registerOwnQuestionStatusTool()
+	if s.mode == ModeTask {
+		s.registerOwnAnswerTool()
+	}
 	s.mcpServer.AddTool(
 		mcp.NewTool("ask_user_question_kandev",
 			mcp.WithDescription(`Ask the user 1-4 related questions and wait for all answers. Each question requires a prompt and 2-6 concrete options with short labels and descriptions; use a stable id when response keys matter. Call only when required input cannot be inferred, and bundle related questions in one call. Returns answers keyed by question id; a rejected bundle includes rejected=true and may include reject_reason.`),

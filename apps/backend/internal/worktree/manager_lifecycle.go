@@ -516,7 +516,7 @@ func (m *Manager) openReusableWorktreePath(worktreePath string, wt *Worktree) (s
 		}
 		return nil, false, err
 	}
-	if handle == nil || !handle.IsValidWorktree() {
+	if handle == nil || (!handle.IsValidWorktree() && !m.IsValid(worktreePath)) {
 		if handle != nil {
 			_ = handle.Close()
 		}
