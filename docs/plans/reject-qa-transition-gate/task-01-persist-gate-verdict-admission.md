@@ -59,8 +59,9 @@ No runtime fixture is shared with another task or a Human test instance.
 From the repository root, run:
 
 ```bash
-(cd apps/backend && go test -trimpath -race ./internal/orchestrator ./internal/mcp/handlers ./internal/mcp/server ./internal/workflow/... ./internal/task/repository/sqlite -run 'TestCompletion|TestPersistedGate|TestStepComplete|TestHandleStepComplete|TestGate|TestPendingMove|TestApplyPendingMove|Test.*StartStep|Test.*Reorder|Test.*UpdateIntent|Test.*EntryPrompt|Test.*Delivery' -count=1)
+(cd apps/backend && go test -trimpath -race ./internal/orchestrator ./internal/mcp/handlers ./internal/mcp/server ./internal/workflow/... ./internal/task/repository/sqlite -run 'TestCompletion|TestPostgresCompletion|TestPersistedGate|TestStepComplete|TestHandleStepComplete|TestGate|TestPendingMove|TestApplyPendingMove|Test.*StartSelection|Test.*StartStep|Test.*Reorder|Test.*UpdateIntent|Test.*EntryPrompt|Test.*Delivery' -count=1)
 (cd apps/backend && go test -trimpath -race ./internal/persistence/storeconformance -count=1)
+(cd apps/backend && env -u KANDEV_TEST_POSTGRES_DSN go test -trimpath ./internal/task/repository/sqlite -count=1)
 (cd apps/backend && go run ./cmd/sqlguard ./internal)
 node --test scripts/validate-public-docs.test.mjs
 node scripts/validate-public-docs.mjs
@@ -70,8 +71,10 @@ git diff --check
 ```
 
 Set `KANDEV_TEST_POSTGRES_DSN` to an independently owned disposable fixture for
-repository and store-conformance commands, and confirm relevant PostgreSQL
-tests run without skips. Also run full affected backend packages and normal
+focused race and store-conformance commands, and confirm relevant PostgreSQL
+tests run without skips. The separate full repository unit command uses SQLite;
+the expanded all-PostgreSQL repository run can exceed the default package
+budget and is not a substitute for the named concurrency checks. Also run full affected backend packages and normal
 commit hooks; run exact-head PR documentation coverage with this changed work
 order and sibling plan. Backend protocol/persistence changes have no rendered
 UI, so browser screenshots do not prove these acceptance criteria.
