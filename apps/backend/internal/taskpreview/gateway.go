@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -136,7 +137,7 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, grant Grant, key
 	}()
 	defer func() { cancel(); <-done }()
 	target, _ := url.Parse("http://127.0.0.1:" + strconv.Itoa(grant.HostPort))
-	proxy := &httputil.ReverseProxy{Rewrite: func(p *httputil.ProxyRequest) {
+	proxy := &httputil.ReverseProxy{Transport: g.boundTransport(target.Host, grant, key), Rewrite: func(p *httputil.ProxyRequest) {
 		p.SetURL(target)
 		// The outer gate already validated the browser Origin. Normalise the
 		// inner HTTP hop for the unchanged trial's same-origin/CSRF checks;
@@ -183,6 +184,27 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, grant Grant, key
 	}, FlushInterval: -1}
 	w.Header().Del("Content-Security-Policy")
 	proxy.ServeHTTP(w, r.WithContext(ctx))
+}
+
+func (g *Gateway) boundTransport(target string, grant Grant, key []byte) *http.Transport {
+	// Every request uses a fresh socket. Reauthorize after TCP establishment,
+	// before RoundTrip may write headers or body. A pinned container boot also
+	// prevents stop/rebind/restart from laundering an already-accepted socket.
+	return &http.Transport{DisableKeepAlives: true, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address != target {
+			return nil, ErrDenied
+		}
+		dialer := net.Dialer{Timeout: 5 * time.Second}
+		conn, err := dialer.DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		if g.authorize(ctx, grant, key, grant.UserID) != nil {
+			_ = conn.Close()
+			return nil, ErrDenied
+		}
+		return conn, nil
+	}}
 }
 func (g *Gateway) watch(ctx context.Context, cancel context.CancelFunc, grant Grant, key []byte) {
 	ticker := time.NewTicker(time.Second)

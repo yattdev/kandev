@@ -29,29 +29,30 @@ var servicePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 // Grant is operator-installed; HTTP callers cannot select or register targets.
 type Grant struct {
-	ID             string `json:"id"`
-	ApprovalID     string `json:"approval_id"`
-	ApprovalSHA256 string `json:"approval_sha256"`
-	EnvironmentID  string `json:"environment_id"`
-	TaskID         string `json:"task_id"`
-	WorkspaceID    string `json:"workspace_id"`
-	UserID         string `json:"user_id"`
-	TaskRoot       string `json:"task_root"`
-	CWD            string `json:"cwd"`
-	ContainerID    string `json:"container_id"`
-	ImageID        string `json:"image_id"`
-	Project        string `json:"project"`
-	Service        string `json:"service"`
-	HostPort       int    `json:"host_port"`
-	ContainerPort  int    `json:"container_port"`
-	ModelPath      string `json:"model_path"`
-	ClaimPath      string `json:"claim_path"`
-	ModelSHA256    string `json:"model_sha256"`
-	MainOrigin     string `json:"main_origin"`
-	PreviewOrigin  string `json:"preview_origin"`
-	ListenAddress  string `json:"listen_address"`
-	IssuedAt       int64  `json:"issued_at"`
-	ExpiresAt      int64  `json:"expires_at"`
+	ID                 string `json:"id"`
+	ApprovalID         string `json:"approval_id"`
+	ApprovalSHA256     string `json:"approval_sha256"`
+	EnvironmentID      string `json:"environment_id"`
+	TaskID             string `json:"task_id"`
+	WorkspaceID        string `json:"workspace_id"`
+	UserID             string `json:"user_id"`
+	TaskRoot           string `json:"task_root"`
+	CWD                string `json:"cwd"`
+	ContainerID        string `json:"container_id"`
+	ContainerStartedAt string `json:"container_started_at"`
+	ImageID            string `json:"image_id"`
+	Project            string `json:"project"`
+	Service            string `json:"service"`
+	HostPort           int    `json:"host_port"`
+	ContainerPort      int    `json:"container_port"`
+	ModelPath          string `json:"model_path"`
+	ClaimPath          string `json:"claim_path"`
+	ModelSHA256        string `json:"model_sha256"`
+	MainOrigin         string `json:"main_origin"`
+	PreviewOrigin      string `json:"preview_origin"`
+	ListenAddress      string `json:"listen_address"`
+	IssuedAt           int64  `json:"issued_at"`
+	ExpiresAt          int64  `json:"expires_at"`
 }
 
 func (g Grant) Validate() error {
@@ -71,10 +72,15 @@ func (g Grant) Validate() error {
 	if !privateListener(g.ListenAddress, preview.Port()) || !digestPattern.MatchString(g.ApprovalSHA256) {
 		return ErrDenied
 	}
-	if g.validateTarget() != nil || g.validatePaths() != nil || g.IssuedAt <= 0 || g.ExpiresAt-g.IssuedAt != int64(Lifetime/time.Second) {
+	if g.validateTarget() != nil || g.validatePaths() != nil || !g.validContainerStart() || g.IssuedAt <= 0 || g.ExpiresAt-g.IssuedAt != int64(Lifetime/time.Second) {
 		return ErrDenied
 	}
 	return nil
+}
+
+func (g Grant) validContainerStart() bool {
+	started, err := time.Parse(time.RFC3339Nano, g.ContainerStartedAt)
+	return err == nil && started.Unix() > 0 && started.Unix() <= g.IssuedAt
 }
 
 func validPort(port int) bool { return port >= 1024 && port <= 65535 }
