@@ -21,6 +21,7 @@ import (
 
 const taskMessageIntentKey = "task_message_intent_id"
 const observeTaskMessageTurn = "observe_original_turn"
+const taskMessageSessionTerminal = "session_terminal"
 
 var taskMessageIntentNamespace = uuid.MustParse("2c81d732-93f2-48b8-b132-1fde6e603147")
 
@@ -137,6 +138,8 @@ func (h *Handlers) readTaskMessageReceipt(ctx context.Context, p mcpscope.Princi
 	if len(records) == 0 {
 		if req.IntentID == "" {
 			receipt.Status = "not_found"
+		} else if err := h.guardAbsentTaskMessageReceipt(ctx, p, receipt); err != nil {
+			return nil, nil, err
 		}
 		return receipt, records, nil
 	}
@@ -173,6 +176,22 @@ func (h *Handlers) readTaskMessageReceipt(ctx context.Context, p mcpscope.Princi
 		}
 	}
 	return receipt, records, nil
+}
+
+// Absence proves no message was admitted, not that its owner can accept one.
+// This projection never changes lifecycle state or wakes an execution.
+func (h *Handlers) guardAbsentTaskMessageReceipt(ctx context.Context, p mcpscope.Principal, receipt *taskMessageReceipt) error {
+	_, session, err := h.taskMessageReceiptTarget(ctx, p, receipt.TaskID, receipt.SessionID)
+	if err != nil {
+		return err
+	}
+	switch session.State {
+	case models.TaskSessionStateFailed, models.TaskSessionStateCompleted, models.TaskSessionStateCancelled:
+		receipt.RetryAllowed = false
+		receipt.AdmissionError = taskMessageSessionTerminal
+		receipt.Continuation = "exact_session_recovery_required"
+	}
+	return nil
 }
 
 func projectTaskMessageQueueReceipt(r *taskMessageReceipt, record models.TaskMessageRecord) {
@@ -268,6 +287,9 @@ func (h *Handlers) handleReceiptTaskMessage(ctx context.Context, msg *ws.Message
 	if len(records) > 0 {
 		return replayTaskMessageReceipt(msg, receipt, records, fingerprint)
 	}
+	if receipt.AdmissionError == taskMessageSessionTerminal {
+		return ws.NewResponse(msg.ID, msg.Action, receipt)
+	}
 	if h.sessionLauncher == nil || h.sessionLauncher.GetMessageQueue() == nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "durable queue unavailable", nil)
 	}
@@ -279,7 +301,7 @@ func (h *Handlers) handleReceiptTaskMessage(ctx context.Context, msg *ws.Message
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "task message admission unconfirmed; read original intent before retry", nil)
 	}
 	if err != nil {
-		receipt.AdmissionError = taskMessageAdmissionError(err)
+		applyTaskMessageAdmissionFailure(receipt, err)
 	} else if receipt.ContinueAllowed {
 		_ = h.continueTaskMessageReceipt(readCtx, p, receipt, readRecords)
 	}
@@ -348,5 +370,19 @@ func taskMessageAdmissionError(err error) string {
 	if errors.Is(err, repoerrors.ErrTaskMessageInputPending) {
 		return "human_input_pending"
 	}
+	if errors.Is(err, repoerrors.ErrTaskSessionUnavailable) {
+		return "session_unavailable"
+	}
 	return "admission_unavailable"
+}
+
+func applyTaskMessageAdmissionFailure(receipt *taskMessageReceipt, err error) {
+	if receipt.AdmissionError == taskMessageSessionTerminal {
+		return
+	}
+	receipt.AdmissionError = taskMessageAdmissionError(err)
+	if receipt.AdmissionError == "session_unavailable" && receipt.Status == "not_created" {
+		receipt.RetryAllowed = false
+		receipt.Continuation = "correlate_session_state"
+	}
 }
