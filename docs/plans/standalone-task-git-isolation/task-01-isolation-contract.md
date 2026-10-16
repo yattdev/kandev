@@ -24,7 +24,8 @@ Carry validated Git projections as a server-authored agentctl isolation manifest
 ## In scope
 
 - Typed lifecycle, agentctl request, and instance configuration contract.
-- Canonical containment and malformed-manifest rejection.
+- Canonical containment, malformed-manifest rejection, and race-safe filesystem
+  object pinning from validation through helper installation.
 
 ## Out of scope
 
@@ -33,7 +34,8 @@ Carry validated Git projections as a server-authored agentctl isolation manifest
 ## Acceptance
 
 - Each projection yields only task-private writable paths and shared read-only paths.
-- Invalid, symlinked, swapped, or foreign metadata produces no manifest.
+- Invalid, symlinked, swapped, concurrently swapped, or foreign metadata
+  produces no manifest or installable grant.
 
 ## Verification
 
@@ -54,6 +56,8 @@ None.
 ## Risks
 
 Internal request contracts must not permit agent-supplied path expansion.
+Path revalidation alone is insufficient: implementation must use stable
+descriptor-based pinning or an equivalent supported kernel object reference.
 
 ## Parallelism
 

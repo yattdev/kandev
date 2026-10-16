@@ -29,8 +29,11 @@ environment and prove direct sibling writes fail.
 ## In scope
 
 - Packaged-helper invocation and fail-closed diagnostics.
-- ACP, process-runner, and interactive-shell launch paths.
-- Real Git and hostile-write integration coverage, including attached repos.
+- ACP, `ProcessRunner.Start`, `ProcessRunner.StartPiped` including LSP and
+  `CombinedOutput` callers, and interactive-shell launch paths.
+- Real Git (`add`, `commit`, `fetch`, relaunch visibility, and index/ref/reflog
+  locks) and hostile-write integration coverage, including attached repos.
+- Hostile `/proc`/PID namespace and inherited-writable-descriptor escape tests.
 
 ## Out of scope
 
@@ -39,7 +42,8 @@ environment and prove direct sibling writes fail.
 ## Acceptance
 
 - All agent-controlled launch paths use the same manifest.
-- Direct shared-ref and reflog writes fail while native task Git succeeds.
+- Direct shared-ref and reflog writes, proc/PID escape writes, and inherited-FD
+  escape writes fail while native task Git succeeds.
 - Missing helper or unsupported host capability prevents launch.
 
 ## Verification

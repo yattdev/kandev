@@ -26,6 +26,9 @@ process launch and Docker mount construction, not to task ownership itself.
   an interactive terminal or shell started for that agent instance.
 - **Isolation manifest:** Server-resolved filesystem grants for one agent
   instance. Agents cannot provide or expand its paths.
+- **Pinned grant:** A grant whose filesystem objects are retained by stable
+  descriptors or an equivalent race-safe kernel object reference from validation
+  through helper installation; a later path lookup is not authority to mount.
 
 ## Requirements
 
@@ -43,13 +46,16 @@ its task checkout so that concurrent tasks cannot corrupt each other.
   starts on a supported Linux host, the system shall run every agent-controlled
   process with a server-resolved isolation manifest that makes its shared common
   Git directories read-only and its validated task-private metadata writable.
+  The process shall use a private PID namespace and a proc view that exposes no
+  host process handles, and shall start with no inherited writable descriptor
+  that reaches outside the manifest.
 - **AC-EXECUTORS-TASK-GIT-ISOLATION-001.2:** When an agent-controlled process
   attempts a direct write to a sibling ref, sibling reflog, or another path in
   a shared common Git directory, the system shall deny the write.
 - **AC-EXECUTORS-TASK-GIT-ISOLATION-001.3:** When an agent uses a validated
   task checkout, the system shall permit native `git add`, `git commit`, and
   `git fetch`, including index, ref, and reflog lock behavior; the host checkout
-  shall observe a successful task commit.
+  shall observe a successful task commit after relaunch.
 - **AC-EXECUTORS-TASK-GIT-ISOLATION-001.4:** When a task has attached
   repositories, the system shall apply the same isolation independently to each
   validated checkout and shall deny writes across their shared or sibling Git
@@ -67,16 +73,19 @@ with broader filesystem authority.
   shall refuse to start that instance and shall report an actionable executor
   failure without falling back to an unrestricted host process.
 - **AC-EXECUTORS-TASK-GIT-ISOLATION-002.2:** When a Docker host-worktree
-  configuration contains a read-write mount covering a shared common Git
-  directory, the system shall reject the configuration unless the mount is a
-  validated task-private child grant.
+  configuration contains a read-write bind whose canonical source or canonical
+  destination overlaps a shared common Git directory, including either path's
+  ancestor or descendant, the system shall reject the configuration unless it
+  is the exact validated task-private administration source-and-destination
+  rebind pair.
 - **AC-EXECUTORS-TASK-GIT-ISOLATION-002.3:** When Docker clones a repository
   inside its container workspace, the system shall reject host worktree
   metadata projections and shall use only container-private Git metadata.
 - **AC-EXECUTORS-TASK-GIT-ISOLATION-002.4:** When a task-private metadata
   pointer, alternate object path, or linked-worktree registration is swapped,
   symlinked, malformed, or foreign, the system shall refuse the instance before
-  granting filesystem access.
+  granting filesystem access. The validated filesystem objects shall be pinned
+  or equivalently bound race-safely through helper installation.
 
 ## Out of scope
 

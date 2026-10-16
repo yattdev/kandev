@@ -24,8 +24,12 @@ diagnostics without recreating live sessions.
 
 ## In scope
 
-- Package and runtime capability checks.
-- Operator documentation and migration wording.
+- Version-pinned helper artifact provenance, digest, ownership/mode, and
+  self-reported capability checks.
+- Operator activation and rollback documentation: validate a non-live task
+  environment, admit new protected instances, then use normal operator restart
+  or recreation for existing sessions; rollback stops new admission without
+  automatically mutating live sessions.
 
 ## Out of scope
 
@@ -33,7 +37,8 @@ diagnostics without recreating live sessions.
 
 ## Acceptance
 
-- Unsupported hosts report an actionable failure before launch.
+- Missing helper, provenance/digest mismatch, unsupported kernel/user namespace,
+  PID/proc, or mount capability reports an actionable failure before launch.
 - Existing sessions are not mutated by rollout logic.
 
 ## Verification

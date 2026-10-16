@@ -25,7 +25,8 @@ clone-inside no-host-projection boundary.
 
 ## In scope
 
-- Mount overlap validation after all mount sources are combined.
+- Canonical source and destination overlap validation after all mount sources
+  are combined, including ancestor, descendant, and alias paths.
 - Unit and daemon-backed Docker coverage.
 
 ## Out of scope
@@ -34,8 +35,10 @@ clone-inside no-host-projection boundary.
 
 ## Acceptance
 
-- Runtime or plugin read-write shared-root mounts fail configuration.
-- Exact task-admin child rebinds remain permitted.
+- Runtime or plugin read-write shared-root source or destination aliases fail
+  configuration.
+- Only the exact validated task-admin source-and-destination rebind remains
+  permitted.
 
 ## Verification
 

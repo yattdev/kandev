@@ -23,8 +23,10 @@ not meet the security requirement.
 ### In scope
 
 - Server-authored Linux isolation manifests for standalone worktree instances.
-- Sandboxed ACP commands, user processes, and interactive shells.
-- Host-visible normal Git operations and hostile direct-write denial tests.
+- Sandboxed ACP commands, ProcessRunner `Start` and `StartPiped` (LSP and
+  `CombinedOutput` callers), and interactive shells.
+- Host-visible normal Git operations and hostile direct-write denial tests,
+  including proc/PID and inherited-descriptor escape attempts.
 - Multi-repository projection support and Docker final-mount conflict checks.
 
 ### Out of scope
@@ -33,17 +35,23 @@ not meet the security requirement.
 
 ## Technical approach
 
-Add the typed manifest at the lifecycle-to-agentctl boundary, construct the
-Linux helper command in `process/isolation`, then route each process launch
-through it. Preserve the existing private-common Git arrangement. Validate final
-Docker mounts after plugin/runtime expansion, never in a task-local image guard.
+Add the typed manifest and pinned filesystem grants at the lifecycle-to-agentctl
+boundary, construct the Linux helper command in `process/isolation`, then route
+each process launch through it. Preserve the existing private-common Git
+arrangement. Validate canonical source and destination overlap in final Docker
+mounts after plugin/runtime expansion, never in a task-local image guard.
 
 ## Tests
 
 `AC-EXECUTORS-TASK-GIT-ISOLATION-001.1` through `.4` map to process isolation
 unit/integration tests and standalone lifecycle tests. `AC-EXECUTORS-TASK-GIT-
-ISOLATION-002.1` through `.4` map to helper-unavailable, malformed projection,
-Docker conflict, clone-inside, and existing worktree resolver tests.
+ISOLATION-002.1` through `.4` map to missing-helper/kernel/mount failure,
+malformed and concurrent-swapped projection, Docker source/destination alias
+conflict, clone-inside, and existing worktree resolver tests. Future integration
+coverage explicitly includes `git fetch`, host-visible commits after relaunch,
+index/ref/reflog locks, every agent process path, multi-repository attachment,
+and real-daemon host-worktree and clone-inside Docker cases. These are planned
+tests only and are not results of this design correction.
 
 ## Work orders
 

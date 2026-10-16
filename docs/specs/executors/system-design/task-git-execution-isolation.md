@@ -33,27 +33,37 @@ the original `SharedCommonDir` paths. It is carried in the internal agentctl
 create-instance DTO and `config.InstanceConfig`; no agent request field can add
 or widen an entry.
 
+Validation opens and pins each grant's directory objects with stable file
+descriptors, or an equivalent kernel-supported object reference, before helper
+installation. The helper receives those pinned grants rather than authority to
+resolve the original paths again. If a source object changes, cannot be pinned,
+or no supported race-safe bind mechanism exists, instance creation fails closed.
+
 `internal/agentctl/server/process/isolation` builds a Linux command wrapper
-using the Kandev-distributed sandbox helper. The wrapper creates a mount
-namespace, exposes runtime dependencies read-only, binds task workspaces and
+using the Kandev-distributed sandbox helper. The wrapper creates private mount
+and PID namespaces, mounts a private proc view for that PID namespace, closes
+or marks close-on-exec every inherited descriptor except an explicit,
+read-only helper control channel, exposes runtime dependencies read-only, binds task workspaces and
 validated task-private Git paths read-write, and binds every shared common Git
 directory read-only before rebinding its validated private child. It neither
 binds a parent source directory read-write nor accepts an uncanonical path.
 
-`process.Manager.buildFinalCommand`, `ProcessRunner.Start`, and interactive
-shell lifecycle paths use the same wrapper. Agentctl's workspace tracker remains
-outside that wrapper because it is a trusted server component, not an
-agent-controlled command boundary.
+`process.Manager.buildFinalCommand`, `ProcessRunner.Start`,
+`ProcessRunner.StartPiped` (including LSP and `CombinedOutput` callers), and
+interactive shell lifecycle paths use the same wrapper. Agentctl's workspace
+tracker remains outside that wrapper because it is a trusted server component,
+not an agent-controlled command boundary.
 
 ## Docker mount validation
 
 `gitMetadataMounts` continues to provide the source common directory read-only
 and the validated task Git administration directory read-write. A validator in
 `container.go` runs after all runtime, profile, and plugin mounts are assembled.
-It rejects a read-write target that contains a `SharedCommonDir`; only a strictly
-contained validated task Git administration path may override the read-only
-ancestor. This detects product configuration conflicts independently of any
-local image or tag-plugin guard.
+For every read-write bind it canonicalizes both source and destination, rejects
+any overlap with a shared common directory on either side (including ancestors,
+descendants, and aliases), and permits only the exact validated task-private
+administration source-and-destination rebind pair. This detects product
+configuration conflicts independently of any local image or tag-plugin guard.
 
 Clone-inside Docker has no host worktree namespace. `DockerExecutor` therefore
 rejects non-empty host Git projections and lets the clone create private
@@ -72,10 +82,13 @@ actions after rollout.
 
 The common Git root is a read-only operating-system mount, not merely a
 filesystem-policy value. A direct shell write to sibling refs or reflogs fails
-even when the agent knows the host path. Task-private object alternates reference
-the original object store read-only. The projection resolver continues to reject
-symlink, pointer-swap, alternate, and foreign-worktree attacks before the
-manifest is formed.
+even when the agent knows the host path. Namespace isolation prevents writes
+through host `/proc/<pid>/root` or related process-handle escape paths, and
+descriptor closure prevents writes through inherited host descriptors.
+Task-private object alternates reference the original object store read-only.
+The projection resolver continues to reject symlink, pointer-swap, alternate,
+and foreign-worktree attacks before the manifest is formed; pinned grants close
+the validation-to-mount swap window.
 
 ## Observability
 

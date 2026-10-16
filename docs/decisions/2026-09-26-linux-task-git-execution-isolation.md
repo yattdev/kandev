@@ -15,18 +15,36 @@ mount set is validated.
 
 ## Decision
 
-Kandev will provide a Linux per-instance sandbox helper and fail closed for
+Kandev will distribute a version-pinned Linux per-instance sandbox helper from
+the reviewed Kandev release artifact, with its digest/provenance recorded in the
+package manifest. Before launch, agentctl verifies the expected version and
+digest, executable ownership and mode, helper self-reported capability, and the
+host's required user-namespace, mount, PID-namespace, and proc support. Kandev
+will fail closed for
 standalone worktree instances that require task Git isolation when it cannot
 create the required mount namespace. Agentctl will apply the same server-authored
-manifest to the ACP process, agent-owned process runner, and interactive shells.
+manifest to the ACP process, agent-owned process runner including piped/LSP and
+combined-output calls, and interactive shells. The helper creates private mount
+and PID namespaces, a private proc view, and closes inherited writable
+descriptors before executing agent-controlled code.
 Shared Git common directories are read-only; only validated task workspace and
 private Git administration paths are writable. Docker validates the final mount
-set and rejects read-write coverage of a shared common directory except a
-validated private child grant.
+set by canonical source and destination overlap and rejects read-write coverage
+of a shared common directory except the exact validated private administration
+source-and-destination rebind pair. Filesystem objects are pinned, or
+equivalently installed race-safely, between validation and helper mount.
 
 The first supported scope is Linux. Existing live standalone sessions are not
 recreated automatically. Helper packaging and compatibility checks are product
 rollout work, not deployment authorization.
+
+Proposed operator activation is: verify the release artifact and host capability
+check on a non-live task environment; enable protected standalone launches for
+new instances; then restart or recreate existing task environments through the
+normal operator lifecycle action. Proposed rollback is: stop admitting new
+protected standalone launches, retain existing sessions unchanged, and return
+new work to the prior supported executor only after its ordinary safety checks.
+Neither sequence authorizes automatic session mutation or deployment.
 
 ## Consequences
 
@@ -37,6 +55,8 @@ rollout work, not deployment authorization.
 - Process, terminal, and shell launch paths share one isolation contract.
 - Distribution packaging and Linux capability diagnostics become required
   executor responsibilities.
+- Package provenance, helper capability checks, and operator activation and
+  rollback instructions must be reviewed before policy adoption.
 
 ## Alternatives Considered
 
