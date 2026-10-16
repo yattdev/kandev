@@ -51,7 +51,7 @@ func classifyLaunchFailure(err error) launchFailureClassification {
 			code:    models.LaunchErrorCategoryWorkspaceCheckoutFailed,
 			message: "The workspace could not be prepared for this launch.",
 		}
-	case errors.Is(err, worktree.ErrInvalidBaseBranch):
+	case errors.Is(err, worktree.ErrInvalidBaseBranch) || isLegacyWorkspaceBaseFailure(err):
 		return launchFailureClassification{
 			code:    models.LaunchErrorCategoryBaseBranchMissing,
 			message: "The selected base branch is not available.",
@@ -67,6 +67,13 @@ func classifyLaunchFailure(err error) launchFailureClassification {
 			message: "The agent could not start.",
 		}
 	}
+}
+
+// Older workspace preparation transports flattened this sentinel into one
+// exact diagnostic. Retain its workspace ownership without matching arbitrary
+// provider text that happens to mention a missing branch.
+func isLegacyWorkspaceBaseFailure(err error) bool {
+	return err != nil && err.Error() == "environment preparation failed: base branch does not exist"
 }
 
 func launchFailureRecoveryActions(category, taskRepositoryID string, markReviewDone bool) []string {

@@ -1259,7 +1259,7 @@ type Service struct {
 	// so a concurrent Stop can otherwise read lifecycleSweepCancel while it is
 	// still nil and return before Start launches an uncancellable sweep.
 	lifecycleSweepMu      sync.Mutex
-	lifecycleSweepCancel  context.CancelFunc
+	lifecycleSweepCancel  context.CancelCauseFunc
 	lifecycleSweepStopped bool
 	lifecycleSweepWorkers sync.WaitGroup
 
@@ -3602,11 +3602,11 @@ func (s *Service) resetLifecycleSweepWorkers() {
 // stopped flag under the same lock stopLifecycleSweepAsync uses, mirroring
 // stopDynamicSuccessorWorkers / resetDynamicSuccessorWorkers.
 func (s *Service) startLifecycleSweepAsync(ctx context.Context) bool {
-	sweepCtx, cancel := context.WithCancel(ctx)
+	sweepCtx, cancel := context.WithCancelCause(ctx)
 	s.lifecycleSweepMu.Lock()
 	if s.lifecycleSweepStopped {
 		s.lifecycleSweepMu.Unlock()
-		cancel()
+		cancel(executor.ErrStartupSweepStopped)
 		s.logger.Warn("startup lifecycle sweep skipped; service is stopping")
 		return false
 	}
@@ -3636,7 +3636,7 @@ func (s *Service) stopLifecycleSweepAsync() {
 	s.lifecycleSweepCancel = nil
 	s.lifecycleSweepMu.Unlock()
 	if cancel != nil {
-		cancel()
+		cancel(executor.ErrStartupSweepStopped)
 	}
 	done := make(chan struct{})
 	go func() {
