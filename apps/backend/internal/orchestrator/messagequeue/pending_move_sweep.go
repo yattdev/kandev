@@ -110,6 +110,9 @@ func (r *sqliteRepository) DeletePendingMoveIfMatch(
 			return false, fmt.Errorf("delete pending move hand-off prompt: %w", err)
 		}
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, expected.SessionID); err != nil {
+		return false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
@@ -150,6 +153,9 @@ func (r *memoryRepository) DeletePendingMoveIfMatch(
 		!stored.QueuedAt.Equal(expected.Move.QueuedAt) {
 		return false, nil
 	}
+	if err := r.canBumpCensusLocked(expected.SessionID); err != nil {
+		return false, err
+	}
 	delete(r.pendingMoves, expected.SessionID)
 	if handoffEntryID != "" {
 		entries := r.entries[expected.SessionID]
@@ -165,6 +171,7 @@ func (r *memoryRepository) DeletePendingMoveIfMatch(
 			break
 		}
 	}
+	r.bumpCensusLocked(expected.SessionID)
 	return true, nil
 }
 

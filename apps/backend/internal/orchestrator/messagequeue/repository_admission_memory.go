@@ -3,6 +3,7 @@ package messagequeue
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 )
 
@@ -118,6 +119,10 @@ func (r *memoryRepository) admitNewAdmissionLocked(
 	}
 	if claim != nil && len(claim.IDs) > 0 {
 		return nil, false, ErrQueueAdmissionUnavailable
+	}
+	if policy != nil && policy.Enabled && len(r.entries[identity.SessionID]) > 0 &&
+		r.censusRevision[identity.SessionID] >= math.MaxInt64-1 {
+		return nil, false, errCensusRevisionExhausted
 	}
 	if err := r.insertLocked(message, maxPerSession); err != nil {
 		return nil, false, err

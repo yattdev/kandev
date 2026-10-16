@@ -1826,6 +1826,9 @@ func (r *Repository) deleteDeferredMoveGuardTx(
 	if affected != 1 {
 		return messagequeue.ErrSessionIdentityMismatch
 	}
+	if err := messagequeue.BumpCensusRevisionTx(ctx, tx, r.db, record.SessionID); err != nil {
+		return err
+	}
 	return nil
 }
 

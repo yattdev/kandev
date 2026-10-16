@@ -37,28 +37,34 @@ type MCPPrincipalScoper func(ctx context.Context, taskID, sessionID string) (con
 // payload session_id would let it name another user's session and inherit
 // their identity — turning the scoping fix into a privilege escalation.
 type taskScopedMCPHandler struct {
-	inner                     agentctl.MCPHandler
-	scope                     MCPIdentityScoper
-	principal                 MCPPrincipalScoper
-	executionID               string
-	taskID                    string
-	sessionID                 string
-	managedToolPolicy         *mcpprofile.ManagedToolPolicy
-	managedToolPolicyRequired bool
-	coordinatorToolPolicy     *mcpprofile.CoordinatorToolPolicy
-	coordinatorPolicyRequired bool
-	logger                    *logger.Logger
+	inner                      agentctl.MCPHandler
+	scope                      MCPIdentityScoper
+	principal                  MCPPrincipalScoper
+	executionID                string
+	taskID                     string
+	sessionID                  string
+	originalWorkspaceID        string
+	originalOwnerID            string
+	originalQueueIncarnationID string
+	managedToolPolicy          *mcpprofile.ManagedToolPolicy
+	managedToolPolicyRequired  bool
+	coordinatorToolPolicy      *mcpprofile.CoordinatorToolPolicy
+	coordinatorPolicyRequired  bool
+	logger                     *logger.Logger
 }
 
 type currentMCPHandler struct {
-	streamManager             *StreamManager
-	executionID               string
-	taskID                    string
-	sessionID                 string
-	managedToolPolicy         *mcpprofile.ManagedToolPolicy
-	managedToolPolicyRequired bool
-	coordinatorToolPolicy     *mcpprofile.CoordinatorToolPolicy
-	coordinatorPolicyRequired bool
+	streamManager              *StreamManager
+	executionID                string
+	taskID                     string
+	sessionID                  string
+	originalWorkspaceID        string
+	originalOwnerID            string
+	originalQueueIncarnationID string
+	managedToolPolicy          *mcpprofile.ManagedToolPolicy
+	managedToolPolicyRequired  bool
+	coordinatorToolPolicy      *mcpprofile.CoordinatorToolPolicy
+	coordinatorPolicyRequired  bool
 }
 
 func (h *currentMCPHandler) Dispatch(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
@@ -70,17 +76,20 @@ func (h *currentMCPHandler) Dispatch(ctx context.Context, msg *ws.Message) (*ws.
 		return inner.Dispatch(ctx, msg)
 	}
 	return (&taskScopedMCPHandler{
-		inner:                     inner,
-		scope:                     scope,
-		principal:                 principal,
-		executionID:               h.executionID,
-		taskID:                    h.taskID,
-		sessionID:                 h.sessionID,
-		managedToolPolicy:         h.managedToolPolicy,
-		managedToolPolicyRequired: h.managedToolPolicyRequired,
-		coordinatorToolPolicy:     h.coordinatorToolPolicy,
-		coordinatorPolicyRequired: h.coordinatorPolicyRequired,
-		logger:                    h.streamManager.logger,
+		inner:                      inner,
+		scope:                      scope,
+		principal:                  principal,
+		executionID:                h.executionID,
+		taskID:                     h.taskID,
+		sessionID:                  h.sessionID,
+		originalWorkspaceID:        h.originalWorkspaceID,
+		originalOwnerID:            h.originalOwnerID,
+		originalQueueIncarnationID: h.originalQueueIncarnationID,
+		managedToolPolicy:          h.managedToolPolicy,
+		managedToolPolicyRequired:  h.managedToolPolicyRequired,
+		coordinatorToolPolicy:      h.coordinatorToolPolicy,
+		coordinatorPolicyRequired:  h.coordinatorPolicyRequired,
+		logger:                     h.streamManager.logger,
 	}).Dispatch(ctx, msg)
 }
 
@@ -89,11 +98,14 @@ func (h *taskScopedMCPHandler) Dispatch(ctx context.Context, msg *ws.Message) (*
 		ctx = mcporigin.WithTrustedInternalCall(ctx)
 	}
 	ctx = streams.WithMCPExecutionContext(ctx, streams.MCPExecutionContext{
-		ExecutionID:               h.executionID,
-		TaskID:                    h.taskID,
-		SessionID:                 h.sessionID,
-		ManagedToolPolicy:         h.managedToolPolicy,
-		ManagedToolPolicyRequired: h.managedToolPolicyRequired,
+		ExecutionID:                h.executionID,
+		TaskID:                     h.taskID,
+		SessionID:                  h.sessionID,
+		OriginalWorkspaceID:        h.originalWorkspaceID,
+		OriginalOwnerID:            h.originalOwnerID,
+		OriginalQueueIncarnationID: h.originalQueueIncarnationID,
+		ManagedToolPolicy:          h.managedToolPolicy,
+		ManagedToolPolicyRequired:  h.managedToolPolicyRequired,
 
 		CoordinatorToolPolicy:         h.coordinatorToolPolicy,
 		CoordinatorToolPolicyRequired: h.coordinatorPolicyRequired,
@@ -131,6 +143,20 @@ func (h *taskScopedMCPHandler) Dispatch(ctx context.Context, msg *ws.Message) (*
 // backend-owned execution identity is always attached; user identity is also
 // attached when per-user scoping has been wired.
 func (sm *StreamManager) mcpHandlerFor(execution *AgentExecution) agentctl.MCPHandler {
+	originalOwnerID := ""
+	originalWorkspaceID := execution.WorkspaceID
+	if owner, ok := execution.metadataValue(metadataKeyQueueCensusOwner); ok {
+		workspace, _ := execution.metadataValue(metadataKeyQueueCensusWorkspace)
+		incarnation, _ := execution.metadataValue(metadataKeyQueueCensusIncarnation)
+		boundExecution, _ := execution.metadataValue(metadataKeyQueueCensusExecution)
+		workspaceID, workspaceValid := workspace.(string)
+		if ownerID, valid := owner.(string); valid && ownerID != "" && workspaceValid && workspaceID != "" &&
+			(originalWorkspaceID == "" || workspaceID == originalWorkspaceID) &&
+			incarnation == execution.DeliveryIncarnationID && boundExecution == execution.ID {
+			originalOwnerID = ownerID
+			originalWorkspaceID = workspaceID
+		}
+	}
 	var managedToolPolicy *mcpprofile.ManagedToolPolicy
 	managedToolPolicyRequired := false
 	if value, present := execution.metadataValue(mcpprofile.ManagedToolPolicyMetadataKey); present {
@@ -154,14 +180,17 @@ func (sm *StreamManager) mcpHandlerFor(execution *AgentExecution) agentctl.MCPHa
 		}
 	}
 	return &currentMCPHandler{
-		streamManager:             sm,
-		executionID:               execution.ID,
-		taskID:                    execution.TaskID,
-		sessionID:                 execution.SessionID,
-		managedToolPolicy:         managedToolPolicy,
-		managedToolPolicyRequired: managedToolPolicyRequired,
-		coordinatorToolPolicy:     coordinatorToolPolicy,
-		coordinatorPolicyRequired: coordinatorPolicyRequired,
+		streamManager:              sm,
+		executionID:                execution.ID,
+		taskID:                     execution.TaskID,
+		sessionID:                  execution.SessionID,
+		originalWorkspaceID:        originalWorkspaceID,
+		originalOwnerID:            originalOwnerID,
+		originalQueueIncarnationID: execution.DeliveryIncarnationID,
+		managedToolPolicy:          managedToolPolicy,
+		managedToolPolicyRequired:  managedToolPolicyRequired,
+		coordinatorToolPolicy:      coordinatorToolPolicy,
+		coordinatorPolicyRequired:  coordinatorPolicyRequired,
 	}
 }
 

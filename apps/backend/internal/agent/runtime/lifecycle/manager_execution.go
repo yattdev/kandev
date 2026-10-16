@@ -1098,6 +1098,17 @@ func (m *Manager) prepareExecutionCreateRequest(
 	for key, value := range info.Metadata {
 		metadata[key] = value
 	}
+	if info.AgentExecutionID != executionID {
+		for _, key := range []string{metadataKeyQueueCensusOwner, metadataKeyQueueCensusWorkspace, metadataKeyQueueCensusIncarnation, metadataKeyQueueCensusExecution} {
+			delete(metadata, key)
+		}
+		if info.OriginalOwnerID != "" && info.WorkspaceID != "" && info.DeliveryIncarnationID != "" && executionID != "" {
+			metadata[metadataKeyQueueCensusOwner] = info.OriginalOwnerID
+			metadata[metadataKeyQueueCensusWorkspace] = info.WorkspaceID
+			metadata[metadataKeyQueueCensusIncarnation] = info.DeliveryIncarnationID
+			metadata[metadataKeyQueueCensusExecution] = executionID
+		}
+	}
 	delete(metadata, managedGoCacheMetadataKey)
 	m.seedExecutionBaseBranches(ctx, taskID, executionID, metadata)
 	if envPreparation.managedGoCachePath != "" {

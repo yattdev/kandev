@@ -11,11 +11,14 @@ type mcpExecutionContextKey struct{}
 // MCPExecutionContext identifies the backend-owned execution behind one
 // in-session MCP stream. Agent-controlled request payloads cannot override it.
 type MCPExecutionContext struct {
-	ExecutionID               string
-	TaskID                    string
-	SessionID                 string
-	ManagedToolPolicy         *mcpprofile.ManagedToolPolicy
-	ManagedToolPolicyRequired bool
+	ExecutionID                string
+	TaskID                     string
+	SessionID                  string
+	OriginalWorkspaceID        string
+	OriginalOwnerID            string
+	OriginalQueueIncarnationID string
+	ManagedToolPolicy          *mcpprofile.ManagedToolPolicy
+	ManagedToolPolicyRequired  bool
 
 	// CoordinatorToolPolicy is the tool list bound to a coordinator
 	// conversation. CoordinatorToolPolicyRequired is true when the execution

@@ -72,6 +72,9 @@ func (m *Manager) checkpointPluginExecutorRuntimeInventory(
 func mergePluginExecutorRuntimeMetadata(current, runtime map[string]interface{}) (map[string]interface{}, error) {
 	metadata := clonePluginExecutorMetadata(current)
 	for key, value := range runtime {
+		if key == metadataKeyQueueCensusOwner || key == metadataKeyQueueCensusWorkspace || key == metadataKeyQueueCensusIncarnation || key == metadataKeyQueueCensusExecution {
+			continue
+		}
 		metadata[key] = value
 	}
 	if _, exists := metadata[MetadataKeyPluginExecutor]; !exists {

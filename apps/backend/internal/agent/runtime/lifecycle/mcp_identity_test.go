@@ -11,6 +11,7 @@ import (
 	"github.com/kandev/kandev/internal/common/logger"
 	mcporigin "github.com/kandev/kandev/internal/mcp/origin"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
+	mcpscope "github.com/kandev/kandev/internal/mcp/scope"
 	ws "github.com/kandev/kandev/pkg/websocket"
 )
 
@@ -99,6 +100,82 @@ func TestMCPHandlerForScopesToExecutionTask(t *testing.T) {
 	}
 	if executionContext.TaskID != "task-a" || executionContext.SessionID != "session-a" {
 		t.Errorf("execution context = %#v, want task-a/session-a", executionContext)
+	}
+}
+
+func TestMCPHandlerRetainsOriginalQueueIncarnation(t *testing.T) {
+	inner := &recordingMCPHandler{}
+	sm := newMCPStreamManager(t, inner, nil)
+	currentIncarnation := "incarnation-1"
+	currentWorkspace := "workspace-1"
+	sm.setMCPPrincipalScoper(func(ctx context.Context, taskID, sessionID string) (context.Context, error) {
+		bound, _ := streams.MCPExecutionContextFromContext(ctx)
+		return mcpscope.WithPrincipal(ctx, mcpscope.Principal{
+			CallerTaskID: taskID, CallerSessionID: sessionID,
+			WorkspaceID: currentWorkspace, OriginalWorkspaceID: bound.OriginalWorkspaceID,
+			CallerIncarnationID: currentIncarnation, OriginalQueueIncarnationID: bound.OriginalQueueIncarnationID,
+			ExecutionID: bound.ExecutionID, Surface: mcpprofile.SurfaceKanbanTask,
+		}), nil
+	})
+	execution := &AgentExecution{ID: "execution-1", TaskID: "task-a", SessionID: "session-a", WorkspaceID: "workspace-1", DeliveryIncarnationID: "incarnation-1"}
+	handler := sm.mcpHandlerFor(execution)
+	currentIncarnation = "incarnation-2"
+	currentWorkspace = "workspace-2"
+	execution.DeliveryIncarnationID = "incarnation-2"
+	execution.WorkspaceID = "workspace-2"
+	execution.ID = "execution-2"
+	if _, err := handler.Dispatch(context.Background(), mcpRequest(t, nil)); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	bound, ok := streams.MCPExecutionContextFromContext(inner.gotCtx)
+	if !ok || bound.OriginalQueueIncarnationID != "incarnation-1" {
+		t.Fatalf("original queue incarnation = %q, present=%v", bound.OriginalQueueIncarnationID, ok)
+	}
+	if bound.ExecutionID != "execution-1" {
+		t.Fatalf("original execution = %q, want execution-1", bound.ExecutionID)
+	}
+	principal, ok := mcpscope.PrincipalFromContext(inner.gotCtx)
+	if !ok || principal.WorkspaceID != "workspace-2" || principal.OriginalWorkspaceID != "workspace-1" ||
+		principal.CallerIncarnationID != "incarnation-2" || principal.OriginalQueueIncarnationID != "incarnation-1" || principal.ExecutionID != "execution-1" {
+		t.Fatalf("retained handler principal = %#v, present=%v", principal, ok)
+	}
+}
+
+func TestMCPHandlerRetainsDurableOriginalOwnerBinding(t *testing.T) {
+	inner := &recordingMCPHandler{}
+	sm := newMCPStreamManager(t, inner, nil)
+	metadata := map[string]interface{}{
+		metadataKeyQueueCensusOwner: "owner-a", metadataKeyQueueCensusWorkspace: "workspace-1",
+		metadataKeyQueueCensusIncarnation: "incarnation-1", metadataKeyQueueCensusExecution: "execution-1",
+	}
+	execution := &AgentExecution{ID: "execution-1", TaskID: "task-a", SessionID: "session-a", WorkspaceID: "workspace-1", DeliveryIncarnationID: "incarnation-1", metadata: metadata}
+	handler := sm.mcpHandlerFor(execution)
+	execution.metadata = map[string]interface{}{metadataKeyQueueCensusOwner: "owner-b"}
+	_, err := handler.Dispatch(context.Background(), mcpRequest(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, ok := streams.MCPExecutionContextFromContext(inner.gotCtx)
+	if !ok || bound.OriginalOwnerID != "owner-a" {
+		t.Fatalf("retained original owner = %q, present=%v", bound.OriginalOwnerID, ok)
+	}
+	recovered := &AgentExecution{ID: "execution-1", TaskID: "task-a", SessionID: "session-a", DeliveryIncarnationID: "incarnation-1", metadata: FilterPersistentMetadata(metadata)}
+	_, err = sm.mcpHandlerFor(recovered).Dispatch(context.Background(), mcpRequest(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, ok = streams.MCPExecutionContextFromContext(inner.gotCtx)
+	if !ok || bound.OriginalOwnerID != "owner-a" || bound.OriginalWorkspaceID != "workspace-1" {
+		t.Fatalf("recovered original owner/workspace = %q/%q, present=%v", bound.OriginalOwnerID, bound.OriginalWorkspaceID, ok)
+	}
+	recovered.metadata = nil
+	_, err = sm.mcpHandlerFor(recovered).Dispatch(context.Background(), mcpRequest(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, _ = streams.MCPExecutionContextFromContext(inner.gotCtx)
+	if bound.OriginalOwnerID != "" {
+		t.Fatalf("unknown legacy owner was inferred as %q", bound.OriginalOwnerID)
 	}
 }
 

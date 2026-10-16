@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	streams "github.com/kandev/kandev/internal/agentctl/types/streams"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/task/models"
 )
@@ -13,12 +14,17 @@ import (
 // Automation handlers use the principal as their workspace and self-target
 // boundary in addition to the normal owner identity attached to the context.
 type Principal struct {
-	AutomationID    string
-	WorkspaceID     string
-	CallerTaskID    string
-	CallerSessionID string
-	Surface         mcpprofile.Surface
-	CoordinatorID   string
+	AutomationID               string
+	WorkspaceID                string
+	CallerTaskID               string
+	CallerSessionID            string
+	CallerIncarnationID        string
+	OriginalWorkspaceID        string
+	OriginalOwnerID            string
+	OriginalQueueIncarnationID string
+	ExecutionID                string
+	Surface                    mcpprofile.Surface
+	CoordinatorID              string
 }
 
 func (p Principal) IsAutomation() bool {
@@ -61,6 +67,21 @@ func (r *Resolver) ScopePrincipal(ctx context.Context, taskID, sessionID string)
 	if err != nil {
 		return nil, err
 	}
+	if session == nil {
+		return nil, fmt.Errorf("resolve MCP principal: session is required")
+	}
+	executionID, err := principalExecutionID(ctx, taskID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	originalIncarnationID := ""
+	originalWorkspaceID := ""
+	originalOwnerID := ""
+	if execution, ok := streams.MCPExecutionContextFromContext(ctx); ok {
+		originalIncarnationID = execution.OriginalQueueIncarnationID
+		originalWorkspaceID = execution.OriginalWorkspaceID
+		originalOwnerID = execution.OriginalOwnerID
+	}
 
 	workspaceID, err := r.resolvePrincipalWorkspace(ctx, task)
 	if err != nil {
@@ -78,12 +99,17 @@ func (r *Resolver) ScopePrincipal(ctx context.Context, taskID, sessionID string)
 		}
 	}
 	return WithPrincipal(ctx, Principal{
-		AutomationID:    automationID,
-		WorkspaceID:     workspaceID,
-		CallerTaskID:    taskID,
-		CallerSessionID: sessionID,
-		Surface:         surface,
-		CoordinatorID:   coordinatorID,
+		AutomationID:               automationID,
+		WorkspaceID:                workspaceID,
+		CallerTaskID:               taskID,
+		CallerSessionID:            sessionID,
+		CallerIncarnationID:        session.QueueIncarnationID,
+		OriginalWorkspaceID:        originalWorkspaceID,
+		OriginalOwnerID:            originalOwnerID,
+		OriginalQueueIncarnationID: originalIncarnationID,
+		ExecutionID:                executionID,
+		Surface:                    surface,
+		CoordinatorID:              coordinatorID,
 	}), nil
 }
 
@@ -177,4 +203,15 @@ func (r *Resolver) principalSurface(ctx context.Context, task *models.Task) (aut
 		return "", "", mcpprofile.SurfaceAutomation, fmt.Errorf("automation ID is missing")
 	}
 	return automationID, "", mcpprofile.SurfaceAutomation, nil
+}
+
+func principalExecutionID(ctx context.Context, taskID, sessionID string) (string, error) {
+	execution, ok := streams.MCPExecutionContextFromContext(ctx)
+	if !ok {
+		return "", nil
+	}
+	if execution.TaskID != taskID || execution.SessionID != sessionID || execution.ExecutionID == "" {
+		return "", fmt.Errorf("resolve MCP principal: execution context does not match session")
+	}
+	return execution.ExecutionID, nil
 }

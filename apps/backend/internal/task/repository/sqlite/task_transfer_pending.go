@@ -6,6 +6,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 )
@@ -150,6 +151,22 @@ func (r *Repository) updateTaskTransferRelations(
 			UPDATE workflow_step_participants SET agent_profile_id = ?
 			WHERE task_id = ? AND agent_profile_id = ?`),
 			destinationProfileID, command.TaskID, sourceProfileID); err != nil {
+			return err
+		}
+	}
+	if inventory.queueCensus {
+		return r.bumpTransferredTaskCensusTx(ctx, tx, command.TaskID)
+	}
+	return nil
+}
+
+func (r *Repository) bumpTransferredTaskCensusTx(ctx context.Context, tx *sqlx.Tx, taskID string) error {
+	var sessionIDs []string
+	if err := tx.SelectContext(ctx, &sessionIDs, r.db.Rebind(`SELECT id FROM task_sessions WHERE task_id = ? ORDER BY id`), taskID); err != nil {
+		return fmt.Errorf("list transferred task queue sessions: %w", err)
+	}
+	for _, sessionID := range sessionIDs {
+		if err := messagequeue.LockAndBumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
 			return err
 		}
 	}

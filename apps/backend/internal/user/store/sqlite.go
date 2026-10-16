@@ -208,8 +208,29 @@ func (r *sqliteRepository) ListUsers(ctx context.Context) ([]*models.User, error
 
 // DeleteUser removes the user row with the given id.
 func (r *sqliteRepository) DeleteUser(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`DELETE FROM users WHERE id = ?`), id)
-	return err
+	present, err := r.queueCensusAvailable(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM users WHERE id = ?`), id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if present && affected > 0 {
+		if err := r.bumpOwnerQueueSessionsTx(ctx, tx, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // CreateUser inserts a new user row with an empty settings blob, stamping
@@ -230,7 +251,27 @@ func (r *sqliteRepository) CreateUser(ctx context.Context, user *models.User) er
 // promote the pre-auth default-user row into the admin account (preserving the
 // row keeps all existing user settings intact) and by profile edits.
 func (r *sqliteRepository) UpdateUserProfile(ctx context.Context, id, email, displayName, role string) (*models.User, error) {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	queueCensusPresent, err := r.queueCensusAvailable(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var previousRole string
+	query := `SELECT role FROM users WHERE id = ?`
+	if dialect.IsPostgres(r.db.DriverName()) {
+		query += accountAuthorityForUpdate
+	}
+	if err := tx.GetContext(ctx, &previousRole, r.db.Rebind(query), id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("user not found: %s", id)
+		}
+		return nil, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE users SET email = ?, display_name = ?, role = ?, updated_at = ?
 		WHERE id = ?
 	`), email, displayName, role, time.Now().UTC(), id)
@@ -240,13 +281,41 @@ func (r *sqliteRepository) UpdateUserProfile(ctx context.Context, id, email, dis
 	if err := checkUserRowsAffected(result, id); err != nil {
 		return nil, err
 	}
+	if queueCensusPresent && previousRole != role {
+		if err := r.bumpOwnerQueueSessionsTx(ctx, tx, id); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
 	return r.getUserFromWriter(ctx, id)
 }
 
 // UpdateUserRoleStatus updates a user's role and status, returning the
 // refreshed row.
 func (r *sqliteRepository) UpdateUserRoleStatus(ctx context.Context, id, role, status string) (*models.User, error) {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	queueCensusPresent, err := r.queueCensusAvailable(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var previousRole, previousStatus string
+	query := `SELECT role, status FROM users WHERE id = ?`
+	if dialect.IsPostgres(r.db.DriverName()) {
+		query += accountAuthorityForUpdate
+	}
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(query), id).Scan(&previousRole, &previousStatus); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("user not found: %s", id)
+		}
+		return nil, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE users SET role = ?, status = ?, updated_at = ?
 		WHERE id = ?
 	`), role, status, time.Now().UTC(), id)
@@ -254,6 +323,14 @@ func (r *sqliteRepository) UpdateUserRoleStatus(ctx context.Context, id, role, s
 		return nil, err
 	}
 	if err := checkUserRowsAffected(result, id); err != nil {
+		return nil, err
+	}
+	if queueCensusPresent && (previousRole != role || previousStatus != status) {
+		if err := r.bumpOwnerQueueSessionsTx(ctx, tx, id); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return r.getUserFromWriter(ctx, id)

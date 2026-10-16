@@ -63,6 +63,9 @@ func (r *sqliteRepository) acquireEditLease(ctx context.Context, lease *QueueEdi
 	if affected != 1 {
 		return ErrEditConflict
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, lease.SessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -86,6 +89,9 @@ func (r *sqliteRepository) renewEditLease(ctx context.Context, lease *QueueEditL
 	if affected != 1 {
 		return ErrEditLeaseNotFound
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, lease.SessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -95,10 +101,20 @@ func (r *sqliteRepository) releaseEditLease(ctx context.Context, sessionID, entr
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, tx.Rebind(`
+	result, err := tx.ExecContext(ctx, tx.Rebind(`
 		DELETE FROM queue_edit_leases WHERE session_id = ? AND entry_id = ? AND lease_id = ?
-	`), sessionID, entryID, leaseID); err != nil {
+	`), sessionID, entryID, leaseID)
+	if err != nil {
 		return fmt.Errorf("release queue edit lease: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 1 {
+		if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

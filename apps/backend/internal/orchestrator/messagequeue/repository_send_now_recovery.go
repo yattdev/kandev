@@ -262,9 +262,22 @@ func (r *sqliteRepository) MarkPendingSendNowClaimAccepted(ctx context.Context, 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var accepted int
+	err = tx.GetContext(ctx, &accepted, r.db.Rebind(`
+		SELECT accepted FROM queue_send_now_claims WHERE session_id = ? AND claim_id = ?
+	`), sessionID, claim.ClaimID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrSendNowClaimChanged
+	}
+	if err != nil {
+		return fmt.Errorf("read Send Now claim acceptance: %w", err)
+	}
+	if accepted == 1 {
+		return tx.Commit()
+	}
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE queue_send_now_claims SET accepted = 1
-		WHERE session_id = ? AND claim_id = ?
+		WHERE session_id = ? AND claim_id = ? AND accepted = 0
 	`), sessionID, claim.ClaimID)
 	if err != nil {
 		return fmt.Errorf("mark Send Now claim accepted: %w", err)
@@ -275,6 +288,9 @@ func (r *sqliteRepository) MarkPendingSendNowClaimAccepted(ctx context.Context, 
 	}
 	if affected != 1 {
 		return ErrSendNowClaimChanged
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -323,6 +339,13 @@ func (r *sqliteRepository) SetPendingSendNowClaimDelivery(
 	if err != nil {
 		return fmt.Errorf("marshal Send Now claim delivery: %w", err)
 	}
+	if string(updatedJSON) == claimJSON {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		claim.setDeliverySubmission(protocol, submissionID, payloadHash)
+		return nil
+	}
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE queue_send_now_claims SET claim_json = ?
 		WHERE session_id = ? AND claim_id = ? AND accepted = 0
@@ -337,8 +360,14 @@ func (r *sqliteRepository) SetPendingSendNowClaimDelivery(
 	if affected != 1 {
 		return ErrSendNowClaimChanged
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
 	claim.setDeliverySubmission(protocol, submissionID, payloadHash)
-	return tx.Commit()
+	return nil
 }
 
 func (r *sqliteRepository) DeletePendingSendNowClaim(ctx context.Context, claim *SendNowClaim) error {
@@ -369,6 +398,9 @@ func (r *sqliteRepository) DeletePendingSendNowClaim(ctx context.Context, claim 
 	}
 	if affected != 1 {
 		return ErrSendNowClaimChanged
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

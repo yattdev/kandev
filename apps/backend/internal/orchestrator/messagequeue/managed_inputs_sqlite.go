@@ -311,6 +311,9 @@ func (r *sqliteRepository) CancelManagedInput(
 	}
 	receipt.State = ManagedInputStateCancelled
 	receipt.UpdatedAt = now
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, identity.SessionID); err != nil {
+		return ManagedInputReceipt{}, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return ManagedInputReceipt{}, false, fmt.Errorf("commit managed input cancellation: %w", err)
 	}
@@ -392,6 +395,9 @@ func (r *sqliteRepository) MarkManagedInputRunning(
 	receipt.TurnID = turnID
 	receipt.ExecutionID = executionID
 	receipt.UpdatedAt = now
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, identity.SessionID); err != nil {
+		return ManagedInputReceipt{}, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return ManagedInputReceipt{}, false, fmt.Errorf("commit managed input start: %w", err)
 	}
@@ -450,6 +456,9 @@ func (r *sqliteRepository) SettleManagedInput(
 		receipt.State = ManagedInputStateUncertain
 		receipt.Outcome = outcome
 		receipt.UpdatedAt = now
+		if err := bumpCensusRevisionTx(ctx, tx, r.db, identity.SessionID); err != nil {
+			return ManagedInputReceipt{}, false, err
+		}
 		if err := tx.Commit(); err != nil {
 			return ManagedInputReceipt{}, false, fmt.Errorf("commit unlinked managed input uncertainty: %w", err)
 		}
@@ -474,6 +483,9 @@ func (r *sqliteRepository) SettleManagedInput(
 	receipt.State = state
 	receipt.Outcome = outcome
 	receipt.UpdatedAt = now
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, identity.SessionID); err != nil {
+		return ManagedInputReceipt{}, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return ManagedInputReceipt{}, false, fmt.Errorf("commit managed input settlement: %w", err)
 	}

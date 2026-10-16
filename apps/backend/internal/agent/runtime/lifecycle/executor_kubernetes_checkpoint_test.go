@@ -502,6 +502,10 @@ func TestCheckpointKubernetesRuntimeInventoryPersistsBeforeExecutionRegistration
 		InstanceID: "execution-1", TaskID: "task-1", SessionID: "session-1",
 		AgentProfileID: "agent-profile-1",
 		Metadata: map[string]interface{}{
+			metadataKeyQueueCensusOwner:          "owner-a",
+			metadataKeyQueueCensusWorkspace:      "workspace-a",
+			metadataKeyQueueCensusIncarnation:    "incarnation-a",
+			metadataKeyQueueCensusExecution:      "execution-1",
 			"executor_id":                        "executor-1",
 			MetadataKeyExecutorProfileID:         "executor-profile-1",
 			MetadataKeyCleanupScript:             "cleanup",
@@ -511,6 +515,8 @@ func TestCheckpointKubernetesRuntimeInventoryPersistsBeforeExecutionRegistration
 		},
 	}
 	runtimeMetadata := map[string]interface{}{
+		metadataKeyQueueCensusOwner:                "owner-b",
+		metadataKeyQueueCensusWorkspace:            "workspace-b",
 		MetadataKeyKubernetesInventoryState:        KubernetesInventoryStatePodCreated,
 		MetadataKeyKubernetesNamespace:             "kandev-agents",
 		MetadataKeyKubernetesPodName:               "pod-1",
@@ -534,6 +540,8 @@ func TestCheckpointKubernetesRuntimeInventoryPersistsBeforeExecutionRegistration
 	require.Equal(t, models.ExecutorRunningStatusStarting, writer.running.Status)
 	require.Equal(t, "pod-uid", writer.running.Metadata[MetadataKeyKubernetesPodUID])
 	require.Equal(t, "cleanup", writer.running.Metadata[MetadataKeyCleanupScript])
+	require.Equal(t, "owner-a", writer.running.Metadata[metadataKeyQueueCensusOwner])
+	require.Equal(t, "workspace-a", writer.running.Metadata[metadataKeyQueueCensusWorkspace])
 	require.NotContains(t, writer.running.Metadata, "raw_secret_value")
 
 	require.NoError(t, mgr.releaseKubernetesRuntimeInventory(context.Background(), req))

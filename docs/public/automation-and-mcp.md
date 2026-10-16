@@ -326,6 +326,12 @@ The same data is available directly over REST for scripting: `GET /api/v1/worksp
 
 Kandev automatically injects a task-aware MCP server into supported agent sessions. You do not need to add it to the profile. It lets the active agent use current IDs and structured operations instead of inferring board state from text.
 
+### Inspect and remove a pending queue entry
+
+An active Kanban task or Office session can call `get_message_queue_census_kandev` with omitted arguments or `{}` to read its own complete pending queue. The result includes each visible entry's ID, position, sender, queued time, content byte count, content SHA-256, and a removal claim. It does not return message bodies, attachments, or metadata. If the queue cannot be represented completely, the call fails rather than returning a partial list.
+
+To remove one entry, call `remove_message_queue_entry_kandev` with exactly `entry_id` and that entry's `claim`. Any intervening queue change invalidates the claim, including a change to another entry; read a fresh census before retrying. A successful removal cannot be replayed to remove a later entry with the same ID. These tools use the authenticated current session and execution; neither accepts a task or session ID, and external, configuration, automation, coordinator, and managed-conversation MCP surfaces do not expose them.
+
 ### Manage linked pull and merge requests
 
 Task MCP provides one shared contract for GitHub pull requests and GitLab merge

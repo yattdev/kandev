@@ -626,8 +626,8 @@ func opaqueMCPConnectionID(connectionID string) string {
 // Used by agentctl which serves the MCP transport at /sse, /message, /mcp.
 func (s *Server) RegisterRoutes(router gin.IRouter) {
 	router.GET("/sse", gin.WrapH(s.sseServer.SSEHandler()))
-	router.POST("/message", gin.WrapH(s.sseServer.MessageHandler()))
-	router.Any("/mcp", gin.WrapH(s.httpServer))
+	router.POST("/message", gin.WrapH(queueArgumentBoundaryHandler(s.sseServer.MessageHandler())))
+	router.Any("/mcp", gin.WrapH(queueArgumentBoundaryHandler(s.httpServer)))
 
 	s.logger.Info("registered MCP routes", zap.String("sse", "/sse"), zap.String("http", "/mcp"))
 }
@@ -637,8 +637,8 @@ func (s *Server) RegisterRoutes(router gin.IRouter) {
 // share a clean URL prefix on the multi-purpose backend HTTP server.
 func (s *Server) RegisterBackendRoutes(router gin.IRouter) {
 	router.GET("/mcp/sse", gin.WrapH(s.sseServer.SSEHandler()))
-	router.POST("/mcp/message", gin.WrapH(s.sseServer.MessageHandler()))
-	router.Any("/mcp", gin.WrapH(s.httpServer))
+	router.POST("/mcp/message", gin.WrapH(queueArgumentBoundaryHandler(s.sseServer.MessageHandler())))
+	router.Any("/mcp", gin.WrapH(queueArgumentBoundaryHandler(s.httpServer)))
 
 	s.logger.Info("registered MCP backend routes",
 		zap.String("sse", "/mcp/sse"),
@@ -1226,6 +1226,7 @@ func (s *Server) profileToolGroups() []profileToolGroup {
 			s.registerUpdateRepositoryBaseBranchTool()
 		}},
 		{name: "step-completion", enabled: func(ctx mcpprofile.Context) bool { return kanban(ctx) || office(ctx) }, register: func(s *Server) { s.registerStepCompleteTool() }},
+		{name: "message-queue-census", enabled: func(ctx mcpprofile.Context) bool { return kanban(ctx) || office(ctx) }, register: func(s *Server) { s.registerMessageQueueTools() }},
 		{name: "task-title", enabled: andProfilePredicates(kanban, capabilityEnabled(mcpprofile.CapabilityTaskTitle)), register: func(s *Server) { s.registerSetTaskTitleTool() }},
 		{name: "diagnostics", enabled: kanban, register: func(s *Server) { s.registerDiagnosticBundleTool() }},
 		{name: "canvas-authoring", enabled: andProfilePredicates(kanban, capabilityEnabled(mcpprofile.CapabilityCanvas)), register: func(s *Server) { s.registerCanvasTools() }},

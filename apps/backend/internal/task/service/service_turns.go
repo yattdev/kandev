@@ -908,6 +908,10 @@ func (s *Service) GetWorkspaceInfoForSession(ctx context.Context, taskID, sessio
 		RuntimeConfigOptions:    runtimeConfig.ConfigOptions,
 		RuntimeConfigOptionsSet: runtimeConfigOptionsSet,
 	}
+	info.OriginalOwnerID, err = s.censusOriginalOwnerForTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
 	incarnationID, generation, err := s.workspaceDeliveryIdentity(ctx, session)
 	if err != nil {
 		return nil, err
@@ -1027,6 +1031,27 @@ func (s *Service) GetWorkspaceInfoForSession(ctx context.Context, taskID, sessio
 	info.McpMode = mcpMode
 
 	return info, nil
+}
+
+func (s *Service) censusOriginalOwnerForTask(ctx context.Context, taskID string) (string, error) {
+	if taskID == "" {
+		return "", nil
+	}
+	task, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil {
+		return "", fmt.Errorf("resolve queue census owner task: %w", err)
+	}
+	if task == nil || task.WorkspaceID == "" {
+		return "", nil
+	}
+	workspace, err := s.workspaces.GetWorkspace(ctx, task.WorkspaceID)
+	if err != nil {
+		return "", fmt.Errorf("resolve queue census owner workspace: %w", err)
+	}
+	if workspace == nil {
+		return "", nil
+	}
+	return workspace.OwnerID, nil
 }
 
 // resolveWorkspaceInfoMcpMode derives WorkspaceInfo.McpMode from taskID alone

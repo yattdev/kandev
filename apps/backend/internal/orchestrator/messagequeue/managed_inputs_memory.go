@@ -175,10 +175,14 @@ func (r *memoryRepository) CancelManagedInput(
 	if receipt.State != ManagedInputStateAccepted {
 		return receipt, false, nil
 	}
+	if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+		return ManagedInputReceipt{}, false, err
+	}
 	receipt.State = ManagedInputStateCancelled
 	receipt.UpdatedAt = time.Now().UTC()
 	r.managedInputs[key] = receipt
 	r.removeManagedQueueRowLocked(identity.SessionID, inputID)
+	r.bumpCensusLocked(identity.SessionID)
 	return receipt, true, nil
 }
 
@@ -216,6 +220,9 @@ func (r *memoryRepository) MarkManagedInputRunning(
 	if !isMemoryQueueHead(r.entries[identity.SessionID], inputID) {
 		return ManagedInputReceipt{}, false, ErrManagedInputNotHead
 	}
+	if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+		return ManagedInputReceipt{}, false, err
+	}
 	receipt.State = ManagedInputStateRunning
 	receipt.TurnID = turnID
 	receipt.ExecutionID = executionID
@@ -223,6 +230,7 @@ func (r *memoryRepository) MarkManagedInputRunning(
 	r.managedInputs[key] = receipt
 	entries := r.entries[identity.SessionID]
 	r.entries[identity.SessionID] = append(entries[:rowIndex], entries[rowIndex+1:]...)
+	r.bumpCensusLocked(identity.SessionID)
 	return receipt, true, nil
 }
 
@@ -251,20 +259,28 @@ func (r *memoryRepository) SettleManagedInput(
 	}
 	if receipt.State == ManagedInputStateAccepted && state == ManagedInputStateUncertain &&
 		turnID == "" && executionID == "" {
+		if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+			return ManagedInputReceipt{}, false, err
+		}
 		receipt.State = ManagedInputStateUncertain
 		receipt.Outcome = outcome
 		receipt.UpdatedAt = time.Now().UTC()
 		r.managedInputs[key] = receipt
 		r.removeManagedQueueRowLocked(identity.SessionID, inputID)
+		r.bumpCensusLocked(identity.SessionID)
 		return receipt, true, nil
 	}
 	if receipt.State != ManagedInputStateRunning || receipt.TurnID != turnID || receipt.ExecutionID != executionID {
 		return ManagedInputReceipt{}, false, ErrManagedInputTransition
 	}
+	if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+		return ManagedInputReceipt{}, false, err
+	}
 	receipt.State = state
 	receipt.Outcome = outcome
 	receipt.UpdatedAt = time.Now().UTC()
 	r.managedInputs[key] = receipt
+	r.bumpCensusLocked(identity.SessionID)
 	return receipt, true, nil
 }
 

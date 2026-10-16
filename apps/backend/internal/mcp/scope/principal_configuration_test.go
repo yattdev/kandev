@@ -27,7 +27,7 @@ func TestScopePrincipalConfigurationRequiresStoredSessionPurpose(t *testing.T) {
 				tasks: principalLookup{
 					task:      &models.Task{ID: "task", WorkspaceID: "workspace", Origin: tt.origin, Metadata: tt.taskMetadata},
 					workspace: &models.Workspace{ID: "workspace"},
-					session:   &models.TaskSession{ID: "session", TaskID: "task", Metadata: tt.sessionMetadata},
+					session:   &models.TaskSession{ID: "session", TaskID: "task", QueueIncarnationID: "incarnation-1", Metadata: tt.sessionMetadata},
 				},
 				coordinators: fakeCoordinatorLookup{coordinatorID: "coordinator", ok: true},
 			}

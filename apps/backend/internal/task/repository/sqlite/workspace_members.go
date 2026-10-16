@@ -8,6 +8,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
+	internaldb "github.com/kandev/kandev/internal/db"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
 )
 
@@ -144,6 +146,16 @@ func (r *Repository) CountWorkspaceMembers(ctx context.Context) (map[string]int,
 // TransferWorkspaceOwnership moves the accountable owner in one transaction:
 // workspaces.owner_id and the mirroring owner row must never disagree.
 func (r *Repository) TransferWorkspaceOwnership(ctx context.Context, workspaceID, fromUserID, toUserID string) error {
+	queueCensusPresent, err := internaldb.TableExistsContext(ctx, r.db, "queue_session_locks")
+	if err != nil {
+		return err
+	}
+	if queueCensusPresent {
+		queueCensusPresent, err = internaldb.ColumnExists(r.db, "queue_session_locks", "census_revision")
+		if err != nil {
+			return err
+		}
+	}
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -179,6 +191,20 @@ func (r *Repository) TransferWorkspaceOwnership(ctx context.Context, workspaceID
 	if fromUserID != "" && fromUserID != toUserID {
 		if err := upsertMemberTx(ctx, tx, r.db.Rebind, workspaceID, fromUserID, "collaborator", now); err != nil {
 			return err
+		}
+	}
+	if queueCensusPresent && fromUserID != toUserID {
+		var sessionIDs []string
+		if err := tx.SelectContext(ctx, &sessionIDs, r.db.Rebind(`
+			SELECT ts.id FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
+			WHERE t.workspace_id = ? ORDER BY ts.id
+		`), workspaceID); err != nil {
+			return err
+		}
+		for _, sessionID := range sessionIDs {
+			if err := messagequeue.LockAndBumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()

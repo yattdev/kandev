@@ -434,6 +434,13 @@ func recoveredRemoteMetadata(record *models.ExecutorRunning, ri *ExecutorInstanc
 	for key, value := range ri.Metadata {
 		metadata[key] = value
 	}
+	for _, key := range []string{metadataKeyQueueCensusOwner, metadataKeyQueueCensusWorkspace, metadataKeyQueueCensusIncarnation, metadataKeyQueueCensusExecution} {
+		if value, ok := record.Metadata[key]; ok {
+			metadata[key] = value
+		} else {
+			delete(metadata, key)
+		}
+	}
 	return metadata
 }
 

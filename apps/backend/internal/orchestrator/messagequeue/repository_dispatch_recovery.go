@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	internaldb "github.com/kandev/kandev/internal/db"
 )
@@ -319,9 +319,23 @@ func (r *sqliteRepository) MarkPendingQueueDispatchAccepted(
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var accepted int
+	err = tx.GetContext(ctx, &accepted, r.db.Rebind(`
+		SELECT accepted FROM queue_dispatch_claims
+		WHERE entry_id = ? AND session_id = ? AND attempt_id = ?
+	`), msg.ID, msg.SessionID, msg.dispatchAttemptID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrQueueDispatchClaimChanged
+	}
+	if err != nil {
+		return fmt.Errorf("read queue dispatch acceptance: %w", err)
+	}
+	if accepted == 1 {
+		return tx.Commit()
+	}
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE queue_dispatch_claims SET accepted = 1
-		WHERE entry_id = ? AND session_id = ? AND attempt_id = ?
+		WHERE entry_id = ? AND session_id = ? AND attempt_id = ? AND accepted = 0
 	`), msg.ID, msg.SessionID, msg.dispatchAttemptID)
 	if err != nil {
 		return fmt.Errorf("mark queue dispatch accepted: %w", err)
@@ -332,6 +346,9 @@ func (r *sqliteRepository) MarkPendingQueueDispatchAccepted(
 	}
 	if affected != 1 {
 		return ErrQueueDispatchClaimChanged
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -352,6 +369,29 @@ func (r *sqliteRepository) SetPendingQueueDispatchDelivery(
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var stored struct {
+		ProtocolMode string `db:"protocol_mode"`
+		SubmissionID string `db:"submission_id"`
+		PayloadHash  string `db:"payload_hash"`
+		Accepted     int    `db:"accepted"`
+	}
+	err = tx.GetContext(ctx, &stored, r.db.Rebind(`
+		SELECT protocol_mode, submission_id, payload_hash, accepted FROM queue_dispatch_claims
+		WHERE entry_id = ? AND session_id = ? AND attempt_id = ?
+	`), msg.ID, msg.SessionID, msg.dispatchAttemptID)
+	if errors.Is(err, sql.ErrNoRows) || stored.Accepted != 0 {
+		return ErrQueueDispatchClaimChanged
+	}
+	if err != nil {
+		return fmt.Errorf("read queue dispatch delivery: %w", err)
+	}
+	if stored.ProtocolMode == protocol && stored.SubmissionID == submissionID && stored.PayloadHash == payloadHash {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		msg.setDeliverySubmission(protocol, submissionID, payloadHash)
+		return nil
+	}
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE queue_dispatch_claims
 		SET protocol_mode = ?, submission_id = ?, payload_hash = ?
@@ -367,8 +407,14 @@ func (r *sqliteRepository) SetPendingQueueDispatchDelivery(
 	if affected != 1 {
 		return ErrQueueDispatchClaimChanged
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
 	msg.setDeliverySubmission(protocol, submissionID, payloadHash)
-	return tx.Commit()
+	return nil
 }
 
 func (r *sqliteRepository) DeletePendingQueueDispatch(
@@ -384,6 +430,9 @@ func (r *sqliteRepository) DeletePendingQueueDispatch(
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := r.deletePendingQueueDispatchTx(ctx, tx, msg); err != nil {
+		return err
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -3,6 +3,7 @@ package messagequeue
 import (
 	"context"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -29,7 +30,10 @@ type memoryRepository struct {
 	managedInputs      map[managedInputIDKey]ManagedInputReceipt
 	managedOccurrences map[managedInputOccurrenceKey]managedInputIDKey
 	statusGeneration   map[string]int64
+	censusRevision     map[string]int64
+	censusEditLeases   map[editLeaseKey]*QueueEditLease
 	authority          func(context.Context, string, string) (QueueSessionIdentity, error)
+	censusAuthority    CensusAuthorityGuard
 }
 
 // NewMemoryRepository returns an in-memory Repository. Suitable for tests.
@@ -46,6 +50,8 @@ func NewMemoryRepository() Repository {
 		autoRunIncarnation: make(map[string]string),
 		autoMergeOverrides: make(map[QueueSessionIdentity]AutoMergeOverride),
 		statusGeneration:   make(map[string]int64),
+		censusRevision:     make(map[string]int64),
+		censusEditLeases:   make(map[editLeaseKey]*QueueEditLease),
 		identities:         make(map[string]QueueSessionIdentity),
 		admissionReceipts:  make(map[queueAdmissionKey]queueAdmissionReceipt),
 		managedInputs:      make(map[managedInputIDKey]ManagedInputReceipt),
@@ -73,6 +79,11 @@ func (r *memoryRepository) clearSessionStateLocked(sessionID string) {
 	delete(r.autoRunIncarnation, sessionID)
 	delete(r.statusGeneration, sessionID)
 	delete(r.identities, sessionID)
+	for key := range r.censusEditLeases {
+		if key.sessionID == sessionID {
+			delete(r.censusEditLeases, key)
+		}
+	}
 	for key := range r.admissionReceipts {
 		if key.SessionID == sessionID {
 			delete(r.admissionReceipts, key)
@@ -132,7 +143,11 @@ func (r *memoryRepository) ResolveSessionIdentity(ctx context.Context, taskID, s
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if existing, ok := r.identities[sessionID]; ok && existing != identity {
+			if err := r.canBumpCensusLocked(sessionID); err != nil {
+				return QueueSessionIdentity{}, err
+			}
 			r.clearSessionStateLocked(sessionID)
+			r.bumpCensusLocked(sessionID)
 		}
 		r.identities[sessionID] = identity
 		return identity, nil
@@ -205,6 +220,23 @@ func (r *memoryRepository) SessionGeneration(_ context.Context, sessionID string
 func (r *memoryRepository) PurgeTask(_ context.Context, taskID string) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for sessionID, list := range r.entries {
+		for _, msg := range list {
+			if msg.TaskID == taskID {
+				if err := r.canBumpCensusLocked(sessionID); err != nil {
+					return 0, err
+				}
+				break
+			}
+		}
+	}
+	for sessionID, move := range r.pendingMoves {
+		if move != nil && move.TaskID == taskID {
+			if err := r.canBumpCensusLocked(sessionID); err != nil {
+				return 0, err
+			}
+		}
+	}
 	removed := 0
 	affectedSessions := make(map[string]struct{})
 	for sessionID, list := range r.entries {
@@ -236,6 +268,7 @@ func (r *memoryRepository) PurgeTask(_ context.Context, taskID string) (int, err
 	}
 	for sessionID := range affectedSessions {
 		r.sessionGeneration[sessionID]++
+		r.bumpCensusLocked(sessionID)
 	}
 	r.generation[taskID]++
 	return removed, nil
@@ -385,6 +418,9 @@ func (r *memoryRepository) restoreLocked(msg *QueuedMessage, maxPerSession int) 
 	if maxPerSession > 0 && len(list) >= maxPerSession {
 		return ErrQueueFull
 	}
+	if err := r.canBumpCensusLocked(msg.SessionID); err != nil {
+		return err
+	}
 	if msg.ID == "" {
 		msg.ID = uuid.New().String()
 	}
@@ -400,6 +436,7 @@ func (r *memoryRepository) restoreLocked(msg *QueuedMessage, maxPerSession int) 
 	if clone.Position > r.nextPosition[msg.SessionID] {
 		r.nextPosition[msg.SessionID] = clone.Position
 	}
+	r.bumpCensusLocked(msg.SessionID)
 	return nil
 }
 
@@ -429,10 +466,14 @@ func (r *memoryRepository) SetAutoMergeOverride(
 	if err := r.bindIdentityLocked(identity); err != nil {
 		return AutoMergeOverride{}, err
 	}
+	if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+		return AutoMergeOverride{}, err
+	}
 	override := r.autoMergeOverrides[identity]
 	override.Enabled = enabled
 	override.Revision++
 	r.autoMergeOverrides[identity] = override
+	r.bumpCensusLocked(identity.SessionID)
 	return override, nil
 }
 
@@ -470,6 +511,9 @@ func (r *memoryRepository) insertLocked(msg *QueuedMessage, maxPerSession int) e
 	if maxPerSession > 0 && len(list) >= maxPerSession {
 		return ErrQueueFull
 	}
+	if err := r.canBumpCensusLocked(msg.SessionID); err != nil {
+		return err
+	}
 	if msg.ID == "" {
 		msg.ID = uuid.New().String()
 	}
@@ -480,6 +524,7 @@ func (r *memoryRepository) insertLocked(msg *QueuedMessage, maxPerSession int) e
 	msg.Position = r.nextPosition[msg.SessionID]
 	clone := cloneQueuedMessage(msg)
 	r.entries[msg.SessionID] = append(list, clone)
+	r.bumpCensusLocked(msg.SessionID)
 	return nil
 }
 
@@ -548,6 +593,9 @@ func (r *memoryRepository) requeuePreservingFIFOLocked(
 			if metadataString(existing.Metadata, MetadataCoalesceKey) != coalesceKey {
 				continue
 			}
+			if err := r.canBumpCensusLocked(msg.SessionID); err != nil {
+				return err
+			}
 			existing.TaskID = msg.TaskID
 			existing.Content = msg.Content
 			existing.Model = msg.Model
@@ -561,8 +609,12 @@ func (r *memoryRepository) requeuePreservingFIFOLocked(
 			}
 			msg.ID = existing.ID
 			msg.Position = existing.Position
+			r.bumpCensusLocked(msg.SessionID)
 			return nil
 		}
+	}
+	if err := r.canBumpCensusLocked(msg.SessionID); err != nil {
+		return err
 	}
 	if msg.ID == "" {
 		msg.ID = uuid.New().String()
@@ -576,6 +628,7 @@ func (r *memoryRepository) requeuePreservingFIFOLocked(
 	newList = append(newList, clone)
 	newList = append(newList, list...)
 	r.entries[msg.SessionID] = newList
+	r.bumpCensusLocked(msg.SessionID)
 	return nil
 }
 
@@ -594,6 +647,9 @@ func (r *memoryRepository) releaseLifecycleReservationForRetryLocked(
 			lifecycleReservationIncarnation(existing.Metadata) != expectedIncarnationID {
 			return ErrEntryNotFound
 		}
+		if err := r.canBumpCensusLocked(msg.SessionID); err != nil {
+			return err
+		}
 		coalesceKey := metadataString(existing.Metadata, MetadataCoalesceKey)
 		if r.hasPendingCoalescedSuccessorLocked(
 			msg.SessionID,
@@ -602,6 +658,7 @@ func (r *memoryRepository) releaseLifecycleReservationForRetryLocked(
 			coalesceKey,
 		) {
 			r.removeEntryLocked(msg.SessionID, index)
+			r.bumpCensusLocked(msg.SessionID)
 			return nil
 		}
 		releasedMetadata := copyMessageMetadata(existing.Metadata, len(msg.Metadata))
@@ -609,6 +666,7 @@ func (r *memoryRepository) releaseLifecycleReservationForRetryLocked(
 			releasedMetadata[key] = value
 		}
 		existing.Metadata = clearReservedMetadata(releasedMetadata)
+		r.bumpCensusLocked(msg.SessionID)
 		return nil
 	}
 	return ErrEntryNotFound
@@ -685,7 +743,11 @@ func (r *memoryRepository) appendOrInsertTailLocked(sessionID, taskID, content, 
 	if len(list) > 0 {
 		tail := list[len(list)-1]
 		if tail.QueuedBy == queuedBy {
+			if err := r.canBumpCensusLocked(sessionID); err != nil {
+				return nil, false, err
+			}
 			tail.Content = tail.Content + "\n\n---\n\n" + content
+			r.bumpCensusLocked(sessionID)
 			out := cloneQueuedMessage(tail)
 			return out, true, nil
 		}
@@ -751,6 +813,9 @@ func (r *memoryRepository) insertOrReplaceByCoalesceKeyLocked(
 			reservedMatch = true
 			continue
 		}
+		if err := r.canBumpCensusLocked(msg.SessionID); err != nil {
+			return nil, false, err
+		}
 		if msg.QueuedAt.IsZero() {
 			msg.QueuedAt = time.Now().UTC()
 		}
@@ -762,6 +827,7 @@ func (r *memoryRepository) insertOrReplaceByCoalesceKeyLocked(
 		existing.Metadata = copyMessageMetadata(msg.Metadata, 0)
 		existing.QueuedAt = msg.QueuedAt
 		out := cloneQueuedMessage(existing)
+		r.bumpCensusLocked(msg.SessionID)
 		return out, true, nil
 	}
 	if !allowInsert {
@@ -825,6 +891,9 @@ func (r *memoryRepository) insertOrReplaceLifecycleLocked(
 			reservedMatch = true
 			continue
 		}
+		if err := r.canBumpCensusLocked(msg.SessionID); err != nil {
+			return nil, false, err
+		}
 		if msg.QueuedAt.IsZero() {
 			msg.QueuedAt = time.Now().UTC()
 		}
@@ -836,6 +905,7 @@ func (r *memoryRepository) insertOrReplaceLifecycleLocked(
 		existing.Metadata = msg.Metadata
 		existing.QueuedAt = msg.QueuedAt
 		out := *existing
+		r.bumpCensusLocked(msg.SessionID)
 		return &out, true, nil
 	}
 	if !allowInsert {
@@ -957,6 +1027,9 @@ func (r *memoryRepository) TakeHead(_ context.Context, sessionID string) (*Queue
 		return nil, nil
 	}
 	headIndex := lowestPositionIndex(list)
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return nil, err
+	}
 	head := list[headIndex]
 	r.entries[sessionID] = append(list[:headIndex], list[headIndex+1:]...)
 	if len(r.entries[sessionID]) == 0 {
@@ -964,6 +1037,7 @@ func (r *memoryRepository) TakeHead(_ context.Context, sessionID string) (*Queue
 	}
 	out := cloneQueuedMessage(head)
 	r.captureReservationLocked(out)
+	r.bumpCensusLocked(sessionID)
 	return out, nil
 }
 
@@ -971,22 +1045,26 @@ func (r *memoryRepository) TakeHead(_ context.Context, sessionID string) (*Queue
 func (r *memoryRepository) ReserveHead(_ context.Context, sessionID string) (*QueuedMessage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.reserveHeadLocked(sessionID, nil, false), nil
+	return r.reserveHeadLocked(sessionID, nil, false)
 }
 
 func (r *memoryRepository) reserveHeadLocked(
 	sessionID string,
 	identity *QueueSessionIdentity,
 	retainOrdinary bool,
-) *QueuedMessage {
+) (*QueuedMessage, error) {
 	list := r.entries[sessionID]
 	if len(list) == 0 {
-		return nil
+		return nil, nil
+	}
+	if r.censusRevision[sessionID] > int64(^uint64(0)>>1)-int64(len(list)) {
+		return nil, errCensusRevisionExhausted
 	}
 	headIndex := lowestPositionIndex(list)
 	head := list[headIndex]
 	if head.IsDeliveryAttempted() && !isManagedInputQueueEntry(head) {
 		r.removeEntryLocked(sessionID, headIndex)
+		r.bumpCensusLocked(sessionID)
 		return r.reserveHeadLocked(sessionID, identity, retainOrdinary)
 	}
 	if head.IsDurablePlanComment() && head.IsReservedInFlight() {
@@ -995,22 +1073,25 @@ func (r *memoryRepository) reserveHeadLocked(
 		if (identity == nil || reservationIncarnation == "" ||
 			reservationIncarnation == identity.SessionIncarnationID) &&
 			deliveryReservationToken(head.Metadata) != "" && expiresAt.After(time.Now()) {
-			return nil
+			return nil, nil
 		}
 	}
 	if head.IsDurableDelivery() || retainOrdinary {
 		if reservationBelongsToDifferentIncarnation(head.Metadata, identity) {
 			r.removeEntryLocked(sessionID, headIndex)
+			r.bumpCensusLocked(sessionID)
 			return r.reserveHeadLocked(sessionID, identity, retainOrdinary)
 		}
 		out := reserveMemoryDelivery(head, identity)
 		r.captureReservationLocked(out)
-		return out
+		r.bumpCensusLocked(sessionID)
+		return out, nil
 	}
 	out := cloneQueuedMessage(head)
 	r.captureReservationLocked(out)
 	r.removeEntryLocked(sessionID, headIndex)
-	return out
+	r.bumpCensusLocked(sessionID)
+	return out, nil
 }
 
 func reservationBelongsToDifferentIncarnation(
@@ -1107,7 +1188,14 @@ func (r *memoryRepository) setAutoRunLocked(
 func (r *memoryRepository) SetAutoRun(_ context.Context, sessionID string, enabled bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if current, exists := r.autoRun[sessionID]; exists && current == enabled && r.autoRunIncarnation[sessionID] == "" {
+		return nil
+	}
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return err
+	}
 	r.setAutoRunLocked(nil, sessionID, enabled)
+	r.bumpCensusLocked(sessionID)
 	return nil
 }
 
@@ -1117,7 +1205,15 @@ func (r *memoryRepository) SetAutoRunForSession(_ context.Context, identity Queu
 	if err := r.bindIdentityLocked(identity); err != nil {
 		return err
 	}
+	if current, exists := r.autoRun[identity.SessionID]; exists && current == enabled &&
+		r.autoRunIncarnation[identity.SessionID] == identity.SessionIncarnationID {
+		return nil
+	}
+	if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+		return err
+	}
 	r.setAutoRunLocked(&identity, identity.SessionID, enabled)
+	r.bumpCensusLocked(identity.SessionID)
 	return nil
 }
 
@@ -1125,7 +1221,14 @@ func (r *memoryRepository) SetAutoRunForSession(_ context.Context, identity Queu
 func (r *memoryRepository) PauseAutoRunIfPending(_ context.Context, sessionID string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.pauseAutoRunIfPendingLocked(nil, sessionID), nil
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return false, err
+	}
+	changed := r.pauseAutoRunIfPendingLocked(nil, sessionID)
+	if changed {
+		r.bumpCensusLocked(sessionID)
+	}
+	return changed, nil
 }
 
 func (r *memoryRepository) PauseAutoRunIfPendingForSession(
@@ -1137,7 +1240,14 @@ func (r *memoryRepository) PauseAutoRunIfPendingForSession(
 	if err := r.bindIdentityLocked(identity); err != nil {
 		return false, err
 	}
-	return r.pauseAutoRunIfPendingLocked(&identity, identity.SessionID), nil
+	if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+		return false, err
+	}
+	changed := r.pauseAutoRunIfPendingLocked(&identity, identity.SessionID)
+	if changed {
+		r.bumpCensusLocked(identity.SessionID)
+	}
+	return changed, nil
 }
 
 func (r *memoryRepository) pauseAutoRunIfPendingLocked(
@@ -1161,7 +1271,8 @@ func (r *memoryRepository) ReserveHeadIfAutoRun(_ context.Context, sessionID str
 	if !r.autoRunLocked(sessionID) {
 		return nil, false, nil
 	}
-	return r.reserveHeadLocked(sessionID, nil, false), true, nil
+	reserved, err := r.reserveHeadLocked(sessionID, nil, false)
+	return reserved, true, err
 }
 
 func (r *memoryRepository) ReserveHeadIfAutoRunForSession(_ context.Context, identity QueueSessionIdentity) (*QueuedMessage, bool, error) {
@@ -1173,7 +1284,8 @@ func (r *memoryRepository) ReserveHeadIfAutoRunForSession(_ context.Context, ide
 	if !r.autoRunForIdentityLocked(identity) {
 		return nil, false, nil
 	}
-	return r.reserveHeadLocked(identity.SessionID, &identity, false), true, nil
+	reserved, err := r.reserveHeadLocked(identity.SessionID, &identity, false)
+	return reserved, true, err
 }
 
 func (r *memoryRepository) ReserveHeadForDeliveryIfAutoRunForSession(
@@ -1188,7 +1300,8 @@ func (r *memoryRepository) ReserveHeadForDeliveryIfAutoRunForSession(
 	if !r.autoRunForIdentityLocked(identity) {
 		return nil, false, nil
 	}
-	return r.reserveHeadLocked(identity.SessionID, &identity, true), true, nil
+	reserved, err := r.reserveHeadLocked(identity.SessionID, &identity, true)
+	return reserved, true, err
 }
 
 // AcknowledgeReserved removes only the exact lifecycle delivery attempt.
@@ -1204,10 +1317,14 @@ func (r *memoryRepository) AcknowledgeReserved(_ context.Context, reserved *Queu
 		if reserved.lifecycleReservationID == "" || storedReservationID != reserved.lifecycleReservationID {
 			return ErrLifecycleReservationChanged
 		}
+		if err := r.canBumpCensusLocked(reserved.SessionID); err != nil {
+			return err
+		}
 		r.entries[reserved.SessionID] = append(list[:i], list[i+1:]...)
 		if len(r.entries[reserved.SessionID]) == 0 {
 			delete(r.entries, reserved.SessionID)
 		}
+		r.bumpCensusLocked(reserved.SessionID)
 		return nil
 	}
 	return ErrEntryNotFound
@@ -1223,7 +1340,11 @@ func (r *memoryRepository) AcknowledgeByID(_ context.Context, sessionID, entryID
 		if !msg.IsReservedInFlight() {
 			return ErrEntryNotFound
 		}
+		if err := r.canBumpCensusLocked(sessionID); err != nil {
+			return err
+		}
 		r.removeEntryLocked(sessionID, index)
+		r.bumpCensusLocked(sessionID)
 		return nil
 	}
 	return ErrEntryNotFound
@@ -1251,7 +1372,11 @@ func (r *memoryRepository) AcknowledgeByIDForSession(
 			!reserved.reservationMatches(msg.Metadata) {
 			return ErrEntryNotFound
 		}
+		if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+			return err
+		}
 		r.removeEntryLocked(identity.SessionID, index)
+		r.bumpCensusLocked(identity.SessionID)
 		return nil
 	}
 	return ErrEntryNotFound
@@ -1294,9 +1419,17 @@ func (r *memoryRepository) MarkDeliveryAttemptedForSession(
 		}
 		stored[candidate.ID] = found
 	}
+	if len(stored) > 0 {
+		if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+			return err
+		}
+	}
 	for _, msg := range stored {
 		msg.Metadata[MetadataDeliveryAttempted] = true
 		msg.Metadata[metadataUserMessageRecorded] = true
+	}
+	if len(stored) > 0 {
+		r.bumpCensusLocked(identity.SessionID)
 	}
 	return nil
 }
@@ -1323,6 +1456,9 @@ func (r *memoryRepository) ReleaseDeliveryReservationForSession(
 			!reserved.reservationMatches(msg.Metadata) {
 			return ErrEntryNotFound
 		}
+		if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+			return err
+		}
 		coalesceKey := metadataString(msg.Metadata, MetadataCoalesceKey)
 		if r.hasPendingCoalescedSuccessorLocked(
 			identity.SessionID,
@@ -1331,9 +1467,11 @@ func (r *memoryRepository) ReleaseDeliveryReservationForSession(
 			coalesceKey,
 		) {
 			r.removeEntryLocked(identity.SessionID, index)
+			r.bumpCensusLocked(identity.SessionID)
 			return nil
 		}
 		msg.Metadata = clearReservedMetadata(msg.Metadata)
+		r.bumpCensusLocked(identity.SessionID)
 		return nil
 	}
 	return ErrEntryNotFound
@@ -1357,7 +1495,11 @@ func (r *memoryRepository) DiscardLifecycleReservation(
 			!reserved.reservationMatches(msg.Metadata) {
 			return ErrEntryNotFound
 		}
+		if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+			return err
+		}
 		r.removeEntryLocked(identity.SessionID, index)
+		r.bumpCensusLocked(identity.SessionID)
 		return nil
 	}
 	return ErrEntryNotFound
@@ -1369,7 +1511,7 @@ func (r *memoryRepository) DiscardLifecycleReservation(
 func (r *memoryRepository) TakeByID(_ context.Context, sessionID, entryID string) (*QueuedMessage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.takeByIDLocked(sessionID, entryID), nil
+	return r.takeByIDLocked(sessionID, entryID)
 }
 func (r *memoryRepository) TakeByIDForSession(
 	_ context.Context,
@@ -1381,17 +1523,20 @@ func (r *memoryRepository) TakeByIDForSession(
 	if err := r.bindIdentityLocked(identity); err != nil {
 		return nil, err
 	}
-	return r.takeByIDLocked(identity.SessionID, entryID), nil
+	return r.takeByIDLocked(identity.SessionID, entryID)
 }
 
-func (r *memoryRepository) takeByIDLocked(sessionID, entryID string) *QueuedMessage {
+func (r *memoryRepository) takeByIDLocked(sessionID, entryID string) (*QueuedMessage, error) {
 	list, ok := r.entries[sessionID]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	for i, message := range list {
 		if message.ID != entryID {
 			continue
+		}
+		if err := r.canBumpCensusLocked(sessionID); err != nil {
+			return nil, err
 		}
 		r.entries[sessionID] = append(list[:i], list[i+1:]...)
 		if len(r.entries[sessionID]) == 0 {
@@ -1399,9 +1544,10 @@ func (r *memoryRepository) takeByIDLocked(sessionID, entryID string) *QueuedMess
 		}
 		out := cloneQueuedMessage(message)
 		r.captureReservationLocked(out)
-		return out
+		r.bumpCensusLocked(sessionID)
+		return out, nil
 	}
-	return nil
+	return nil, nil
 }
 
 // ClaimSendNow atomically claims the exact ordered source snapshot for a send-now dispatch.
@@ -1459,6 +1605,9 @@ func (r *memoryRepository) claimSendNowLocked(
 	if err != nil {
 		return nil, err
 	}
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return nil, err
+	}
 	generations := make(map[string]int64)
 	for _, source := range sources {
 		if source.TaskID != "" {
@@ -1511,6 +1660,7 @@ func (r *memoryRepository) claimSendNowLocked(
 	}
 	r.setAutoRunLocked(identityPointer(identity), sessionID, true)
 	r.sendNowGeneration[sessionID]++
+	r.bumpCensusLocked(sessionID)
 	return &SendNowClaim{
 		ClaimID:             uuid.NewString(),
 		Identity:            identity,
@@ -1579,6 +1729,9 @@ func (r *memoryRepository) RestoreSendNowClaim(ctx context.Context, claim *SendN
 	if err := validateMemorySendNowRestore(claim, sessionID, existing, r.generation); err != nil {
 		return err
 	}
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return err
+	}
 
 	for _, source := range claim.Sources {
 		if sendNowSourceGenerationChanged(claim, source, r.generation[source.TaskID]) {
@@ -1600,6 +1753,7 @@ func (r *memoryRepository) RestoreSendNowClaim(ctx context.Context, claim *SendN
 	sort.Slice(list, func(i, j int) bool { return list[i].Position < list[j].Position })
 	r.entries[sessionID] = list
 	delete(r.sendNowClaims, sessionID)
+	r.bumpCensusLocked(sessionID)
 	return nil
 }
 
@@ -1680,6 +1834,9 @@ func (r *memoryRepository) AcknowledgeSendNowClaim(ctx context.Context, claim *S
 	if len(requested) == 0 {
 		return nil
 	}
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return err
+	}
 	list := r.entries[sessionID]
 	remaining := list[:0]
 	for _, entry := range list {
@@ -1693,6 +1850,7 @@ func (r *memoryRepository) AcknowledgeSendNowClaim(ctx context.Context, claim *S
 		r.entries[sessionID] = remaining
 	}
 	delete(r.sendNowClaims, sessionID)
+	r.bumpCensusLocked(sessionID)
 	return nil
 }
 
@@ -1806,9 +1964,17 @@ func (r *memoryRepository) updateContentAndMetadataLocked(sessionID, entryID, co
 		if m.QueuedBy != queuedBy || m.IsReservedInFlight() {
 			return ErrEntryNotFound
 		}
+		updatedMetadata := applyMetadataUpdates(m.Metadata, metadataUpdates)
+		if m.Content == content && slices.Equal(m.Attachments, attachments) && reflect.DeepEqual(m.Metadata, updatedMetadata) {
+			return nil
+		}
+		if err := r.canBumpCensusLocked(sessionID); err != nil {
+			return err
+		}
 		m.Content = content
 		m.Attachments = append([]MessageAttachment(nil), attachments...)
-		m.Metadata = applyMetadataUpdates(m.Metadata, metadataUpdates)
+		m.Metadata = updatedMetadata
+		r.bumpCensusLocked(sessionID)
 		return nil
 	}
 	return ErrEntryNotFound
@@ -1877,6 +2043,9 @@ func (r *memoryRepository) mergeIntoAboveLocked(sessionID, sourceID, queuedBy st
 	if err != nil {
 		return nil, err
 	}
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return nil, err
+	}
 	target.Content = content
 	target.Attachments = attachments
 	target.Metadata = metadata
@@ -1885,6 +2054,7 @@ func (r *memoryRepository) mergeIntoAboveLocked(sessionID, sourceID, queuedBy st
 	if len(r.entries[sessionID]) == 0 {
 		delete(r.nextPosition, sessionID)
 	}
+	r.bumpCensusLocked(sessionID)
 	return cloneQueuedMessage(target), nil
 }
 
@@ -1948,11 +2118,15 @@ func (r *memoryRepository) autoMergeIntoAboveLocked(sessionID, sourceID string) 
 	if !compatible {
 		return cloneQueuedMessage(source), false, nil
 	}
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return nil, false, err
+	}
 	target.Content = values.content
 	target.Attachments = values.attachments
 	target.Metadata = values.metadata
 	target.QueuedAt = values.queuedAt
 	r.entries[sessionID] = append(list[:sourceIndex], list[sourceIndex+1:]...)
+	r.bumpCensusLocked(sessionID)
 	return cloneQueuedMessage(target), true, nil
 }
 
@@ -2039,10 +2213,14 @@ func (r *memoryRepository) autoMergeCandidateIntoAboveLocked(candidate *QueuedMe
 	if !compatible {
 		return nil, false, nil
 	}
+	if err := r.canBumpCensusLocked(candidate.SessionID); err != nil {
+		return nil, false, err
+	}
 	target.Content = values.content
 	target.Attachments = values.attachments
 	target.Metadata = values.metadata
 	target.QueuedAt = values.queuedAt
+	r.bumpCensusLocked(candidate.SessionID)
 	return cloneQueuedMessage(target), true, nil
 }
 
@@ -2093,6 +2271,18 @@ func (r *memoryRepository) reorderEntriesLocked(sessionID string, orderedIDs []s
 			visibleCursor++
 		}
 	}
+	changed := false
+	for i, msg := range sequence {
+		if sorted[i].ID != msg.ID || msg.Position != int64(i+1) {
+			changed = true
+			break
+		}
+	}
+	if changed {
+		if err := r.canBumpCensusLocked(sessionID); err != nil {
+			return err
+		}
+	}
 	for i, msg := range sequence {
 		msg.Position = int64(i + 1)
 	}
@@ -2104,6 +2294,9 @@ func (r *memoryRepository) reorderEntriesLocked(sessionID string, orderedIDs []s
 		if n := len(sequence); int64(n) > r.nextPosition[sessionID] {
 			r.nextPosition[sessionID] = int64(n)
 		}
+	}
+	if changed {
+		r.bumpCensusLocked(sessionID)
 	}
 	return nil
 }
@@ -2136,6 +2329,9 @@ func (r *memoryRepository) deleteByIDForSessionLocked(sessionID, entryID string)
 		if message.IsReservedInFlight() {
 			return nil, ErrEntryNotFound
 		}
+		if err := r.canBumpCensusLocked(sessionID); err != nil {
+			return nil, err
+		}
 		removed := cloneQueuedMessage(message)
 		r.entries[sessionID] = append(list[:i], list[i+1:]...)
 		retained := cloneQueuedMessages(r.entries[sessionID])
@@ -2143,6 +2339,7 @@ func (r *memoryRepository) deleteByIDForSessionLocked(sessionID, entryID string)
 			delete(r.entries, sessionID)
 			delete(r.nextPosition, sessionID)
 		}
+		r.bumpCensusLocked(sessionID)
 		return &QueueRemovalResult{
 			Removed:  []QueuedMessage{*removed},
 			Retained: retained,
@@ -2163,10 +2360,14 @@ func (r *memoryRepository) deleteByIDLocked(sessionID, entryID string) error {
 		if m.IsReservedInFlight() {
 			return ErrEntryNotFound
 		}
+		if err := r.canBumpCensusLocked(sessionID); err != nil {
+			return err
+		}
 		r.entries[sessionID] = append(list[:i], list[i+1:]...)
 		if len(r.entries[sessionID]) == 0 {
 			delete(r.entries, sessionID)
 		}
+		r.bumpCensusLocked(sessionID)
 		return nil
 	}
 	return ErrEntryNotFound
@@ -2185,7 +2386,14 @@ func (r *memoryRepository) DeleteAllBySessionForIdentity(_ context.Context, iden
 	if err := r.bindIdentityLocked(identity); err != nil {
 		return nil, err
 	}
-	return r.deleteAllBySessionForIdentityLocked(identity.SessionID), nil
+	if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+		return nil, err
+	}
+	result := r.deleteAllBySessionForIdentityLocked(identity.SessionID)
+	if len(result.Removed) > 0 {
+		r.bumpCensusLocked(identity.SessionID)
+	}
+	return result, nil
 }
 
 func (r *memoryRepository) deleteAllBySessionForIdentityLocked(sessionID string) *QueueRemovalResult {
@@ -2211,6 +2419,9 @@ func (r *memoryRepository) deleteAllBySessionForIdentityLocked(sessionID string)
 }
 
 func (r *memoryRepository) deleteAllBySessionLocked(sessionID string) (int, error) {
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return 0, err
+	}
 	list := r.entries[sessionID]
 	kept := list[:0]
 	removed := 0
@@ -2227,6 +2438,7 @@ func (r *memoryRepository) deleteAllBySessionLocked(sessionID string) (int, erro
 		r.entries[sessionID] = kept
 	}
 	r.sessionGeneration[sessionID]++
+	r.bumpCensusLocked(sessionID)
 	return removed, nil
 }
 
@@ -2235,6 +2447,9 @@ func (r *memoryRepository) deleteAllBySessionLocked(sessionID string) (int, erro
 func (r *memoryRepository) PurgeSession(_ context.Context, sessionID string) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return 0, err
+	}
 	removed := len(r.entries[sessionID])
 	delete(r.entries, sessionID)
 	for key := range r.admissionReceipts {
@@ -2245,6 +2460,7 @@ func (r *memoryRepository) PurgeSession(_ context.Context, sessionID string) (in
 	delete(r.pendingMoves, sessionID)
 	delete(r.autoRun, sessionID)
 	r.sessionGeneration[sessionID]++
+	r.bumpCensusLocked(sessionID)
 	return removed, nil
 }
 
@@ -2257,7 +2473,11 @@ func (r *memoryRepository) PurgeDeletedSession(
 	if current, exists := r.identities[identity.SessionID]; exists && current != identity {
 		return nil
 	}
+	if err := r.canBumpCensusLocked(identity.SessionID); err != nil {
+		return err
+	}
 	r.clearSessionStateLocked(identity.SessionID)
+	r.bumpCensusLocked(identity.SessionID)
 	return nil
 }
 
@@ -2290,13 +2510,19 @@ func (r *memoryRepository) transferSessionLocked(
 	if oldSessionID == newSessionID {
 		return nil
 	}
-	r.sessionGeneration[oldSessionID]++
-	r.sessionGeneration[newSessionID]++
 	for _, entry := range r.entries[oldSessionID] {
 		if entry.IsReservedInFlight() && !r.sendNowClaimContainsLocked(oldSessionID, entry.ID) {
 			return ErrQueueChanged
 		}
 	}
+	if err := r.canBumpCensusLocked(oldSessionID); err != nil {
+		return err
+	}
+	if err := r.canBumpCensusLocked(newSessionID); err != nil {
+		return err
+	}
+	r.sessionGeneration[oldSessionID]++
+	r.sessionGeneration[newSessionID]++
 	sourceAutoRun := r.autoRunLocked(oldSessionID)
 	destinationAutoRun := r.autoRunLocked(newSessionID)
 	if source != nil && destination != nil {
@@ -2345,6 +2571,8 @@ func (r *memoryRepository) transferSessionLocked(
 	delete(r.autoRun, oldSessionID)
 	delete(r.autoRunIncarnation, oldSessionID)
 	delete(r.identities, oldSessionID)
+	r.bumpCensusLocked(oldSessionID)
+	r.bumpCensusLocked(newSessionID)
 	return nil
 }
 
@@ -2374,6 +2602,9 @@ func (r *memoryRepository) ReplaceSessionForIdentity(_ context.Context, identity
 }
 
 func (r *memoryRepository) replaceSessionLocked(sessionID string, entries []QueuedMessage, pendingMove *PendingMove) error {
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return err
+	}
 	if len(entries) == 0 {
 		delete(r.entries, sessionID)
 	} else {
@@ -2397,10 +2628,12 @@ func (r *memoryRepository) replaceSessionLocked(sessionID string, entries []Queu
 	}
 	if pendingMove == nil {
 		delete(r.pendingMoves, sessionID)
+		r.bumpCensusLocked(sessionID)
 		return nil
 	}
 	clone := *pendingMove
 	r.pendingMoves[sessionID] = &clone
+	r.bumpCensusLocked(sessionID)
 	return nil
 }
 
@@ -2410,6 +2643,9 @@ func (r *memoryRepository) SetPendingMove(_ context.Context, sessionID string, m
 	defer r.mu.Unlock()
 	if move == nil || move.TaskID == "" || sessionID == "" {
 		return ErrSessionIdentityMismatch
+	}
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return err
 	}
 	if move.SessionIncarnationID == "" {
 		if identity, ok := r.identities[sessionID]; ok {
@@ -2439,6 +2675,7 @@ func (r *memoryRepository) SetPendingMove(_ context.Context, sessionID string, m
 	}
 	clone := *move
 	r.pendingMoves[sessionID] = &clone
+	r.bumpCensusLocked(sessionID)
 	return nil
 }
 
@@ -2462,6 +2699,10 @@ func (r *memoryRepository) TakePendingMove(_ context.Context, sessionID string) 
 	if !ok {
 		return nil, nil
 	}
+	if err := r.canBumpCensusLocked(sessionID); err != nil {
+		return nil, err
+	}
 	delete(r.pendingMoves, sessionID)
+	r.bumpCensusLocked(sessionID)
 	return move, nil
 }

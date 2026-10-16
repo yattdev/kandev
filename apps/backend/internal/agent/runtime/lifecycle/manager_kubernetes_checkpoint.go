@@ -55,6 +55,9 @@ func (m *Manager) checkpointKubernetesRuntimeInventory(
 	ctx = persistCtx
 	metadata := cloneKubernetesMetadata(req.Metadata)
 	for key, value := range runtimeMetadata {
+		if key == metadataKeyQueueCensusOwner || key == metadataKeyQueueCensusWorkspace || key == metadataKeyQueueCensusIncarnation || key == metadataKeyQueueCensusExecution {
+			continue
+		}
 		metadata[key] = value
 	}
 	if strings.TrimSpace(getMetadataString(metadata, MetadataKeyKubernetesInventoryState)) == "" {

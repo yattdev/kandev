@@ -151,6 +151,18 @@ func TestToAgentExecutionRecordsHistoryForContextContinuation(t *testing.T) {
 	require.True(t, execution.historyEnabled)
 }
 
+func TestQueueCensusOwnerBindingIgnoresRuntimeMetadata(t *testing.T) {
+	instance := &ExecutorInstance{InstanceID: "execution-1", Metadata: map[string]interface{}{
+		metadataKeyQueueCensusOwner: "owner-b", metadataKeyQueueCensusWorkspace: "workspace-b",
+	}}
+	execution := instance.ToAgentExecution(&ExecutorCreateRequest{Metadata: map[string]interface{}{
+		metadataKeyQueueCensusOwner: "owner-a", metadataKeyQueueCensusWorkspace: "workspace-a",
+		metadataKeyQueueCensusIncarnation: "incarnation-a", metadataKeyQueueCensusExecution: "execution-1",
+	}})
+	require.Equal(t, "owner-a", execution.OriginalOwnerID)
+	require.Equal(t, "workspace-a", execution.MetadataSnapshot()[metadataKeyQueueCensusWorkspace])
+}
+
 func TestToAgentExecutionFreezesStartupDisposition(t *testing.T) {
 	metadata := map[string]interface{}{MetadataKeyReuseExistingProcess: true}
 	execution := (&ExecutorInstance{InstanceID: "execution", Metadata: metadata}).ToAgentExecution(&ExecutorCreateRequest{})

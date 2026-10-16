@@ -64,6 +64,7 @@ type AgentExecution struct {
 	SessionID                       string
 	TaskEnvironmentID               string // Env owning this execution; sessions in the same task share one env
 	WorkspaceID                     string
+	OriginalOwnerID                 string
 	// ExecutorType preserves launch locality for features that must only access
 	// the backend user's host filesystem. Empty means locality is unknown.
 	ExecutorType string
@@ -1807,6 +1808,7 @@ type McpConfigProvider interface {
 
 // WorkspaceInfo contains information about a task's workspace for on-demand execution creation
 type WorkspaceInfo struct {
+	OriginalOwnerID           string
 	DeliveryIncarnationID     string
 	DeliveryHarnessGeneration uint64
 	DeliveryStreamID          string

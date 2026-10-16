@@ -56,6 +56,12 @@ func TestUpdateTaskWithWorkflowStepAdmissionForDeferredMovePersistsQueuedEntryOp
 	if err := queueRepo.SetPendingMove(ctx, session.ID, &move); err != nil {
 		t.Fatal(err)
 	}
+	var censusRevisionBefore int64
+	if err := repo.db.GetContext(ctx, &censusRevisionBefore, repo.db.Rebind(`
+		SELECT census_revision FROM queue_session_locks WHERE session_id = ?
+	`), session.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	admitted, applied, err := repo.UpdateTaskWithWorkflowStepAdmissionForDeferredMove(
 		ctx, candidate, "step-source-options", "step-target-options", 1,
@@ -66,6 +72,15 @@ func TestUpdateTaskWithWorkflowStepAdmissionForDeferredMovePersistsQueuedEntryOp
 	}
 	if admitted || !applied {
 		t.Fatalf("admitted=%t applied=%t, want queued applied move", admitted, applied)
+	}
+	var censusRevisionAfter int64
+	if err := repo.db.GetContext(ctx, &censusRevisionAfter, repo.db.Rebind(`
+		SELECT census_revision FROM queue_session_locks WHERE session_id = ?
+	`), session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if censusRevisionAfter <= censusRevisionBefore {
+		t.Fatalf("deferred move consumption left census revision at %d, before %d", censusRevisionAfter, censusRevisionBefore)
 	}
 
 	stored, err := repo.GetTask(ctx, candidate.ID)

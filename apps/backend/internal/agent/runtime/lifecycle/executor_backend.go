@@ -295,7 +295,11 @@ const (
 	// MetadataKeyOriginalWorkspacePath preserves the first agent-visible CWD
 	// across runtime and backend restarts so restore policy can distinguish a
 	// relocation from an unchanged workspace.
-	MetadataKeyOriginalWorkspacePath = "original_workspace_path"
+	MetadataKeyOriginalWorkspacePath  = "original_workspace_path"
+	metadataKeyQueueCensusOwner       = "queue_census_original_owner"
+	metadataKeyQueueCensusWorkspace   = "queue_census_original_workspace"
+	metadataKeyQueueCensusIncarnation = "queue_census_original_incarnation"
+	metadataKeyQueueCensusExecution   = "queue_census_original_execution"
 
 	// SSH runtime metadata keys (per-session, except SSHWorkdirRoot which is per-profile).
 	MetadataKeySSHHostAlias            = "ssh_host_alias"
@@ -437,6 +441,10 @@ var persistentMetadataKeys = map[string]bool{
 	MetadataKeyContributionDestinations: true,
 	MetadataKeyOfficeAgentProfileID:     true,
 	MetadataKeyOriginalWorkspacePath:    true,
+	metadataKeyQueueCensusOwner:         true,
+	metadataKeyQueueCensusWorkspace:     true,
+	metadataKeyQueueCensusIncarnation:   true,
+	metadataKeyQueueCensusExecution:     true,
 	metadataKeyPassthroughMCPClaims:     true,
 }
 
@@ -845,6 +853,13 @@ func (ri *ExecutorInstance) ToAgentExecution(req *ExecutorCreateRequest) *AgentE
 	for k, v := range ri.Metadata {
 		metadata[k] = v
 	}
+	for _, key := range []string{metadataKeyQueueCensusOwner, metadataKeyQueueCensusWorkspace, metadataKeyQueueCensusIncarnation, metadataKeyQueueCensusExecution} {
+		if value, ok := req.Metadata[key]; ok {
+			metadata[key] = value
+		} else {
+			delete(metadata, key)
+		}
+	}
 	executorType := req.ExecutorType
 	if executorType != "" {
 		metadata[MetadataKeyExecutorType] = executorType
@@ -888,6 +903,7 @@ func (ri *ExecutorInstance) ToAgentExecution(req *ExecutorCreateRequest) *AgentE
 		ContainerID:               ri.ContainerID,
 		ContainerIP:               ri.ContainerIP,
 		WorkspacePath:             workspacePath,
+		OriginalOwnerID:           getMetadataString(metadata, metadataKeyQueueCensusOwner),
 		OriginalWorkspacePath:     originalWorkspacePath,
 		WorkspaceSourceRoots:      append([]string(nil), req.WorkspaceSourceRoots...),
 		DeliveryStreamID:          req.DeliveryStreamID,

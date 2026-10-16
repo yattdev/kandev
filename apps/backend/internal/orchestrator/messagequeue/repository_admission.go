@@ -387,6 +387,9 @@ func updateAdmissionMergeTargetTx(
 	if affected != 1 {
 		return ErrQueueChanged
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, target.SessionID); err != nil {
+		return err
+	}
 	target.Content = values.content
 	target.Attachments = values.attachments
 	target.Metadata = values.metadata

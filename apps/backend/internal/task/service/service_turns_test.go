@@ -828,6 +828,9 @@ func TestGetWorkspaceInfoForSession_BasicFields(t *testing.T) {
 	ctx := context.Background()
 
 	setupTestTask(t, repo)
+	if err := repo.TransferWorkspaceOwnership(ctx, "ws-1", "", "owner-a"); err != nil {
+		t.Fatalf("set workspace owner: %v", err)
+	}
 	now := time.Now().UTC()
 
 	session := &models.TaskSession{
@@ -872,6 +875,9 @@ func TestGetWorkspaceInfoForSession_BasicFields(t *testing.T) {
 
 	if info.TaskID != "task-123" {
 		t.Errorf("expected TaskID 'task-123', got %q", info.TaskID)
+	}
+	if info.OriginalOwnerID != "owner-a" {
+		t.Fatalf("original owner = %q, want owner-a", info.OriginalOwnerID)
 	}
 	if info.SessionID != "session-1" {
 		t.Errorf("expected SessionID 'session-1', got %q", info.SessionID)

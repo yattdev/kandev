@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
 
+	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/user/models"
 )
 
@@ -19,22 +19,50 @@ import (
 // flow, because moving a person between tenants would leave their workspaces
 // behind in the old one.
 func (r *sqliteRepository) SetUserOrg(ctx context.Context, id, orgID string) error {
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
-		UPDATE users SET org_id = ?, updated_at = ? WHERE id = ?
-	`), orgID, time.Now().UTC(), id)
-	return err
+	return r.setAccountAuthorityField(ctx, id, "org_id", orgID)
 }
 
 // AssignUsersWithoutOrg puts every account that has no organization into the
 // given one. It is the user half of the tenancy migration and is idempotent.
 func (r *sqliteRepository) AssignUsersWithoutOrg(ctx context.Context, orgID string) (int64, error) {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	present, err := r.queueCensusAvailable(ctx)
+	if err != nil {
+		return 0, err
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var ids []string
+	if present && orgID != "" {
+		query := `SELECT id FROM users WHERE org_id = '' OR org_id IS NULL ORDER BY id`
+		if dialect.IsPostgres(r.db.DriverName()) {
+			query += accountAuthorityForUpdate
+		}
+		if err := tx.SelectContext(ctx, &ids, r.db.Rebind(query)); err != nil {
+			return 0, err
+		}
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE users SET org_id = ? WHERE org_id = '' OR org_id IS NULL
 	`), orgID)
 	if err != nil {
 		return 0, err
 	}
-	return result.RowsAffected()
+	for _, id := range ids {
+		if err := r.bumpOwnerQueueSessionsTx(ctx, tx, id); err != nil {
+			return 0, err
+		}
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return affected, nil
 }
 
 // ListUsersByOrg returns the accounts belonging to one organization.
@@ -63,10 +91,7 @@ func (r *sqliteRepository) SetOperator(ctx context.Context, id string, operator 
 	if operator {
 		flag = 1
 	}
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
-		UPDATE users SET is_operator = ?, updated_at = ? WHERE id = ?
-	`), flag, time.Now().UTC(), id)
-	return err
+	return r.setAccountAuthorityField(ctx, id, "is_operator", flag)
 }
 
 // CountOperators reports how many accounts hold the operator tier. Used to
@@ -97,6 +122,32 @@ func (r *sqliteRepository) DeleteUsersByOrg(ctx context.Context, orgID string) e
 	if orgID == "" {
 		return nil
 	}
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`DELETE FROM users WHERE org_id = ?`), orgID)
-	return err
+	present, err := r.queueCensusAvailable(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var ids []string
+	if present {
+		query := `SELECT id FROM users WHERE org_id = ? ORDER BY id`
+		if dialect.IsPostgres(r.db.DriverName()) {
+			query += accountAuthorityForUpdate
+		}
+		if err := tx.SelectContext(ctx, &ids, r.db.Rebind(query), orgID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM users WHERE org_id = ?`), orgID); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := r.bumpOwnerQueueSessionsTx(ctx, tx, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

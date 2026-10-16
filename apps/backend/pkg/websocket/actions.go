@@ -514,6 +514,8 @@ const (
 	ActionMCPClarificationTimeout                  = "mcp.clarification_timeout"
 	ActionMCPSetTaskTitle                          = "mcp.set_task_title"
 	ActionMCPGetDiagnosticBundle                   = "mcp.get_diagnostic_bundle"
+	ActionMCPMessageQueueCensus                    = "mcp.message_queue_census"
+	ActionMCPRemoveClaimedQueueEntry               = "mcp.remove_claimed_queue_entry"
 
 	// Office task handoffs (cross-task context).
 	ActionMCPListRelatedTasks         = "mcp.list_related_tasks"
@@ -736,6 +738,7 @@ const (
 	ErrorCodeValidation             = "VALIDATION_ERROR"
 	ErrorCodeConflict               = "CONFLICT"
 	ErrorCodeUnavailable            = "UNAVAILABLE"
+	ErrorCodeResourceExhausted      = "RESOURCE_EXHAUSTED"
 	ErrorCodeUnknownAction          = "UNKNOWN_ACTION"
 	ErrorCodePlanCommentsChanged    = "plan_comments_changed"
 	ErrorCodePreviewFeedbackChanged = "preview_feedback_changed"

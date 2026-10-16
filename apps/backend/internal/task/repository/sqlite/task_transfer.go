@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 
+	internaldb "github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/steptelemetry"
 	"github.com/kandev/kandev/internal/task/models"
@@ -52,7 +53,7 @@ type transferTaskPlacement struct {
 }
 
 type transferRelationInventory struct {
-	labels, groups, pendingMoves, participants, decisions, treeHolds, agentProfiles, automationCleanupJobs bool
+	labels, groups, pendingMoves, participants, decisions, treeHolds, agentProfiles, automationCleanupJobs, queueCensus bool
 }
 
 type transferStepSemantics struct {
@@ -106,6 +107,16 @@ func (r *Repository) TransferTask(
 	projections, counts, inventory, err := r.inspectTaskTransferRelations(ctx)
 	if err != nil {
 		return nil, errors.Join(err, r.RecordTaskTransferAttempt(ctx, command, taskTransferResultFailed))
+	}
+	queueCensusPresent, err := internaldb.TableExistsContext(ctx, r.db, "queue_session_locks")
+	if err != nil {
+		return nil, errors.Join(err, r.RecordTaskTransferAttempt(ctx, command, taskTransferResultFailed))
+	}
+	if queueCensusPresent {
+		inventory.queueCensus, err = internaldb.ColumnExists(r.db, "queue_session_locks", "census_revision")
+		if err != nil {
+			return nil, errors.Join(err, r.RecordTaskTransferAttempt(ctx, command, taskTransferResultFailed))
+		}
 	}
 
 	tx, err := r.db.BeginTxx(ctx, nil)

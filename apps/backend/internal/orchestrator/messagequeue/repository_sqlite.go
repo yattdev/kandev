@@ -115,26 +115,68 @@ func (r *sqliteRepository) sharedTablePresent(name string) (bool, error) {
 }
 
 func (r *sqliteRepository) migratePendingMoveIdentities() error {
-	if _, err := r.db.Exec(r.db.Rebind(`
+	ctx := context.Background()
+	var sessionIDs []string
+	if err := r.db.SelectContext(ctx, &sessionIDs, `
+		SELECT DISTINCT session_id FROM pending_moves
+		WHERE session_incarnation_id = '' ORDER BY session_id
+	`); err != nil {
+		return fmt.Errorf("list legacy pending moves: %w", err)
+	}
+	for _, sessionID := range sessionIDs {
+		if err := r.migratePendingMoveIdentityForSession(ctx, sessionID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *sqliteRepository) migratePendingMoveIdentityForSession(ctx context.Context, sessionID string) error {
+	unlock := r.withSessionLock(sessionID)
+	defer unlock()
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin legacy pending move migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockSessionTxUnfenced(ctx, tx, sessionID); err != nil {
+		return err
+	}
+	updated, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE pending_moves
 		   SET session_incarnation_id = (
 		       SELECT queue_incarnation_id FROM task_sessions
 		        WHERE task_sessions.id = pending_moves.session_id
 		          AND task_sessions.task_id = pending_moves.task_id
 		   )
-		 WHERE session_incarnation_id = ''
+		 WHERE session_id = ? AND session_incarnation_id = ''
 		   AND EXISTS (
 		       SELECT 1 FROM task_sessions
 		        WHERE task_sessions.id = pending_moves.session_id
 		          AND task_sessions.task_id = pending_moves.task_id
 		   )
-	`)); err != nil {
+	`), sessionID)
+	if err != nil {
 		return fmt.Errorf("backfill pending move session incarnations: %w", err)
 	}
-	if _, err := r.db.Exec(`DELETE FROM pending_moves WHERE session_incarnation_id = ''`); err != nil {
+	deleted, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM pending_moves WHERE session_id = ? AND session_incarnation_id = ''`), sessionID)
+	if err != nil {
 		return fmt.Errorf("delete unmatched legacy pending moves: %w", err)
 	}
-	return nil
+	updatedCount, err := updated.RowsAffected()
+	if err != nil {
+		return err
+	}
+	deletedCount, err := deleted.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updatedCount+deletedCount > 0 {
+		if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // withSessionLock serializes the queue mutations of one session so a concurrent
@@ -674,7 +716,8 @@ func (r *sqliteRepository) initSchema() error {
 	-- sharing one queue database. SQLite treats FOR UPDATE as a no-op and
 	-- serializes writes at the DB level anyway; Postgres enforces the row lock.
 	CREATE TABLE IF NOT EXISTS queue_session_locks (
-		session_id TEXT PRIMARY KEY
+		session_id TEXT PRIMARY KEY,
+		census_revision BIGINT NOT NULL DEFAULT 0
 	);
 
 	CREATE TABLE IF NOT EXISTS queue_session_state (
@@ -690,6 +733,9 @@ func (r *sqliteRepository) initSchema() error {
 	`)
 	if err != nil {
 		return err
+	}
+	if _, alterErr := r.db.Exec(`ALTER TABLE queue_session_locks ADD COLUMN census_revision BIGINT NOT NULL DEFAULT 0`); alterErr != nil && !internaldb.IsDuplicateColumnError(alterErr) {
+		return fmt.Errorf("add queue census revision: %w", alterErr)
 	}
 	if _, err := r.db.Exec(queueAdmissionReceiptSchema); err != nil {
 		return fmt.Errorf("create queue admission receipts: %w", err)
@@ -917,6 +963,9 @@ func (r *sqliteRepository) insert(
 		if err := persistTaskManagementFenceTx(ctx, tx, r.db, msg.ID, msg.TaskID, *workflowEntry); err != nil {
 			return err
 		}
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -1265,6 +1314,9 @@ func (r *sqliteRepository) releaseLifecycleReservationForRetryTx(
 	); err != nil {
 		return fmt.Errorf("release lifecycle reservation for retry: %w", err)
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -1353,6 +1405,9 @@ func (r *sqliteRepository) applyCoalesceReplaceTx(ctx context.Context, tx *sqlx.
 	}
 	msg.ID = existingID
 	msg.Position = existingPosition
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -1417,6 +1472,9 @@ func (r *sqliteRepository) applyHeadInsertTx(ctx context.Context, tx *sqlx.Tx, m
 		boolToInt(msg.PlanMode), attachmentsJSON, metadataJSON, msg.QueuedAt, msg.QueuedBy,
 	); err != nil {
 		return fmt.Errorf("insert queued_messages (requeue-fifo): %w", err)
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -1518,6 +1576,9 @@ func (r *sqliteRepository) restore(
 	); err != nil {
 		return fmt.Errorf("restore queued_messages: %w", err)
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -1592,6 +1653,9 @@ func (r *sqliteRepository) appendOrInsertTail(ctx context.Context, identity *Que
 		return nil, false, err
 	}
 	if appended {
+		if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+			return nil, false, err
+		}
 		if err := tx.Commit(); err != nil {
 			return nil, false, err
 		}
@@ -1637,6 +1701,9 @@ func (r *sqliteRepository) appendOrInsertTail(ctx context.Context, identity *Que
 		boolToInt(msg.PlanMode), attachmentsJSON, metadataJSON, msg.QueuedAt, msg.QueuedBy,
 	); err != nil {
 		return nil, false, fmt.Errorf("insert queued_messages: %w", err)
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return nil, false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, false, err
@@ -2139,6 +2206,11 @@ func PurgeTaskInTransaction(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, taskI
 	`), taskID); err != nil {
 		return 0, fmt.Errorf("advance lifecycle queue generation: %w", err)
 	}
+	for _, sessionID := range ordered {
+		if err := BumpCensusRevisionTx(ctx, tx, db, sessionID); err != nil {
+			return 0, err
+		}
+	}
 	return int(removed), nil
 }
 
@@ -2209,6 +2281,9 @@ func PurgeSessionInTransaction(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, se
 	`), sessionID); err != nil {
 		return 0, fmt.Errorf("purge session dispatch claims: %w", err)
 	}
+	if err := BumpCensusRevisionTx(ctx, tx, db, sessionID); err != nil {
+		return 0, err
+	}
 	return int(removed), nil
 }
 
@@ -2244,6 +2319,9 @@ func (r *sqliteRepository) replaceCoalesced(ctx context.Context, tx *sqlx.Tx, ex
 	}
 	if rows == 0 {
 		return nil, ErrEntryNotFound
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return nil, err
 	}
 	existing.TaskID = msg.TaskID
 	existing.Content = msg.Content
@@ -2322,7 +2400,7 @@ func insertQueuedMessageInTransaction(
 		}
 		return fmt.Errorf("insert coalesced queued: %w", err)
 	}
-	return nil
+	return BumpCensusRevisionTx(ctx, tx, db, msg.SessionID)
 }
 
 // ensureQueueCapacity rejects the insert when the session already holds maxPerSession entries.
@@ -2783,6 +2861,9 @@ func (r *sqliteRepository) TakeHead(ctx context.Context, sessionID string) (*Que
 		if _, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM queued_messages WHERE id = ? AND session_id = ?`), msg.ID, sessionID); err != nil {
 			return nil, fmt.Errorf("discard stale manager queue entry: %w", err)
 		}
+		if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+			return nil, err
+		}
 		discardedStaleManagerEntry = true
 	}
 	blocked, err := r.editLeaseBlocksEntryTx(ctx, tx, sessionID, msg.ID)
@@ -2816,6 +2897,9 @@ func (r *sqliteRepository) TakeHead(ctx context.Context, sessionID string) (*Que
 	}
 	if affected == 0 {
 		return nil, nil
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -2960,6 +3044,9 @@ func (r *sqliteRepository) SetAutoMergeOverride(
 		return AutoMergeOverride{}, fmt.Errorf("read written queue Auto-merge override: %w", err)
 	}
 	result.Enabled = storedEnabled != 0
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, identity.SessionID); err != nil {
+		return AutoMergeOverride{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return AutoMergeOverride{}, err
 	}
@@ -3048,12 +3135,27 @@ func (r *sqliteRepository) setAutoRunTx(
 	sessionID string,
 	enabled bool,
 ) error {
+	var current int64
+	var currentIncarnation sql.NullString
+	readErr := tx.QueryRowxContext(ctx, r.db.Rebind(`
+		SELECT auto_run, session_incarnation_id FROM queue_session_state WHERE session_id = ?
+	`), sessionID).Scan(&current, &currentIncarnation)
+	if readErr != nil && !errors.Is(readErr, sql.ErrNoRows) {
+		return fmt.Errorf("read queue auto-run before update: %w", readErr)
+	}
+	changed := errors.Is(readErr, sql.ErrNoRows) || current != int64(boolToInt(enabled))
+	if identity != nil && currentIncarnation.String != identity.SessionIncarnationID {
+		changed = true
+	}
 	if identity == nil {
 		if _, err := tx.ExecContext(ctx, r.db.Rebind(`
 			INSERT INTO queue_session_state (session_id, auto_run) VALUES (?, ?)
 			ON CONFLICT(session_id) DO UPDATE SET auto_run = excluded.auto_run
 		`), sessionID, boolToInt(enabled)); err != nil {
 			return fmt.Errorf("set queue auto-run: %w", err)
+		}
+		if changed {
+			return bumpCensusRevisionTx(ctx, tx, r.db, sessionID)
 		}
 		return nil
 	}
@@ -3080,6 +3182,9 @@ func (r *sqliteRepository) setAutoRunTx(
 			session_incarnation_id = excluded.session_incarnation_id
 	`), sessionID, identity.SessionIncarnationID, boolToInt(enabled)); err != nil {
 		return fmt.Errorf("set queue auto-run: %w", err)
+	}
+	if changed {
+		return bumpCensusRevisionTx(ctx, tx, r.db, sessionID)
 	}
 	return nil
 }
@@ -3275,6 +3380,9 @@ func (r *sqliteRepository) reserveHeadTx(
 				return nil, true, ErrQueueChanged
 			}
 			discardedStaleReservation = true
+			if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+				return nil, true, err
+			}
 			continue
 		}
 		if hasLivePlanCommentReservation(msg, identity, time.Now()) {
@@ -3292,6 +3400,9 @@ func (r *sqliteRepository) reserveHeadTx(
 		}
 		if discarded {
 			discardedStaleReservation = true
+			if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+				return nil, true, err
+			}
 			continue
 		}
 		retainedDurable := msg.IsDurableDelivery()
@@ -3433,6 +3544,9 @@ func (r *sqliteRepository) reserveRetainedHead(
 	if affected == 0 {
 		return nil, nil
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -3466,6 +3580,9 @@ func (r *sqliteRepository) reserveOrdinaryHead(
 	}
 	if affected == 0 {
 		return nil, nil
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -3521,6 +3638,9 @@ func (r *sqliteRepository) AcknowledgeReserved(ctx context.Context, msg *QueuedM
 	if affected != 1 {
 		return ErrLifecycleReservationChanged
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, msg.SessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -3564,6 +3684,9 @@ func (r *sqliteRepository) AcknowledgeByID(ctx context.Context, sessionID, entry
 	}
 	if affected != 1 {
 		return ErrEntryNotFound
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -3628,6 +3751,9 @@ func (r *sqliteRepository) AcknowledgeByIDForSession(
 	if affected == 0 {
 		return ErrEntryNotFound
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, identity.SessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -3668,6 +3794,9 @@ func (r *sqliteRepository) MarkDeliveryAttemptedForSession(
 		if err := r.markDeliveryAttemptedTx(ctx, tx, identity, candidate); err != nil {
 			return err
 		}
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, identity.SessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -3795,6 +3924,9 @@ func (r *sqliteRepository) ReleaseDeliveryReservationForSession(
 	); err != nil {
 		return fmt.Errorf("release delivery reservation: %w", err)
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, identity.SessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 func (r *sqliteRepository) DiscardLifecycleReservation(
@@ -3853,6 +3985,9 @@ func (r *sqliteRepository) DiscardLifecycleReservation(
 	}
 	if affected == 0 {
 		return ErrEntryNotFound
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, identity.SessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -3940,6 +4075,9 @@ func (r *sqliteRepository) takeByID(
 		if _, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM queued_messages WHERE id = ? AND session_id = ?`), msg.ID, sessionID); err != nil {
 			return nil, fmt.Errorf("discard stale manager queue entry: %w", err)
 		}
+		if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+			return nil, err
+		}
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
@@ -3970,6 +4108,9 @@ func (r *sqliteRepository) takeByID(
 	}
 	if affected == 0 {
 		return nil, nil
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -4155,6 +4296,9 @@ func (r *sqliteRepository) RestoreSendNowClaim(ctx context.Context, claim *SendN
 			return err
 		}
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -4203,6 +4347,7 @@ func (r *sqliteRepository) AcknowledgeSendNowClaim(ctx context.Context, claim *S
 	if err := validateSQLiteSendNowAcknowledge(claim, sessionID, stored, generations); err != nil {
 		return err
 	}
+	changedPendingQueue := false
 	for _, source := range claim.Sources {
 		if sendNowSourceGenerationChanged(claim, source, generations[source.TaskID]) {
 			continue
@@ -4210,9 +4355,15 @@ func (r *sqliteRepository) AcknowledgeSendNowClaim(ctx context.Context, claim *S
 		if err := r.acknowledgeSQLiteSendNowSource(ctx, tx, sessionID, source, stored); err != nil {
 			return err
 		}
+		changedPendingQueue = changedPendingQueue || source.IsDurableDelivery()
 	}
 	if claim.ClaimID != "" {
 		if err := r.deleteExactSendNowClaimTx(ctx, tx, sessionID, claim.ClaimID); err != nil {
+			return err
+		}
+	}
+	if changedPendingQueue {
+		if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
 			return err
 		}
 	}
@@ -4752,15 +4903,19 @@ func (r *sqliteRepository) updateContentAndMetadata(ctx context.Context, identit
 	if err := r.validateOptionalSessionIdentityTx(ctx, tx, identity); err != nil {
 		return err
 	}
-	var metadataJSON string
-	query := `SELECT metadata_json FROM queued_messages WHERE id = ? AND session_id = ? AND queued_by = ? AND queued_by NOT IN (?, ?, ?)`
-	if err := tx.GetContext(ctx, &metadataJSON, r.db.Rebind(query), entryID, sessionID, queuedBy, QueuedByAgent, QueuedByWorkflow, QueuedByServer); err != nil {
+	var stored struct {
+		Content         string `db:"content"`
+		AttachmentsJSON string `db:"attachments_json"`
+		MetadataJSON    string `db:"metadata_json"`
+	}
+	query := `SELECT content, attachments_json, metadata_json FROM queued_messages WHERE id = ? AND session_id = ? AND queued_by = ? AND queued_by NOT IN (?, ?, ?)`
+	if err := tx.GetContext(ctx, &stored, r.db.Rebind(query), entryID, sessionID, queuedBy, QueuedByAgent, QueuedByWorkflow, QueuedByServer); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrEntryNotFound
 		}
 		return fmt.Errorf("read queued metadata: %w", err)
 	}
-	reserved, err := isReservedMetadataJSON(metadataJSON)
+	reserved, err := isReservedMetadataJSON(stored.MetadataJSON)
 	if err != nil {
 		return err
 	}
@@ -4770,11 +4925,17 @@ func (r *sqliteRepository) updateContentAndMetadata(ctx context.Context, identit
 	if err := claimOptionalMessageAttachmentsTx(ctx, tx, identity, claim, "", sessionID); err != nil {
 		return err
 	}
-	metadataJSON, err = updatedQueueMetadataJSON(metadataJSON, metadataUpdates)
+	metadataJSON, err := updatedQueueMetadataJSON(stored.MetadataJSON, metadataUpdates)
 	if err != nil {
 		return err
 	}
+	if claim == nil && stored.Content == content && stored.AttachmentsJSON == attachmentsJSON && stored.MetadataJSON == metadataJSON {
+		return tx.Commit()
+	}
 	if err := r.updateQueuedEntryTx(ctx, tx, sessionID, entryID, content, attachmentsJSON, metadataJSON, queuedBy); err != nil {
+		return err
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -4847,6 +5008,9 @@ func (r *sqliteRepository) updateContentAndMetadataTx(
 	}
 	if n == 0 {
 		return ErrEntryNotFound
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -5212,6 +5376,9 @@ func (r *sqliteRepository) autoMergeCandidateIntoAbove(
 		// concurrently accepted message.
 		return nil, false, nil
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, candidate.SessionID); err != nil {
+		return nil, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, false, err
 	}
@@ -5325,6 +5492,13 @@ func (r *sqliteRepository) reorderEntries(ctx context.Context, identity *QueueSe
 			visibleCursor++
 		}
 	}
+	changed := false
+	for i, msg := range sequence {
+		if stored[i].ID != msg.ID || msg.Position != int64(i+1) {
+			changed = true
+			break
+		}
+	}
 
 	for i, msg := range sequence {
 		res, err := tx.ExecContext(ctx, r.db.Rebind(`
@@ -5347,6 +5521,11 @@ func (r *sqliteRepository) reorderEntries(ctx context.Context, identity *QueueSe
 			// cross-instance compare-and-swap, so a stale reorder rolls back
 			// with ErrQueueChanged instead of clobbering the newer order.
 			return ErrQueueChanged
+		}
+	}
+	if changed {
+		if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+			return err
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -5454,7 +5633,7 @@ func applyMergeWrites(ctx context.Context, r *sqliteRepository, tx *sqlx.Tx, tar
 		// update so the merge is all-or-nothing.
 		return ErrEntryNotFound
 	}
-	return nil
+	return bumpCensusRevisionTx(ctx, tx, r.db, sessionID)
 }
 
 // DeleteByID removes a single pending entry scoped to its session.
@@ -5527,6 +5706,9 @@ func (r *sqliteRepository) deleteByID(ctx context.Context, identity *QueueSessio
 	}
 	if n == 0 {
 		return nil, ErrEntryNotFound
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return nil, err
 	}
 	retained, err := listQueuedMessagesBySessionTx(ctx, r, tx, sessionID)
 	if err != nil {
@@ -5653,6 +5835,9 @@ func (r *sqliteRepository) deleteAllBySession(ctx context.Context, identity *Que
 	if err := r.deletePendingQueueDispatchesBySessionTx(ctx, tx, sessionID); err != nil {
 		return nil, err
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -5716,6 +5901,9 @@ func (r *sqliteRepository) PurgeSession(ctx context.Context, sessionID string) (
 		return 0, err
 	}
 	if err := r.deletePendingQueueDispatchesBySessionTx(ctx, tx, sessionID); err != nil {
+		return 0, err
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -5969,6 +6157,9 @@ func (r *sqliteRepository) transferSessionStateTx(
 	if err := r.bumpSendNowGenerationTx(ctx, tx, oldSessionID); err != nil {
 		return err
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, oldSessionID); err != nil {
+		return err
+	}
 	return r.bumpSendNowGenerationTx(ctx, tx, newSessionID)
 }
 
@@ -6070,6 +6261,9 @@ func (r *sqliteRepository) transferSession(
 	if err := r.transferPendingSendNowClaimTx(
 		ctx, tx, oldSessionID, newSessionID, source, destination, sourceGeneration, queuePositionOffset,
 	); err != nil {
+		return err
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, oldSessionID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -6492,6 +6686,9 @@ func (r *sqliteRepository) replaceSession(ctx context.Context, identity *QueueSe
 	if err := r.bumpSendNowGenerationTx(ctx, tx, sessionID); err != nil {
 		return err
 	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -6570,6 +6767,9 @@ func (r *sqliteRepository) SetPendingMove(ctx context.Context, sessionID string,
 		move.SenderSessionID, marshalEntryOptions(move.EntryOptions),
 	); err != nil {
 		return fmt.Errorf("upsert pending move: %w", err)
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -6657,6 +6857,9 @@ func (r *sqliteRepository) TakePendingMove(ctx context.Context, sessionID string
 	}
 	if _, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM pending_moves WHERE session_id = ?`), sessionID); err != nil {
 		return nil, fmt.Errorf("delete pending move: %w", err)
+	}
+	if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

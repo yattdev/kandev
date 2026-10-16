@@ -212,6 +212,22 @@ func (r *sqliteRepository) UpsertSessionTransferCompensation(
 	); err != nil {
 		return err
 	}
+	var previous struct {
+		EntryIDs        string `db:"entry_ids_json"`
+		AttachmentIDs   string `db:"attachment_ids_json"`
+		CleanupLocators string `db:"cleanup_locators_json"`
+	}
+	readErr := tx.GetContext(ctx, &previous, tx.Rebind(`
+		SELECT entry_ids_json, attachment_ids_json, cleanup_locators_json
+		FROM queue_session_transfer_compensations
+		WHERE task_id = ? AND from_session_id = ? AND to_session_id = ?
+	`), compensation.TaskID, compensation.FromSessionID, compensation.ToSessionID)
+	if readErr != nil && !errors.Is(readErr, sql.ErrNoRows) {
+		return fmt.Errorf("read session transfer compensation state: %w", readErr)
+	}
+	semanticChange := errors.Is(readErr, sql.ErrNoRows) ||
+		previous.EntryIDs != entryIDsJSON || previous.AttachmentIDs != attachmentIDsJSON ||
+		previous.CleanupLocators != cleanupLocatorsJSON
 	leaseExpiresAt := time.Now().UTC().Add(sessionTransferCompensationLeaseDuration)
 	result, err := tx.ExecContext(ctx, tx.Rebind(`
 		INSERT INTO queue_session_transfer_compensations
@@ -238,6 +254,16 @@ func (r *sqliteRepository) UpsertSessionTransferCompensation(
 	}
 	if affected != 1 {
 		return ErrSessionTransferOwnershipLost
+	}
+	if semanticChange {
+		for index, sessionID := range []string{first, second} {
+			if sessionID == "" || (index == 1 && first == second) {
+				continue
+			}
+			if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+				return err
+			}
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit session transfer compensation: %w", err)
@@ -287,6 +313,14 @@ func (r *sqliteRepository) deleteSessionTransferCompensationWithOwner(
 	}
 	if affected != 1 {
 		return ErrSessionTransferOwnershipLost
+	}
+	for index, sessionID := range []string{fromSessionID, toSessionID} {
+		if sessionID == "" || (index == 1 && fromSessionID == toSessionID) {
+			continue
+		}
+		if err := bumpCensusRevisionTx(ctx, tx, r.db, sessionID); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit delete session transfer compensation: %w", err)

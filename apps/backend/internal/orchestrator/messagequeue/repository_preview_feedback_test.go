@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/task/models"
@@ -67,6 +68,54 @@ func TestSQLiteRepositoryInsertWithTaskFeedbackQueuesAndConsumesMixedContext(t *
 	entries, err := queueRepo.ListBySession(ctx, queued.SessionID)
 	if err != nil || len(entries) != 1 || entries[0].Content != queued.Content {
 		t.Fatalf("stored queue=%#v err=%v", entries, err)
+	}
+}
+
+func TestSQLiteTaskFeedbackAdmissionAdvancesCensusButExactReplayDoesNot(t *testing.T) {
+	taskRepo, queueRepo := newPlanCommentQueueRepos(t)
+	ctx := context.Background()
+	seedQueuePlanComment(t, ctx, taskRepo, "census-feedback")
+	preview := seedQueuePreviewFeedback(t, ctx, taskRepo, "census-feedback")
+	refs := []models.TaskPlanCommentRef{{ID: "comment-census-feedback", Version: 1}}
+	previewRefs := []models.TaskPreviewFeedbackRef{{ID: preview.ID, Version: 1}}
+	message := planCommentQueuedMessage("census-feedback", "queue-census-feedback", "fingerprint-census-feedback", refs)
+	message.Metadata["preview_feedback_refs"] = previewRefs
+	identity := resolvePlanCommentQueueIdentity(t, ctx, queueRepo, message)
+	if _, err := taskRepo.DB().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS executors_running (session_id TEXT PRIMARY KEY, agent_execution_id TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := taskRepo.DB().ExecContext(ctx, `INSERT INTO executors_running
+		(id, session_id, task_id, executor_id, agent_execution_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "executor-census-feedback", identity.SessionID, identity.TaskID, "executor-test", "execution-1", now, now); err != nil {
+		t.Fatal(err)
+	}
+	observer := queueRepo.(interface {
+		ObservePendingCensus(context.Context, messagequeue.QueueSessionIdentity, string, int) (messagequeue.PendingCensus, error)
+	})
+	before, err := observer.ObservePendingCensus(ctx, identity, "execution-1", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := queueRepo.(taskFeedbackQueueWriter)
+	if _, _, replay, err := writer.InsertWithTaskFeedback(ctx, identity, message, refs, previewRefs, "fingerprint-census-feedback", true, nil, 10); err != nil || replay {
+		t.Fatalf("first feedback admission replay=%v err=%v", replay, err)
+	}
+	after, err := observer.ObservePendingCensus(ctx, identity, "execution-1", 10)
+	if err != nil || len(after.Entries) != 1 || after.Revision <= before.Revision {
+		t.Fatalf("feedback census after insert=%#v err=%v", after, err)
+	}
+	retry := planCommentQueuedMessage("census-feedback", message.ID, "fingerprint-census-feedback", refs)
+	retry.Metadata["preview_feedback_refs"] = previewRefs
+	if _, _, replay, err := writer.InsertWithTaskFeedback(ctx, identity, retry, refs, previewRefs, "fingerprint-census-feedback", true, nil, 10); err != nil || !replay {
+		t.Fatalf("feedback replay=%v err=%v", replay, err)
+	}
+	unchanged, err := observer.ObservePendingCensus(ctx, identity, "execution-1", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Revision != after.Revision || unchanged.Entries[0].ClaimSHA256 != after.Entries[0].ClaimSHA256 {
+		t.Fatalf("exact feedback replay changed census claim: before=%#v after=%#v", after, unchanged)
 	}
 }
 

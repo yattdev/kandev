@@ -552,6 +552,7 @@ func (h *Handlers) registerTaskModeHandlers(d *guardedMCPDispatcher) {
 }
 
 func (h *Handlers) registerTaskReadHandlers(d *guardedMCPDispatcher) {
+	d.RegisterFunc(ws.ActionMCPMessageQueueCensus, h.handleMessageQueueCensus)
 	d.RegisterFunc(ws.ActionMCPListWorkspaces, h.handleListWorkspaces)
 	if h.pluginSvc != nil {
 		d.RegisterFunc(ws.ActionMCPListPluginTools, h.handleListPluginTools)
@@ -586,6 +587,7 @@ func (h *Handlers) registerTaskReadHandlers(d *guardedMCPDispatcher) {
 }
 
 func (h *Handlers) registerTaskMutationHandlers(d *guardedMCPDispatcher) {
+	d.RegisterFunc(ws.ActionMCPRemoveClaimedQueueEntry, h.handleRemoveClaimedQueueEntry)
 	d.RegisterFunc(ws.ActionMCPCreateTask, h.handleCreateTask)
 	d.RegisterFunc(ws.ActionMCPUpdateTask, h.handleUpdateTask)
 	d.RegisterFunc(ws.ActionMCPSetTaskTitle, h.handleSetTaskTitle)
