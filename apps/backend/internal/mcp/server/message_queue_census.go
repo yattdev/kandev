@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -85,7 +86,12 @@ func validateQueueToolRawArguments(toolName string, arguments any) error {
 }
 
 func queueToolObject(arguments any) (map[string]any, []byte, error) {
+	var encoded []byte
 	if raw, ok := arguments.(json.RawMessage); ok {
+		if len(raw) > 2048 || hasDuplicateQueueArgumentKeys(raw) {
+			return nil, nil, fmt.Errorf("invalid queue arguments")
+		}
+		encoded = raw
 		var decoded any
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			return nil, nil, fmt.Errorf("invalid queue arguments")
@@ -96,11 +102,42 @@ func queueToolObject(arguments any) (map[string]any, []byte, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("queue arguments must be an object")
 	}
-	encoded, err := json.Marshal(arguments)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid queue arguments")
+	if encoded == nil {
+		var err error
+		encoded, err = json.Marshal(arguments)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid queue arguments")
+		}
 	}
 	return fields, encoded, nil
+}
+
+func hasDuplicateQueueArgumentKeys(raw json.RawMessage) bool {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	first, err := decoder.Token()
+	if err != nil || first != json.Delim('{') {
+		return false
+	}
+	seen := make(map[string]struct{}, 2)
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return false
+		}
+		name, ok := key.(string)
+		if !ok {
+			return false
+		}
+		if _, exists := seen[name]; exists {
+			return true
+		}
+		seen[name] = struct{}{}
+		var value json.RawMessage
+		if decoder.Decode(&value) != nil {
+			return false
+		}
+	}
+	return false
 }
 
 func validateClaimedRemovalObject(fields map[string]any, encoded []byte) error {

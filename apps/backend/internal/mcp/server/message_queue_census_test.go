@@ -139,15 +139,25 @@ func TestMessageQueueRemovalWireArgumentByteBoundary(t *testing.T) {
 	for _, size := range []int{2048, 2049} {
 		arguments := base[:16] + strings.Repeat(" ", size-len(base)) + base[16:]
 		require.Len(t, []byte(arguments), size)
-		backend.lastAction = ""
-		request := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"remove_message_queue_entry_kandev","arguments":` + arguments + `}}`)
-		response := postJSONRPC(t, server.URL+"/mcp", string(request), init.sessionID)
-		require.Equal(t, http.StatusOK, response.statusCode)
-		if size == 2048 {
-			require.Equal(t, ws.ActionMCPRemoveClaimedQueueEntry, backend.lastAction)
-		} else {
-			require.Empty(t, backend.lastAction)
-			require.Contains(t, response.body, `"isError":true`)
+		for _, request := range []string{
+			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"remove_message_queue_entry_kandev","arguments":` + arguments + `}}`,
+			`{"params":{"arguments":` + arguments + `,"name":"remove_message_queue_entry_kandev"},"method":"tools/call","id":2,"jsonrpc":"2.0"}`,
+		} {
+			backend.lastAction = ""
+			response := postJSONRPC(t, server.URL+"/mcp", request, init.sessionID)
+			require.Equal(t, http.StatusOK, response.statusCode)
+			if size == 2048 {
+				require.Equal(t, ws.ActionMCPRemoveClaimedQueueEntry, backend.lastAction)
+			} else {
+				require.Empty(t, backend.lastAction)
+				require.Contains(t, response.body, `"isError":true`)
+			}
 		}
 	}
+	backend.lastAction = ""
+	duplicate := `{"entry_id":"a","entry_id":"a","claim":"` + strings.Repeat("a", 64) + `"}`
+	response := postJSONRPC(t, server.URL+"/mcp", `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"remove_message_queue_entry_kandev","arguments":`+duplicate+`}}`, init.sessionID)
+	require.Equal(t, http.StatusOK, response.statusCode)
+	require.Empty(t, backend.lastAction)
+	require.Contains(t, response.body, `"isError":true`)
 }
