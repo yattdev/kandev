@@ -18,6 +18,9 @@ func (s *Server) registerOwnAnswerTool() {
 	for _, key := range []string{"question_id", "pending_id", "question_message_id", "question_sha256", "answer_message_id", "answer_sha256"} {
 		options = append(options, mcp.WithString(key, mcp.Required()))
 	}
+	for _, key := range []string{"approval_link_grant_id", "approval_link_operation_id"} {
+		options = append(options, mcp.WithString(key, mcp.Description("Exact previously issued approval-link identity; both grant and operation IDs required for the reviewed repair.")))
+	}
 	s.mcpServer.AddTool(mcp.NewTool(ownAnswerToolName, options...), s.wrapSensitiveHandler(ownAnswerToolName, s.ownAnswerHandler()))
 }
 
@@ -30,6 +33,11 @@ func (s *Server) ownAnswerHandler() server.ToolHandlerFunc {
 				return mcp.NewToolResultError("exact identities and hashes required"), nil
 			}
 			payload[key] = value
+		}
+		for _, key := range []string{"approval_link_grant_id", "approval_link_operation_id"} {
+			if value := req.GetString(key, ""); value != "" {
+				payload[key] = value
+			}
 		}
 		return s.ownQuestionBackendCall(ctx, ws.ActionMCPReconcileOwnQuestionAnswer, payload)
 	}

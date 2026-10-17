@@ -208,6 +208,8 @@ func (h *TaskHandlers) registerHTTP(router *gin.Engine) {
 	api.POST("/tasks/:id/environment/reset", h.httpResetTaskEnvironment)
 	api.GET("/task-sessions/:id/turns", h.httpListSessionTurns)
 	api.POST("/tasks", h.httpCreateTask)
+	api.POST("/tasks/:id/approval-link-grants", h.httpCreateApprovalLinkGrant)
+	api.DELETE("/tasks/:id/approval-link-grants/:grant_id", h.httpRevokeApprovalLinkGrant)
 	api.POST("/tasks/delete-preflight", h.httpTaskDeletePreflight)
 	api.PATCH("/tasks/:id", h.httpUpdateTask)
 	api.PATCH("/tasks/:id/port-forwarding", h.httpUpdateTaskPortForwarding)

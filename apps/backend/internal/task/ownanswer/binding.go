@@ -39,6 +39,8 @@ type OwnAnswerBinding struct {
 }
 
 type OwnAnswerReceipt struct {
+	ApprovalGrantID      string `json:"approval_grant_id,omitempty"`
+	ApprovalOperationID  string `json:"approval_operation_id,omitempty"`
 	Version              string `json:"version"`
 	ID                   string `json:"receipt_id"`
 	Workspace            string `json:"workspace_id"`
