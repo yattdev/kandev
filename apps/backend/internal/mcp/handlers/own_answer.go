@@ -17,10 +17,16 @@ type ownAnswerWriter interface {
 	ReconcileOwnQuestionAnswer(context.Context, ownanswer.OwnAnswerBinding) ([]*models.Message, bool, error)
 }
 
+type approvalLinkConsumer interface {
+	ConsumeApprovalLinkGrant(context.Context, ownanswer.OwnAnswerBinding, string, string, string) ([]*models.Message, bool, error)
+}
+
 func (h *Handlers) handleReconcileOwnAnswer(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
 	var request struct {
 		ownanswer.OwnAnswerBinding
-		ResultMode string `json:"result_mode,omitempty"`
+		ResultMode  string `json:"result_mode,omitempty"`
+		GrantID     string `json:"approval_link_grant_id,omitempty"`
+		OperationID string `json:"approval_link_operation_id,omitempty"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(msg.Payload))
 	decoder.DisallowUnknownFields()
@@ -38,7 +44,7 @@ func (h *Handlers) handleReconcileOwnAnswer(ctx context.Context, msg *ws.Message
 	}
 	b.TaskID = caller.ID
 	b.WorkspaceID = p.WorkspaceID
-	writer, ok := h.sessionRepo.(ownAnswerWriter)
+	_, ok := h.sessionRepo.(ownAnswerWriter)
 	if !ok || h.taskSvc == nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "answer reconciliation unavailable", nil)
 	}
@@ -51,7 +57,7 @@ func (h *Handlers) handleReconcileOwnAnswer(ctx context.Context, msg *ws.Message
 	if _, live := store.GetRequest(b.PendingID); live {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "question still has a live waiter", nil)
 	}
-	rows, changed, err := writer.ReconcileOwnQuestionAnswer(ctx, b)
+	rows, changed, err := h.reconcileOwnAnswerEvidence(ctx, b, request.GrantID, request.OperationID)
 	if errors.Is(err, ownanswer.ErrAnswerFormatUnsupported) && request.ResultMode == ownanswer.DispositionMode {
 		return ws.NewResponse(msg.ID, msg.Action, unsupportedOwnAnswerDisposition(b))
 	}
@@ -65,6 +71,22 @@ func (h *Handlers) handleReconcileOwnAnswer(ctx context.Context, msg *ws.Message
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "answer durably bound; read own status before retry", nil)
 	}
 	return ws.NewResponse(msg.ID, msg.Action, map[string]any{"receipt": receipt, "changed": changed, "publication_pending": publishErr != nil})
+}
+
+func (h *Handlers) reconcileOwnAnswerEvidence(ctx context.Context, b ownanswer.OwnAnswerBinding, grant, operation string) ([]*models.Message, bool, error) {
+	if grant == "" && operation == "" {
+		writer, ok := h.sessionRepo.(ownAnswerWriter)
+		if !ok {
+			return nil, false, errors.New("answer reconciliation unavailable")
+		}
+		return writer.ReconcileOwnQuestionAnswer(ctx, b)
+	}
+	consumer, supported := h.sessionRepo.(approvalLinkConsumer)
+	session, err := h.sessionRepo.GetTaskSession(ctx, b.SessionID)
+	if !supported || err != nil || session == nil {
+		return nil, false, errors.New("approval-link consumption unavailable")
+	}
+	return consumer.ConsumeApprovalLinkGrant(ctx, b, grant, operation, session.QueueIncarnationID)
 }
 
 func validOwnAnswerMode(mode string) bool {

@@ -14,6 +14,12 @@ func TestOwnAnswerReconciliationBoundInput(t *testing.T) {
 	require.False(t, result.IsError)
 	require.Equal(t, "own-task", b.lastPayload.(map[string]interface{})["task_id"])
 	require.Equal(t, s.sessionID, b.lastPayload.(map[string]interface{})["session_id"])
+	args["approval_link_grant_id"] = "synthetic-grant"
+	args["approval_link_operation_id"] = "synthetic-operation"
+	result = callTool(t, s, "reconcile_own_question_answer_kandev", args)
+	require.False(t, result.IsError)
+	require.Equal(t, "synthetic-grant", b.lastPayload.(map[string]interface{})["approval_link_grant_id"])
+	require.Equal(t, "synthetic-operation", b.lastPayload.(map[string]interface{})["approval_link_operation_id"])
 	args["answer"] = "fabricated"
 	require.True(t, callTool(t, s, "reconcile_own_question_answer_kandev", args).IsError)
 }

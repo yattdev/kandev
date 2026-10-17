@@ -1,0 +1,322 @@
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"maps"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/agentctl/types/streams"
+	"github.com/kandev/kandev/internal/auth"
+	"github.com/kandev/kandev/internal/auth/authn"
+	"github.com/kandev/kandev/internal/auth/httpmw"
+	authstore "github.com/kandev/kandev/internal/auth/store"
+	"github.com/kandev/kandev/internal/clarification"
+	"github.com/kandev/kandev/internal/common/config"
+	kdb "github.com/kandev/kandev/internal/db"
+	mcphandlers "github.com/kandev/kandev/internal/mcp/handlers"
+	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
+	mcpscope "github.com/kandev/kandev/internal/mcp/scope"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
+	taskhandlers "github.com/kandev/kandev/internal/task/handlers"
+	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/task/ownanswer"
+	sqliterepo "github.com/kandev/kandev/internal/task/repository/sqlite"
+	"github.com/kandev/kandev/internal/task/service"
+	userstore "github.com/kandev/kandev/internal/user/store"
+	ws "github.com/kandev/kandev/pkg/websocket"
+	"github.com/stretchr/testify/require"
+)
+
+type compositionFixture struct {
+	repo             *sqliterepo.SyntheticApprovalRepository
+	auth             *auth.Service
+	token            string
+	router, ordinary *gin.Engine
+	server           *Server
+}
+
+// The fixture transport supplies server execution identity, never request data.
+type compositionTransport struct {
+	BackendClient
+	resolver *mcpscope.Resolver
+	binding  ownanswer.OwnAnswerBinding
+}
+
+func (c compositionTransport) RequestPayload(ctx context.Context, action string, payload, result interface{}) error {
+	b := c.binding
+	ctx, err := c.resolver.Scope(ctx, b.TaskID)
+	if err != nil {
+		return err
+	}
+	ctx = mcpscope.WithPrincipal(ctx, mcpscope.Principal{CallerTaskID: b.TaskID, CallerSessionID: b.SessionID, WorkspaceID: b.WorkspaceID, Surface: mcpprofile.SurfaceKanbanTask})
+	ctx = streams.WithMCPExecutionContext(ctx, streams.MCPExecutionContext{TaskID: b.TaskID, SessionID: b.SessionID, ExecutionID: "synthetic-execution"})
+	return c.BackendClient.RequestPayload(ctx, action, payload, result)
+}
+
+func newCompositionFixture(t *testing.T) *compositionFixture {
+	t.Helper()
+	ctx := context.Background()
+	db, err := kdb.OpenSQLite(filepath.Join(t.TempDir(), "synthetic.db"))
+	require.NoError(t, err)
+	pool := sqlx.NewDb(db, "sqlite3")
+	t.Cleanup(func() { require.NoError(t, pool.Close()) })
+	r, err := sqliterepo.NewWithDB(pool, pool, nil)
+	require.NoError(t, err)
+	users, cleanup, err := userstore.Provide(pool, pool)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cleanup()) })
+	as, err := authstore.New(pool, pool)
+	require.NoError(t, err)
+	cfg := &config.Config{}
+	cfg.Features.Auth = true
+	cfg.Auth.SessionTTLHours = 1
+	a, err := auth.NewService(ctx, auth.Deps{Cfg: cfg, Store: as, Users: users})
+	require.NoError(t, err)
+	u, token, err := a.Setup(ctx, "synthetic-composition@example.test", "synthetic-password-123", "Synthetic admin", "", "")
+	require.NoError(t, err)
+	_, err = messagequeue.NewSQLiteRepository(pool, pool)
+	require.NoError(t, err)
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	require.NoError(t, r.CreateWorkspace(ctx, &models.Workspace{ID: "composition-workspace", Name: "Synthetic", OwnerID: u.ID}))
+	_, err = db.Exec(`INSERT INTO tasks(id,workspace_id,title,created_at,updated_at) VALUES ('composition-task','composition-workspace','Synthetic',?,?)`, now, now)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO task_sessions(id,task_id,queue_incarnation_id,started_at,updated_at) VALUES ('composition-session','composition-task','synthetic-incarnation',?,?)`, now, now)
+	require.NoError(t, err)
+	require.NoError(t, r.CreateTurn(ctx, &models.Turn{ID: "composition-turn", TaskID: "composition-task", TaskSessionID: "composition-session", StartedAt: now}))
+	q := ownanswer.Question{ID: "synthetic-q", Title: "Synthetic", Prompt: "Synthetic choice?", Options: []ownanswer.Option{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}}
+	qm := &models.Message{ID: "composition-question", TaskID: "composition-task", TaskSessionID: "composition-session", TurnID: "composition-turn", Type: models.MessageTypeClarificationRequest, AuthorType: models.MessageAuthorAgent, Content: "Synthetic question", RequestsInput: true, CreatedAt: now, UpdatedAt: now, Metadata: map[string]any{"question": q, "question_id": q.ID, "pending_id": "synthetic-pending", "status": "pending", "agent_disconnected": true}}
+	require.NoError(t, r.CreateMessage(ctx, qm))
+	am := &models.Message{ID: "composition-answer", TaskID: qm.TaskID, TaskSessionID: qm.TaskSessionID, TurnID: qm.TurnID, Type: models.MessageTypeMessage, AuthorType: models.MessageAuthorUser, Content: "Synthetic comments without historical question linkage.", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second), Metadata: map[string]any{"client_message_request_fingerprint": strings.Repeat("a", 64)}}
+	require.NoError(t, r.CreateMessage(ctx, am))
+	storedQuestion, err := r.GetMessage(ctx, qm.ID)
+	require.NoError(t, err)
+	raw, err := json.Marshal(storedQuestion.Metadata["question"])
+	require.NoError(t, err)
+	b := ownanswer.OwnAnswerBinding{WorkspaceID: "composition-workspace", TaskID: qm.TaskID, SessionID: qm.TaskSessionID, QuestionID: q.ID, PendingID: "synthetic-pending", QuestionMessageID: qm.ID, QuestionSHA256: ownanswer.OwnAnswerDigest(raw), AnswerMessageID: am.ID, AnswerSHA256: ownanswer.OwnAnswerDigest([]byte(am.Content))}
+	// Same-session unrelated content and ordered queue state must survive the flow.
+	fact := *am
+	fact.ID = "unrelated-fact"
+	fact.Content = "Synthetic unrelated fact"
+	fact.CreatedAt = am.CreatedAt.Add(time.Second)
+	fact.UpdatedAt = fact.CreatedAt
+	require.NoError(t, r.CreateMessage(ctx, &fact))
+	independent := *qm
+	independent.ID = "unrelated-question"
+	independent.Metadata = maps.Clone(qm.Metadata)
+	otherQuestion := q
+	otherQuestion.ID, otherQuestion.Prompt = "unrelated-q", "An unrelated synthetic question?"
+	independent.Metadata["question"] = otherQuestion
+	independent.Metadata["question_id"] = otherQuestion.ID
+	independent.Metadata["pending_id"] = "unrelated-pending"
+	require.NoError(t, r.CreateMessage(ctx, &independent))
+	_, err = db.Exec(`INSERT INTO queued_messages(id,session_id,task_id,position,content,queued_at,queued_by) VALUES ('retained-queue',?,?,0,'Retained synthetic FIFO entry',?,'user')`, b.SessionID, b.TaskID, now)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO queue_admission_receipts(task_id,session_id,session_incarnation_id,client_queue_id,request_fingerprint,accepted_queue_id,response_json,admitted_at) VALUES (?,?,?,?,?,?,?,?)`, b.TaskID, b.SessionID, "synthetic-incarnation", "unrelated-admission", strings.Repeat("b", 64), "retained-queue", `{"id":"retained-queue","content":"Unrelated synthetic admission"}`, now)
+	require.NoError(t, err)
+	require.NoError(t, r.UpsertExecutorRunning(ctx, &models.ExecutorRunning{ID: b.SessionID, TaskID: b.TaskID, SessionID: b.SessionID, AgentExecutionID: "synthetic-execution", Status: models.ExecutorRunningStatusRunning}))
+	repo := &sqliterepo.SyntheticApprovalRepository{Repository: r, Binding: b}
+	log := newTestLogger(t)
+	svc := service.NewService(service.Repos{Workspaces: repo, Tasks: repo, TaskRepos: repo, Workflows: repo, Messages: repo, Turns: repo, Sessions: repo, GitSnapshots: repo, RepoEntities: repo, Executors: repo, Environments: repo, TaskEnvironments: repo, Reviews: repo}, nil, log, service.RepositoryDiscoveryConfig{})
+	router := gin.New()
+	router.Use(httpmw.Middleware(a))
+	router.POST("/api/v1/tasks/:id/approval-link-grants", taskhandlers.SyntheticApprovalHandler(svc, repo, log, b))
+	ordinary := gin.New()
+	ordinary.Use(httpmw.Middleware(a))
+	taskhandlers.RegisterTaskRoutes(ordinary, ws.NewDispatcher(), svc, nil, repo, nil, log)
+	dispatcher := ws.NewDispatcher()
+	mcphandlers.NewHandlers(svc, nil, clarification.NewStore(0), nil, nil, repo, repo, nil, nil, nil, nil, nil, log).RegisterHandlers(dispatcher)
+	transport := compositionTransport{BackendClient: NewDispatcherBackendClient(dispatcher, log), resolver: mcpscope.NewResolver(repo, a, func() bool { return true }, log), binding: b}
+	s := New(transport, b.SessionID, b.TaskID, 10005, log, "", false, ModeTask)
+	return &compositionFixture{repo: repo, auth: a, token: token, router: router, ordinary: ordinary, server: s}
+}
+
+func (f *compositionFixture) issue(t *testing.T, router *gin.Engine, credential, option string, bearer bool) *httptest.ResponseRecorder {
+	t.Helper()
+	body := map[string]any{"purpose": ownanswer.ApprovalLinkPurpose, "option_id": option}
+	raw, err := json.Marshal(f.repo.Binding)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &body))
+	raw, err = json.Marshal(body)
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/"+f.repo.Binding.TaskID+"/approval-link-grants", strings.NewReader(string(raw)))
+	if bearer {
+		req.Header.Set("Authorization", "Bearer "+credential)
+	} else if credential != "" {
+		req.AddCookie(&http.Cookie{Name: f.auth.CookieNameForRequest(req), Value: credential})
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func (f *compositionFixture) consume(t *testing.T, id, operation string) bool {
+	t.Helper()
+	raw, err := json.Marshal(f.repo.Binding)
+	require.NoError(t, err)
+	args := map[string]any{}
+	require.NoError(t, json.Unmarshal(raw, &args))
+	delete(args, "workspace_id")
+	delete(args, "task_id")
+	delete(args, "session_id")
+	args["approval_link_grant_id"] = id
+	args["approval_link_operation_id"] = operation
+	return callTool(t, f.server, ownAnswerToolName, args).IsError
+}
+
+func compositionSnapshot(t *testing.T, f *compositionFixture) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, table := range []string{"tasks", "workspaces", "task_sessions", "task_session_turns", "executors_running", "task_session_messages", "queued_messages", "queue_admission_receipts", "own_answer_approval_link_grants"} {
+		rows, err := f.repo.DB().Query("SELECT * FROM " + table + " ORDER BY 1")
+		require.NoError(t, err)
+		cols, err := rows.Columns()
+		require.NoError(t, err)
+		all := []map[string]any{}
+		for rows.Next() {
+			v := make([]any, len(cols))
+			p := make([]any, len(cols))
+			for i := range v {
+				p[i] = &v[i]
+			}
+			require.NoError(t, rows.Scan(p...))
+			m := map[string]any{}
+			for i, k := range cols {
+				if b, ok := v[i].([]byte); ok {
+					m[k] = string(b)
+				} else {
+					m[k] = v[i]
+				}
+			}
+			all = append(all, m)
+		}
+		require.NoError(t, rows.Err())
+		require.NoError(t, rows.Close())
+		raw, err := json.Marshal(all)
+		require.NoError(t, err)
+		out[table] = string(raw)
+	}
+	return out
+}
+
+// Synthetic policy injection exists only in additive test compilation. These
+// assertions do not claim original-hash production success or historical origin.
+func TestApprovalLinkSyntheticComposition(t *testing.T) {
+	f := newCompositionFixture(t)
+	before := compositionSnapshot(t, f)
+	for _, tc := range []struct {
+		name, credential, option string
+		bearer                   bool
+		want                     int
+	}{{"anonymous", "", "a", false, 401}, {"forged-cookie", "forged", "a", false, 401}, {"bad-option", f.token, "foreign", false, 409}} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, f.issue(t, f.router, tc.credential, tc.option, tc.bearer).Code)
+			require.Equal(t, before, compositionSnapshot(t, f))
+		})
+	}
+	id, ok := f.auth.ResolveSessionToken(context.Background(), f.token, "")
+	require.True(t, ok)
+	_, pat, err := f.auth.MintToken(context.Background(), id.UserID, "synthetic-pat", 1)
+	require.NoError(t, err)
+	require.Equal(t, 403, f.issue(t, f.router, pat, "a", true).Code)
+	require.Equal(t, before, compositionSnapshot(t, f))
+	_, err = f.repo.DB().Exec(`UPDATE workspaces SET owner_id='foreign-owner' WHERE id=?`, f.repo.Binding.WorkspaceID)
+	require.NoError(t, err)
+	foreignOwner := compositionSnapshot(t, f)
+	require.Equal(t, 403, f.issue(t, f.router, f.token, "a", false).Code)
+	require.Equal(t, foreignOwner, compositionSnapshot(t, f))
+	_, err = f.repo.DB().Exec(`UPDATE workspaces SET owner_id=? WHERE id=?`, id.UserID, f.repo.Binding.WorkspaceID)
+	require.NoError(t, err)
+	require.Equal(t, before, compositionSnapshot(t, f))
+	// Even with the synthetic repository adapter, the normal HTTP selector is closed.
+	require.Equal(t, 403, f.issue(t, f.ordinary, f.token, "a", false).Code)
+	trusted := authn.WithIdentity(context.Background(), id)
+	trusted = streams.WithMCPExecutionContext(trusted, streams.MCPExecutionContext{TaskID: f.repo.Binding.TaskID, SessionID: f.repo.Binding.SessionID, ExecutionID: "synthetic-execution"})
+	_, err = f.repo.Repository.CreateApprovalLinkGrant(trusted, ownanswer.ApprovalLinkRequest{OwnAnswerBinding: f.repo.Binding, OptionID: "a"})
+	require.Error(t, err)
+	_, _, err = f.repo.Repository.ConsumeApprovalLinkGrant(trusted, f.repo.Binding, "foreign", "synthetic-operation", "synthetic-incarnation")
+	require.Error(t, err)
+	rec := f.issue(t, f.router, f.token, "a", false)
+	require.Equal(t, 201, rec.Code, rec.Body.String())
+	var g ownanswer.ApprovalLinkGrant
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g))
+	require.Equal(t, id.UserID, g.CreatorUserID)
+	require.Equal(t, id.SessionID, g.CreatorSessionID)
+	issued := compositionSnapshot(t, f)
+	for table, value := range before {
+		if table != "own_answer_approval_link_grants" {
+			require.Equal(t, value, issued[table], table)
+		}
+	}
+	require.True(t, f.consume(t, g.ID, ""))
+	require.Equal(t, issued, compositionSnapshot(t, f))
+	// Fail after grant CAS: grant consumption and both message writes must roll back.
+	_, err = f.repo.DB().Exec(`CREATE TRIGGER synthetic_abort_link BEFORE UPDATE ON task_session_messages BEGIN SELECT RAISE(ABORT,'synthetic rollback'); END`)
+	require.NoError(t, err)
+	require.True(t, f.consume(t, g.ID, "synthetic-operation"))
+	require.Equal(t, issued, compositionSnapshot(t, f))
+	_, err = f.repo.DB().Exec(`DROP TRIGGER synthetic_abort_link`)
+	require.NoError(t, err)
+	require.False(t, f.consume(t, g.ID, "synthetic-operation"))
+	settled := compositionSnapshot(t, f)
+	for _, table := range []string{"tasks", "workspaces", "task_sessions", "task_session_turns", "executors_running", "queued_messages", "queue_admission_receipts"} {
+		require.Equal(t, before[table], settled[table], table)
+	}
+	q, err := f.repo.GetMessage(context.Background(), f.repo.Binding.QuestionMessageID)
+	require.NoError(t, err)
+	require.Equal(t, "answered", q.Metadata["status"])
+	a, err := f.repo.GetMessage(context.Background(), f.repo.Binding.AnswerMessageID)
+	require.NoError(t, err)
+	require.Equal(t, "Synthetic comments without historical question linkage.", a.Content)
+	require.NotNil(t, a.Metadata[ownanswer.OwnAnswerBindingKey])
+	assertCompositionMessagePreservation(t, before["task_session_messages"], settled["task_session_messages"], f.repo.Binding)
+	fact, err := f.repo.GetMessage(context.Background(), "unrelated-fact")
+	require.NoError(t, err)
+	require.Equal(t, "Synthetic unrelated fact", fact.Content)
+	require.False(t, f.consume(t, g.ID, "synthetic-operation"))
+	require.Equal(t, settled, compositionSnapshot(t, f))
+	require.True(t, f.consume(t, g.ID, "conflicting-operation"))
+	require.Equal(t, settled, compositionSnapshot(t, f))
+}
+
+func assertCompositionMessagePreservation(t *testing.T, before, after string, b ownanswer.OwnAnswerBinding) {
+	t.Helper()
+	var original, settled []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(before), &original))
+	require.NoError(t, json.Unmarshal([]byte(after), &settled))
+	require.Len(t, settled, len(original))
+	for i, row := range settled {
+		id := row["id"]
+		if id != b.QuestionMessageID && id != b.AnswerMessageID {
+			require.Equal(t, original[i], row, "unrelated message must remain byte-identical")
+			continue
+		}
+		var oldMeta, newMeta map[string]any
+		require.NoError(t, json.Unmarshal([]byte(original[i]["metadata"].(string)), &oldMeta))
+		require.NoError(t, json.Unmarshal([]byte(row["metadata"].(string)), &newMeta))
+		if id == b.QuestionMessageID {
+			require.Equal(t, "answered", newMeta["status"])
+			require.NotNil(t, newMeta["response"])
+			require.NotNil(t, newMeta[ownanswer.OwnAnswerReceiptKey])
+			delete(newMeta, "response")
+			delete(newMeta, ownanswer.OwnAnswerReceiptKey)
+			newMeta["status"] = oldMeta["status"]
+		} else {
+			require.NotNil(t, newMeta[ownanswer.OwnAnswerBindingKey])
+			delete(newMeta, ownanswer.OwnAnswerBindingKey)
+		}
+		require.Equal(t, oldMeta, newMeta, "only settlement metadata may change")
+		delete(row, "metadata")
+		delete(original[i], "metadata")
+		delete(row, "updated_at")
+		delete(original[i], "updated_at")
+		require.Equal(t, original[i], row, "all original message bytes/identity/timestamps except settlement updated_at remain unchanged")
+	}
+}
