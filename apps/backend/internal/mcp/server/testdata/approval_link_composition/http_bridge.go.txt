@@ -1,0 +1,15 @@
+// This file is compiled only through the additive composition-test overlay.
+package handlers
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/kandev/kandev/internal/common/logger"
+	"github.com/kandev/kandev/internal/task/ownanswer"
+	"github.com/kandev/kandev/internal/task/service"
+)
+
+// SyntheticApprovalHandler is absent from every normal build and import.
+func SyntheticApprovalHandler(svc *service.Service, repo handlerRepo, log *logger.Logger, expected ownanswer.OwnAnswerBinding) gin.HandlerFunc {
+	h := NewTaskHandlers(svc, nil, repo, nil, log)
+	return func(c *gin.Context) { h.createApprovalLinkGrant(c, expected) }
+}

@@ -74,6 +74,10 @@ func decodeApprovalLinkCreation(c *gin.Context) (approvalLinkCreation, error) {
 // Grant issuance requires a browser-authenticated administrator. Task-owner
 // identities and the auth-disabled synthetic administrator confer no authority.
 func (h *TaskHandlers) httpCreateApprovalLinkGrant(c *gin.Context) {
+	h.createApprovalLinkGrant(c, ownanswer.ApprovalLinkCase())
+}
+
+func (h *TaskHandlers) createApprovalLinkGrant(c *gin.Context, expected ownanswer.OwnAnswerBinding) {
 	if !approvalBrowserAuthorized(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "authenticated workspace administrator browser session required"})
 		return
@@ -83,8 +87,8 @@ func (h *TaskHandlers) httpCreateApprovalLinkGrant(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "exact new-authorization request required"})
 		return
 	}
-	body.WorkspaceID = ownanswer.ApprovalLinkCase().WorkspaceID
-	if body.OwnAnswerBinding != ownanswer.ApprovalLinkCase() || c.Param("id") != body.TaskID {
+	body.WorkspaceID = expected.WorkspaceID
+	if body.OwnAnswerBinding != expected || c.Param("id") != body.TaskID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "reviewed approval-link case required"})
 		return
 	}

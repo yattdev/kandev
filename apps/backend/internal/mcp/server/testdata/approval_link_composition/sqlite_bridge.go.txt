@@ -1,0 +1,31 @@
+// This file is compiled only through the additive composition-test overlay.
+package sqlite
+
+import (
+	"context"
+	"github.com/kandev/kandev/internal/agentctl/types/streams"
+	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/task/ownanswer"
+)
+
+// SyntheticApprovalRepository injects only a synthetic binding into the same
+// transaction workers. Production exported selectors remain untouched.
+type SyntheticApprovalRepository struct {
+	*Repository
+	Binding ownanswer.OwnAnswerBinding
+}
+
+func (r *SyntheticApprovalRepository) CreateApprovalLinkGrant(ctx context.Context, req ownanswer.ApprovalLinkRequest) (*ownanswer.ApprovalLinkGrant, error) {
+	if req.OwnAnswerBinding != r.Binding {
+		return nil, errApprovalLink
+	}
+	return r.createApprovalLinkGrant(ctx, req)
+}
+
+func (r *SyntheticApprovalRepository) ConsumeApprovalLinkGrant(ctx context.Context, b ownanswer.OwnAnswerBinding, id, op, incarnation string) ([]*models.Message, bool, error) {
+	e, ok := streams.MCPExecutionContextFromContext(ctx)
+	if b != r.Binding || !ok || e.TaskID != b.TaskID || e.SessionID != b.SessionID || e.ExecutionID == "" {
+		return nil, false, errApprovalLink
+	}
+	return r.consumeApprovalLinkGrant(ctx, b, id, op, incarnation)
+}
