@@ -12,7 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kandev/kandev/internal/agentctl/isolationbroker"
 	"github.com/kandev/kandev/internal/agentctl/server/config"
+	"github.com/kandev/kandev/internal/agentctl/server/process/isolation"
 	"github.com/kandev/kandev/internal/agentctl/types/streams"
 	"github.com/kandev/kandev/internal/common/acpprovider"
 	"github.com/kandev/kandev/internal/common/logger"
@@ -26,11 +28,17 @@ import (
 // It manages creation and deletion of agent instances.
 // Used by both Docker and standalone runtimes.
 type ControlClient struct {
-	mu         sync.Mutex
-	baseURL    string
-	httpClient *http.Client
-	logger     *logger.Logger
-	authToken  string
+	mu              sync.Mutex
+	baseURL         string
+	httpClient      *http.Client
+	logger          *logger.Logger
+	authToken       string
+	isolationBroker *isolationbroker.Client
+}
+
+// WithIsolationBroker binds protected creates to the fresh launcher channel.
+func WithIsolationBroker(broker *isolationbroker.Client) ControlClientOption {
+	return func(c *ControlClient) { c.isolationBroker = broker }
 }
 
 // McpServerConfig holds configuration for an MCP server.
@@ -274,6 +282,20 @@ func (c *ControlClient) SubprocessAdmission(ctx context.Context) (subproc.Snapsh
 
 // CreateInstance creates a new agent instance.
 func (c *ControlClient) CreateInstance(ctx context.Context, req *CreateInstanceRequest) (*CreateInstanceResponse, error) {
+	return c.CreateInstanceWithPins(ctx, req, nil)
+}
+
+// CreateInstanceWithPins registers held source descriptors before HTTP create.
+func (c *ControlClient) CreateInstanceWithPins(ctx context.Context, req *CreateInstanceRequest, pins *isolation.Set) (*CreateInstanceResponse, error) {
+	if (req.WorkspaceIsolation != nil) != (pins != nil) {
+		if pins != nil {
+			_ = pins.Close()
+		}
+		return nil, errors.New("protected create requires held isolation descriptors")
+	}
+	if pins != nil {
+		defer func() { _ = pins.Close() }()
+	}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -284,9 +306,19 @@ func (c *ControlClient) CreateInstance(ctx context.Context, req *CreateInstanceR
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	receipt, err := c.registerIsolation(ctx, req, body, pins)
+	if err != nil {
+		return nil, err
+	}
+	if receipt != "" {
+		httpReq.Header.Set("X-Kandev-Isolation-Receipt", receipt)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
+		if recovered := c.reconcileAfterError(receipt, req.ID); recovered != nil {
+			return recovered, nil
+		}
 		return nil, fmt.Errorf("failed to create instance: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -303,6 +335,9 @@ func (c *ControlClient) CreateInstance(ctx context.Context, req *CreateInstanceR
 
 	var result CreateInstanceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		if recovered := c.reconcileAfterError(receipt, req.ID); recovered != nil {
+			return recovered, nil
+		}
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -311,6 +346,57 @@ func (c *ControlClient) CreateInstance(ctx context.Context, req *CreateInstanceR
 		zap.Int("port", result.Port))
 
 	return &result, nil
+}
+
+func (c *ControlClient) registerIsolation(ctx context.Context, req *CreateInstanceRequest, body []byte, pins *isolation.Set) (string, error) {
+	if req.WorkspaceIsolation == nil {
+		return "", nil
+	}
+	if c.isolationBroker == nil {
+		return "", errors.New("protected create requires a fresh launcher isolation broker")
+	}
+	registration := isolationbroker.Registration{TaskID: req.TaskID, SessionID: req.SessionID, InstanceID: req.ID, Workspace: req.WorkspacePath, Identities: req.WorkspaceIsolation.ObjectIdentities}
+	receipt, err := c.isolationBroker.Register(ctx, body, registration, pins)
+	if err != nil {
+		return "", fmt.Errorf("register isolation descriptors: %w", err)
+	}
+	return receipt, nil
+}
+
+func (c *ControlClient) reconcileAfterError(receipt, instanceID string) *CreateInstanceResponse {
+	if receipt == "" {
+		return nil
+	}
+	recovered, err := c.reconcileProtectedCreate(receipt, instanceID)
+	if err != nil {
+		return nil
+	}
+	return recovered
+}
+
+func (c *ControlClient) reconcileProtectedCreate(receipt, instanceID string) (*CreateInstanceResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/isolation/receipts/"+receipt, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("isolation receipt outcome unavailable: %d", resp.StatusCode)
+	}
+	var created CreateInstanceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return nil, err
+	}
+	if created.ID != instanceID || created.Port <= 0 {
+		return nil, errors.New("isolation receipt outcome mismatched instance")
+	}
+	return &created, nil
 }
 
 // DeleteInstance stops and removes an agent instance.

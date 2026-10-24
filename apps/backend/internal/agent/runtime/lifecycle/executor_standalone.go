@@ -16,6 +16,7 @@ import (
 	agentctl "github.com/kandev/kandev/internal/agent/runtime/agentctl"
 	"github.com/kandev/kandev/internal/agentctl/server/config"
 	"github.com/kandev/kandev/internal/agentctl/server/process"
+	"github.com/kandev/kandev/internal/agentctl/server/process/isolation"
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/common/subproc"
 	"github.com/kandev/kandev/internal/task/models"
@@ -303,32 +304,43 @@ func standaloneGitCheckouts(workspacePath string) (map[string]struct{}, error) {
 	return checkouts, nil
 }
 
-func standaloneWorkspaceIsolation(req *ExecutorCreateRequest) (*config.WorkspaceIsolation, error) {
+func standaloneWorkspaceIsolation(req *ExecutorCreateRequest) (*config.WorkspaceIsolation, *isolation.Set, error) {
 	if len(req.GitMetadataProjections) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	isolation := &config.WorkspaceIsolation{WritableWorkspaceRoots: []string{req.WorkspacePath}}
 	for _, projection := range req.GitMetadataProjections {
 		if err := projection.Revalidate(); err != nil {
-			return nil, errors.New(gitMetadataProjectionInvalid)
+			return nil, nil, errors.New(gitMetadataProjectionInvalid)
 		}
 		isolation.SharedCommonDirs = append(isolation.SharedCommonDirs, projection.SharedCommonDir)
 		isolation.WritablePaths = append(isolation.WritablePaths, projection.AgentWritablePaths...)
 		isolation.PrivateAdminPaths = append(isolation.PrivateAdminPaths, projection.GitDir)
 		isolation.RequiredDirectories = append(isolation.RequiredDirectories, projection.ObjectDir)
 	}
-	if err := isolation.CaptureObjects(); err != nil {
-		return nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
+	pins, err := isolation.CaptureObjectsPinned()
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
 	}
+	valid := false
+	defer func() {
+		if !valid {
+			_ = pins.Close()
+		}
+	}()
 	for _, projection := range req.GitMetadataProjections {
 		if err := projection.Revalidate(); err != nil {
-			return nil, errors.New(gitMetadataProjectionInvalid)
+			return nil, nil, errors.New(gitMetadataProjectionInvalid)
 		}
 	}
 	if err := isolation.ConfirmObjects(); err != nil {
-		return nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
+		return nil, nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
 	}
-	return isolation, nil
+	if err := pins.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
+	}
+	valid = true
+	return isolation, pins, nil
 }
 
 func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCreateRequest) (*ExecutorInstance, error) {
@@ -381,7 +393,7 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 	createReq := buildStandaloneCreateInstanceRequest(
 		req, env, agentType, disableAskQuestion, assumeMcpSse, assumeMcpHttp, requiresProcessKill, stripEnv,
 	)
-	isolation, err := standaloneWorkspaceIsolation(req)
+	isolation, pins, err := standaloneWorkspaceIsolation(req)
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +404,7 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 		zap.String("req_protocol", req.Protocol),
 		zap.String("createReq_protocol", createReq.Protocol))
 
-	resp, err := r.ctl.CreateInstance(ctx, createReq)
+	resp, err := r.ctl.CreateInstanceWithPins(ctx, createReq, pins)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create standalone instance: %w", err)
 	}

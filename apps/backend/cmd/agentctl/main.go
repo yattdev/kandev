@@ -237,6 +237,14 @@ func run(cfg *config.Config, log *logger.Logger) {
 
 	// Create control server
 	controlServer = api.NewControlServer(cfg, instMgr, log)
+	broker, brokerErr := inheritedIsolationBroker(controlServer.CredentialSource().Invalidated)
+	_ = os.Unsetenv("KANDEV_ISOLATION_BROKER_FD")
+	if brokerErr != nil {
+		log.Error("isolation broker unavailable; protected creates will fail closed", zap.Error(brokerErr))
+	} else if broker != nil {
+		controlServer.SetIsolationBroker(broker)
+		defer func() { _ = broker.Close() }()
+	}
 	stopUnownedReaper := startUnownedReaperIfEnabled(cfg, controlServer)
 	defer stopUnownedReaper()
 

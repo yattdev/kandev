@@ -3,11 +3,14 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/kandev/kandev/internal/agentctl/isolationbroker"
 	"github.com/kandev/kandev/internal/agentctl/server/config"
 	"github.com/kandev/kandev/internal/agentctl/server/instance"
 	commonconfig "github.com/kandev/kandev/internal/common/config"
@@ -38,6 +41,7 @@ type ControlServer struct {
 	router            *gin.Engine
 	ownership         *ownershipState
 	credentials       *credentialState
+	isolationBroker   *isolationbroker.Server
 	shutdownRequested chan struct{}
 	shutdownOnce      sync.Once
 	unownedPeriod     time.Duration
@@ -52,6 +56,11 @@ type ControlServer struct {
 	// instead of the atomic check-and-latch) fails a test even though it
 	// would still pass every other reaper assertion.
 	decideUnownedShutdown func(time.Duration) bool
+}
+
+// SetIsolationBroker installs the launcher-owned descriptor receiver.
+func (m *ControlServer) SetIsolationBroker(broker *isolationbroker.Server) {
+	m.isolationBroker = broker
 }
 
 // NewControlServer creates a new ControlServer for instance management.
@@ -134,6 +143,7 @@ func (m *ControlServer) setupRoutes() {
 	// Instance management API - same endpoints regardless of mode
 	api := m.router.Group("/api/v1")
 	api.POST("/instances", m.handleCreateInstance)
+	api.GET("/isolation/receipts/:receipt", m.handleIsolationReceipt)
 	api.GET("/instances", m.handleListInstances)
 	api.GET("/instances/:id", m.handleGetInstance)
 	api.DELETE("/instances/:id", m.handleDeleteInstance)
@@ -194,7 +204,12 @@ func (m *ControlServer) handleHandshake(c *gin.Context) {
 
 func (m *ControlServer) handleCreateInstance(c *gin.Context) {
 	var req instance.CreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	body, readErr := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20+1))
+	if readErr != nil || len(body) > 1<<20 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body size"})
+		return
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
 		m.logger.Warn("invalid create instance request", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid request body: " + err.Error(),
@@ -210,16 +225,61 @@ func (m *ControlServer) handleCreateInstance(c *gin.Context) {
 		return
 	}
 
-	resp, err := m.instMgr.CreateInstance(c.Request.Context(), &req)
+	if req.WorkspaceIsolation != nil && m.isolationBroker == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "protected create requires a fresh launcher isolation broker"})
+		return
+	}
+	var resp *instance.CreateResponse
+	var err error
+	var protectedReceipt string
+	var protectedEpoch <-chan struct{}
+	if req.WorkspaceIsolation != nil {
+		if m.credentials.Latest() == "" || extractBearerToken(c.Request) == "" || req.ID == "" || req.TaskID == "" || req.SessionID == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "protected create requires full control ownership and task identity"})
+			return
+		}
+		epoch := m.credentials.Invalidated()
+		protectedEpoch = epoch
+		protectedReceipt = c.GetHeader("X-Kandev-Isolation-Receipt")
+		registration := isolationbroker.Registration{TaskID: req.TaskID, SessionID: req.SessionID, InstanceID: req.ID, Workspace: req.WorkspacePath, Identities: req.WorkspaceIsolation.ObjectIdentities}
+		pins, consumeErr := m.isolationBroker.Consume(protectedReceipt, body, registration, epoch)
+		if consumeErr != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "protected create isolation receipt rejected: " + consumeErr.Error()})
+			return
+		}
+		resp, err = m.instMgr.CreateInstanceWithPinsFenced(c.Request.Context(), &req, pins,
+			func(publish func()) bool { return m.credentials.PublishIfCurrent(epoch, publish) })
+	} else {
+		resp, err = m.instMgr.CreateInstance(c.Request.Context(), &req)
+	}
 	if err != nil {
+		if protectedReceipt != "" {
+			m.isolationBroker.Forget(protectedReceipt)
+		}
 		m.logger.Error("failed to create instance", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to create instance: " + err.Error(),
 		})
 		return
 	}
+	if protectedReceipt != "" {
+		m.isolationBroker.MarkCreated(protectedReceipt, protectedEpoch, isolationbroker.Created{ID: resp.ID, Port: resp.Port})
+	}
 
 	c.JSON(http.StatusCreated, resp)
+}
+
+func (m *ControlServer) handleIsolationReceipt(c *gin.Context) {
+	if m.isolationBroker == nil || m.credentials.Latest() == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "isolation receipt unavailable"})
+		return
+	}
+	created, ok := m.isolationBroker.Created(c.Param("receipt"), m.credentials.Invalidated())
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "isolation receipt unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, created)
 }
 
 func (m *ControlServer) handleListInstances(c *gin.Context) {

@@ -10,6 +10,7 @@ import (
 	agentruntime "github.com/kandev/kandev/internal/agent/runtime"
 	agentctlclient "github.com/kandev/kandev/internal/agent/runtime/agentctl"
 	"github.com/kandev/kandev/internal/agent/runtime/agentctl/launcher"
+	"github.com/kandev/kandev/internal/agentctl/isolationbroker"
 	"github.com/kandev/kandev/internal/common/config"
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/common/ownershipperiod"
@@ -21,6 +22,7 @@ import (
 type agentctlLauncherResult struct {
 	cleanup    func() error
 	binaryPath string
+	broker     *isolationbroker.Client
 	// recoveryDeadlineStart is the AC-EXECUTORS-SURVIVAL-003.7 recovery
 	// deadline's clock start (the instant this launch first contacted a
 	// recorded control endpoint). Zero when this launch never contacted one
@@ -233,6 +235,7 @@ func spawnFreshAgentctl(
 			return cleanup()
 		},
 		binaryPath: l.BinaryPath(),
+		broker:     l.Broker(),
 	}, nil
 }
 

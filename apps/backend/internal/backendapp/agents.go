@@ -16,6 +16,7 @@ import (
 	agentctl "github.com/kandev/kandev/internal/agent/runtime/agentctl"
 	"github.com/kandev/kandev/internal/agent/runtime/lifecycle"
 	settingsstore "github.com/kandev/kandev/internal/agent/settings/store"
+	"github.com/kandev/kandev/internal/agentctl/isolationbroker"
 	"github.com/kandev/kandev/internal/agentctl/server/process"
 	"github.com/kandev/kandev/internal/common/config"
 	"github.com/kandev/kandev/internal/common/logger"
@@ -42,6 +43,7 @@ func provideLifecycleManager(
 	passthroughSessionProvider lifecycle.PassthroughSessionProvider,
 	runningWriter lifecycle.ExecutorRunningWriter,
 	startupRecoveryGuard *lifecycle.RecoveryGuard,
+	broker *isolationbroker.Client,
 ) (*lifecycle.Manager, error) {
 	log.Info("Initializing Agent Manager...")
 	secretStores := newLifecycleSecretStores(rawSecretStore)
@@ -55,6 +57,7 @@ func provideLifecycleManager(
 		cfg.Agent.StandalonePort,
 		log,
 		agentctl.WithControlAuthToken(cfg.Agent.StandaloneAuthToken),
+		agentctl.WithIsolationBroker(broker),
 	)
 	standaloneExec := lifecycle.NewStandaloneExecutor(
 		controlClient,

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	agentctlclient "github.com/kandev/kandev/internal/agent/runtime/agentctl"
+	"github.com/kandev/kandev/internal/agentctl/isolationbroker"
 	commonconfig "github.com/kandev/kandev/internal/common/config"
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/common/netprobe"
@@ -46,6 +47,7 @@ type Launcher struct {
 	// When the backend dies (even SIGKILL), the kernel closes this FD,
 	// breaking the pipe. agentctl detects the break and self-terminates.
 	parentPipe *os.File
+	broker     *isolationbroker.Client
 
 	// jobHandle holds a platform-specific kernel object used to enforce
 	// "kill the child if the parent dies" without relying on the agentctl
@@ -123,6 +125,13 @@ func (l *Launcher) AuthToken() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.authToken
+}
+
+// Broker returns the private descriptor channel for this fresh child only.
+func (l *Launcher) Broker() *isolationbroker.Client {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.broker
 }
 
 // generateNonce creates a cryptographically random 32-byte hex-encoded nonce.
@@ -273,22 +282,51 @@ func (l *Launcher) buildAndStartProcess(nonce string) error {
 			return err
 		}
 	}
+	broker, brokerChild, err := setupIsolationBroker(l.cmd)
+	if err != nil {
+		closePipeOnStartFailure(pipeWrite, l.cmd)
+		return fmt.Errorf("create isolation broker: %w", err)
+	}
+	l.broker = broker
 
 	stdout, err := l.cmd.StdoutPipe()
 	if err != nil {
+		closePipeOnStartFailure(pipeWrite, l.cmd)
+		if brokerChild != nil {
+			_ = brokerChild.Close()
+		}
+		if broker != nil {
+			_ = broker.Close()
+		}
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 	stderr, err := l.cmd.StderrPipe()
 	if err != nil {
+		closePipeOnStartFailure(pipeWrite, l.cmd)
+		if brokerChild != nil {
+			_ = brokerChild.Close()
+		}
+		if broker != nil {
+			_ = broker.Close()
+		}
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	if err := l.cmd.Start(); err != nil {
 		closePipeOnStartFailure(pipeWrite, l.cmd)
+		if brokerChild != nil {
+			_ = brokerChild.Close()
+		}
+		if broker != nil {
+			_ = broker.Close()
+		}
 		return fmt.Errorf("failed to start agentctl: %w", err)
 	}
 
 	closeChildPipeEnd(l.cmd)
+	if brokerChild != nil {
+		_ = brokerChild.Close()
+	}
 	l.parentPipe = pipeWrite
 
 	// Bind the child to a kill-on-parent-exit kernel primitive (Job Object on
@@ -676,6 +714,9 @@ func stripANSI(s string) string {
 // monitorExit waits for the process to exit and signals via the exited channel.
 func (l *Launcher) monitorExit() {
 	err := l.cmd.Wait()
+	if l.broker != nil {
+		_ = l.broker.Close()
+	}
 
 	l.mu.Lock()
 	stopping := l.stopping

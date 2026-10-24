@@ -115,112 +115,59 @@ func (m *Manager) SetServerFactory(factory ServerFactory) {
 
 // CreateInstance creates a new agent instance.
 func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
-	if req.WorkspaceIsolation != nil {
-		if err := req.WorkspaceIsolation.ValidateObjects(); err != nil {
-			return nil, fmt.Errorf("invalid workspace isolation: %w", err)
-		}
+	return m.CreateInstanceWithPins(ctx, req, nil)
+}
+
+// CreateInstanceWithPins consumes descriptors admitted by the private broker.
+func (m *Manager) CreateInstanceWithPins(ctx context.Context, req *CreateRequest, pins *isolation.Set) (*CreateResponse, error) {
+	return m.CreateInstanceWithPinsFenced(ctx, req, pins, nil)
+}
+
+func validateProtectedCreate(req *CreateRequest, pins *isolation.Set) error {
+	if (req.WorkspaceIsolation != nil) != (pins != nil) {
+		return errors.New("protected create requires broker-owned isolation descriptors")
 	}
-	// createStart includes the m.mu queue wait deliberately: that wait is the
-	// leak pathology described below, and the diagnostic agentctl_create_ready_ms
-	// metric (api.handleSystemMetrics) exists to make it visible.
+	if req.WorkspaceIsolation == nil {
+		return nil
+	}
+	if err := req.WorkspaceIsolation.ValidateObjects(); err != nil {
+		return fmt.Errorf("invalid workspace isolation: %w", err)
+	}
+	if err := pins.Validate(); err != nil {
+		return fmt.Errorf("invalid broker isolation descriptors: %w", err)
+	}
+	return nil
+}
+
+// CreateInstanceWithPinsFenced publishes a protected instance only while its
+// authenticated control generation still owns the broker registration.
+func (m *Manager) CreateInstanceWithPinsFenced(ctx context.Context, req *CreateRequest, pins *isolation.Set, fence func(func()) bool) (*CreateResponse, error) {
+	defer func() {
+		if pins != nil {
+			_ = pins.Close()
+		}
+	}()
+	if err := validateProtectedCreate(req, pins); err != nil {
+		return nil, err
+	}
+	// Include the mutex queue wait in create latency.
 	createStart := time.Now()
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Refuse once Shutdown has begun, so no creation can register an
-	// abandonment teardown after Shutdown drained the wait group.
-	if m.shuttingDown {
-		return nil, ErrManagerShuttingDown
-	}
-
-	// The caller may already be gone. Creation is serialised on m.mu, the
-	// control client gives up after 30s, and callers that give up retry — so
-	// under load this lock grows a queue of requests nobody is waiting for any
-	// more. Building an instance for one of those leaks it: no caller holds its
-	// ID, so nothing ever stops it, and it keeps a port, an HTTP server and a
-	// full set of workspace trackers polling git. That extra polling is what
-	// makes the next creation slower, which lengthens the queue, which leaks
-	// more instances.
-	//
-	// Seen in the field as create latency climbing 6ms -> 5.5s -> 34s -> 192s
-	// with 16 live instances and zero deletions, by which point plain
-	// `git ls-files` was hitting its 10s timeout and session resume failed.
-	if err := ctx.Err(); err != nil {
-		m.logger.Warn("create instance abandoned while queued; caller had already given up",
-			zap.String("workspace_path", req.WorkspacePath),
-			zap.Error(err))
-		return nil, fmt.Errorf("create instance abandoned while queued: %w", err)
-	}
-	var pins *isolation.Set
-	if req.WorkspaceIsolation != nil {
-		var err error
-		pins, err = isolation.PinAll(req.WorkspaceIsolation.ObjectIdentities)
-		if err != nil {
-			return nil, fmt.Errorf("pin workspace isolation: %w", err)
-		}
-		defer func() {
-			if pins != nil {
-				_ = pins.Close()
-			}
-		}()
-	}
-
-	agentEnv, err := config.CollectAgentEnvWithError(req.Env)
-	if err != nil {
-		return nil, fmt.Errorf("prepare agent environment: %w", err)
-	}
-
-	id := req.ID
-	if id == "" {
-		id = uuid.New().String()
-	}
-	if _, exists := m.instances[id]; exists {
-		return nil, fmt.Errorf("instance with ID %s already exists", id)
-	}
-
-	port, listener, err := m.allocatePortAndListener(id)
+	id, agentEnv, port, listener, err := m.prepareCreateResources(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	agentCmd := m.resolveAgentCommand(req)
-	autoStart := req.AutoStart
-	mcpServers := m.buildMcpServerConfigs(req.McpServers)
 
 	m.logger.Info("CreateInstance: received request",
 		zap.String("req_protocol", req.Protocol),
 		zap.String("workspace_path", req.WorkspacePath))
 
-	overrides := &config.InstanceOverrides{
-		InstanceID:                 id,
-		Protocol:                   agent.Protocol(req.Protocol),
-		AgentCommand:               agentCmd,
-		WorkDir:                    req.WorkspacePath,
-		AutoStart:                  &autoStart,
-		Env:                        agentEnv,
-		AutoApprovePermissions:     req.AutoApprovePermissions,
-		AgentType:                  req.AgentType,
-		McpServers:                 mcpServers,
-		SessionID:                  req.SessionID,
-		TaskID:                     req.TaskID,
-		DisableAskQuestion:         req.DisableAskQuestion,
-		AssumeMcpSse:               req.AssumeMcpSse,
-		AssumeMcpHttp:              req.AssumeMcpHttp,
-		McpMode:                    req.McpMode,
-		McpProviders:               req.McpProviders,
-		McpProfile:                 req.McpProfile,
-		NamespacesMCPToolsByServer: req.NamespacesMCPToolsByServer,
-		RequiresProcessKill:        req.RequiresProcessKill,
-		StripEnv:                   req.StripEnv,
-		ProviderGatewayAuth:        req.ProviderGatewayAuth,
-		BaseBranches:               req.BaseBranches,
-		ComparisonTargets:          req.ComparisonTargets,
-		RemoteContributions:        req.RemoteContributions,
-		ContributionDestinations:   req.ContributionDestinations,
-		WorkspaceSourceRoots:       req.WorkspaceSourceRoots,
-		WorkspaceIsolation:         req.WorkspaceIsolation,
-	}
+	overrides := m.createOverrides(req, id, agentEnv, agentCmd)
 
 	m.logger.Info("CreateInstance: applying overrides",
 		zap.String("override_protocol", string(overrides.Protocol)))
@@ -242,43 +189,8 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 	// CreateInstance returns, so setting it here happens-before any
 	// terminal event the instance could ever produce.
 	procMgr.SetTurnOutcomeRecorder(id, m)
-	// Materialize provider-qualified comparison targets before any tracker
-	// polling starts. Failures remain explicit unavailable tracker state.
-	procMgr.PrepareComparisonTargets(ctx)
-
-	// Start root + per-repo trackers so file-change events fire even in passthrough mode.
-	procMgr.StartAllWorkspaceTrackers(context.Background())
-	if m.afterTrackerStart != nil {
-		m.afterTrackerStart()
-	}
-	if err := procMgr.ValidateIsolationPins(); err != nil {
-		m.abandonWG.Add(1)
-		go func() {
-			defer m.abandonWG.Done()
-			m.abandonPartialInstance(id, port, listener, procMgr)
-		}()
-		return nil, fmt.Errorf("workspace isolation changed during instance creation: %w", err)
-	}
-
-	// Starting the trackers is the slow part of creation, so re-check: a caller
-	// that was still waiting when we took the lock can time out during it.
-	if err := ctx.Err(); err != nil {
-		// Teardown runs off this goroutine because it must not happen under
-		// m.mu. stopWorkspaceTrackers stops trackers one at a time, and
-		// WorkspaceTracker.Stop takes no context — it waits on its own
-		// stopTimeout timer — so a workspace with a dozen repositories could
-		// pin the creation mutex for the better part of a minute, lengthening
-		// the very queue this abandonment exists to drain.
-		//
-		// Nothing can observe the instance meanwhile: it was never added to
-		// m.instances, and PortAllocator carries its own mutex. The wait group
-		// lets Shutdown drain these before it returns.
-		m.abandonWG.Add(1)
-		go func() {
-			defer m.abandonWG.Done()
-			m.abandonPartialInstance(id, port, listener, procMgr)
-		}()
-		return nil, fmt.Errorf("create instance abandoned during startup: %w", err)
+	if err := m.startTrackersForCreate(ctx, id, port, listener, procMgr); err != nil {
+		return nil, err
 	}
 
 	// Create instance up-front so the activity middleware can reference it.
@@ -297,9 +209,14 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 	inst.MarkActivity()
 
 	handler := activityMiddleware(inst)(m.buildHTTPHandler(instanceCfg, procMgr))
-	httpServer := m.startHTTPServer(port, listener, handler, id)
-	inst.server = httpServer
-	m.instances[id] = inst
+	publish := func() {
+		inst.server = m.startHTTPServer(port, listener, handler, id)
+		m.instances[id] = inst
+	}
+	if !publishIfOwned(fence, publish) {
+		m.scheduleAbandonedCreate(id, port, listener, procMgr)
+		return nil, errors.New("control ownership changed before protected instance publication")
+	}
 
 	// Clamp to a minimum of 1ms so a genuinely sub-millisecond creation can't
 	// be stored as 0, which CreateReadyMillis's zero value reserves to mean
@@ -315,10 +232,101 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 		zap.Int("port", port),
 		zap.String("workspace", req.WorkspacePath))
 
-	return &CreateResponse{
-		ID:   id,
-		Port: port,
-	}, nil
+	return &CreateResponse{ID: id, Port: port}, nil
+}
+
+func (m *Manager) createOverrides(req *CreateRequest, id string, agentEnv []string, agentCmd string) *config.InstanceOverrides {
+	autoStart := req.AutoStart
+	return &config.InstanceOverrides{
+		InstanceID:                 id,
+		Protocol:                   agent.Protocol(req.Protocol),
+		AgentCommand:               agentCmd,
+		WorkDir:                    req.WorkspacePath,
+		AutoStart:                  &autoStart,
+		Env:                        agentEnv,
+		AutoApprovePermissions:     req.AutoApprovePermissions,
+		AgentType:                  req.AgentType,
+		McpServers:                 m.buildMcpServerConfigs(req.McpServers),
+		SessionID:                  req.SessionID,
+		TaskID:                     req.TaskID,
+		DisableAskQuestion:         req.DisableAskQuestion,
+		AssumeMcpSse:               req.AssumeMcpSse,
+		AssumeMcpHttp:              req.AssumeMcpHttp,
+		McpMode:                    req.McpMode,
+		McpProviders:               req.McpProviders,
+		McpProfile:                 req.McpProfile,
+		NamespacesMCPToolsByServer: req.NamespacesMCPToolsByServer,
+		RequiresProcessKill:        req.RequiresProcessKill,
+		StripEnv:                   req.StripEnv,
+		ProviderGatewayAuth:        req.ProviderGatewayAuth,
+		BaseBranches:               req.BaseBranches,
+		ComparisonTargets:          req.ComparisonTargets,
+		RemoteContributions:        req.RemoteContributions,
+		ContributionDestinations:   req.ContributionDestinations,
+		WorkspaceSourceRoots:       req.WorkspaceSourceRoots,
+		WorkspaceIsolation:         req.WorkspaceIsolation,
+	}
+}
+
+func (m *Manager) startTrackersForCreate(ctx context.Context, id string, port int, listener net.Listener, procMgr *process.Manager) error {
+	procMgr.PrepareComparisonTargets(ctx)
+	procMgr.StartAllWorkspaceTrackers(context.Background())
+	if m.afterTrackerStart != nil {
+		m.afterTrackerStart()
+	}
+	if err := procMgr.ValidateIsolationPins(); err != nil {
+		m.scheduleAbandonedCreate(id, port, listener, procMgr)
+		return fmt.Errorf("workspace isolation changed during instance creation: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		m.scheduleAbandonedCreate(id, port, listener, procMgr)
+		return fmt.Errorf("create instance abandoned during startup: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) scheduleAbandonedCreate(id string, port int, listener net.Listener, procMgr *process.Manager) {
+	m.abandonWG.Add(1)
+	go func() {
+		defer m.abandonWG.Done()
+		m.abandonPartialInstance(id, port, listener, procMgr)
+	}()
+}
+
+// prepareCreateResources runs under m.mu, so a vanished caller never leaves an
+// untracked listener, port, or duplicate instance ID behind.
+func (m *Manager) prepareCreateResources(ctx context.Context, req *CreateRequest) (string, []string, int, net.Listener, error) {
+	if m.shuttingDown {
+		return "", nil, 0, nil, ErrManagerShuttingDown
+	}
+	if err := ctx.Err(); err != nil {
+		m.logger.Warn("create instance abandoned while queued; caller had already given up", zap.String("workspace_path", req.WorkspacePath), zap.Error(err))
+		return "", nil, 0, nil, fmt.Errorf("create instance abandoned while queued: %w", err)
+	}
+	agentEnv, err := config.CollectAgentEnvWithError(req.Env)
+	if err != nil {
+		return "", nil, 0, nil, fmt.Errorf("prepare agent environment: %w", err)
+	}
+	id := req.ID
+	if id == "" {
+		id = uuid.New().String()
+	}
+	if _, exists := m.instances[id]; exists {
+		return "", nil, 0, nil, fmt.Errorf("instance with ID %s already exists", id)
+	}
+	port, listener, err := m.allocatePortAndListener(id)
+	if err != nil {
+		return "", nil, 0, nil, err
+	}
+	return id, agentEnv, port, listener, nil
+}
+
+func publishIfOwned(fence func(func()) bool, publish func()) bool {
+	if fence != nil {
+		return fence(publish)
+	}
+	publish()
+	return true
 }
 
 // abandonPartialInstanceTimeout bounds the admission wait inside

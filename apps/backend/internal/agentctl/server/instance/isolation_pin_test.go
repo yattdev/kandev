@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/kandev/kandev/internal/agentctl/server/config"
+	"github.com/kandev/kandev/internal/agentctl/server/process/isolation"
+	"golang.org/x/sys/unix"
 )
 
 func TestCreateInstanceRejectsReplacedPinnedGrantBeforePublishing(t *testing.T) {
@@ -53,6 +55,71 @@ func TestCreateInstanceRejectsReplacedPinnedGrantBeforePublishing(t *testing.T) 
 				t.Fatalf("rejected grant published %d instances", len(got))
 			}
 		})
+	}
+}
+
+func TestCreateInstanceRejectsBareProtectedManifest(t *testing.T) {
+	root := t.TempDir()
+	shared := filepath.Join(root, "repo", ".git")
+	private := filepath.Join(shared, "worktrees", "task")
+	workspace := filepath.Join(root, "task")
+	for _, path := range []string{private, workspace} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := &config.WorkspaceIsolation{
+		SharedCommonDirs: []string{shared}, WritablePaths: []string{private},
+		PrivateAdminPaths: []string{private}, WritableWorkspaceRoots: []string{workspace},
+	}
+	if err := manifest.CaptureObjects(); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManager(&config.Config{Ports: config.PortConfig{Base: 0, Max: 0}}, newTestLogger(t))
+	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	if _, err := mgr.CreateInstance(context.Background(), &CreateRequest{WorkspacePath: workspace, WorkspaceIsolation: manifest}); err == nil {
+		t.Fatal("bare protected JSON created an instance without broker-owned descriptors")
+	}
+	if len(mgr.ListInstances()) != 0 {
+		t.Fatal("bare protected JSON published an instance")
+	}
+}
+
+func TestCreateInstanceRejectsStaleControlGenerationBeforePublishing(t *testing.T) {
+	root := t.TempDir()
+	shared := filepath.Join(root, "repo", ".git")
+	private := filepath.Join(shared, "worktrees", "task")
+	workspace := filepath.Join(root, "task")
+	for _, path := range []string{private, workspace} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := &config.WorkspaceIsolation{SharedCommonDirs: []string{shared}, WritablePaths: []string{private}, PrivateAdminPaths: []string{private}, WritableWorkspaceRoots: []string{workspace}}
+	if err := manifest.CaptureObjects(); err != nil {
+		t.Fatal(err)
+	}
+	pins, err := isolation.PinAll(manifest.ObjectIdentities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin, ok := pins.Get(workspace)
+	if !ok {
+		t.Fatal("workspace descriptor missing")
+	}
+	fd := int(pin.File().Fd())
+	mgr := NewManager(&config.Config{Ports: config.PortConfig{Base: 0, Max: 0}}, newTestLogger(t))
+	if _, err := mgr.CreateInstanceWithPinsFenced(context.Background(), &CreateRequest{ID: "instance", WorkspacePath: workspace, WorkspaceIsolation: manifest}, pins, func(func()) bool { return false }); err == nil {
+		t.Fatal("stale generation published protected instance")
+	}
+	if err := mgr.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(mgr.ListInstances()) != 0 {
+		t.Fatal("stale generation left a published instance")
+	}
+	if err := unix.Fstat(fd, &unix.Stat_t{}); err != unix.EBADF {
+		t.Fatalf("stale create retained workspace FD: %v", err)
 	}
 }
 

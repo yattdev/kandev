@@ -67,6 +67,7 @@ import (
 	runtimeskill "github.com/kandev/kandev/internal/agent/runtime/lifecycle/skill"
 	agentsettingscontroller "github.com/kandev/kandev/internal/agent/settings/controller"
 	settingsstore "github.com/kandev/kandev/internal/agent/settings/store"
+	"github.com/kandev/kandev/internal/agentctl/isolationbroker"
 	agentctltracing "github.com/kandev/kandev/internal/agentctl/tracing"
 	mcpscope "github.com/kandev/kandev/internal/mcp/scope"
 	"github.com/kandev/kandev/internal/utility/profilebinding"
@@ -541,6 +542,7 @@ func startServices( //nolint:cyclop
 		return false
 	}
 	var agentctlBinaryPath string
+	var isolationBroker *isolationbroker.Client
 	var recoveryDeadlineStart time.Time
 	var inheritedRecordScope lifecycle.InheritedRecordScope
 	if agentctlResult != nil {
@@ -558,13 +560,14 @@ func startServices( //nolint:cyclop
 		// Capture the binary path so initOfficeServices can include it in the
 		// ServiceOptions when constructing the office service.
 		agentctlBinaryPath = agentctlResult.binaryPath
+		isolationBroker = agentctlResult.broker
 		recoveryDeadlineStart = agentctlResult.recoveryDeadlineStart
 		inheritedRecordScope = agentctlResult.inheritedRecordScope
 	}
 
 	return startAgentInfrastructure(ctx, cfg, log, addCleanup, eventBus, agentRuntimeAvailability,
 		dbPool, repos, services, agentSettingsController, agentRegistry, agentctlBinaryPath, recoveryDeadlineStart, inheritedRecordScope,
-		startupRecoveryGuard, runCleanups, cancelWorkers)
+		startupRecoveryGuard, isolationBroker, runCleanups, cancelWorkers)
 }
 
 // startAgentInfrastructure initializes the agent lifecycle manager, worktree, orchestrator,
@@ -587,6 +590,7 @@ func startAgentInfrastructure(
 	recoveryDeadlineStart time.Time,
 	inheritedRecordScope lifecycle.InheritedRecordScope,
 	startupRecoveryGuard *lifecycle.RecoveryGuard,
+	isolationBroker *isolationbroker.Client,
 	runCleanups func(),
 	cancelWorkers context.CancelFunc,
 ) bool {
@@ -634,6 +638,7 @@ func startAgentInfrastructure(
 		services.Task,
 		repos.Task,
 		startupRecoveryGuard,
+		isolationBroker,
 	)
 	if err != nil {
 		log.Error("Failed to initialize agent manager", zap.Error(err))

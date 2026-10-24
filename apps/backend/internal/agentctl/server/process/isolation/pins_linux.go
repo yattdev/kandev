@@ -67,6 +67,54 @@ func Capture(path string) (Identity, error) {
 	}
 }
 
+// CapturePinned records identity while retaining the first opened object and
+// parent handles. A later path check cannot recycle either held inode.
+func CapturePinned(path string) (Identity, *Pinned, error) {
+	if err := validatePath(path); err != nil {
+		return Identity{}, nil, err
+	}
+	file, stat, err := openPath(path)
+	if err != nil && !errors.Is(err, unix.ENOENT) {
+		return Identity{}, nil, err
+	}
+	parentPath := filepath.Dir(path)
+	var parent *os.File
+	var parentStat unix.Stat_t
+	for {
+		parent, parentStat, err = openPath(parentPath)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, unix.ENOENT) || parentPath == string(filepath.Separator) {
+			if file != nil {
+				_ = file.Close()
+			}
+			return Identity{}, nil, fmt.Errorf("open isolation parent: %w", err)
+		}
+		parentPath = filepath.Dir(parentPath)
+	}
+	identity := Identity{Path: path, ParentPath: parentPath, ParentDev: parentStat.Dev, ParentIno: parentStat.Ino}
+	pin := &Pinned{identity: identity, file: parent}
+	if file != nil {
+		identity.Exists, identity.Dev, identity.Ino, identity.Mode = true, stat.Dev, stat.Ino, stat.Mode&unix.S_IFMT
+		pin.file, pin.parent = file, parent
+	} else {
+		leaf, relErr := filepath.Rel(parentPath, path)
+		if relErr != nil || leaf == "." || strings.HasPrefix(leaf, "..") {
+			_ = parent.Close()
+			return Identity{}, nil, errors.New("invalid isolation leaf")
+		}
+		pin.leaf = leaf
+	}
+	pin.identity = identity
+	got, err := Capture(path)
+	if err != nil || got != identity {
+		_ = pin.Close()
+		return Identity{}, nil, errors.New("isolation object changed during capture")
+	}
+	return identity, pin, nil
+}
+
 // Pin reopens an attested path without following symlinks and retains its object.
 func Pin(want Identity) (*Pinned, error) {
 	if err := validatePath(want.Path); err != nil {
@@ -106,6 +154,72 @@ func Pin(want Identity) (*Pinned, error) {
 		_ = pin.Close()
 		return nil, err
 	}
+	return pin, nil
+}
+
+// FromFiles takes ownership of descriptors received from the trusted broker.
+// Existing objects carry an object and parent FD; missing leaves carry only
+// their nearest existing parent FD.
+func FromFiles(identities []Identity, files []*os.File) (*Set, error) {
+	set := &Set{grants: make(map[string]*Pinned, len(identities))}
+	closeUnowned := func(start int) {
+		for _, file := range files[start:] {
+			if file != nil {
+				_ = file.Close()
+			}
+		}
+	}
+	index := 0
+	for _, identity := range identities {
+		count := 1
+		if identity.Exists {
+			count = 2
+		}
+		if index+count > len(files) {
+			closeUnowned(index)
+			_ = set.Close()
+			return nil, errors.New("invalid received isolation inventory")
+		}
+		if _, exists := set.grants[identity.Path]; exists {
+			closeUnowned(index)
+			_ = set.Close()
+			return nil, errors.New("duplicate received isolation object")
+		}
+		pin, err := receivedPin(identity, files[index:index+count])
+		if err != nil {
+			closeUnowned(index)
+			_ = set.Close()
+			return nil, err
+		}
+		set.grants[identity.Path] = pin
+		index += count
+	}
+	if index != len(files) {
+		closeUnowned(index)
+		_ = set.Close()
+		return nil, errors.New("extra received isolation descriptors")
+	}
+	if err := set.Validate(); err != nil {
+		_ = set.Close()
+		return nil, err
+	}
+	return set, nil
+}
+
+func receivedPin(identity Identity, files []*os.File) (*Pinned, error) {
+	if err := validatePath(identity.Path); err != nil || files[0] == nil || (identity.Exists && files[1] == nil) {
+		return nil, errors.New("invalid received isolation inventory")
+	}
+	pin := &Pinned{identity: identity, file: files[0]}
+	if identity.Exists {
+		pin.parent = files[1]
+		return pin, nil
+	}
+	leaf, err := filepath.Rel(identity.ParentPath, identity.Path)
+	if err != nil || leaf == "." || strings.HasPrefix(leaf, "..") {
+		return nil, errors.New("invalid received isolation leaf")
+	}
+	pin.leaf = leaf
 	return pin, nil
 }
 

@@ -67,6 +67,31 @@ func (m *WorkspaceIsolation) CaptureObjects() error {
 	return nil
 }
 
+// CaptureObjectsPinned retains the producer's original grant objects until
+// the private descriptor broker acknowledges transfer.
+func (m *WorkspaceIsolation) CaptureObjectsPinned() (*isolation.Set, error) {
+	if err := m.Validate(); err != nil {
+		return nil, err
+	}
+	paths := m.grantPaths()
+	ordered := make([]string, 0, len(paths))
+	for path := range paths {
+		ordered = append(ordered, path)
+	}
+	sort.Strings(ordered)
+	identities, pins, err := isolation.CaptureAllPinned(ordered)
+	if err != nil {
+		return nil, fmt.Errorf("capture pinned isolation objects: %w", err)
+	}
+	m.ObjectIdentities = identities
+	if err := m.ValidateObjects(); err != nil {
+		_ = pins.Close()
+		m.ObjectIdentities = nil
+		return nil, err
+	}
+	return pins, nil
+}
+
 // ValidateObjects requires an exact object identity for every lexical grant.
 func (m WorkspaceIsolation) ValidateObjects() error {
 	if err := m.Validate(); err != nil {

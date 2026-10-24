@@ -93,6 +93,22 @@ func (c *credentialState) Invalidated() <-chan struct{} {
 	return c.invalidated
 }
 
+// PublishIfCurrent holds the credential generation stable through publication.
+func (c *credentialState) PublishIfCurrent(epoch <-chan struct{}, publish func()) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.latest == "" || c.invalidated != epoch {
+		return false
+	}
+	select {
+	case <-epoch:
+		return false
+	default:
+	}
+	publish()
+	return true
+}
+
 // Latest returns the credential that authenticates every operation.
 func (c *credentialState) Latest() string {
 	c.mu.Lock()
@@ -259,6 +275,9 @@ func (m *ControlServer) handleCredentialRotate(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{errKey: err.Error()})
 		return
+	}
+	if m.isolationBroker != nil {
+		m.isolationBroker.Revoke()
 	}
 
 	if afterCredentialRotateAccepted != nil {

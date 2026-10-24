@@ -166,3 +166,70 @@ func TestPinnedSetRetainsAndClosesGrantDescriptors(t *testing.T) {
 		t.Fatalf("closed descriptor Fstat error = %v, want EBADF", err)
 	}
 }
+
+func TestReceivedSetOwnsTransferredDescriptors(t *testing.T) {
+	root := t.TempDir()
+	missing := filepath.Join(root, "refs", "heads", "main.lock")
+	identities := make([]Identity, 0, 2)
+	files := make([]*os.File, 0, 3)
+	for _, path := range []string{root, missing} {
+		identity, err := Capture(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pin, err := Pin(identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		identities = append(identities, identity)
+		files = append(files, pin.File())
+		if identity.Exists {
+			files = append(files, pin.parent)
+		}
+	}
+	set, err := FromFiles(identities, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := set.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	fds := make([]int, len(files))
+	for i, file := range files {
+		fds[i] = int(file.Fd())
+	}
+	if err := set.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, fd := range fds {
+		if err := unix.Fstat(fd, &unix.Stat_t{}); err != unix.EBADF {
+			t.Fatalf("transferred fd %d remained open: %v", fd, err)
+		}
+	}
+}
+
+func TestCapturePinnedRetainsOriginalAcrossReplacement(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "shared")
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	identity, pin, err := CapturePinned(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pin.Close() }()
+	if err := os.Rename(path, path+"-old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := pin.Validate(); err == nil {
+		t.Fatal("replacement passed retained pin validation")
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(int(pin.File().Fd()), &stat); err != nil || stat.Ino != identity.Ino {
+		t.Fatalf("original descriptor lost after replacement: %v", err)
+	}
+}

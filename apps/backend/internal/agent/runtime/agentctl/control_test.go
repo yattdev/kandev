@@ -32,6 +32,25 @@ func splitTestServerHostPort(t *testing.T, srv *httptest.Server) (string, int) {
 	return host, portNumber
 }
 
+func TestReconcileProtectedCreateRequiresExactReceiptInstance(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/isolation/receipts/receipt-1" || r.Header.Get("Authorization") != "Bearer owner" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"instance-1","port":45678}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := newTestControlClient(t, srv, WithControlAuthToken("owner"))
+	if _, err := c.reconcileProtectedCreate("receipt-1", "other-instance"); err == nil {
+		t.Fatal("lost-response reconciliation accepted another instance")
+	}
+	got, err := c.reconcileProtectedCreate("receipt-1", "instance-1")
+	if err != nil || got.ID != "instance-1" || got.Port != 45678 {
+		t.Fatalf("exact receipt reconciliation = %+v, %v", got, err)
+	}
+}
+
 // newTestControlClient builds a ControlClient pointed at srv, going through the
 // real constructor so base-URL assembly and the auth transport are exercised.
 func newTestControlClient(t *testing.T, srv *httptest.Server, opts ...ControlClientOption) *ControlClient {

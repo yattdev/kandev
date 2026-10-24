@@ -5,6 +5,7 @@ package launcher
 import (
 	"context"
 	"os/exec"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -29,8 +30,12 @@ func TestBuildAndStartProcessSkipsParentLivenessPipeWhenSurvivalEnabled(t *testi
 	t.Cleanup(func() { _ = l.cmd.Process.Kill() })
 	<-l.exited // "true" exits immediately; wait so ExtraFiles/env are stable to inspect
 
-	if len(l.cmd.ExtraFiles) != 0 {
-		t.Fatalf("ExtraFiles = %v, want none: the parent-liveness pipe must not be armed", l.cmd.ExtraFiles)
+	wantFiles := 0
+	if runtime.GOOS == "linux" {
+		wantFiles = 1
+	} // private broker, never a liveness pipe
+	if len(l.cmd.ExtraFiles) != wantFiles {
+		t.Fatalf("ExtraFiles = %v, want %d without a liveness pipe", l.cmd.ExtraFiles, wantFiles)
 	}
 	if l.parentPipe != nil {
 		t.Fatal("parentPipe was set even though the capability is engaged for this launch")
@@ -77,8 +82,12 @@ func TestBuildAndStartProcessArmsParentLivenessPipeWhenSurvivalDisabled(t *testi
 	t.Cleanup(func() { _ = l.cmd.Process.Kill() })
 	<-l.exited
 
-	if len(l.cmd.ExtraFiles) != 1 {
-		t.Fatalf("ExtraFiles = %v, want exactly 1 (the pipe read-end)", l.cmd.ExtraFiles)
+	wantFiles := 1
+	if runtime.GOOS == "linux" {
+		wantFiles = 2
+	} // liveness pipe and private broker
+	if len(l.cmd.ExtraFiles) != wantFiles {
+		t.Fatalf("ExtraFiles = %v, want %d", l.cmd.ExtraFiles, wantFiles)
 	}
 	if l.parentPipe == nil {
 		t.Fatal("parentPipe was not set with the capability disabled")

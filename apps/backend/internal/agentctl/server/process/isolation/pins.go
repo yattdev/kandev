@@ -25,8 +25,9 @@ type Pinned struct {
 	leaf     string
 }
 
-func (p *Pinned) File() *os.File { return p.file }
-func (p *Pinned) Leaf() string   { return p.leaf }
+func (p *Pinned) File() *os.File   { return p.file }
+func (p *Pinned) Parent() *os.File { return p.parent }
+func (p *Pinned) Leaf() string     { return p.leaf }
 func (p *Pinned) Close() error {
 	err := p.file.Close()
 	if p.parent != nil {

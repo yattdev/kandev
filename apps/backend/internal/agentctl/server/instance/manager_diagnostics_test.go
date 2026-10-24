@@ -10,6 +10,7 @@ import (
 
 	"github.com/kandev/kandev/internal/agentctl/server/config"
 	"github.com/kandev/kandev/internal/agentctl/server/process"
+	processisolation "github.com/kandev/kandev/internal/agentctl/server/process/isolation"
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/pkg/agent"
 )
@@ -109,9 +110,13 @@ func TestCreateInstanceCarriesValidatedWorkspaceIsolationIntoConfig(t *testing.T
 	if err := isolation.CaptureObjects(); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := mgr.CreateInstance(context.Background(), &CreateRequest{
+	pins, err := processisolation.PinAll(isolation.ObjectIdentities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := mgr.CreateInstanceWithPins(context.Background(), &CreateRequest{
 		WorkspacePath: workspace, WorkspaceIsolation: isolation,
-	})
+	}, pins)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/kandev/kandev/internal/agent/agents"
 	"github.com/kandev/kandev/internal/agent/executor"
 	agentctlclient "github.com/kandev/kandev/internal/agent/runtime/agentctl"
+	"github.com/kandev/kandev/internal/agentctl/isolationbroker"
 	"github.com/kandev/kandev/internal/agentctl/server/process"
 	"github.com/kandev/kandev/internal/agentctl/types/streams"
 	"github.com/kandev/kandev/internal/task/models"
@@ -31,6 +33,8 @@ type standaloneControlServer struct {
 	deleted        []string
 	createStatus   int
 	server         *httptest.Server
+	brokerClient   *isolationbroker.Client
+	brokerServer   *isolationbroker.Server
 	// listInstances is what GET /api/v1/instances returns; nil (vs. an empty
 	// non-nil slice) tells the fake to answer with a listing failure instead,
 	// for exercising AC-EXECUTORS-SURVIVAL-002.12.
@@ -88,6 +92,22 @@ func newStandaloneControlServer(t *testing.T, healthy bool) *standaloneControlSe
 		turnOutcomes:        make(map[string]agentctlclient.TurnOutcome),
 		turnOutcomeFailures: make(map[string]int),
 		turnOutcomeAttempts: make(map[string]int),
+	}
+	if runtime.GOOS == "linux" {
+		parent, child, err := isolationbroker.SocketPair()
+		if err != nil {
+			t.Fatal(err)
+		}
+		generation := make(chan struct{})
+		s.brokerServer, err = isolationbroker.NewServer(child, func() <-chan struct{} { return generation })
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.brokerClient, err = isolationbroker.NewClient(parent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = s.brokerClient.Close(); _ = s.brokerServer.Close() })
 	}
 	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
@@ -181,7 +201,7 @@ func (s *standaloneControlServer) executor(t *testing.T) *StandaloneExecutor {
 		t.Fatalf("parse control URL: %v", err)
 	}
 	port, _ := strconv.Atoi(parsed.Port())
-	ctl := agentctlclient.NewControlClient(parsed.Hostname(), port, newTestLogger())
+	ctl := agentctlclient.NewControlClient(parsed.Hostname(), port, newTestLogger(), agentctlclient.WithIsolationBroker(s.brokerClient))
 	return NewStandaloneExecutor(ctl, parsed.Hostname(), port, newTestLogger())
 }
 

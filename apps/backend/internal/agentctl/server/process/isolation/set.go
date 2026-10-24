@@ -5,6 +5,26 @@ import (
 	"sync"
 )
 
+// CaptureAllPinned captures ordered grant identities while retaining sources.
+func CaptureAllPinned(paths []string) ([]Identity, *Set, error) {
+	set := &Set{grants: make(map[string]*Pinned, len(paths))}
+	identities := make([]Identity, 0, len(paths))
+	for _, path := range paths {
+		if _, exists := set.grants[path]; exists {
+			_ = set.Close()
+			return nil, nil, errors.New("duplicate isolation grant")
+		}
+		identity, pin, err := CapturePinned(path)
+		if err != nil {
+			_ = set.Close()
+			return nil, nil, err
+		}
+		set.grants[path] = pin
+		identities = append(identities, identity)
+	}
+	return identities, set, nil
+}
+
 // Set owns every descriptor retained for one instance's isolation grants.
 type Set struct {
 	mu     sync.Mutex
