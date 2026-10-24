@@ -268,7 +268,7 @@ func (r *Repository) ClaimWorkspaceGroupCleanup(ctx context.Context, id string, 
 			FROM task_workspace_group_members member
 			JOIN tasks task ON task.id = member.task_id
 			WHERE member.workspace_group_id = task_workspace_groups.id
-			  AND member.released_at IS NULL
+			  AND (member.released_at IS NULL OR member.released_by_cascade_id != '')
 			  AND task.archived_at IS NULL
 		  )
 	`), models.WorkspaceCleanupStatusPending, time.Now().UTC(), id, generation, true,

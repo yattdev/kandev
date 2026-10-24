@@ -41,6 +41,48 @@ func insertWGTask(t *testing.T, repo *sqlite.Repository, id string, archived boo
 	}
 }
 
+func TestWorkspaceGroupCleanupClaimRejectsReleasedLiveCascadeMember(t *testing.T) {
+	repo := newWorkspaceGroupTestRepo(t)
+	ctx := context.Background()
+	insertWGTask(t, repo, "live-member", false)
+	group := &models.WorkspaceGroup{
+		ID: "released-live-cascade", WorkspaceID: "ws-1", OwnerTaskID: "live-member",
+		MaterializedKind: models.WorkspaceGroupKindPlainFolder,
+		OwnedByKandev:    true,
+		CleanupPolicy:    models.WorkspaceCleanupPolicyDeleteWhenLastMemberArchivedOrDel,
+	}
+	if err := repo.CreateWorkspaceGroup(ctx, group); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AddWorkspaceGroupMember(ctx, group.ID, "live-member", models.WorkspaceMemberRoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ReleaseWorkspaceGroupMember(ctx, group.ID, "live-member", models.WorkspaceReleaseReasonDeleted, "partial-cascade"); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := repo.ClaimWorkspaceGroupCleanup(ctx, group.ID, group.OwnershipGeneration)
+	if err != nil || claimed {
+		t.Fatalf("claim with released live cascade member = %v, %v; want false", claimed, err)
+	}
+	if err := repo.RestoreWorkspaceGroupMemberByCascade(ctx, "live-member", "partial-cascade"); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = repo.ClaimWorkspaceGroupCleanup(ctx, group.ID, group.OwnershipGeneration)
+	if err != nil || claimed {
+		t.Fatalf("claim after membership repair = %v, %v; want false", claimed, err)
+	}
+	if _, err := repo.ExecRaw(ctx, `UPDATE tasks SET archived_at = datetime('now') WHERE id = ?`, "live-member"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ReleaseWorkspaceGroupMember(ctx, group.ID, "live-member", models.WorkspaceReleaseReasonArchived, "finished-cascade"); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = repo.ClaimWorkspaceGroupCleanup(ctx, group.ID, group.OwnershipGeneration)
+	if err != nil || !claimed {
+		t.Fatalf("claim after actual archive = %v, %v; want true", claimed, err)
+	}
+}
+
 // TestWorkspaceGroup_CreateDefaultsAreSafe is the critical safety test:
 // a freshly-inserted group MUST default to owned_by_kandev=false and
 // cleanup_policy=never_delete. Anything else risks deleting user data.

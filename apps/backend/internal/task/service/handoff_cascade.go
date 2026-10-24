@@ -112,6 +112,13 @@ func (s *HandoffService) evaluateWorkspaceGroupCleanup(ctx context.Context, grou
 		// left untouched so unarchive sees the prior state.
 		return nil
 	}
+	// A partial cascade can commit one child while leaving another task live.
+	// If compensation could not restore that task's released membership, the
+	// released row is still a durable repair obligation, not proof that the
+	// workspace is empty. Repair it before considering destructive cleanup.
+	if err := s.restoreLiveCascadeMembers(ctx, groupID); err != nil {
+		return err
+	}
 	members, err := s.wsGroups.ListActiveWorkspaceGroupMembers(ctx, groupID)
 	if err != nil {
 		return err
@@ -157,6 +164,32 @@ func (s *HandoffService) evaluateWorkspaceGroupCleanup(ctx context.Context, grou
 	now := time.Now().UTC()
 	return completeWorkspaceGroupCleanup(ctx, s.wsGroups, g,
 		orchmodels.WorkspaceCleanupStatusCleaned, "", &now)
+}
+
+func (s *HandoffService) restoreLiveCascadeMembers(ctx context.Context, groupID string) error {
+	members, err := s.wsGroups.ListWorkspaceGroupMembers(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	for _, member := range members {
+		if member.ReleasedAt == nil || member.ReleasedByCascadeID == "" {
+			continue
+		}
+		task, err := s.tasks.GetTask(ctx, member.TaskID)
+		if errors.Is(err, taskrepo.ErrTaskNotFound) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("inspect released workspace member %s: %w", member.TaskID, err)
+		}
+		if task == nil || task.ArchivedAt != nil {
+			continue
+		}
+		if err := s.wsGroups.RestoreWorkspaceGroupMemberByCascade(ctx, member.TaskID, member.ReleasedByCascadeID); err != nil {
+			return fmt.Errorf("restore live workspace member %s: %w", member.TaskID, err)
+		}
+	}
+	return nil
 }
 
 // hasActiveExecutionsForGroup walks every task that ever belonged to
@@ -698,6 +731,9 @@ func (s *HandoffService) deleteTaskTreeWithReasonAndOptions(
 		)
 		var committed *CascadePostCommitError
 		if errors.As(err, &committed) {
+			if compensateErr != nil {
+				return out, errors.Join(err, compensateErr)
+			}
 			return out, errors.Join(err, compensateErr,
 				errors.Join(s.evaluateWorkspaceGroups(postDeleteCtx, groupIDs)...))
 		}
