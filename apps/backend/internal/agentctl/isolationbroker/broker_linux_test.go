@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -280,6 +281,180 @@ func TestBrokerTimeoutQuarantinesConnection(t *testing.T) {
 	}
 	if _, err := client.Register(context.Background(), []byte("second"), reg, pins); err == nil {
 		t.Fatal("ambiguous broker connection was reused")
+	}
+}
+
+func TestBrokerConsumeKeepsReceiptVisibleBeforeClaim(t *testing.T) {
+	parent, child, err := SocketPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch := make(chan struct{})
+	var gate atomic.Bool
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	current := func() <-chan struct{} {
+		if gate.CompareAndSwap(true, false) {
+			close(entered)
+			<-release
+		}
+		return epoch
+	}
+	server, err := NewServer(child, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = server.Close() }()
+	client, err := NewClient(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	root := t.TempDir()
+	identity, err := isolation.Capture(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := isolation.PinAll([]isolation.Identity{identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = source.Close() }()
+	reg := Registration{TaskID: "task", SessionID: "session", InstanceID: "instance", Workspace: root, Identities: []isolation.Identity{identity}}
+	body := []byte("body")
+	receipt, err := client.Register(context.Background(), body, reg, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate.Store(true)
+	type outcome struct {
+		pins *isolation.Set
+		err  error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		pins, err := server.Consume(receipt, body, reg, epoch)
+		done <- outcome{pins: pins, err: err}
+	}()
+	<-entered
+	_, _, pending := server.Lookup(receipt, epoch)
+	close(release)
+	result := <-done
+	if result.pins != nil {
+		defer func() { _ = result.pins.Close() }()
+	}
+	if !pending || result.err != nil {
+		t.Fatalf("receipt became invisible before claim: pending=%t err=%v", pending, result.err)
+	}
+}
+
+func TestBrokerEOFRejectsInFlightClaimAndPreservesCommittedOutcome(t *testing.T) {
+	parent, child, err := SocketPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch := make(chan struct{})
+	var gate atomic.Bool
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	current := func() <-chan struct{} {
+		if gate.CompareAndSwap(true, false) {
+			close(entered)
+			<-release
+		}
+		return epoch
+	}
+	server, err := NewServer(child, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = server.Close() }()
+	client, err := NewClient(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	identity, err := isolation.Capture(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := isolation.PinAll([]isolation.Identity{identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = source.Close() }()
+	reg := Registration{TaskID: "task", SessionID: "session", InstanceID: "instance", Workspace: root, Identities: []isolation.Identity{identity}}
+	body := []byte("body")
+	receipt, err := client.Register(context.Background(), body, reg, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate.Store(true)
+	done := make(chan error, 1)
+	go func() {
+		pins, err := server.Consume(receipt, body, reg, epoch)
+		if pins != nil {
+			_ = pins.Close()
+		}
+		done <- err
+	}()
+	<-entered
+	_ = client.Close()
+	<-server.done
+	close(release)
+	if err := <-done; err == nil {
+		t.Fatal("broker EOF allowed in-flight receipt claim")
+	}
+	published := false
+	if server.CommitCreated(receipt, epoch, Created{ID: "instance", Port: 1}, func() { published = true }) || published {
+		t.Fatal("broker EOF allowed instance publication")
+	}
+}
+
+func TestBrokerEOFKeepsCommittedReceiptForCurrentOwner(t *testing.T) {
+	parent, child, err := SocketPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch := make(chan struct{})
+	server, err := NewServer(child, func() <-chan struct{} { return epoch })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = server.Close() }()
+	client, err := NewClient(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	identity, err := isolation.Capture(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := isolation.PinAll([]isolation.Identity{identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = source.Close() }()
+	reg := Registration{TaskID: "task", SessionID: "session", InstanceID: "instance", Workspace: root, Identities: []isolation.Identity{identity}}
+	body := []byte("body")
+	receipt, err := client.Register(context.Background(), body, reg, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins, err := server.Consume(receipt, body, reg, epoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pins.Close() }()
+	if !server.CommitCreated(receipt, epoch, Created{ID: "instance", Port: 1234}, func() {}) {
+		t.Fatal("receipt outcome was not committed")
+	}
+	_ = client.Close()
+	<-server.done
+	created, ok, _ := server.Lookup(receipt, epoch)
+	if !ok || created.ID != "instance" || created.Port != 1234 {
+		t.Fatalf("broker EOF lost committed outcome: %+v, %t", created, ok)
 	}
 }
 

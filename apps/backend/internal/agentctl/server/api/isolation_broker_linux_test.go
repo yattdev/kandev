@@ -104,6 +104,33 @@ func TestProtectedCreateConsumesExactBrokerReceipt(t *testing.T) {
 	if rotate.Code != http.StatusOK {
 		t.Fatalf("control rotation = %d %s", rotate.Code, rotate.Body.String())
 	}
+	var rotated struct {
+		Credential string `json:"credential"`
+	}
+	if err := json.Unmarshal(rotate.Body.Bytes(), &rotated); err != nil || rotated.Credential == "" {
+		t.Fatalf("rotation credential = %+v, %v", rotated, err)
+	}
+	oldStatus := httptest.NewRequest(http.MethodGet, "/api/v1/isolation/receipts/"+receipt, nil)
+	oldStatus.Header.Set("Authorization", "Bearer control-token")
+	oldResult := httptest.NewRecorder()
+	server.Router().ServeHTTP(oldResult, oldStatus)
+	if oldResult.Code != http.StatusUnauthorized {
+		t.Fatalf("old owner retained receipt access: %d", oldResult.Code)
+	}
+	newStatus := httptest.NewRequest(http.MethodGet, "/api/v1/isolation/receipts/"+receipt, nil)
+	newStatus.Header.Set("Authorization", "Bearer "+rotated.Credential)
+	newResult := httptest.NewRecorder()
+	server.Router().ServeHTTP(newResult, newStatus)
+	if newResult.Code != http.StatusNotFound {
+		t.Fatalf("successor inherited old receipt: %d", newResult.Code)
+	}
+	instanceReq := httptest.NewRequest(http.MethodGet, "/api/v1/instances/instance", nil)
+	instanceReq.Header.Set("Authorization", "Bearer "+rotated.Credential)
+	instanceResult := httptest.NewRecorder()
+	server.Router().ServeHTTP(instanceResult, instanceReq)
+	if instanceResult.Code != http.StatusOK {
+		t.Fatalf("successor could not inspect exact instance: %d %s", instanceResult.Code, instanceResult.Body.String())
+	}
 	if _, err := client.Register(context.Background(), body, reg, pins); err == nil {
 		t.Fatal("rotated launcher broker accepted protected registration")
 	}

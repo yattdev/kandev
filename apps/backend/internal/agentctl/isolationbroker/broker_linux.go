@@ -224,7 +224,7 @@ func NewServer(file *os.File, current func() <-chan struct{}) (*Server, error) {
 
 func (s *Server) run() {
 	defer close(s.done)
-	defer s.Revoke()
+	defer s.retire(true)
 	for {
 		var payload [maxFrame]byte
 		ancillary := make([]byte, unix.CmsgSpace(2*maxGrants*4))
@@ -326,32 +326,27 @@ func (s *Server) expire(receipt string) {
 }
 
 func (s *Server) Consume(receipt string, body []byte, reg Registration, epoch <-chan struct{}) (*isolation.Set, error) {
+	current := s.current()
+	digest := sha256.Sum256(body)
 	s.mu.Lock()
 	entry := s.entries[receipt]
-	delete(s.entries, receipt)
-	if entry != nil {
-		entry.timer.Stop()
-	}
-	s.mu.Unlock()
 	if entry == nil {
+		s.mu.Unlock()
 		return nil, errors.New("isolation receipt missing, expired, or already used")
 	}
-	if entry.epoch != epoch || entry.epoch != s.current() || entry.frame.Digest != sha256.Sum256(body) || !reflect.DeepEqual(entry.frame.Registration, reg) {
+	delete(s.entries, receipt)
+	entry.timer.Stop()
+	if s.closed || entry.epoch != epoch || epoch != current || epoch != s.origin || entry.frame.Digest != digest || !reflect.DeepEqual(entry.frame.Registration, reg) {
+		s.mu.Unlock()
 		_ = entry.pins.Close()
 		return nil, errors.New("isolation receipt does not match authenticated create")
 	}
 	select {
 	case <-epoch:
+		s.mu.Unlock()
 		_ = entry.pins.Close()
 		return nil, errors.New("isolation credential rotated")
 	default:
-	}
-	current := s.current()
-	s.mu.Lock()
-	if s.closed || epoch != current || epoch != s.origin {
-		s.mu.Unlock()
-		_ = entry.pins.Close()
-		return nil, errors.New("isolation ownership changed before claim")
 	}
 	s.claimed[receipt] = time.AfterFunc(time.Minute, func() { s.Forget(receipt) })
 	s.mu.Unlock()
@@ -359,13 +354,21 @@ func (s *Server) Consume(receipt string, body []byte, reg Registration, epoch <-
 }
 
 func (s *Server) Revoke() {
+	s.retire(false)
+}
+
+func (s *Server) retire(preserveCompleted bool) {
 	s.mu.Lock()
+	s.closed = true
 	entries := s.entries
 	s.entries = make(map[string]*pending)
 	claimed := s.claimed
 	s.claimed = make(map[string]*time.Timer)
-	completedEntries := s.completed
-	s.completed = make(map[string]*completed)
+	var completedEntries map[string]*completed
+	if !preserveCompleted {
+		completedEntries = s.completed
+		s.completed = make(map[string]*completed)
+	}
 	s.mu.Unlock()
 	for _, entry := range entries {
 		entry.timer.Stop()
@@ -428,7 +431,7 @@ func (s *Server) Lookup(receipt string, epoch <-chan struct{}) (Created, bool, b
 	current := s.current()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed || epoch != current || epoch != s.origin {
+	if epoch != current || epoch != s.origin {
 		return Created{}, false, false
 	}
 	select {
@@ -439,6 +442,9 @@ func (s *Server) Lookup(receipt string, epoch <-chan struct{}) (Created, bool, b
 	entry, ok := s.completed[receipt]
 	if ok && entry.epoch == epoch {
 		return entry.created, true, false
+	}
+	if s.closed {
+		return Created{}, false, false
 	}
 	if waiting, ok := s.entries[receipt]; ok && waiting.epoch == epoch {
 		return Created{}, false, true
