@@ -679,10 +679,11 @@ func (s *Service) reconcilePreparedTaskResourceCleanupJobs(
 			}
 			continue
 		}
-		s.resolvePreparedTaskQueuePurge(ctx, job, true)
 		if err := s.activatePreparedTaskResourceCleanupJob(ctx, job); err != nil {
 			errs = append(errs, fmt.Errorf("start committed prepared cleanup %s: %w", job.ID, err))
+			continue
 		}
+		s.resolvePreparedTaskQueuePurge(ctx, job, true)
 	}
 	return errors.Join(errs...)
 }
@@ -734,11 +735,73 @@ func (s *Service) preparedTaskCleanupMutationCommitted(
 		return !taskExists, nil
 	}
 	switch job.Trigger {
-	case models.TaskResourceCleanupTriggerArchive, models.TaskResourceCleanupTriggerCascadeArchive:
+	case models.TaskResourceCleanupTriggerArchive:
 		return taskExists && task.ArchivedAt != nil, nil
+	case models.TaskResourceCleanupTriggerCascadeArchive:
+		prefix := string(job.Trigger) + ":"
+		suffix := ":" + job.TaskID
+		if !strings.HasPrefix(job.OperationID, prefix) || !strings.HasSuffix(job.OperationID, suffix) {
+			return false, fmt.Errorf("invalid cascade cleanup operation %q", job.OperationID)
+		}
+		cascadeID := strings.TrimSuffix(strings.TrimPrefix(job.OperationID, prefix), suffix)
+		return taskExists && task.ArchivedAt != nil && task.ArchivedByCascadeID == cascadeID, nil
 	default:
 		return false, nil
 	}
+}
+
+// ResolveCascadeTaskResourceCleanupAfterMutationError proves the mutation
+// outcome before changing its matching prepared job. An unreadable outcome
+// retains the prepared intent and its process-local queue fence for replay.
+func (s *Service) ResolveCascadeTaskResourceCleanupAfterMutationError(ctx context.Context, operationID string) (bool, bool, error) {
+	if s.resourceCleanups == nil || operationID == "" {
+		return false, false, ErrTaskCleanupAdmissionRequired
+	}
+	transitionCtx, cancel := detachedCleanupTransitionContext(ctx)
+	defer cancel()
+	job, err := s.resourceCleanups.GetTaskResourceCleanupJobByOperationID(transitionCtx, operationID)
+	if err != nil {
+		return false, false, err
+	}
+	if job == nil {
+		return false, false, fmt.Errorf("%w: %s", ErrTaskCleanupAdmissionRequired, operationID)
+	}
+	committed, err := s.preparedTaskCleanupMutationCommitted(transitionCtx, job)
+	if err != nil {
+		markErr := s.resourceCleanups.CompleteTaskResourceCleanupJob(
+			transitionCtx, job.ID, models.TaskResourceCleanupStatePrepared,
+			taskResourceCleanupMutationOutcomeUnknown, nil,
+		)
+		s.startTaskResourceCleanup(job)
+		return false, false, errors.Join(err, markErr)
+	}
+	if committed {
+		if err := s.activatePreparedTaskResourceCleanupJob(transitionCtx, job); err != nil {
+			return true, true, err
+		}
+		s.resolvePreparedTaskQueuePurge(transitionCtx, job, true)
+		return true, true, nil
+	}
+	cas, ok := s.resourceCleanups.(taskResourceCleanupCancellationCAS)
+	if !ok {
+		return false, true, ErrTaskCleanupAdmissionRequired
+	}
+	cancelled, err := cas.CancelTaskResourceCleanupJobIfPending(transitionCtx, job.ID)
+	if err != nil {
+		return false, true, err
+	}
+	if !cancelled {
+		current, readErr := s.resourceCleanups.GetTaskResourceCleanupJob(transitionCtx, job.ID)
+		if readErr != nil {
+			return false, true, readErr
+		}
+		if current != nil && current.State == models.TaskResourceCleanupStateCancelled {
+			return false, true, nil
+		}
+		return false, true, fmt.Errorf("%w: %s", ErrCleanupCancellationRace, operationID)
+	}
+	s.resolvePreparedTaskQueuePurge(transitionCtx, job, false)
+	return false, true, nil
 }
 func (s *Service) processTaskResourceCleanupJob(ctx context.Context, id string) error {
 	operationCtx, cancel := context.WithDeadline(ctx, archivecascade.ArchiveDeadline(ctx))

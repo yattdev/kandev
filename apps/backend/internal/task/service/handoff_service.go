@@ -380,6 +380,10 @@ type taskResourceCleanupCoordinator interface {
 	CancelPreparedTaskResourceCleanup(ctx context.Context, operationID string) error
 }
 
+type cascadeMutationOutcomeResolver interface {
+	ResolveCascadeTaskResourceCleanupAfterMutationError(context.Context, string) (bool, bool, error)
+}
+
 type taskResourceCleanupRestorer interface {
 	RestoreCancelledTaskResourceCleanup(ctx context.Context, operationID string) error
 }

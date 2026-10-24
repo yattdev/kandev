@@ -16,6 +16,7 @@ import (
 	"github.com/kandev/kandev/internal/task/archivecascade"
 	"github.com/kandev/kandev/internal/task/models"
 	taskrepo "github.com/kandev/kandev/internal/task/repository"
+	"github.com/kandev/kandev/internal/task/repository/queuepurge"
 )
 
 type workspaceEnvironmentRepository interface {
@@ -211,6 +212,8 @@ type CascadeOutcome struct {
 type CascadePostCommitError struct {
 	Err error
 }
+
+var errCascadeMutationOutcomeUnknown = errors.New("cascade mutation outcome unknown")
 
 func (e *CascadePostCommitError) Error() string {
 	return e.Err.Error()
@@ -410,12 +413,35 @@ func (s *HandoffService) applyArchiveTaskMutations(
 ) ([]error, error) {
 	var cleanupErrors []error
 	for i := len(all) - 1; i >= 0; i-- {
+		mutationCtx := queuepurge.WithTaskQueuePurgeOperations(ctx, map[string]string{all[i]: cleanupOps[all[i]]})
 		vacatedStepID, ok, err := s.archiveTaskWithVacatedStep(
-			ctx, all[i], cascadeID, autoArchiveCandidate,
+			mutationCtx, all[i], cascadeID, autoArchiveCandidate,
 		)
 		if err != nil {
-			cancelErr := s.cancelCascadeResourceCleanupRange(ctx, all[:i+1], cleanupOps)
-			return nil, errors.Join(fmt.Errorf("archive %s: %w", all[i], err), cancelErr)
+			if cleanupOps[all[i]] == "" {
+				cancelErr := s.cancelCascadeResourceCleanupRange(ctx, all[:i+1], cleanupOps)
+				return nil, errors.Join(fmt.Errorf("archive %s: %w", all[i], err), cancelErr)
+			}
+			committed, known, resolveErr := s.resolveCascadeMutationError(ctx, cleanupOps[all[i]])
+			cancelErr := s.cancelCascadeResourceCleanupRange(ctx, all[:i], cleanupOps)
+			if committed {
+				out.ArchivedTaskIDs = append(out.ArchivedTaskIDs, all[i])
+				if task, readErr := s.tasks.GetTask(ctx, all[i]); readErr == nil && task != nil {
+					recordVacatedStep(vacatedStepIDs, task.WorkflowStepID)
+				} else {
+					cleanupErrors = appendTaskCleanupError(cleanupErrors, readErr)
+				}
+				cleanupErrors = appendTaskCleanupError(cleanupErrors,
+					s.finalizeActiveSessions(ctx, archiveDeadline, all[i], models.SessionArchiveTreeCancelReason))
+				cleanupErrors = appendTaskCleanupError(cleanupErrors, s.publishUpdatedTask(ctx, all[i]))
+				s.markOrphanedInheritParentChildren(ctx, &models.Task{ID: all[i]})
+				return cleanupErrors, cascadePostCommitError(out,
+					errors.Join(fmt.Errorf("archive %s: %w", all[i], err), resolveErr, cancelErr, errors.Join(cleanupErrors...)))
+			}
+			if !known {
+				return nil, errors.Join(fmt.Errorf("archive %s: %w: %w", all[i], errCascadeMutationOutcomeUnknown, err), resolveErr, cancelErr)
+			}
+			return nil, errors.Join(fmt.Errorf("archive %s: %w", all[i], err), resolveErr, cancelErr)
 		}
 		if ok {
 			out.ArchivedTaskIDs = append(out.ArchivedTaskIDs, all[i])
@@ -643,6 +669,9 @@ func (s *HandoffService) deleteTaskTreeWithReasonAndOptions(
 		out, ownershipTransfers, vacatedStepIDs, reason,
 	)
 	if err != nil {
+		if errors.Is(err, errCascadeMutationOutcomeUnknown) {
+			return out, err
+		}
 		return out, errors.Join(err, s.compensateDeleteFailure(
 			deleteCompensationCtx, all, cascadeID, out.ArchivedTaskIDs, noCascadeSnapshots,
 		))
@@ -763,16 +792,48 @@ func (s *HandoffService) deleteTaskTreeRows(
 		// Tear down runtime resources BEFORE the DB delete so the env / worktree
 		// rows are still queryable for the gather step. The actual destroy work
 		// runs async after this returns. Delete cascade removes the env row.
-		vacatedStepID, err := s.deleteTaskWithVacatedStep(postDeleteCtx, all[i])
+		mutationCtx := queuepurge.WithTaskQueuePurgeOperations(postDeleteCtx, map[string]string{all[i]: cleanupOps[all[i]]})
+		vacatedStepID, err := s.deleteTaskWithVacatedStep(mutationCtx, all[i])
 		if err != nil {
-			restoreErr := s.restoreTaskDependencyEdgesLocked(deleteCompensationCtx, dependencySnapshot)
+			if cleanupOps[all[i]] == "" {
+				restoreErr := s.restoreTaskDependencyEdgesLocked(deleteCompensationCtx, dependencySnapshot)
+				dependencyUnlock()
+				cancelErr := s.cancelCascadeResourceCleanupRange(deleteCompensationCtx, all[:i+1], cleanupOps)
+				deleteErr := fmt.Errorf("delete %s: %w", all[i], err)
+				if len(out.ArchivedTaskIDs) == 0 {
+					deleteErr = s.rollbackWorkspaceEnvironmentOwnershipAfterFailure(deleteCompensationCtx, ownershipTransfers, deleteErr)
+				}
+				return nil, errors.Join(deleteErr, restoreErr, cancelErr)
+			}
+			committed, known, resolveErr := s.resolveCascadeMutationError(deleteCompensationCtx, cleanupOps[all[i]])
+			var restoreErr error
+			if known && !committed {
+				restoreErr = s.restoreTaskDependencyEdgesLocked(deleteCompensationCtx, dependencySnapshot)
+			}
 			dependencyUnlock()
-			cancelErr := s.cancelCascadeResourceCleanupRange(deleteCompensationCtx, all[:i+1], cleanupOps)
+			cancelErr := s.cancelCascadeResourceCleanupRange(deleteCompensationCtx, all[:i], cleanupOps)
 			deleteErr := fmt.Errorf("delete %s: %w", all[i], err)
-			if len(out.ArchivedTaskIDs) == 0 {
+			if committed {
+				out.ArchivedTaskIDs = append(out.ArchivedTaskIDs, all[i])
+				s.publishDeletedTaskDependencies(postDeleteCtx, dependencySnapshot)
+				if snapshot != nil {
+					recordVacatedStep(vacatedStepIDs, snapshot.WorkflowStepID)
+				}
+				cleanupErrors = appendTaskCleanupError(cleanupErrors,
+					s.finalizeActiveSessions(postDeleteCtx, deleteDeadline, all[i], "task tree deleted"))
+				if s.eventPublisher != nil && snapshot != nil {
+					s.publishDeletedTaskEvent(postDeleteCtx, snapshot, reason)
+				}
+				return cleanupErrors, cascadePostCommitError(out,
+					errors.Join(deleteErr, resolveErr, cancelErr, errors.Join(cleanupErrors...)))
+			}
+			if known && len(out.ArchivedTaskIDs) == 0 {
 				deleteErr = s.rollbackWorkspaceEnvironmentOwnershipAfterFailure(deleteCompensationCtx, ownershipTransfers, deleteErr)
 			}
-			return nil, errors.Join(deleteErr, restoreErr, cancelErr)
+			if !known {
+				deleteErr = errors.Join(errCascadeMutationOutcomeUnknown, deleteErr)
+			}
+			return nil, errors.Join(deleteErr, resolveErr, restoreErr, cancelErr)
 		}
 		dependencyUnlock()
 		s.publishDeletedTaskDependencies(postDeleteCtx, dependencySnapshot)
@@ -1255,6 +1316,17 @@ func (s *HandoffService) cancelCascadeResourceCleanupRange(
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func (s *HandoffService) resolveCascadeMutationError(ctx context.Context, operationID string) (bool, bool, error) {
+	if operationID == "" {
+		return false, false, nil
+	}
+	resolver, ok := s.resourceCleaner.(cascadeMutationOutcomeResolver)
+	if !ok {
+		return false, false, ErrTaskCleanupAdmissionRequired
+	}
+	return resolver.ResolveCascadeTaskResourceCleanupAfterMutationError(ctx, operationID)
 }
 
 func (s *HandoffService) startCascadeResourceCleanup(ctx context.Context, operationID string) error {
