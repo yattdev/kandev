@@ -16,6 +16,12 @@ const (
 
 type TaskResourceCleanupState string
 
+// WorkspaceDeleteAdmissionOperationID identifies the durable creation fence
+// that remains active while workspace deletion inventories its tasks.
+func WorkspaceDeleteAdmissionOperationID(workspaceID string) string {
+	return "workspace_delete_admission:" + workspaceID
+}
+
 const (
 	TaskResourceCleanupStatePrepared  TaskResourceCleanupState = "prepared"
 	TaskResourceCleanupStatePending   TaskResourceCleanupState = "pending"

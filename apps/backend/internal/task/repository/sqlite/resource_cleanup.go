@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/recoveryclaim"
@@ -31,6 +32,7 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 	if job.TaskID == "" && !workspaceOnly {
 		return errors.New("task cleanup reservation requires a task")
 	}
+	workspaceID := ""
 	if workspaceOnly {
 		var snapshot struct {
 			WorkspaceID string `json:"workspace_id"`
@@ -38,6 +40,7 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 		if err := json.Unmarshal([]byte(job.ResourceSnapshot), &snapshot); err != nil || snapshot.WorkspaceID == "" {
 			return errors.New("workspace cleanup reservation requires a workspace snapshot")
 		}
+		workspaceID = snapshot.WorkspaceID
 	}
 	if job.ID == "" {
 		job.ID = uuid.NewString()
@@ -56,6 +59,15 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if workspaceOnly {
+		existing, err := r.admitWorkspaceCleanupReservation(ctx, tx, workspaceID, job)
+		if err != nil {
+			return err
+		}
+		if existing {
+			return tx.Commit()
+		}
+	}
 	found := workspaceOnly
 	if !workspaceOnly {
 		if err := recoveryclaim.EnsureTaskAvailableTx(ctx, r.db, tx, job.TaskID); err != nil {
@@ -110,6 +122,39 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 		return fmt.Errorf("%w: %s", errCleanupReservationConflict, job.OperationID)
 	}
 	return tx.Commit()
+}
+
+func (r *Repository) admitWorkspaceCleanupReservation(
+	ctx context.Context, tx *sqlx.Tx, workspaceID string, job *models.TaskResourceCleanupJob,
+) (bool, error) {
+	if err := r.lockWorkspaceRowInTx(ctx, tx, workspaceID); err != nil &&
+		!errors.Is(err, repoerrors.ErrWorkspaceNotFound) {
+		return false, err
+	}
+	var foundWorkspaceID string
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT id FROM workspaces WHERE id = ?`), workspaceID).Scan(&foundWorkspaceID)
+	if err == nil {
+		return false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	var existingTaskID string
+	var existingTrigger models.TaskResourceCleanupTrigger
+	var existingState models.TaskResourceCleanupState
+	err = tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT task_id, trigger, state FROM task_resource_cleanup_jobs WHERE operation_id = ?
+	`), job.OperationID).Scan(&existingTaskID, &existingTrigger, &existingState)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("%w: %s", repoerrors.ErrWorkspaceNotFound, workspaceID)
+	}
+	if err != nil {
+		return false, err
+	}
+	if existingTaskID != "" || existingTrigger != job.Trigger || !validTaskResourceCleanupState(existingState) {
+		return false, fmt.Errorf("%w: %s", errCleanupReservationConflict, job.OperationID)
+	}
+	return true, nil
 }
 
 func validTaskResourceCleanupState(state models.TaskResourceCleanupState) bool {

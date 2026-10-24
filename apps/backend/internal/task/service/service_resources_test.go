@@ -18,6 +18,7 @@ import (
 	"github.com/kandev/kandev/internal/secrets"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository"
+	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 	"github.com/kandev/kandev/internal/worktree"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -1133,7 +1134,7 @@ func TestService_DeleteWorkspaceKeepsCleanupRunnableWhenSecretDeletionFails(t *t
 func TestService_DeleteWorkspacePublishesChildEventsAndCleansResources(t *testing.T) {
 	svc, eventBus, repo := createTestService(t)
 	ctx := context.Background()
-	svc.setCleanupDoneForTestHook(make(chan struct{}, 1))
+	svc.setCleanupDoneForTestHook(make(chan struct{}, 2))
 	cleanup := &recordingWorktreeCleanup{
 		worktrees: []*worktree.Worktree{{ID: "wt-delete", TaskID: "task-delete"}},
 	}
@@ -1155,6 +1156,7 @@ func TestService_DeleteWorkspacePublishesChildEventsAndCleansResources(t *testin
 	if err := svc.DeleteWorkspace(ctx, "ws-delete"); err != nil {
 		t.Fatalf("DeleteWorkspace: %v", err)
 	}
+	waitForCleanupDone(t, svc)
 	waitForCleanupDone(t, svc)
 
 	eventCounts := make(map[string]int)
@@ -1297,7 +1299,7 @@ func TestService_DeleteWorkspaceWithConfirmNameDeletesWhenNameMatches(t *testing
 func TestService_DeleteWorkspaceWithConfirmNamePublishesChildEventsAndCleansResources(t *testing.T) {
 	svc, eventBus, repo := createTestService(t)
 	ctx := context.Background()
-	svc.setCleanupDoneForTestHook(make(chan struct{}, 1))
+	svc.setCleanupDoneForTestHook(make(chan struct{}, 2))
 	cleanup := &recordingWorktreeCleanup{
 		worktrees: []*worktree.Worktree{{ID: "wt-delete", TaskID: "task-delete"}},
 	}
@@ -1320,6 +1322,7 @@ func TestService_DeleteWorkspaceWithConfirmNamePublishesChildEventsAndCleansReso
 		t.Fatalf("DeleteWorkspaceWithConfirmName: %v", err)
 	}
 	waitForCleanupDone(t, svc)
+	waitForCleanupDone(t, svc)
 
 	eventCounts := make(map[string]int)
 	for _, event := range eventBus.GetPublishedEvents() {
@@ -1340,10 +1343,9 @@ func TestService_DeleteWorkspaceWithConfirmNamePublishesChildEventsAndCleansReso
 	}
 }
 
-func TestService_DeleteWorkspaceWithConfirmNamePublishesEventsForAllCascadeDeletedChildren(t *testing.T) {
+func TestService_DeleteWorkspaceWithConfirmNameFencesTaskCreatedAfterInventory(t *testing.T) {
 	svc, eventBus, repo := createTestService(t)
 	ctx := context.Background()
-	svc.setCleanupDoneForTestHook(make(chan struct{}, 2))
 	cleanup := &recordingWorktreeCleanup{
 		worktreesByTaskID: map[string][]*worktree.Worktree{
 			"task-delete": {{ID: "wt-delete", TaskID: "task-delete"}},
@@ -1370,37 +1372,27 @@ func TestService_DeleteWorkspaceWithConfirmNamePublishesEventsForAllCascadeDelet
 	}
 	eventBus.ClearEvents()
 
-	if err := svc.DeleteWorkspaceWithConfirmName(ctx, "ws-delete", "Delete Me"); err != nil {
-		t.Fatalf("DeleteWorkspaceWithConfirmName: %v", err)
+	if err := svc.DeleteWorkspaceWithConfirmName(ctx, "ws-delete", "Delete Me"); !errors.Is(err, repoerrors.ErrTaskCleanupInProgress) {
+		t.Fatalf("late task creation error = %v, want workspace cleanup fence", err)
 	}
-	waitForCleanupDone(t, svc)
-	waitForCleanupDone(t, svc)
-
-	// This covers event publication from the repository cascade return value.
-	// Runtime cleanup is prepared before the cascade and topped up from the
-	// cascade return value for children that appear after that first snapshot.
 	eventCounts := make(map[string]int)
 	for _, event := range eventBus.GetPublishedEvents() {
 		eventCounts[event.Type]++
 	}
-	if eventCounts[events.TaskDeleted] != 2 {
-		t.Fatalf("task deleted events = %d, want 2", eventCounts[events.TaskDeleted])
+	if eventCounts[events.TaskDeleted] != 0 || eventCounts[events.WorkspaceDeleted] != 0 {
+		t.Fatalf("denied workspace delete emitted deletion events: %v", eventCounts)
 	}
-	if eventCounts[events.WorkflowDeleted] != 2 {
-		t.Fatalf("workflow deleted events = %d, want 2", eventCounts[events.WorkflowDeleted])
+	if _, err := repo.GetWorkspace(ctx, "ws-delete"); err != nil {
+		t.Fatalf("denied delete removed workspace: %v", err)
+	}
+	if _, err := repo.GetTask(ctx, "task-delete"); err != nil {
+		t.Fatalf("denied delete removed admitted task: %v", err)
 	}
 	if _, err := repo.GetTask(ctx, "task-raced"); err == nil {
-		t.Fatalf("late-created task should be deleted")
+		t.Fatal("task created after workspace delete admission")
 	}
-	if _, err := repo.GetWorkflow(ctx, "wf-raced"); err == nil {
-		t.Fatalf("late-created workflow should be deleted")
-	}
-	cleaned := make(map[string]bool)
-	for _, id := range cleanup.cleanedIDs() {
-		cleaned[id] = true
-	}
-	if len(cleaned) != 2 || !cleaned["wt-delete"] || !cleaned["wt-raced"] {
-		t.Fatalf("cleaned worktrees = %#v, want wt-delete and wt-raced", cleaned)
+	if cleaned := cleanup.cleanedIDs(); len(cleaned) != 0 {
+		t.Fatalf("denied delete cleaned worktrees: %v", cleaned)
 	}
 }
 

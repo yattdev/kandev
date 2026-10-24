@@ -254,6 +254,30 @@ func (s *Service) persistTaskResourceCleanup(
 	return persisted, nil
 }
 
+func (s *Service) prepareWorkspaceDeleteAdmission(ctx context.Context, workspaceID string) (*models.TaskResourceCleanupJob, error) {
+	operationID := models.WorkspaceDeleteAdmissionOperationID(workspaceID)
+	job, err := s.persistTaskResourceCleanup(
+		ctx, "", models.TaskResourceCleanupTriggerWorkspaceDelete, operationID,
+		nil, nil, nil, nil, taskEnvironmentCleanup{}, true, false, workspaceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if job.State == models.TaskResourceCleanupStateCancelled {
+		if err := s.RestoreCancelledTaskResourceCleanup(ctx, operationID); err != nil {
+			return nil, err
+		}
+		job, err = s.resourceCleanups.GetTaskResourceCleanupJobByOperationID(ctx, operationID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if job == nil || job.State != models.TaskResourceCleanupStatePrepared {
+		return nil, ErrTaskCleanupAdmissionRequired
+	}
+	return job, nil
+}
+
 func (s *Service) updateReservedCleanupEnvironmentSnapshot(
 	ctx context.Context, job *models.TaskResourceCleanupJob, env *models.TaskEnvironment,
 ) error {

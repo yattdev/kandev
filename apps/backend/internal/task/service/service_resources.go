@@ -332,16 +332,20 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 		releaseAttachmentAdmission = s.attachmentSvc.beginWorkspaceDeletion(workspace.ID)
 		defer releaseAttachmentAdmission()
 	}
-	tasks, err := s.listAllTasksForWorkspaceDelete(ctx, workspace.ID)
+	fence, err := s.prepareWorkspaceDeleteAdmission(ctx, workspace.ID)
 	if err != nil {
 		return err
+	}
+	cleanups := []workspaceDeleteTaskCleanup{{cleanupJob: fence}}
+	tasks, err := s.listAllTasksForWorkspaceDelete(ctx, workspace.ID)
+	if err != nil {
+		return errors.Join(err, s.cancelWorkspaceDeleteTaskCleanupJobs(ctx, cleanups))
 	}
 	// Runtime cleanup needs task rows before the cascade removes them.
 	workspaceAttachmentCleanup, err := s.prepareWorkspaceAttachmentCleanup(ctx, workspace.ID)
 	if err != nil {
-		return err
+		return errors.Join(err, s.cancelWorkspaceDeleteTaskCleanupJobs(ctx, cleanups))
 	}
-	cleanups := make([]workspaceDeleteTaskCleanup, 0, len(tasks)+1)
 	if workspaceAttachmentCleanup != nil {
 		cleanups = append(cleanups, workspaceDeleteTaskCleanup{cleanupJob: workspaceAttachmentCleanup})
 	}

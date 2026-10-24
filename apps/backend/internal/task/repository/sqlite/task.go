@@ -402,6 +402,9 @@ func (r *Repository) prepareTaskForCreate(task *models.Task) error {
 }
 
 func (r *Repository) insertTaskTx(ctx context.Context, tx *sql.Tx, task *models.Task) (entryID string, err error) {
+	if err := r.workspaceDeleteAdmissionLocked(ctx, tx, task.WorkspaceID); err != nil {
+		return "", err
+	}
 	metadata, err := json.Marshal(task.Metadata)
 	if err != nil {
 		metadata = []byte("{}")

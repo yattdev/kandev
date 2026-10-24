@@ -50,6 +50,35 @@ func (r *Repository) taskCleanupBarrierLocked(ctx context.Context, tx *sqlx.Tx, 
 	return nil
 }
 
+// workspaceDeleteAdmissionLocked rejects a creator after the durable
+// workspace deletion fence has committed. Callers hold the workspace row lock
+// first so Postgres and SQLite agree on which operation won admission.
+func (r *Repository) workspaceDeleteAdmissionLocked(ctx context.Context, tx interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, workspaceID string) error {
+	if workspaceID == "" {
+		return nil
+	}
+	var active bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT EXISTS (
+			SELECT 1 FROM task_resource_cleanup_jobs
+			WHERE operation_id = ? AND task_id = '' AND trigger = ?
+			AND state IN (?, ?, ?, ?)
+		)
+	`), models.WorkspaceDeleteAdmissionOperationID(workspaceID),
+		models.TaskResourceCleanupTriggerWorkspaceDelete,
+		models.TaskResourceCleanupStatePrepared, models.TaskResourceCleanupStatePending,
+		models.TaskResourceCleanupStateRunning, models.TaskResourceCleanupStateRetryWait,
+	).Scan(&active); err != nil {
+		return fmt.Errorf("check workspace delete admission: %w", err)
+	}
+	if active {
+		return fmt.Errorf("%w: workspace %s", repoerrors.ErrTaskCleanupInProgress, workspaceID)
+	}
+	return nil
+}
+
 // lockTaskRowInTx takes the task row lock (Postgres SELECT FOR UPDATE; SQLite
 // serializes via its single writer). It is the raw row lock behind the
 // creation barrier, used by lifecycle paths that must serialize against
