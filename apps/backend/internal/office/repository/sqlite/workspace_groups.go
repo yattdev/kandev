@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	kandevdb "github.com/kandev/kandev/internal/db"
+	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/office/models"
 )
 
@@ -21,6 +23,8 @@ import (
 // internal/task/repository/sqlite's sqliteMaxHostParams; kept local here
 // because these helpers are unexported and this package cannot import them.
 const workspaceGroupMaxHostParams = 500
+
+var errWorkspaceGroupMemberSetChanged = errors.New("workspace group member set changed during cleanup claim")
 
 // chunkTaskIDs splits ids into sub-slices of at most workspaceGroupMaxHostParams
 // entries, so callers can keep IN-clause queries below the host-parameter limit.
@@ -133,7 +137,7 @@ func (r *Repository) CreateWorkspaceGroup(ctx context.Context, g *models.Workspa
 			created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`), g.ID, g.WorkspaceID, g.OwnerTaskID, g.OwnershipGeneration, g.MaterializedPath,
-		g.MaterializedEnvironmentID, g.MaterializedKind, g.OwnedByKandev,
+		g.MaterializedEnvironmentID, g.MaterializedKind, dialect.BoolToInt(g.OwnedByKandev),
 		g.CleanupPolicy, g.CleanupStatus, g.CleanedAt, g.CleanupError,
 		g.RestoreStatus, g.RestoreError, g.RestoreConfigJSON,
 		g.CreatedAt, g.UpdatedAt)
@@ -217,7 +221,7 @@ func (r *Repository) MarkWorkspaceMaterialized(ctx context.Context, id string, m
 			updated_at = ?
 		WHERE id = ?
 		  AND (materialized_environment_id = '' OR materialized_environment_id = ?)
-	`), m.Path, m.EnvironmentID, m.Kind, m.OwnedByKandev, policy,
+	`), m.Path, m.EnvironmentID, m.Kind, dialect.BoolToInt(m.OwnedByKandev), policy,
 		m.RestoreConfig, time.Now().UTC(), id, m.EnvironmentID)
 	if err != nil {
 		return err
@@ -269,7 +273,7 @@ func (r *Repository) DeferWorkspaceGroupCleanup(ctx context.Context, id string, 
 			  AND task.archived_at IS NULL
 		  )
 	`), models.WorkspaceCleanupStatusPending, models.WorkspaceCleanupDeferredExecutorV1(generation),
-		time.Now().UTC(), id, generation, true,
+		time.Now().UTC(), id, generation, dialect.BoolToInt(true),
 		models.WorkspaceCleanupPolicyDeleteWhenLastMemberArchivedOrDel,
 		models.WorkspaceCleanupStatusActive, models.WorkspaceCleanupStatusFailed)
 	if err != nil {
@@ -300,7 +304,7 @@ func (r *Repository) ListDeferredWorkspaceGroupCleanups(
 		  AND owned_by_kandev = ? AND cleanup_policy = ?
 		ORDER BY id LIMIT ?
 	`), afterID, models.WorkspaceCleanupStatusPending,
-		models.WorkspaceCleanupDeferredExecutorV1Prefix(), true,
+		models.WorkspaceCleanupDeferredExecutorV1Prefix(), dialect.BoolToInt(true),
 		models.WorkspaceCleanupPolicyDeleteWhenLastMemberArchivedOrDel, limit)
 	return groups, err
 }
@@ -308,19 +312,33 @@ func (r *Repository) ListDeferredWorkspaceGroupCleanups(
 // lockWorkspaceGroupMemberTasks holds the same task-row locks acquired by
 // UpsertExecutorRunning. On SQLite the shared single-writer pool serializes
 // writes; on PostgreSQL these row locks close the absent-executor read race.
-func (r *Repository) lockWorkspaceGroupMemberTasks(ctx context.Context, tx *sqlx.Tx, id string) error {
+func workspaceGroupMemberTaskIDs(ctx context.Context, tx *sqlx.Tx, id string) ([]string, error) {
 	var taskIDs []string
 	if err := tx.SelectContext(ctx, &taskIDs, tx.Rebind(`
 		SELECT DISTINCT task_id FROM task_workspace_group_members
 		WHERE workspace_group_id = ? ORDER BY task_id
 	`), id); err != nil {
-		return err
+		return nil, err
+	}
+	return taskIDs, nil
+}
+
+func (r *Repository) lockWorkspaceGroupMemberTasks(ctx context.Context, tx *sqlx.Tx, id string) ([]string, error) {
+	taskIDs, err := workspaceGroupMemberTaskIDs(ctx, tx, id)
+	if err != nil {
+		return nil, err
 	}
 	for _, taskID := range taskIDs {
-		if err := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), taskID); err != nil &&
-			!errors.Is(err, kandevdb.ErrTaskRowNotFound) {
-			return err
+		if err := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), taskID); err != nil {
+			return nil, fmt.Errorf("lock workspace group member %s: %w", taskID, err)
 		}
+	}
+	return taskIDs, nil
+}
+
+func (r *Repository) workspaceGroupAdmissionTxOptions() *sql.TxOptions {
+	if dialect.IsPostgres(r.db.DriverName()) {
+		return &sql.TxOptions{Isolation: sql.LevelReadCommitted}
 	}
 	return nil
 }
@@ -328,7 +346,7 @@ func (r *Repository) lockWorkspaceGroupMemberTasks(ctx context.Context, tx *sqlx
 // lockWorkspaceGroupRow serializes a new membership with a cleanup claim on
 // PostgreSQL. SQLite's shared single-writer pool provides the same exclusion.
 func (r *Repository) lockWorkspaceGroupRow(ctx context.Context, tx *sqlx.Tx, id string) error {
-	if r.db.DriverName() != "pgx" {
+	if !dialect.IsPostgres(r.db.DriverName()) {
 		return nil
 	}
 	var locked string
@@ -345,16 +363,54 @@ func (r *Repository) lockWorkspaceGroupRow(ctx context.Context, tx *sqlx.Tx, id 
 // generation. The active-member predicate is part of the same write so a
 // caller cannot race a membership admission between its read and this claim.
 func (r *Repository) ClaimWorkspaceGroupCleanup(ctx context.Context, id string, generation int64) (bool, error) {
-	tx, err := r.db.BeginTxx(ctx, nil)
+	return r.claimWorkspaceGroupCleanup(ctx, id, generation, nil)
+}
+
+func (r *Repository) claimWorkspaceGroupCleanup(
+	ctx context.Context, id string, generation int64, afterTaskLocks func(*sqlx.Tx, int) error,
+) (bool, error) {
+	const maxMemberSetAttempts = 3
+	for attempt := 0; attempt < maxMemberSetAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		claimed, changed, err := r.claimWorkspaceGroupCleanupOnce(ctx, id, generation, attempt, afterTaskLocks)
+		if err != nil {
+			return false, err
+		}
+		if !changed {
+			return claimed, nil
+		}
+	}
+	return false, fmt.Errorf("workspace group %s: %w", id, errWorkspaceGroupMemberSetChanged)
+}
+
+func (r *Repository) claimWorkspaceGroupCleanupOnce(
+	ctx context.Context, id string, generation int64, attempt int, afterTaskLocks func(*sqlx.Tx, int) error,
+) (bool, bool, error) {
+	tx, err := r.db.BeginTxx(ctx, r.workspaceGroupAdmissionTxOptions())
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.lockWorkspaceGroupMemberTasks(ctx, tx, id); err != nil {
-		return false, err
+	lockedIDs, err := r.lockWorkspaceGroupMemberTasks(ctx, tx, id)
+	if err != nil {
+		return false, false, err
+	}
+	if afterTaskLocks != nil {
+		if err := afterTaskLocks(tx, attempt); err != nil {
+			return false, false, err
+		}
 	}
 	if err := r.lockWorkspaceGroupRow(ctx, tx, id); err != nil {
-		return false, err
+		return false, false, err
+	}
+	currentIDs, err := workspaceGroupMemberTaskIDs(ctx, tx, id)
+	if err != nil {
+		return false, false, err
+	}
+	if !slices.Equal(lockedIDs, currentIDs) {
+		return false, true, nil
 	}
 	result, err := tx.ExecContext(ctx, tx.Rebind(`
 		UPDATE task_workspace_groups
@@ -377,21 +433,21 @@ func (r *Repository) ClaimWorkspaceGroupCleanup(ctx context.Context, id string, 
 			JOIN executors_running running ON running.task_id = member.task_id
 			WHERE member.workspace_group_id = task_workspace_groups.id
 		  )
-	`), models.WorkspaceCleanupStatusPending, time.Now().UTC(), id, generation, true,
+	`), models.WorkspaceCleanupStatusPending, time.Now().UTC(), id, generation, dialect.BoolToInt(true),
 		models.WorkspaceCleanupPolicyDeleteWhenLastMemberArchivedOrDel,
 		models.WorkspaceCleanupStatusActive, models.WorkspaceCleanupStatusFailed,
 		models.WorkspaceCleanupStatusPending, models.WorkspaceCleanupDeferredExecutorV1(generation))
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if err := tx.Commit(); err != nil {
-		return false, err
+		return false, false, err
 	}
-	return rows == 1, nil
+	return rows == 1, false, nil
 }
 
 // CompleteWorkspaceGroupCleanup records a result only while the claimed
@@ -442,7 +498,7 @@ func (r *Repository) AddWorkspaceGroupMember(ctx context.Context, groupID, taskI
 	if role == "" {
 		role = models.WorkspaceMemberRoleMember
 	}
-	tx, err := r.db.BeginTxx(ctx, nil)
+	tx, err := r.db.BeginTxx(ctx, r.workspaceGroupAdmissionTxOptions())
 	if err != nil {
 		return err
 	}
