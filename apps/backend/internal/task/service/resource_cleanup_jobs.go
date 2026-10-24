@@ -1150,7 +1150,9 @@ func (s *Service) resolveTaskResourceCleanupAfterMutationError(ctx context.Conte
 		if err := s.activatePreparedTaskResourceCleanupJob(transitionCtx, job); err != nil {
 			s.logger.Warn("activate cleanup after committed task mutation error failed",
 				zap.String("job_id", job.ID), zap.String("task_id", job.TaskID), zap.Error(err))
+			return
 		}
+		s.resolvePreparedTaskQueuePurge(transitionCtx, job.TaskID, true)
 		return
 	}
 	if err := s.resourceCleanups.CompleteTaskResourceCleanupJob(
@@ -1158,7 +1160,9 @@ func (s *Service) resolveTaskResourceCleanupAfterMutationError(ctx context.Conte
 	); err != nil {
 		s.logger.Warn("cancel task resource cleanup job failed",
 			zap.String("job_id", job.ID), zap.String("task_id", job.TaskID), zap.Error(err))
+		return
 	}
+	s.resolvePreparedTaskQueuePurge(transitionCtx, job.TaskID, false)
 }
 
 func (s *Service) retryTaskResourceCleanupJob(ctx context.Context, job *models.TaskResourceCleanupJob, cleanupErr error) error {

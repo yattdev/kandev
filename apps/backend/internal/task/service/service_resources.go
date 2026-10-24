@@ -408,6 +408,7 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 		deletedTasks, deletedWorkflows, err = s.workspaces.DeleteWorkspaceCascadeWithName(ctx, workspace.ID, *confirmedName)
 	}
 	var postCommitErr error
+	recoveredCommitOutcome := false
 	if err != nil {
 		committed, verifyErr := s.workspaceCascadeCommitted(ctx, workspace.ID)
 		if verifyErr != nil {
@@ -416,8 +417,16 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 		}
 		if !committed {
 			cancelErr := s.cancelWorkspaceDeleteTaskCleanupJobs(ctx, cleanups)
+			if cancelErr == nil {
+				for _, cleanup := range cleanups {
+					if cleanup.cleanupJob != nil {
+						s.resolvePreparedTaskQueuePurge(ctx, cleanup.cleanupJob.TaskID, false)
+					}
+				}
+			}
 			return s.mapWorkspaceDeleteError(workspace.ID, errors.Join(err, cancelErr))
 		}
+		recoveredCommitOutcome = true
 		postCommitErr = err
 		if deletedTasks == nil {
 			deletedTasks = tasks
@@ -439,6 +448,18 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 	cleanups, lateCleanupErr = s.appendWorkspaceDeleteMissingTaskCleanups(ctx, cleanups, deletedTasks)
 	postCommitErr = errors.Join(postCommitErr, lateCleanupErr)
 	s.publishWorkspaceDeleteChildEvents(ctx, deletedTasks, deletedWorkflows)
+	if recoveredCommitOutcome {
+		for _, cleanup := range cleanups {
+			if cleanup.cleanupJob == nil {
+				continue
+			}
+			if startErr := s.StartPreparedTaskResourceCleanup(ctx, cleanup.cleanupJob.OperationID); startErr != nil {
+				postCommitErr = errors.Join(postCommitErr, startErr)
+				continue
+			}
+			s.resolvePreparedTaskQueuePurge(ctx, cleanup.cleanupJob.TaskID, true)
+		}
+	}
 	s.runWorkspaceDeleteTaskCleanups(cleanups, deletedTasks)
 	s.publishWorkspaceEvent(ctx, events.WorkspaceDeleted, workspace)
 	s.logger.Info("workspace deleted", zap.String("workspace_id", workspace.ID))
