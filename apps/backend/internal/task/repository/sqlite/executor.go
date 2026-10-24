@@ -20,6 +20,10 @@ import (
 
 // Executor operations
 
+// Office owns workspace-group rows; this exact persisted status is checked
+// here without importing Office into the lower task repository layer.
+const workspaceGroupCleanupPendingStatus = "cleanup_pending"
+
 func (r *Repository) CreateExecutor(ctx context.Context, executor *models.Executor) error {
 	if executor.ID == "" {
 		executor.ID = uuid.New().String()
@@ -200,6 +204,10 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 		}
 		metadataJSON = string(b)
 	}
+	groupsAvailable, err := workspaceGroupGuardTableExists(ctx, r.db)
+	if err != nil {
+		return fmt.Errorf("check workspace group guard schema: %w", err)
+	}
 
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -216,9 +224,45 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 	if _, err := lockTaskSessionRow(ctx, tx, running.SessionID); err != nil {
 		return err
 	}
+	sessionTaskID := running.TaskID
 	var environmentID sql.NullString
-	if queryErr := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT COALESCE(task_environment_id, '') FROM task_sessions WHERE id = ?`), running.SessionID).Scan(&environmentID); queryErr != nil && queryErr != sql.ErrNoRows {
-		return queryErr
+	if err := tx.QueryRowContext(ctx, tx.Rebind(`
+		SELECT task_id, COALESCE(task_environment_id, '')
+		FROM task_sessions WHERE id = ?
+	`), running.SessionID).Scan(&sessionTaskID, &environmentID); err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("load executor session task: %w", err)
+	}
+	if sessionTaskID != "" && sessionTaskID != running.TaskID {
+		return fmt.Errorf("executor task does not match session task")
+	}
+	// The group claim takes the same task-row lock before proving executor
+	// absence. A newly admitted executor must observe and refuse its pending
+	// claim, including a deferred-executor claim being retried.
+	// Task-only stores may precede Office schema installation. Structural
+	// absence means there can be no group claim; any query failure once that
+	// table exists still fails closed.
+	var groupCleanupPending bool
+	if groupsAvailable {
+		if err := tx.QueryRowContext(ctx, tx.Rebind(`
+		SELECT EXISTS (
+			SELECT 1 FROM task_workspace_group_members member
+			JOIN task_workspace_groups grp ON grp.id = member.workspace_group_id
+			WHERE member.task_id = ? AND grp.cleanup_status = ?
+		)
+	`), sessionTaskID, workspaceGroupCleanupPendingStatus).Scan(&groupCleanupPending); err != nil {
+			return fmt.Errorf("check workspace group cleanup admission: %w", err)
+		}
+	}
+	if groupCleanupPending {
+		var alreadyRunning bool
+		if err := tx.QueryRowContext(ctx, tx.Rebind(`
+			SELECT EXISTS (SELECT 1 FROM executors_running WHERE session_id = ?)
+		`), running.SessionID).Scan(&alreadyRunning); err != nil {
+			return fmt.Errorf("check existing executor row: %w", err)
+		}
+		if !alreadyRunning {
+			return fmt.Errorf("workspace group cleanup in progress for task %s", sessionTaskID)
+		}
 	}
 	if environmentID.Valid {
 		if err := recoveryclaim.EnsureAvailableTx(ctx, r.db, tx, environmentID.String); err != nil {
@@ -285,6 +329,20 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 		return err
 	}
 	return tx.Commit()
+}
+
+func workspaceGroupGuardTableExists(ctx context.Context, db *sqlx.DB) (bool, error) {
+	// Run the structural probe outside the admission transaction: PostgreSQL
+	// aborts a transaction after an undefined-table error. A table without
+	// membership rows cannot carry a group claim; any other error denies.
+	rows, err := db.QueryxContext(ctx, `SELECT 1 FROM task_workspace_group_members LIMIT 0`)
+	if kandevdb.IsMissingTableError(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, rows.Close()
 }
 
 func (r *Repository) ListExecutorsRunning(ctx context.Context) ([]*models.ExecutorRunning, error) {

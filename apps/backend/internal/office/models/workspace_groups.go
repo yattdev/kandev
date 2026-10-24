@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strconv"
+	"time"
+)
 
 // WorkspaceGroup represents a materialized workspace shared by one or more
 // tasks. Cleanup defaults are intentionally safe: a freshly-inserted row has
@@ -75,6 +78,18 @@ const (
 	WorkspaceCleanupStatusCleaned = "cleaned"
 	WorkspaceCleanupStatusFailed  = "cleanup_failed"
 )
+
+const workspaceCleanupDeferredExecutorV1Prefix = "kandev:workspace_cleanup:deferred_executor:v1:"
+
+// WorkspaceCleanupDeferredExecutorV1 binds the internal deferral marker to
+// one ownership generation. An ordinary pending row owns an in-flight claim.
+func WorkspaceCleanupDeferredExecutorV1(generation int64) string {
+	return workspaceCleanupDeferredExecutorV1Prefix + strconv.FormatInt(generation, 10)
+}
+
+func WorkspaceCleanupDeferredExecutorV1Prefix() string {
+	return workspaceCleanupDeferredExecutorV1Prefix
+}
 
 // Restore status values.
 const (

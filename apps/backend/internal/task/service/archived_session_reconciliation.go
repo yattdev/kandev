@@ -49,6 +49,7 @@ func (s *Service) StartSessionReconciliationLoop(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
 	go func() {
 		defer ticker.Stop()
+		s.reconcileDeferredWorkspaceGroupCleanups(ctx)
 		for {
 			select {
 			case <-ctx.Done():
@@ -57,10 +58,23 @@ func (s *Service) StartSessionReconciliationLoop(ctx context.Context) {
 				s.runArchivedSessionReconciliation(ctx)
 				s.runOrphanedSessionReconciliation(ctx)
 				s.runActiveSessionSweep(ctx, now)
+				s.reconcileDeferredWorkspaceGroupCleanups(ctx)
 			}
 		}
 	}()
 	s.logger.Info("session reconciliation loop started (every 1 minute)")
+}
+
+func (s *Service) reconcileDeferredWorkspaceGroupCleanups(ctx context.Context) {
+	reconciler, ok := s.taskLifecycleCoordinator.(interface {
+		ReconcileDeferredWorkspaceGroupCleanups(context.Context) error
+	})
+	if !ok {
+		return
+	}
+	if err := reconciler.ReconcileDeferredWorkspaceGroupCleanups(ctx); err != nil && ctx.Err() == nil {
+		s.logger.Warn("deferred workspace group cleanup reconciliation failed", zap.Error(err))
+	}
 }
 
 // StartArchivedSessionReconciliationLoop keeps the pre-stall-sweep entry

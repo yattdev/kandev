@@ -22,6 +22,9 @@ func newWorkspaceGroupTestRepo(t *testing.T) *sqlite.Repository {
 			archived_at DATETIME,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS executors_running (
+			id TEXT PRIMARY KEY, session_id TEXT NOT NULL, task_id TEXT NOT NULL
 		)
 	`)
 	if err != nil {

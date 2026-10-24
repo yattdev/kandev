@@ -65,6 +65,11 @@ type workspaceGroupCleanupGenerationRepository interface {
 	) (bool, error)
 }
 
+type deferredWorkspaceGroupCleanupRepository interface {
+	DeferWorkspaceGroupCleanup(ctx context.Context, id string, generation int64) (bool, error)
+	ListDeferredWorkspaceGroupCleanups(ctx context.Context, afterID string, limit int) ([]*orchmodels.WorkspaceGroup, error)
+}
+
 func claimWorkspaceGroupCleanup(
 	ctx context.Context,
 	repo WorkspaceGroupRepo,
@@ -281,6 +286,8 @@ type HandoffService struct {
 	partialArchiveMu       sync.Mutex
 	partialArchiveIDs      map[string]string
 	workspaceGroupLock     parentMutex
+	deferredCleanupMu      sync.Mutex
+	deferredCleanupCursor  string
 }
 
 // TaskEventPublisher abstracts the side-effect of broadcasting task

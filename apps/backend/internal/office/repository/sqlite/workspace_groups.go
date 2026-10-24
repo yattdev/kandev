@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	kandevdb "github.com/kandev/kandev/internal/db"
 	"github.com/kandev/kandev/internal/office/models"
@@ -251,18 +252,99 @@ func (r *Repository) UpdateWorkspaceGroupCleanupStatus(ctx context.Context, id, 
 	return err
 }
 
+// DeferWorkspaceGroupCleanup records an executor-owned delay without stealing
+// an in-flight cleanup_pending claim. A later retry may recognize only this
+// exact marker; free-form cleanup errors never confer claim authority.
+func (r *Repository) DeferWorkspaceGroupCleanup(ctx context.Context, id string, generation int64) (bool, error) {
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+		UPDATE task_workspace_groups
+		SET cleanup_status = ?, cleanup_error = ?, cleaned_at = NULL, updated_at = ?
+		WHERE id = ? AND ownership_generation = ? AND owned_by_kandev = ?
+		  AND cleanup_policy = ? AND cleanup_status IN (?, ?)
+		  AND NOT EXISTS (
+			SELECT 1 FROM task_workspace_group_members member
+			JOIN tasks task ON task.id = member.task_id
+			WHERE member.workspace_group_id = task_workspace_groups.id
+			  AND (member.released_at IS NULL OR member.released_by_cascade_id != '')
+			  AND task.archived_at IS NULL
+		  )
+	`), models.WorkspaceCleanupStatusPending, models.WorkspaceCleanupDeferredExecutorV1(generation),
+		time.Now().UTC(), id, generation, true,
+		models.WorkspaceCleanupPolicyDeleteWhenLastMemberArchivedOrDel,
+		models.WorkspaceCleanupStatusActive, models.WorkspaceCleanupStatusFailed)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+// ListDeferredWorkspaceGroupCleanups pages only executor-deferred rows. The
+// caller retains a cursor across the existing reconciliation loop's ticks.
+func (r *Repository) ListDeferredWorkspaceGroupCleanups(
+	ctx context.Context, afterID string, limit int,
+) ([]*models.WorkspaceGroup, error) {
+	if limit < 1 || limit > workspaceGroupMaxHostParams {
+		return nil, errors.New("invalid deferred workspace cleanup limit")
+	}
+	var groups []*models.WorkspaceGroup
+	err := r.ro.SelectContext(ctx, &groups, r.ro.Rebind(`
+		SELECT id, workspace_id, owner_task_id, ownership_generation,
+			materialized_path, materialized_environment_id, materialized_kind,
+			owned_by_kandev, cleanup_policy, cleanup_status, cleaned_at,
+			cleanup_error, restore_status, restore_error, restore_config_json,
+			created_at, updated_at
+		FROM task_workspace_groups
+		WHERE id > ? AND cleanup_status = ?
+		  AND cleanup_error = ? || CAST(ownership_generation AS TEXT)
+		  AND owned_by_kandev = ? AND cleanup_policy = ?
+		ORDER BY id LIMIT ?
+	`), afterID, models.WorkspaceCleanupStatusPending,
+		models.WorkspaceCleanupDeferredExecutorV1Prefix(), true,
+		models.WorkspaceCleanupPolicyDeleteWhenLastMemberArchivedOrDel, limit)
+	return groups, err
+}
+
+// lockWorkspaceGroupMemberTasks holds the same task-row locks acquired by
+// UpsertExecutorRunning. On SQLite the shared single-writer pool serializes
+// writes; on PostgreSQL these row locks close the absent-executor read race.
+func (r *Repository) lockWorkspaceGroupMemberTasks(ctx context.Context, tx *sqlx.Tx, id string) error {
+	var taskIDs []string
+	if err := tx.SelectContext(ctx, &taskIDs, tx.Rebind(`
+		SELECT DISTINCT task_id FROM task_workspace_group_members
+		WHERE workspace_group_id = ? ORDER BY task_id
+	`), id); err != nil {
+		return err
+	}
+	for _, taskID := range taskIDs {
+		if err := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), taskID); err != nil &&
+			!errors.Is(err, kandevdb.ErrTaskRowNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
 // ClaimWorkspaceGroupCleanup reserves destructive cleanup for one ownership
 // generation. The active-member predicate is part of the same write so a
 // caller cannot race a membership admission between its read and this claim.
 func (r *Repository) ClaimWorkspaceGroupCleanup(ctx context.Context, id string, generation int64) (bool, error) {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockWorkspaceGroupMemberTasks(ctx, tx, id); err != nil {
+		return false, err
+	}
+	result, err := tx.ExecContext(ctx, tx.Rebind(`
 		UPDATE task_workspace_groups
 		SET cleanup_status = ?, cleanup_error = '', cleaned_at = NULL, updated_at = ?
 		WHERE id = ?
 		  AND ownership_generation = ?
 		  AND owned_by_kandev = ?
 		  AND cleanup_policy = ?
-		  AND cleanup_status IN (?, ?)
+		  AND (cleanup_status IN (?, ?) OR (cleanup_status = ? AND cleanup_error = ?))
 		  AND NOT EXISTS (
 			SELECT 1
 			FROM task_workspace_group_members member
@@ -271,14 +353,26 @@ func (r *Repository) ClaimWorkspaceGroupCleanup(ctx context.Context, id string, 
 			  AND (member.released_at IS NULL OR member.released_by_cascade_id != '')
 			  AND task.archived_at IS NULL
 		  )
+		  AND NOT EXISTS (
+			SELECT 1 FROM task_workspace_group_members member
+			JOIN executors_running running ON running.task_id = member.task_id
+			WHERE member.workspace_group_id = task_workspace_groups.id
+		  )
 	`), models.WorkspaceCleanupStatusPending, time.Now().UTC(), id, generation, true,
 		models.WorkspaceCleanupPolicyDeleteWhenLastMemberArchivedOrDel,
-		models.WorkspaceCleanupStatusActive, models.WorkspaceCleanupStatusFailed)
+		models.WorkspaceCleanupStatusActive, models.WorkspaceCleanupStatusFailed,
+		models.WorkspaceCleanupStatusPending, models.WorkspaceCleanupDeferredExecutorV1(generation))
 	if err != nil {
 		return false, err
 	}
 	rows, err := result.RowsAffected()
-	return rows == 1, err
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return rows == 1, nil
 }
 
 // CompleteWorkspaceGroupCleanup records a result only while the claimed
@@ -294,6 +388,7 @@ func (r *Repository) CompleteWorkspaceGroupCleanup(
 		UPDATE task_workspace_groups
 		SET cleanup_status = ?, cleanup_error = ?, cleaned_at = ?, updated_at = ?
 		WHERE id = ? AND ownership_generation = ? AND cleanup_status = ?
+		  AND cleanup_error = ''
 	`), status, errStr, cleanedAt, time.Now().UTC(), id, generation, models.WorkspaceCleanupStatusPending)
 	if err != nil {
 		return false, err

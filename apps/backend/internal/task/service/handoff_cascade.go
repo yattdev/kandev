@@ -134,9 +134,13 @@ func (s *HandoffService) evaluateWorkspaceGroupCleanup(ctx context.Context, grou
 		return err
 	}
 	if hasActive {
-		// Leave the group in cleanup_pending with a clear reason so
-		// the operator (and a follow-up evaluation after the executor
-		// stops) can find it.
+		// The marker distinguishes a deferred executor from a cleanup
+		// already claimed by another evaluator. The repository CAS must not
+		// overwrite that claimant's ordinary cleanup_pending row.
+		if guarded, ok := s.wsGroups.(deferredWorkspaceGroupCleanupRepository); ok {
+			_, err := guarded.DeferWorkspaceGroupCleanup(ctx, groupID, g.OwnershipGeneration)
+			return err
+		}
 		return s.wsGroups.UpdateWorkspaceGroupCleanupStatus(ctx, groupID,
 			orchmodels.WorkspaceCleanupStatusPending,
 			"active executor still bound to group's member session", nil)
@@ -148,6 +152,14 @@ func (s *HandoffService) evaluateWorkspaceGroupCleanup(ctx context.Context, grou
 		return err
 	}
 	if !claimed {
+		// An executor can enter after the earlier read but before the
+		// guarded claim. If that executor then stops, a plain active row
+		// would otherwise be absent from startup/periodic retry. The CAS
+		// only marks still-eligible, non-claimed groups for another pass.
+		if guarded, ok := s.wsGroups.(deferredWorkspaceGroupCleanupRepository); ok {
+			_, err := guarded.DeferWorkspaceGroupCleanup(ctx, groupID, g.OwnershipGeneration)
+			return err
+		}
 		return nil
 	}
 	if s.cleaner == nil {
@@ -164,6 +176,46 @@ func (s *HandoffService) evaluateWorkspaceGroupCleanup(ctx context.Context, grou
 	now := time.Now().UTC()
 	return completeWorkspaceGroupCleanup(ctx, s.wsGroups, g,
 		orchmodels.WorkspaceCleanupStatusCleaned, "", &now)
+}
+
+// ReconcileDeferredWorkspaceGroupCleanups retries one bounded page of only
+// explicitly marked executor delays. The cursor rotates across the durable
+// set on the existing startup/session-reconciliation loop; no claimed pending
+// row is considered. SQL locks end before any cleaner operation begins.
+func (s *HandoffService) ReconcileDeferredWorkspaceGroupCleanups(ctx context.Context) error {
+	repo, ok := s.wsGroups.(deferredWorkspaceGroupCleanupRepository)
+	if !ok || s.cleaner == nil || s.sessions == nil {
+		return nil
+	}
+	const batchSize = 100
+	s.deferredCleanupMu.Lock()
+	cursor := s.deferredCleanupCursor
+	s.deferredCleanupMu.Unlock()
+	groups, err := repo.ListDeferredWorkspaceGroupCleanups(ctx, cursor, batchSize)
+	if err != nil {
+		return err
+	}
+	if len(groups) == 0 && cursor != "" {
+		cursor = ""
+		groups, err = repo.ListDeferredWorkspaceGroupCleanups(ctx, cursor, batchSize)
+		if err != nil {
+			return err
+		}
+	}
+	for _, group := range groups {
+		s.deferredCleanupMu.Lock()
+		s.deferredCleanupCursor = group.ID
+		s.deferredCleanupMu.Unlock()
+		if err := s.evaluateWorkspaceGroupCleanup(ctx, group.ID); err != nil {
+			return err
+		}
+	}
+	if len(groups) < batchSize {
+		s.deferredCleanupMu.Lock()
+		s.deferredCleanupCursor = ""
+		s.deferredCleanupMu.Unlock()
+	}
+	return nil
 }
 
 func (s *HandoffService) restoreLiveCascadeMembers(ctx context.Context, groupID string) error {
