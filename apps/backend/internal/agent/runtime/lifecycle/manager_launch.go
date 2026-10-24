@@ -1065,6 +1065,7 @@ func (m *Manager) launchBuildExecutorRequest(ctx context.Context, executionID st
 		WorkspacePath:                  reqWithWorktree.WorkspacePath,
 		WorkspaceSourceRoots:           workspaceSourceRoots(reqWithWorktree.WorkspaceFolders, workspaceRepositorySpecsFromLaunch(reqWithWorktree)),
 		GitMetadataProjections:         reqWithWorktree.GitMetadataProjections,
+		PreparedGitCheckouts:           reqWithWorktree.PreparedGitCheckouts,
 		Protocol:                       string(agentConfig.Runtime().Protocol),
 		Env:                            env,
 		AutoApprovePermissions:         profileInfo != nil && profileInfo.AutoApprove,
@@ -1648,6 +1649,7 @@ func (m *Manager) launchInternal(ctx context.Context, req *LaunchRequest) (*Agen
 			return nil, err
 		}
 		reqWithWorktree.GitMetadataProjections = projections
+		reqWithWorktree.PreparedGitCheckouts = preparedGitCheckoutPaths(prepResult)
 	}
 
 	// 6b. Deploy per-profile skills + custom prompt (ADR 0005 Wave A).

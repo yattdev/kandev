@@ -45,6 +45,23 @@ func projectionsFromPrepareResult(result *EnvPrepareResult) ([]*worktree.GitMeta
 	return projections, nil
 }
 
+func preparedGitCheckoutPaths(result *EnvPrepareResult) []string {
+	if result == nil {
+		return nil
+	}
+	if len(result.Worktrees) == 0 {
+		if result.WorktreeID == "" || result.WorkspacePath == "" {
+			return nil
+		}
+		return []string{result.WorkspacePath}
+	}
+	paths := make([]string, 0, len(result.Worktrees))
+	for _, prepared := range result.Worktrees {
+		paths = append(paths, prepared.WorktreePath)
+	}
+	return paths
+}
+
 // gitMetadataMounts exposes task-owned worktree metadata as writable while
 // keeping source repository metadata read-only.
 func gitMetadataMounts(projections []*worktree.GitMetadataProjection, workspacePath string) ([]docker.MountConfig, error) {

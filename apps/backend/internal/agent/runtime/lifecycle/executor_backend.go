@@ -602,6 +602,7 @@ type ExecutorCreateRequest struct {
 	WorkspacePath          string
 	WorkspaceSourceRoots   []string
 	GitMetadataProjections []*worktree.GitMetadataProjection
+	PreparedGitCheckouts   []string
 	Protocol               string
 	Env                    map[string]string
 	// ApprovedSecretEnvKeys contains repository binding keys explicitly

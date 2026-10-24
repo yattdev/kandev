@@ -750,6 +750,7 @@ func applyOverrides(cfg *InstanceConfig, overrides *InstanceOverrides) {
 		isolation.SharedCommonDirs = append([]string(nil), isolation.SharedCommonDirs...)
 		isolation.WritablePaths = append([]string(nil), isolation.WritablePaths...)
 		isolation.PrivateAdminPaths = append([]string(nil), isolation.PrivateAdminPaths...)
+		isolation.WritableWorkspaceRoots = append([]string(nil), isolation.WritableWorkspaceRoots...)
 		cfg.WorkspaceIsolation = &isolation
 	}
 }

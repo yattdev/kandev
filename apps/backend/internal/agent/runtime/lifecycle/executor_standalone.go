@@ -242,7 +242,7 @@ func validateStandaloneProjectionBindings(req *ExecutorCreateRequest) error {
 		}
 		return nil
 	}
-	checkouts, err := standaloneGitCheckouts(req.WorkspacePath)
+	checkouts, err := expectedStandaloneCheckouts(req)
 	if err != nil {
 		return err
 	}
@@ -262,6 +262,23 @@ func validateStandaloneProjectionBindings(req *ExecutorCreateRequest) error {
 	return nil
 }
 
+func expectedStandaloneCheckouts(req *ExecutorCreateRequest) (map[string]struct{}, error) {
+	checkouts := make(map[string]struct{}, len(req.PreparedGitCheckouts))
+	if len(req.PreparedGitCheckouts) > 0 {
+		for _, path := range req.PreparedGitCheckouts {
+			if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+				return nil, errors.New(gitMetadataProjectionInvalid)
+			}
+			if _, exists := checkouts[path]; exists {
+				return nil, errors.New(gitMetadataProjectionInvalid)
+			}
+			checkouts[path] = struct{}{}
+		}
+		return checkouts, nil
+	}
+	return standaloneGitCheckouts(req.WorkspacePath)
+}
+
 func standaloneGitCheckouts(workspacePath string) (map[string]struct{}, error) {
 	checkouts := map[string]struct{}{}
 	workspace := filepath.Clean(workspacePath)
@@ -271,7 +288,7 @@ func standaloneGitCheckouts(workspacePath string) (map[string]struct{}, error) {
 		return nil, fmt.Errorf("%s: inspect workspace: %w", gitMetadataProjectionInvalid, err)
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 			paths = append(paths, filepath.Join(workspace, entry.Name()))
 		}
 	}
@@ -337,7 +354,7 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 		req, env, agentType, disableAskQuestion, assumeMcpSse, assumeMcpHttp, requiresProcessKill, stripEnv,
 	)
 	if len(req.GitMetadataProjections) > 0 {
-		isolation := &config.WorkspaceIsolation{}
+		isolation := &config.WorkspaceIsolation{WritableWorkspaceRoots: []string{req.WorkspacePath}}
 		for _, projection := range req.GitMetadataProjections {
 			if err := projection.Revalidate(); err != nil {
 				return nil, errors.New(gitMetadataProjectionInvalid)

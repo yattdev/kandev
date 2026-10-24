@@ -8,9 +8,10 @@ import (
 
 // WorkspaceIsolation describes canonical paths granted to an agent instance.
 type WorkspaceIsolation struct {
-	SharedCommonDirs  []string `json:"shared_common_dirs"`
-	WritablePaths     []string `json:"writable_paths"`
-	PrivateAdminPaths []string `json:"private_admin_paths"`
+	SharedCommonDirs       []string `json:"shared_common_dirs"`
+	WritablePaths          []string `json:"writable_paths"`
+	PrivateAdminPaths      []string `json:"private_admin_paths"`
+	WritableWorkspaceRoots []string `json:"writable_workspace_roots"`
 }
 
 // Validate rejects writable grants that overlap a shared Git common directory.
@@ -34,13 +35,20 @@ func (m WorkspaceIsolation) Validate() error {
 }
 
 func (m WorkspaceIsolation) validatePaths() error {
-	if len(m.SharedCommonDirs) == 0 || len(m.WritablePaths) == 0 {
+	if len(m.SharedCommonDirs) == 0 || len(m.WritablePaths) == 0 || len(m.WritableWorkspaceRoots) == 0 {
 		return fmt.Errorf("workspace isolation has no shared or writable paths")
 	}
-	for _, paths := range [][]string{m.SharedCommonDirs, m.WritablePaths, m.PrivateAdminPaths} {
+	for _, paths := range [][]string{m.SharedCommonDirs, m.WritablePaths, m.PrivateAdminPaths, m.WritableWorkspaceRoots} {
 		for _, path := range paths {
-			if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			if !filepath.IsAbs(path) || filepath.Clean(path) != path || strings.ContainsRune(path, 0) {
 				return fmt.Errorf("workspace isolation path is not canonical")
+			}
+		}
+	}
+	for _, root := range m.WritableWorkspaceRoots {
+		for _, shared := range m.SharedCommonDirs {
+			if overlapsSharedCommon(shared, root) {
+				return fmt.Errorf("writable workspace root overlaps shared common directory")
 			}
 		}
 	}
@@ -57,6 +65,9 @@ func (m WorkspaceIsolation) isPrivateAdminPath(private string) bool {
 }
 
 func overlapsSharedCommon(shared, writable string) bool {
+	if writable == string(filepath.Separator) {
+		return true
+	}
 	return writable == shared || strings.HasPrefix(writable, shared+string(filepath.Separator)) ||
 		strings.HasPrefix(shared, writable+string(filepath.Separator))
 }

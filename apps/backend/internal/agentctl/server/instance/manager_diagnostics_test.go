@@ -85,9 +85,10 @@ func TestCreateInstanceCarriesValidatedWorkspaceIsolationIntoConfig(t *testing.T
 		return http.NotFoundHandler()
 	})
 	isolation := &config.WorkspaceIsolation{
-		SharedCommonDirs:  []string{"/repo/.git"},
-		WritablePaths:     []string{"/repo/.git/worktrees/task"},
-		PrivateAdminPaths: []string{"/repo/.git/worktrees/task"},
+		SharedCommonDirs:       []string{"/repo/.git"},
+		WritablePaths:          []string{"/repo/.git/worktrees/task"},
+		PrivateAdminPaths:      []string{"/repo/.git/worktrees/task"},
+		WritableWorkspaceRoots: []string{"/task"},
 	}
 	resp, err := mgr.CreateInstance(context.Background(), &CreateRequest{
 		WorkspacePath: t.TempDir(), WorkspaceIsolation: isolation,
@@ -105,9 +106,20 @@ func TestCreateInstanceCarriesValidatedWorkspaceIsolationIntoConfig(t *testing.T
 	if captured.WorkspaceIsolation.PrivateAdminPaths[0] == isolation.PrivateAdminPaths[0] {
 		t.Fatal("instance config retained mutable request isolation paths")
 	}
+	isolation.WritableWorkspaceRoots[0] = "/changed"
+	if captured.WorkspaceIsolation.WritableWorkspaceRoots[0] == isolation.WritableWorkspaceRoots[0] {
+		t.Fatal("instance config retained mutable workspace roots")
+	}
 	if _, err := mgr.CreateInstance(context.Background(), &CreateRequest{
 		WorkspacePath: t.TempDir(), WorkspaceIsolation: isolation,
 	}); err == nil {
 		t.Fatal("create instance accepted a forged private administration path")
+	}
+	isolation.PrivateAdminPaths[0] = "/repo/.git/worktrees/task"
+	isolation.WritablePaths = []string{"/tmp/invalid\x00path"}
+	if _, err := mgr.CreateInstance(context.Background(), &CreateRequest{
+		WorkspacePath: t.TempDir(), WorkspaceIsolation: isolation,
+	}); err == nil {
+		t.Fatal("create instance accepted a NUL path in its isolation manifest")
 	}
 }

@@ -1214,6 +1214,7 @@ type LaunchRequest struct {
 	// GitMetadataProjections are runtime-only grants derived after task
 	// worktrees are prepared. They must never be reconstructed from metadata.
 	GitMetadataProjections []*worktree.GitMetadataProjection
+	PreparedGitCheckouts   []string
 	TaskDescription        string              // Task description to send via ACP prompt
 	Attachments            []MessageAttachment // Attachments (images/files) for the initial prompt
 	Env                    map[string]string   // Additional env vars
