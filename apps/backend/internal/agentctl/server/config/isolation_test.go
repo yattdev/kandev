@@ -70,3 +70,15 @@ func TestWorkspaceIsolationRequiresWritableWorkspaceRoot(t *testing.T) {
 		t.Fatal("Validate() accepted a manifest without a writable task workspace root")
 	}
 }
+
+func TestWorkspaceIsolationRejectsRootSharedCommonDirectory(t *testing.T) {
+	manifest := WorkspaceIsolation{
+		SharedCommonDirs:       []string{"/"},
+		WritablePaths:          []string{"/worktrees/task"},
+		PrivateAdminPaths:      []string{"/worktrees/task"},
+		WritableWorkspaceRoots: []string{"/task"},
+	}
+	if err := manifest.Validate(); err == nil {
+		t.Fatal("Validate() accepted filesystem root as a shared Git common directory")
+	}
+}

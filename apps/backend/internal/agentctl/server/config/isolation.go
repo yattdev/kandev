@@ -38,6 +38,11 @@ func (m WorkspaceIsolation) validatePaths() error {
 	if len(m.SharedCommonDirs) == 0 || len(m.WritablePaths) == 0 || len(m.WritableWorkspaceRoots) == 0 {
 		return fmt.Errorf("workspace isolation has no shared or writable paths")
 	}
+	for _, shared := range m.SharedCommonDirs {
+		if shared == string(filepath.Separator) {
+			return fmt.Errorf("shared common directory cannot be a filesystem root")
+		}
+	}
 	for _, paths := range [][]string{m.SharedCommonDirs, m.WritablePaths, m.PrivateAdminPaths, m.WritableWorkspaceRoots} {
 		for _, path := range paths {
 			if !filepath.IsAbs(path) || filepath.Clean(path) != path || strings.ContainsRune(path, 0) {
