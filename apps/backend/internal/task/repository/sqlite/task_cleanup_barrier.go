@@ -64,12 +64,13 @@ func (r *Repository) workspaceDeleteAdmissionLocked(ctx context.Context, tx inte
 		SELECT EXISTS (
 			SELECT 1 FROM task_resource_cleanup_jobs
 			WHERE operation_id = ? AND task_id = '' AND trigger = ?
-			AND state IN (?, ?, ?, ?)
+		AND state IN (?, ?, ?, ?, ?, ?)
 		)
 	`), models.WorkspaceDeleteAdmissionOperationID(workspaceID),
 		models.TaskResourceCleanupTriggerWorkspaceDelete,
 		models.TaskResourceCleanupStatePrepared, models.TaskResourceCleanupStatePending,
 		models.TaskResourceCleanupStateRunning, models.TaskResourceCleanupStateRetryWait,
+		models.TaskResourceCleanupStateSucceeded, models.TaskResourceCleanupStateFailed,
 	).Scan(&active); err != nil {
 		return fmt.Errorf("check workspace delete admission: %w", err)
 	}
@@ -112,25 +113,22 @@ func (r *Repository) lockWorkspaceRowInTx(ctx context.Context, tx *sqlx.Tx, work
 
 // lockWorkspaceRowStdTx is the stdlib-transaction variant used by the task
 // creation/admission paths (which begin database/sql transactions). An empty
-// workspace id (config tasks) skips the lock. A NON-EMPTY workspace that no
-// longer has a row is rejected: a creator waiting behind a workspace delete
-// cascade resumes with sql.ErrNoRows after the cascade commits, and inserting
-// then would orphan the task (tasks.workspace_id is not a foreign key).
+// workspace id (config tasks) skips the lock. Legacy tasks can reference an
+// absent workspace, so a missing row is checked by the durable deletion fence.
 func (r *Repository) lockWorkspaceRowStdTx(ctx context.Context, tx interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, workspaceID string) error {
-	if !dialect.IsPostgres(r.db.DriverName()) {
-		return nil
-	}
 	if workspaceID == "" {
 		return nil
 	}
+	query := `SELECT id FROM workspaces WHERE id = ?`
+	if dialect.IsPostgres(r.db.DriverName()) {
+		query += forUpdateClause
+	}
 	var lockedWorkspaceID string
-	if err := tx.QueryRowContext(ctx, r.db.Rebind(
-		`SELECT id FROM workspaces WHERE id = ? FOR UPDATE`,
-	), workspaceID).Scan(&lockedWorkspaceID); err != nil {
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(query), workspaceID).Scan(&lockedWorkspaceID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: %s", repoerrors.ErrWorkspaceNotFound, workspaceID)
+			return nil
 		}
 		return fmt.Errorf("lock workspace row: %w", err)
 	}

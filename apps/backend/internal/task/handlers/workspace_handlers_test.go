@@ -257,6 +257,7 @@ func TestHTTPDeleteWorkspaceReturnsNotFoundWhenWorkspaceMissing(t *testing.T) {
 func TestHTTPDeleteWorkspaceDeletesWhenConfirmNameMatches(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &workspaceDeleteRepo{}
+	cleanupAdmission := &handlerCleanupAdmission{}
 	log, _ := logger.NewLogger(logger.LoggingConfig{Level: "error", Format: "json", OutputPath: "stdout"})
 	svc := service.NewService(service.Repos{
 		Workspaces:       repo,
@@ -272,6 +273,7 @@ func TestHTTPDeleteWorkspaceDeletesWhenConfirmNameMatches(t *testing.T) {
 		Environments:     repo,
 		TaskEnvironments: repo,
 		Reviews:          repo,
+		ResourceCleanups: cleanupAdmission,
 	}, nil, log, service.RepositoryDiscoveryConfig{})
 
 	h := NewWorkspaceHandlers(svc, log)
@@ -298,6 +300,7 @@ func TestHTTPDeleteWorkspaceDeletesWhenConfirmNameMatches(t *testing.T) {
 func TestHTTPDeleteWorkspaceReturnsDeleteFailureWhenCascadeFails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &workspaceDeleteRepo{cascadeErr: errors.New("cleanup failed")}
+	cleanupAdmission := &handlerCleanupAdmission{}
 	log, _ := logger.NewLogger(logger.LoggingConfig{Level: "error", Format: "json", OutputPath: "stdout"})
 	svc := service.NewService(service.Repos{
 		Workspaces:       repo,
@@ -313,6 +316,7 @@ func TestHTTPDeleteWorkspaceReturnsDeleteFailureWhenCascadeFails(t *testing.T) {
 		Environments:     repo,
 		TaskEnvironments: repo,
 		Reviews:          repo,
+		ResourceCleanups: cleanupAdmission,
 	}, nil, log, service.RepositoryDiscoveryConfig{})
 
 	h := NewWorkspaceHandlers(svc, log)
@@ -405,6 +409,7 @@ func TestWSDeleteWorkspaceReturnsNotFoundWhenWorkspaceMissing(t *testing.T) {
 
 func TestWSDeleteWorkspaceDeletesWhenConfirmNameMatches(t *testing.T) {
 	repo := &workspaceDeleteRepo{}
+	cleanupAdmission := &handlerCleanupAdmission{}
 	log, _ := logger.NewLogger(logger.LoggingConfig{Level: "error", Format: "json", OutputPath: "stdout"})
 	svc := service.NewService(service.Repos{
 		Workspaces:       repo,
@@ -420,6 +425,7 @@ func TestWSDeleteWorkspaceDeletesWhenConfirmNameMatches(t *testing.T) {
 		Environments:     repo,
 		TaskEnvironments: repo,
 		Reviews:          repo,
+		ResourceCleanups: cleanupAdmission,
 	}, nil, log, service.RepositoryDiscoveryConfig{})
 
 	h := NewWorkspaceHandlers(svc, log)

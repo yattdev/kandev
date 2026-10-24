@@ -74,15 +74,16 @@ func TestDeleteTaskRejectsDirtyWorktreeBeforeMutation(t *testing.T) {
 	if task == nil {
 		t.Fatal("dirty delete removed task")
 	}
-	var cleanupJobs int
+	var cleanupJobs, cancelledJobs int
 	if err := repo.DB().QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM task_resource_cleanup_jobs
+		SELECT COUNT(*), COALESCE(SUM(CASE WHEN state = ? THEN 1 ELSE 0 END), 0)
+		FROM task_resource_cleanup_jobs
 		WHERE task_id = ? AND trigger = 'delete'
-	`, taskID).Scan(&cleanupJobs); err != nil {
+	`, models.TaskResourceCleanupStateCancelled, taskID).Scan(&cleanupJobs, &cancelledJobs); err != nil {
 		t.Fatalf("count delete cleanup jobs: %v", err)
 	}
-	if cleanupJobs != 0 {
-		t.Fatalf("dirty delete created %d cleanup jobs, want none", cleanupJobs)
+	if cleanupJobs != 1 || cancelledJobs != 1 {
+		t.Fatalf("dirty delete jobs = %d, cancelled = %d; want one cancelled reservation", cleanupJobs, cancelledJobs)
 	}
 	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "preserve me\n" {
 		t.Fatalf("preserved work changed: contents=%q err=%v", got, err)

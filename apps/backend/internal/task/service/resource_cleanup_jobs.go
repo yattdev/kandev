@@ -116,6 +116,7 @@ type persistedWorktreeBranchMetadata struct {
 }
 
 type taskResourceCleanupSnapshot struct {
+	InventoryPending       bool                                       `json:"inventory_pending,omitempty"`
 	Sessions               []*models.TaskSession                      `json:"sessions,omitempty"`
 	Worktrees              []*worktree.Worktree                       `json:"worktrees,omitempty"`
 	WorktreeHeadOIDs       map[string]string                          `json:"worktree_head_oids,omitempty"`
@@ -208,6 +209,7 @@ func (s *Service) persistTaskResourceCleanup(
 	worktreeTaskDirNames := captureWorktreeTaskDirNames(worktrees)
 	worktreeBranchMetadata := captureWorktreeBranchMetadata(worktrees)
 	snapshot := taskResourceCleanupSnapshot{
+		InventoryPending:       taskID != "" && prepared && !collectSSH && sessions == nil && worktrees == nil && stopTargets == nil && attachments == nil && envCleanup.env == nil,
 		Sessions:               sessions,
 		Worktrees:              worktrees,
 		WorktreeHeadOIDs:       worktreeHeadOIDs,
@@ -251,7 +253,40 @@ func (s *Service) persistTaskResourceCleanup(
 		persisted.Trigger != trigger {
 		return nil, ErrTaskCleanupAdmissionRequired
 	}
-	return persisted, nil
+	return s.completePendingCleanupInventory(ctx, persisted, job.ID, snapshot.InventoryPending, string(encoded))
+}
+
+func (s *Service) completePendingCleanupInventory(
+	ctx context.Context, persisted *models.TaskResourceCleanupJob, createdID string,
+	inventoryPending bool, encoded string,
+) (*models.TaskResourceCleanupJob, error) {
+	if persisted.ID == createdID || persisted.State != models.TaskResourceCleanupStatePrepared || inventoryPending {
+		return persisted, nil
+	}
+	var previous taskResourceCleanupSnapshot
+	if err := json.Unmarshal([]byte(persisted.ResourceSnapshot), &previous); err != nil {
+		return nil, ErrTaskCleanupAdmissionRequired
+	}
+	if !previous.InventoryPending {
+		return persisted, nil
+	}
+	if err := s.resourceCleanups.UpdateTaskResourceCleanupSnapshot(ctx, persisted.OperationID, encoded); err != nil {
+		return nil, err
+	}
+	updated, err := s.resourceCleanups.GetTaskResourceCleanupJobByOperationID(ctx, persisted.OperationID)
+	if err != nil || updated == nil || updated.ResourceSnapshot != encoded {
+		return nil, ErrTaskCleanupAdmissionRequired
+	}
+	return updated, nil
+}
+
+func (s *Service) cancelUncommittedTaskCleanup(
+	ctx context.Context, operationID string, committed bool, mutationErr error,
+) error {
+	if committed {
+		return mutationErr
+	}
+	return errors.Join(mutationErr, s.CancelPreparedTaskResourceCleanup(ctx, operationID))
 }
 
 func (s *Service) prepareWorkspaceDeleteAdmission(ctx context.Context, workspaceID string) (*models.TaskResourceCleanupJob, error) {

@@ -84,14 +84,15 @@ func TestTaskMutationAbortsOnAuthoritativeCleanupInventoryReadError(t *testing.T
 				if task.ArchivedAt != nil {
 					t.Fatal("task archived after inventory error")
 				}
-				var jobs int
+				var jobs, cancelled int
 				if err := repo.DB().QueryRowContext(ctx, `
-					SELECT COUNT(*) FROM task_resource_cleanup_jobs WHERE task_id = ?
-				`, taskID).Scan(&jobs); err != nil {
+					SELECT COUNT(*), COALESCE(SUM(CASE WHEN state = ? THEN 1 ELSE 0 END), 0)
+					FROM task_resource_cleanup_jobs WHERE task_id = ?
+				`, models.TaskResourceCleanupStateCancelled, taskID).Scan(&jobs, &cancelled); err != nil {
 					t.Fatalf("count cleanup intents: %v", err)
 				}
-				if jobs != 0 {
-					t.Fatalf("cleanup intents = %d, want none before authoritative inventory succeeds", jobs)
+				if jobs != 1 || cancelled != 1 {
+					t.Fatalf("cleanup intents = %d, cancelled = %d; want one cancelled reservation", jobs, cancelled)
 				}
 			})
 		}

@@ -485,7 +485,17 @@ func (s *Service) appendWorkspaceDeleteMissingTaskCleanups(
 	return cleanups, errors.Join(errs...)
 }
 
-func (s *Service) prepareWorkspaceDeleteTaskCleanup(ctx context.Context, task *models.Task) (workspaceDeleteTaskCleanup, error) {
+func (s *Service) prepareWorkspaceDeleteTaskCleanup(ctx context.Context, task *models.Task) (result workspaceDeleteTaskCleanup, prepareErr error) {
+	operationID := newTaskResourceCleanupOperationID(models.TaskResourceCleanupTriggerWorkspaceDelete, task.ID)
+	if _, err := s.persistTaskResourceCleanup(ctx, task.ID, models.TaskResourceCleanupTriggerWorkspaceDelete,
+		operationID, nil, nil, nil, nil, taskEnvironmentCleanup{}, true, false, task.WorkspaceID); err != nil {
+		return workspaceDeleteTaskCleanup{}, err
+	}
+	defer func() {
+		if prepareErr != nil {
+			prepareErr = errors.Join(prepareErr, s.CancelPreparedTaskResourceCleanup(ctx, operationID))
+		}
+	}()
 	worktrees, err := s.gatherWorktreesForDelete(ctx, task.ID)
 	if err != nil {
 		return workspaceDeleteTaskCleanup{}, fmt.Errorf("list worktrees for workspace delete task %q: %w", task.ID, err)
@@ -505,8 +515,8 @@ func (s *Service) prepareWorkspaceDeleteTaskCleanup(ctx context.Context, task *m
 			return workspaceDeleteTaskCleanup{}, fmt.Errorf("list attachments for workspace delete task %q: %w", task.ID, err)
 		}
 	}
-	cleanup := workspaceDeleteTaskCleanup{task: task, worktrees: worktrees, taskEnv: taskEnv, attachments: attachments}
-	cleanup.sessions, err = s.sessions.ListTaskSessions(ctx, task.ID)
+	result = workspaceDeleteTaskCleanup{task: task, worktrees: worktrees, taskEnv: taskEnv, attachments: attachments}
+	result.sessions, err = s.sessions.ListTaskSessions(ctx, task.ID)
 	if err != nil {
 		return workspaceDeleteTaskCleanup{}, fmt.Errorf("list task sessions for workspace delete task %q: %w", task.ID, err)
 	}
@@ -515,18 +525,17 @@ func (s *Service) prepareWorkspaceDeleteTaskCleanup(ctx context.Context, task *m
 		if listErr != nil {
 			return workspaceDeleteTaskCleanup{}, fmt.Errorf("list active sessions for workspace delete task %q: %w", task.ID, listErr)
 		}
-		cleanup.stopTargets, err = s.buildStopTargets(ctx, task.ID, activeSessions)
+		result.stopTargets, err = s.buildStopTargets(ctx, task.ID, activeSessions)
 		if err != nil {
 			return workspaceDeleteTaskCleanup{}, fmt.Errorf("list runtime cleanup inventory: %w", err)
 		}
 	}
-	cleanup.cleanupJob, err = s.persistTaskResourceCleanup(
+	result.cleanupJob, err = s.persistTaskResourceCleanup(
 		ctx, task.ID, models.TaskResourceCleanupTriggerWorkspaceDelete,
-		newTaskResourceCleanupOperationID(models.TaskResourceCleanupTriggerWorkspaceDelete, task.ID),
-		cleanup.sessions, cleanup.worktrees, cleanup.stopTargets, cleanup.attachments,
-		taskEnvironmentCleanup{env: cleanup.taskEnv, deleteRow: false}, true, true, task.WorkspaceID,
+		operationID, result.sessions, result.worktrees, result.stopTargets, result.attachments,
+		taskEnvironmentCleanup{env: result.taskEnv, deleteRow: false}, true, true, task.WorkspaceID,
 	)
-	return cleanup, err
+	return result, err
 }
 func (s *Service) cancelWorkspaceDeleteTaskCleanupJobs(ctx context.Context, cleanups []workspaceDeleteTaskCleanup) error {
 	jobIDs := make([]string, 0, len(cleanups))

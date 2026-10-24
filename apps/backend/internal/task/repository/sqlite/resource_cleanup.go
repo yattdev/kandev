@@ -59,6 +59,10 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 	if !validTaskResourceCleanupState(job.State) {
 		return fmt.Errorf("%w: unsupported reservation state %s", errCleanupReservationConflict, job.State)
 	}
+	workspaceFence := workspaceOnly && job.OperationID == models.WorkspaceDeleteAdmissionOperationID(workspaceID)
+	if workspaceFence && job.State != models.TaskResourceCleanupStatePrepared {
+		return fmt.Errorf("%w: workspace delete fence must be prepared", errCleanupReservationConflict)
+	}
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -105,7 +109,7 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 		}
 		return tx.Commit()
 	}
-	_, err = tx.ExecContext(ctx, r.db.Rebind(`
+	inserted, err := tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_resource_cleanup_jobs (`+taskResourceCleanupColumns+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(operation_id) DO NOTHING
@@ -114,6 +118,11 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 		job.CreatedAt, job.UpdatedAt, job.CompletedAt)
 	if err != nil {
 		return err
+	}
+	if workspaceFence {
+		if err := r.restoreCancelledWorkspaceFence(ctx, tx, inserted, job, now, workspaceID); err != nil {
+			return err
+		}
 	}
 	var existingTaskID string
 	var existingTrigger models.TaskResourceCleanupTrigger
@@ -127,6 +136,34 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 		return fmt.Errorf("%w: %s", errCleanupReservationConflict, job.OperationID)
 	}
 	return tx.Commit()
+}
+
+func (r *Repository) restoreCancelledWorkspaceFence(
+	ctx context.Context, tx *sqlx.Tx, inserted sql.Result, job *models.TaskResourceCleanupJob,
+	now time.Time, workspaceID string,
+) error {
+	rows, err := inserted.RowsAffected()
+	if err != nil || rows != 0 {
+		return err
+	}
+	restored, err := tx.ExecContext(ctx, r.db.Rebind(`
+		UPDATE task_resource_cleanup_jobs
+		SET state = ?, resource_snapshot = ?, last_error = '', next_attempt_at = NULL,
+			completed_at = NULL, updated_at = ?
+		WHERE operation_id = ? AND task_id = '' AND trigger = ? AND state = ?
+	`), models.TaskResourceCleanupStatePrepared, job.ResourceSnapshot, now,
+		job.OperationID, job.Trigger, models.TaskResourceCleanupStateCancelled)
+	if err != nil {
+		return err
+	}
+	rows, err = restored.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("%w: workspace %s", repoerrors.ErrTaskCleanupInProgress, workspaceID)
+	}
+	return nil
 }
 
 func (r *Repository) admitWorkspaceCleanupReservation(
@@ -143,6 +180,9 @@ func (r *Repository) admitWorkspaceCleanupReservation(
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return false, err
+	}
+	if job.OperationID == models.WorkspaceDeleteAdmissionOperationID(workspaceID) {
+		return false, fmt.Errorf("%w: %s", repoerrors.ErrWorkspaceNotFound, workspaceID)
 	}
 	var existingTaskID string
 	var existingTrigger models.TaskResourceCleanupTrigger

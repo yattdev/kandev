@@ -48,3 +48,15 @@ func (r *handlerCleanupAdmission) StartPreparedTaskResourceCleanupJob(_ context.
 	}
 	return false, nil
 }
+
+func (r *handlerCleanupAdmission) CancelTaskResourceCleanupJobIfPending(_ context.Context, id string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, job := range r.jobs {
+		if job.ID == id && job.State == models.TaskResourceCleanupStatePrepared {
+			job.State = models.TaskResourceCleanupStateCancelled
+			return true, nil
+		}
+	}
+	return false, nil
+}
