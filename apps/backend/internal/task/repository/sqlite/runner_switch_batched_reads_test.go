@@ -63,6 +63,9 @@ func TestGetExecutorRunningExistenceByTaskIDs(t *testing.T) {
 	repo := newRepoForEntityTests(t)
 	ctx := context.Background()
 	taskA, taskB := seedRunnerBatchTasks(t, repo, "ws-exec-running-existence")
+	if err := repo.CreateTaskSession(ctx, &models.TaskSession{ID: "sess-exec-running-a", TaskID: taskA, State: models.TaskSessionStateRunning}); err != nil {
+		t.Fatalf("CreateTaskSession: %v", err)
+	}
 	if err := repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
 		ID: "exec-running-a", SessionID: "sess-exec-running-a", TaskID: taskA, ExecutorID: models.ExecutorIDLocal,
 	}); err != nil {
@@ -101,6 +104,9 @@ func TestGetExecutorRunningExistenceByTaskIDsChunksAcrossHostParamLimit(t *testi
 	repo := newRepoForEntityTests(t)
 	ctx := context.Background()
 	taskA, _ := seedRunnerBatchTasks(t, repo, "ws-exec-running-chunked")
+	if err := repo.CreateTaskSession(ctx, &models.TaskSession{ID: "sess-exec-running-chunked-a", TaskID: taskA, State: models.TaskSessionStateRunning}); err != nil {
+		t.Fatalf("CreateTaskSession: %v", err)
+	}
 	if err := repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
 		ID: "exec-running-chunked-a", SessionID: "sess-exec-running-chunked-a", TaskID: taskA, ExecutorID: models.ExecutorIDLocal,
 	}); err != nil {

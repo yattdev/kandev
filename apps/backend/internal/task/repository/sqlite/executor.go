@@ -174,10 +174,10 @@ func (r *Repository) ListExecutors(ctx context.Context) ([]*models.Executor, err
 // UpsertExecutorRunning takes the shared task-row lock (kandevdb.LockTaskRowInTx)
 // before writing so a concurrent runner switch cannot land between this
 // write's mutability read and its own re-check — the two either fully
-// precede or fully follow each other. A row with no
-// TaskID (defensive only; every production caller populates it from the
-// owning execution) skips the lock, matching guardWorkspaceSourceParentTx's
-// no-parent case. It also locks the session row and, when the session names
+// precede or fully follow each other. A task and matching session must
+// exist; historical deleted tasks cannot acquire a new executor while a
+// group cleanup claim skips their retained membership row. It also locks
+// the session row and, when the session names
 // a task environment, rejects the write via recoveryclaim.EnsureAvailableTx
 // while that environment is under an active recovery claim.
 func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.ExecutorRunning) error {
@@ -186,6 +186,9 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 	}
 	if running.SessionID == "" {
 		return fmt.Errorf("session_id is required")
+	}
+	if running.TaskID == "" {
+		return fmt.Errorf("task_id is required")
 	}
 	if running.ID == "" {
 		running.ID = running.SessionID
@@ -215,24 +218,29 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if running.TaskID != "" {
-		if lockErr := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), running.TaskID); lockErr != nil &&
-			!errors.Is(lockErr, kandevdb.ErrTaskRowNotFound) {
-			return lockErr
-		}
+	if err := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), running.TaskID); err != nil {
+		return fmt.Errorf("lock executor task: %w", err)
 	}
-	if _, err := lockTaskSessionRow(ctx, tx, running.SessionID); err != nil {
+	var taskID string
+	if err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT id FROM tasks WHERE id = ?`), running.TaskID).Scan(&taskID); err != nil {
+		return fmt.Errorf("load executor task: %w", err)
+	}
+	foundSession, err := lockTaskSessionRow(ctx, tx, running.SessionID)
+	if err != nil {
 		return err
 	}
-	sessionTaskID := running.TaskID
+	if !foundSession {
+		return fmt.Errorf("executor session %s: %w", running.SessionID, sql.ErrNoRows)
+	}
+	var sessionTaskID string
 	var environmentID sql.NullString
 	if err := tx.QueryRowContext(ctx, tx.Rebind(`
 		SELECT task_id, COALESCE(task_environment_id, '')
 		FROM task_sessions WHERE id = ?
-	`), running.SessionID).Scan(&sessionTaskID, &environmentID); err != nil && err != sql.ErrNoRows {
+	`), running.SessionID).Scan(&sessionTaskID, &environmentID); err != nil {
 		return fmt.Errorf("load executor session task: %w", err)
 	}
-	if sessionTaskID != "" && sessionTaskID != running.TaskID {
+	if sessionTaskID != running.TaskID {
 		return fmt.Errorf("executor task does not match session task")
 	}
 	// The group claim takes the same task-row lock before proving executor

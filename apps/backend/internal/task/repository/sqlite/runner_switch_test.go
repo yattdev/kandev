@@ -365,11 +365,12 @@ func TestSwitchTaskRunner_RejectsWhenExecutorRunningExists(t *testing.T) {
 	seedRunnerSwitchTask(t, repo, "task-1", "ws-1", seedRunnerSwitchTaskOpts{})
 	seedRunnerSwitchRepository(t, repo, "repo-1", "ws-1")
 	taskRepo := seedRunnerSwitchTaskRepository(t, repo, "task-1", "repo-1")
-
-	if err := repo.UpsertExecutorRunning(ctx, &models.ExecutorRunning{
-		SessionID: "session-1", TaskID: "task-1", ExecutorID: "executor-1", Status: "starting",
-	}); err != nil {
-		t.Fatalf("seed executor running: %v", err)
+	// A legacy orphan row must still prevent switching even though current
+	// executor admission requires a matching persisted session.
+	if _, err := repo.db.Exec(`INSERT INTO executors_running
+		(id, session_id, task_id, executor_id, created_at, updated_at)
+		VALUES ('session-1', 'session-1', 'task-1', 'executor-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatalf("seed legacy executor running: %v", err)
 	}
 
 	_, err := repo.SwitchTaskRunner(ctx, baseRunnerSwitchRequest("task-1", "profile-new", taskRepo))
@@ -637,12 +638,9 @@ func assertRunnerMutabilityConflict(t *testing.T, err error, wantReason string) 
 }
 
 // TestSwitchTaskRunner_ConcurrentExecutorRunningWriteNeverBlendsWithSwitch is
-// the AC-TASKS-RUNNER-SWITCH-002.3a/3b acceptance evidence for the
-// UpsertExecutorRunning retrofit: a runner switch racing an executors_running
-// write must land as one of exactly two outcomes — the switch commits first
-// and the running row is then created under the new profile, or the running
-// row lands first and the switch is rejected as executor_running — never a
-// switch that both commits and coexists with a running row it never saw.
+// With the executor admission invariant, the required session itself blocks
+// a runner switch before any executor write. Concurrent upsert must remain
+// allowed for that session while the runner profile stays unchanged.
 func TestSwitchTaskRunner_ConcurrentExecutorRunningWriteNeverBlendsWithSwitch(t *testing.T) {
 	repo := newRunnerSwitchTestRepo(t)
 	ctx := context.Background()
@@ -652,6 +650,9 @@ func TestSwitchTaskRunner_ConcurrentExecutorRunningWriteNeverBlendsWithSwitch(t 
 	})
 	seedRunnerSwitchRepository(t, repo, "repo-1", "ws-1")
 	taskRepo := seedRunnerSwitchTaskRepository(t, repo, "task-1", "repo-1")
+	if err := repo.CreateTaskSession(ctx, &models.TaskSession{ID: "session-race", TaskID: "task-1", State: models.TaskSessionStateRunning}); err != nil {
+		t.Fatalf("CreateTaskSession: %v", err)
+	}
 
 	var wg sync.WaitGroup
 	var switchErr, runningErr error
@@ -672,14 +673,7 @@ func TestSwitchTaskRunner_ConcurrentExecutorRunningWriteNeverBlendsWithSwitch(t 
 		t.Fatalf("UpsertExecutorRunning error = %v, want nil", runningErr)
 	}
 
-	switchRejectedAsExecutorRunning := false
-	if switchErr != nil {
-		var conflict *repoerrors.ErrRunnerMutabilityConflict
-		if !errors.As(switchErr, &conflict) || conflict.Reason != models.RunnerReasonExecutorRunning {
-			t.Fatalf("switch error = %v, want nil or ErrRunnerMutabilityConflict{executor_running}", switchErr)
-		}
-		switchRejectedAsExecutorRunning = true
-	}
+	assertRunnerMutabilityConflict(t, switchErr, models.RunnerReasonSessionExists)
 
 	task, err := repo.GetTask(ctx, "task-1")
 	if err != nil {
@@ -687,14 +681,8 @@ func TestSwitchTaskRunner_ConcurrentExecutorRunningWriteNeverBlendsWithSwitch(t 
 	}
 	stored, _ := task.Metadata[models.MetaKeyExecutorProfileID].(string)
 
-	if switchRejectedAsExecutorRunning {
-		if stored != "profile-old" {
-			t.Fatalf("switch was rejected but stored profile = %q, want unchanged profile-old", stored)
-		}
-		return
-	}
-	if stored != "profile-new" {
-		t.Fatalf("switch committed but stored profile = %q, want profile-new", stored)
+	if stored != "profile-old" {
+		t.Fatalf("switch was rejected but stored profile = %q, want unchanged profile-old", stored)
 	}
 }
 

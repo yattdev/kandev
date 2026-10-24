@@ -49,6 +49,11 @@ func TestPostgresUpsertExecutorRunningBlocksOnConcurrentRowLock(t *testing.T) {
 	if err := repo.CreateTask(ctx, task); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
+	if err := repo.CreateTaskSession(ctx, &models.TaskSession{
+		ID: "session-pg-exec-running-lock", TaskID: task.ID, State: models.TaskSessionStateRunning,
+	}); err != nil {
+		t.Fatalf("CreateTaskSession: %v", err)
+	}
 
 	// Independent connections, not repo's single isolated connection: see
 	// openSecondPostgresConnection's doc comment for why a shared connection

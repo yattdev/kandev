@@ -309,9 +309,6 @@ func (r *Repository) ListDeferredWorkspaceGroupCleanups(
 	return groups, err
 }
 
-// lockWorkspaceGroupMemberTasks holds the same task-row locks acquired by
-// UpsertExecutorRunning. On SQLite the shared single-writer pool serializes
-// writes; on PostgreSQL these row locks close the absent-executor read race.
 func workspaceGroupMemberTaskIDs(ctx context.Context, tx *sqlx.Tx, id string) ([]string, error) {
 	var taskIDs []string
 	if err := tx.SelectContext(ctx, &taskIDs, tx.Rebind(`
@@ -323,17 +320,41 @@ func workspaceGroupMemberTaskIDs(ctx context.Context, tx *sqlx.Tx, id string) ([
 	return taskIDs, nil
 }
 
-func (r *Repository) lockWorkspaceGroupMemberTasks(ctx context.Context, tx *sqlx.Tx, id string) ([]string, error) {
+// lockWorkspaceGroupMemberTasks holds the same task-row locks acquired by
+// UpsertExecutorRunning for every existing member task. Deleted tasks leave
+// historical membership rows but cannot admit new executors or memberships.
+// On SQLite the shared single-writer pool serializes writes; on PostgreSQL
+// these row locks close the absent-executor read race.
+func (r *Repository) lockWorkspaceGroupMemberTasks(ctx context.Context, tx *sqlx.Tx, id string) ([]string, []string, error) {
 	taskIDs, err := workspaceGroupMemberTaskIDs(ctx, tx, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	var missingIDs []string
 	for _, taskID := range taskIDs {
 		if err := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), taskID); err != nil {
-			return nil, fmt.Errorf("lock workspace group member %s: %w", taskID, err)
+			if errors.Is(err, kandevdb.ErrTaskRowNotFound) {
+				// Released membership rows outlive deleted tasks. Both member
+				// and executor admission require a live task row, so this
+				// historical row cannot acquire a new executor.
+				missingIDs = append(missingIDs, taskID)
+				continue
+			}
+			return nil, nil, fmt.Errorf("lock workspace group member %s: %w", taskID, err)
+		}
+		// SQLite's task-row lock is its single-writer transaction. Check
+		// existence explicitly so a missing historical row is classified,
+		// rather than inferred from a no-op lock.
+		var presentID string
+		if err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT id FROM tasks WHERE id = ?`), taskID).Scan(&presentID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				missingIDs = append(missingIDs, taskID)
+				continue
+			}
+			return nil, nil, fmt.Errorf("load workspace group member %s: %w", taskID, err)
 		}
 	}
-	return taskIDs, nil
+	return taskIDs, missingIDs, nil
 }
 
 func (r *Repository) workspaceGroupAdmissionTxOptions() *sql.TxOptions {
@@ -393,7 +414,7 @@ func (r *Repository) claimWorkspaceGroupCleanupOnce(
 		return false, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	lockedIDs, err := r.lockWorkspaceGroupMemberTasks(ctx, tx, id)
+	lockedIDs, missingIDs, err := r.lockWorkspaceGroupMemberTasks(ctx, tx, id)
 	if err != nil {
 		return false, false, err
 	}
@@ -411,6 +432,17 @@ func (r *Repository) claimWorkspaceGroupCleanupOnce(
 	}
 	if !slices.Equal(lockedIDs, currentIDs) {
 		return false, true, nil
+	}
+	// An absent historical task is safe to skip only while it remains
+	// absent. A row restored under that ID needs a fresh ordered task lock.
+	for _, taskID := range missingIDs {
+		var present bool
+		if err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?)`), taskID).Scan(&present); err != nil {
+			return false, false, fmt.Errorf("recheck historical workspace group member %s: %w", taskID, err)
+		}
+		if present {
+			return false, true, nil
+		}
 	}
 	result, err := tx.ExecContext(ctx, tx.Rebind(`
 		UPDATE task_workspace_groups
@@ -504,9 +536,12 @@ func (r *Repository) AddWorkspaceGroupMember(ctx context.Context, groupID, taskI
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if lockErr := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), taskID); lockErr != nil &&
-		!errors.Is(lockErr, kandevdb.ErrTaskRowNotFound) {
-		return lockErr
+	if err := kandevdb.LockTaskRowInTx(ctx, tx, r.db.DriverName(), taskID); err != nil {
+		return fmt.Errorf("lock workspace group member task: %w", err)
+	}
+	var presentTaskID string
+	if err := tx.QueryRowContext(ctx, tx.Rebind(`SELECT id FROM tasks WHERE id = ?`), taskID).Scan(&presentTaskID); err != nil {
+		return fmt.Errorf("load workspace group member task: %w", err)
 	}
 	if err := r.lockWorkspaceGroupRow(ctx, tx, groupID); err != nil {
 		return err
