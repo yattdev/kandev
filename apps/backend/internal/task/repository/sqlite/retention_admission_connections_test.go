@@ -211,3 +211,42 @@ func TestCleanupEnvironmentTransferRequiresWinningReservationAcrossConnections(t
 		t.Fatalf("transfer lost after reopened connection: %+v, %v", reopenedEnv, err)
 	}
 }
+
+func TestCleanupEnvironmentTransfer_TwoPostgresConnections(t *testing.T) {
+	first, second, _ := newTaskPostgresRepoPair(t)
+	ctx := context.Background()
+	seedBarrierTask(t, first, "pg-transfer-parent")
+	seedBarrierTask(t, first, "pg-transfer-owner")
+	seedBarrierTask(t, first, "pg-transfer-borrower")
+	if _, err := first.db.ExecContext(ctx, first.db.Rebind(`UPDATE tasks SET parent_id = ? WHERE id = ?`),
+		"pg-transfer-parent", "pg-transfer-owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.CreateTaskEnvironment(ctx, &models.TaskEnvironment{
+		ID: "pg-transfer-env", TaskID: "pg-transfer-owner", ExecutorType: string(models.ExecutorTypeLocal),
+		Status: models.TaskEnvironmentStatusReady,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.CreateTaskResourceCleanupJob(ctx, &models.TaskResourceCleanupJob{
+		OperationID: "pg-transfer-op", TaskID: "pg-transfer-owner", Trigger: models.TaskResourceCleanupTriggerDelete,
+		State: models.TaskResourceCleanupStatePrepared,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := second.GetTask(ctx, "pg-transfer-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := second.UpdateTaskWithParentRetention(ctx, owner, "pg-transfer-parent", "ws-1", true, false); err == nil {
+		t.Fatal("Postgres hold overtook prepared cleanup")
+	}
+	if err := second.TransferTaskEnvironmentOwnershipForCleanup(ctx, "pg-transfer-env", "pg-transfer-owner", 1,
+		"pg-transfer-borrower", "pg-transfer-op"); err != nil {
+		t.Fatal(err)
+	}
+	env, err := first.GetTaskEnvironment(ctx, "pg-transfer-env")
+	if err != nil || env.TaskID != "pg-transfer-borrower" || env.OwnershipGeneration != 2 {
+		t.Fatalf("Postgres reserved transfer not visible on first connection: %+v, %v", env, err)
+	}
+}

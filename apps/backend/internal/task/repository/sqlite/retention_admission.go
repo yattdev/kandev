@@ -154,7 +154,7 @@ func (r *Repository) applyAuthorizedRetentionInTx(
 }
 
 func parseRetentionDocument(raw string) (map[string]json.RawMessage, error) {
-	if strings.TrimSpace(raw) == "" || raw == "null" {
+	if strings.TrimSpace(raw) == "" || raw == jsonNull {
 		return make(map[string]json.RawMessage), nil
 	}
 	var metadata map[string]json.RawMessage
@@ -191,7 +191,7 @@ func (r *Repository) taskRetentionInTx(ctx context.Context, tx *sqlx.Tx, taskID 
 	if err != nil {
 		return false, false, err
 	}
-	if !raw.Valid || strings.TrimSpace(raw.String) == "" || raw.String == "null" {
+	if !raw.Valid || strings.TrimSpace(raw.String) == "" || raw.String == jsonNull {
 		return false, true, nil
 	}
 	var metadata map[string]json.RawMessage
