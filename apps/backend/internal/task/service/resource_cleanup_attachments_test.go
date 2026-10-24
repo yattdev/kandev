@@ -261,6 +261,7 @@ func TestRetryTaskResourceCleanupPersistsAfterDeadlineExpiry(t *testing.T) {
 		TaskID: "task-expired-retry", Trigger: models.TaskResourceCleanupTriggerDelete,
 		State: models.TaskResourceCleanupStatePending, ResourceSnapshot: `{}`,
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
 	}

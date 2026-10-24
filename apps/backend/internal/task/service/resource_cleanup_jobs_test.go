@@ -176,6 +176,7 @@ func TestWorkspaceDeleteCancellationFencesRunningCleanupContext(t *testing.T) {
 		State:            models.TaskResourceCleanupStateRunning,
 		ResourceSnapshot: `{}`,
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
 	}
@@ -342,6 +343,7 @@ func TestClaimedCleanupDrainsMaintenanceAndHoldsActivityThroughDestructiveWork(t
 		Trigger: models.TaskResourceCleanupTriggerDelete,
 		State:   models.TaskResourceCleanupStatePending, ResourceSnapshot: string(snapshot),
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(context.Background(), job); err != nil {
 		t.Fatal(err)
 	}
@@ -682,8 +684,12 @@ func TestResumeTaskResourceCleanupJobsReconstructsInterruptedJob(t *testing.T) {
 		Trigger: models.TaskResourceCleanupTriggerDelete,
 		State:   models.TaskResourceCleanupStateRunning, ResourceSnapshot: `{}`,
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
+	}
+	if err := repo.DeleteTask(ctx, job.TaskID); err != nil {
+		t.Fatalf("commit interrupted delete: %v", err)
 	}
 	if err := svc.ResumeTaskResourceCleanupJobs(ctx); err != nil {
 		t.Fatalf("ResumeTaskResourceCleanupJobs: %v", err)
@@ -1280,6 +1286,7 @@ func TestRetryTaskResourceCleanupJobPersistsAfterRunContextCancellation(t *testi
 		Trigger: models.TaskResourceCleanupTriggerDelete,
 		State:   models.TaskResourceCleanupStatePending, ResourceSnapshot: `{}`,
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
 	}
@@ -1327,6 +1334,7 @@ func TestRetryTaskResourceCleanupJobUsesBoundedBackoffAndTerminalState(t *testin
 				State: models.TaskResourceCleanupStatePending, Attempts: test.attempts - 1,
 				ResourceSnapshot: `{}`,
 			}
+			seedCleanupJobTask(t, repo, job.TaskID)
 			if err := repo.CreateTaskResourceCleanupJob(context.Background(), job); err != nil {
 				t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
 			}
@@ -1379,6 +1387,7 @@ func TestRetryCascadeCleanupJobNeverBecomesTerminal(t *testing.T) {
 		State:   models.TaskResourceCleanupStateRunning, Attempts: taskResourceCleanupMaxAttempts,
 		ResourceSnapshot: `{}`,
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(context.Background(), job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
 	}
@@ -1522,6 +1531,7 @@ func TestCancelWorkspaceDeleteCleanupUsesDetachedContext(t *testing.T) {
 		Trigger: models.TaskResourceCleanupTriggerWorkspaceDelete,
 		State:   models.TaskResourceCleanupState("prepared"), ResourceSnapshot: `{}`,
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
 	}
@@ -1547,6 +1557,7 @@ func TestCancelWorkspaceDeleteCleanupDoesNotOverwriteClaim(t *testing.T) {
 		TaskID: "task-running-cancel", Trigger: models.TaskResourceCleanupTriggerWorkspaceDelete,
 		State: models.TaskResourceCleanupStateRunning, ResourceSnapshot: `{}`,
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(context.Background(), job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
 	}
@@ -1620,6 +1631,7 @@ func TestStartTaskResourceCleanupLeavesPendingJobForOwnedWorker(t *testing.T) {
 		Trigger: models.TaskResourceCleanupTriggerDelete,
 		State:   models.TaskResourceCleanupStatePending, ResourceSnapshot: string(snapshot),
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
 	}

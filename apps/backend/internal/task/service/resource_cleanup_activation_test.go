@@ -427,8 +427,12 @@ func TestPreparedActivationFailureDoesNotStarveRunnableCleanup(t *testing.T) {
 		Trigger: models.TaskResourceCleanupTriggerDelete, State: models.TaskResourceCleanupStatePending,
 		ResourceSnapshot: `{}`,
 	}
+	seedCleanupJobTask(t, repo, pending.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, pending); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
+	}
+	if err := repo.DeleteTask(ctx, pending.TaskID); err != nil {
+		t.Fatalf("commit runnable delete: %v", err)
 	}
 	taskSvc.resourceCleanups = &transientStartCleanupRepository{
 		TaskResourceCleanupRepository: repo,
@@ -495,8 +499,12 @@ func TestWorkerRetriesFullResumeAfterStartupResetFailure(t *testing.T) {
 		ResourceSnapshot: `{}`,
 	}
 	for _, job := range []*models.TaskResourceCleanupJob{running, prepared} {
+		seedCleanupJobTask(t, repo, job.TaskID)
 		if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 			t.Fatalf("CreateTaskResourceCleanupJob(%s): %v", job.ID, err)
+		}
+		if err := repo.DeleteTask(ctx, job.TaskID); err != nil {
+			t.Fatalf("commit cleanup delete %s: %v", job.TaskID, err)
 		}
 	}
 	claimed, err := repo.MarkTaskResourceCleanupJobRunning(ctx, running.ID)

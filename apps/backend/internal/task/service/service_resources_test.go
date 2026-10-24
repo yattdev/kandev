@@ -699,6 +699,12 @@ func (c *blockingWorktreeCleanup) GetAllByTaskID(context.Context, string) ([]*wo
 	return nil, nil
 }
 
+func (c *blockingWorktreeCleanup) CaptureArchiveSourceManifests(
+	ctx context.Context, worktrees []*worktree.Worktree,
+) (map[string]worktree.ArchiveSourceManifest, error) {
+	return (&recordingWorktreeCleanup{}).CaptureArchiveSourceManifests(ctx, worktrees)
+}
+
 func (c *blockingWorktreeCleanup) CleanupWorktrees(ctx context.Context, _ []*worktree.Worktree) error {
 	active := c.active.Add(1)
 	updateMaxActive(&c.maxActive, active)
@@ -726,8 +732,12 @@ func TestWorkspaceDeleteDurableCleanupSignalsOwnedWorker(t *testing.T) {
 		TaskID: "workspace-delete-task", Trigger: models.TaskResourceCleanupTriggerWorkspaceDelete,
 		State: models.TaskResourceCleanupStatePrepared, ResourceSnapshot: string(snapshot),
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
+	}
+	if err := repo.DeleteTask(ctx, job.TaskID); err != nil {
+		t.Fatalf("commit workspace task delete: %v", err)
 	}
 	barrier := newCancellableCleanupBarrier()
 	taskSvc.SetWorktreeCleanup(barrier)
@@ -1199,8 +1209,9 @@ func TestService_DeleteWorkspaceStopsBeforeCascadeWhenSessionInventoryFails(t *t
 	}
 }
 
-func TestService_RunWorkspaceDeleteTaskCleanupsCapsConcurrency(t *testing.T) {
-	svc, _, _ := createTestService(t)
+func TestService_RunWorkspaceDeleteTaskCleanupsUsesOwnedWorker(t *testing.T) {
+	svc, _, repo := createTestService(t)
+	ctx := context.Background()
 	taskCount := workspaceDeleteCleanupConcurrency + 3
 	svc.setCleanupDoneForTestHook(make(chan struct{}, taskCount))
 	cleanup := &blockingWorktreeCleanup{release: make(chan struct{})}
@@ -1211,22 +1222,40 @@ func TestService_RunWorkspaceDeleteTaskCleanupsCapsConcurrency(t *testing.T) {
 	for i := 0; i < taskCount; i++ {
 		taskID := fmt.Sprintf("task-%02d", i)
 		task := &models.Task{ID: taskID}
+		seedCleanupJobTask(t, repo, taskID)
+		snapshot, err := json.Marshal(taskResourceCleanupSnapshot{
+			Worktrees: []*worktree.Worktree{{ID: "wt-" + taskID, TaskID: taskID}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := &models.TaskResourceCleanupJob{
+			ID: "job-" + taskID, OperationID: "workspace_delete:" + taskID,
+			TaskID: taskID, Trigger: models.TaskResourceCleanupTriggerWorkspaceDelete,
+			State: models.TaskResourceCleanupStatePrepared, ResourceSnapshot: string(snapshot),
+		}
+		if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.DeleteTask(ctx, taskID); err != nil {
+			t.Fatal(err)
+		}
 		cleanups = append(cleanups, workspaceDeleteTaskCleanup{
-			task:      task,
+			task: task, cleanupJob: job,
 			worktrees: []*worktree.Worktree{{ID: "wt-" + taskID, TaskID: taskID}},
 		})
 		deletedTasks = append(deletedTasks, task)
 	}
 
 	svc.runWorkspaceDeleteTaskCleanups(cleanups, deletedTasks)
-	waitForActiveCleanups(t, cleanup, workspaceDeleteCleanupConcurrency)
+	waitForActiveCleanups(t, cleanup, 1)
 	close(cleanup.release)
 	for i := 0; i < taskCount; i++ {
 		waitForCleanupDone(t, svc)
 	}
 
-	if got := cleanup.maxActive.Load(); got > workspaceDeleteCleanupConcurrency {
-		t.Fatalf("max active cleanups = %d, want <= %d", got, workspaceDeleteCleanupConcurrency)
+	if got := cleanup.maxActive.Load(); got != 1 {
+		t.Fatalf("max active cleanups = %d, want one owned worker", got)
 	}
 }
 

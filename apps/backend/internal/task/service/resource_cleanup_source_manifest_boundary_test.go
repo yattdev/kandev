@@ -115,7 +115,11 @@ func TestCleanupRetryReusesPersistedSourceManifest(t *testing.T) {
 		TaskID: "task", Trigger: models.TaskResourceCleanupTriggerDelete,
 		State: models.TaskResourceCleanupStatePending, ResourceSnapshot: string(snapshot),
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.DeleteTask(ctx, job.TaskID); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.processTaskResourceCleanupJob(ctx, job.ID); err == nil {
@@ -152,7 +156,11 @@ func TestCleanupPersistsSourceManifestAfterStopBeforeWorktreeRemoval(t *testing.
 		TaskID: "task", Trigger: models.TaskResourceCleanupTriggerDelete,
 		State: models.TaskResourceCleanupStatePending, ResourceSnapshot: string(snapshot),
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.DeleteTask(ctx, job.TaskID); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.processTaskResourceCleanupJob(ctx, job.ID); err != nil {
@@ -190,7 +198,11 @@ func TestDeleteCleanupTriggersPersistSourceManifestBeforeWorktreeRemoval(t *test
 				TaskID: "task", Trigger: trigger,
 				State: models.TaskResourceCleanupStatePending, ResourceSnapshot: string(snapshot),
 			}
+			seedCleanupJobTask(t, repo, job.TaskID)
 			if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
+				t.Fatal(err)
+			}
+			if err := repo.DeleteTask(ctx, job.TaskID); err != nil {
 				t.Fatal(err)
 			}
 			if err := svc.processTaskResourceCleanupJob(ctx, job.ID); err != nil {
@@ -226,7 +238,11 @@ func TestCleanupCaptureFailureBlocksWorktreeRemoval(t *testing.T) {
 		TaskID: "task", Trigger: models.TaskResourceCleanupTriggerDelete,
 		State: models.TaskResourceCleanupStatePending, ResourceSnapshot: string(snapshot),
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.DeleteTask(ctx, job.TaskID); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.processTaskResourceCleanupJob(ctx, job.ID); err == nil {

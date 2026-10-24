@@ -222,8 +222,12 @@ func TestDirtyWorktreeCleanupRefusalBecomesTerminalAfterAdmission(t *testing.T) 
 		TaskID: "task-race", Trigger: models.TaskResourceCleanupTriggerDelete,
 		State: models.TaskResourceCleanupStatePending, ResourceSnapshot: string(snapshot),
 	}
+	seedCleanupJobTask(t, repo, job.TaskID)
 	if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 		t.Fatalf("create cleanup job: %v", err)
+	}
+	if err := repo.DeleteTask(ctx, job.TaskID); err != nil {
+		t.Fatalf("commit cleanup delete: %v", err)
 	}
 	if err := svc.processTaskResourceCleanupJob(ctx, job.ID); !errors.Is(err, worktree.ErrDirtyWorktreeCleanup) {
 		t.Fatalf("process cleanup error = %v, want dirty-worktree refusal", err)
