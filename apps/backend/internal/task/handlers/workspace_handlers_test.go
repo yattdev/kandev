@@ -335,7 +335,7 @@ func TestHTTPDeleteWorkspaceReturnsDeleteFailureWhenCascadeFails(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 	require.JSONEq(t, `{"error":"workspace not deleted"}`, rec.Body.String())
 	require.True(t, repo.cascadeCalled, "handler should surface cascade failures separately")
-	require.Equal(t, 1, repo.getCalls, "confirmed delete should fetch the workspace once")
+	require.Equal(t, 2, repo.getCalls, "cascade failure should verify whether deletion committed")
 }
 
 func TestWSDeleteWorkspaceRequiresConfirmName(t *testing.T) {

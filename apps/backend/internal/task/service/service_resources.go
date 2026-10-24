@@ -341,6 +341,13 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 	if err != nil {
 		return errors.Join(err, s.cancelWorkspaceDeleteTaskCleanupJobs(ctx, cleanups))
 	}
+	var workflowsBefore []*models.Workflow
+	if s.workflows != nil {
+		workflowsBefore, err = s.workflows.ListWorkflows(ctx, workspace.ID, true)
+		if err != nil {
+			return errors.Join(err, s.cancelWorkspaceDeleteTaskCleanupJobs(ctx, cleanups))
+		}
+	}
 	// Runtime cleanup needs task rows before the cascade removes them.
 	workspaceAttachmentCleanup, err := s.prepareWorkspaceAttachmentCleanup(ctx, workspace.ID)
 	if err != nil {
@@ -400,11 +407,25 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 	default:
 		deletedTasks, deletedWorkflows, err = s.workspaces.DeleteWorkspaceCascadeWithName(ctx, workspace.ID, *confirmedName)
 	}
-	if err != nil {
-		cancelErr := s.cancelWorkspaceDeleteTaskCleanupJobs(ctx, cleanups)
-		return s.mapWorkspaceDeleteError(workspace.ID, errors.Join(err, cancelErr))
-	}
 	var postCommitErr error
+	if err != nil {
+		committed, verifyErr := s.workspaceCascadeCommitted(ctx, workspace.ID)
+		if verifyErr != nil {
+			// Keep prepared jobs when the commit outcome cannot be established.
+			return errors.Join(err, fmt.Errorf("verify workspace deletion outcome: %w", verifyErr))
+		}
+		if !committed {
+			cancelErr := s.cancelWorkspaceDeleteTaskCleanupJobs(ctx, cleanups)
+			return s.mapWorkspaceDeleteError(workspace.ID, errors.Join(err, cancelErr))
+		}
+		postCommitErr = err
+		if deletedTasks == nil {
+			deletedTasks = tasks
+		}
+		if deletedWorkflows == nil {
+			deletedWorkflows = workflowsBefore
+		}
+	}
 	if s.attachmentSvc != nil {
 		s.attachmentSvc.RemoveBytes(deletedWorkspaceAttachments)
 	}
@@ -426,6 +447,19 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 	}
 	return nil
 
+}
+
+func (s *Service) workspaceCascadeCommitted(ctx context.Context, workspaceID string) (bool, error) {
+	verifyCtx, cancel := detachedCleanupTransitionContext(ctx)
+	defer cancel()
+	workspace, err := s.workspaces.GetWorkspace(verifyCtx, workspaceID)
+	if errors.Is(err, taskrepo.ErrWorkspaceNotFound) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return workspace == nil, nil
 }
 func (s *Service) prepareWorkspaceDeleteTaskCleanups(ctx context.Context, tasks []*models.Task) ([]workspaceDeleteTaskCleanup, error) {
 	cleanups := make([]workspaceDeleteTaskCleanup, 0, len(tasks))

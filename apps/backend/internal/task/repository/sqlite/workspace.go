@@ -290,7 +290,7 @@ func (r *Repository) deleteWorkspaceCascade(
 		return nil, nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, nil, err
+		return tasks, workflows, err
 	}
 	for _, task := range tasks {
 		r.notifyTaskQueuePurged(ctx, task.ID)
