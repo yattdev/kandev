@@ -290,12 +290,25 @@ func (r *Repository) deleteWorkspaceCascade(
 		return nil, nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return tasks, workflows, err
+		verifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		var exists bool
+		verifyErr := r.db.QueryRowContext(verifyCtx, r.db.Rebind(`
+			SELECT EXISTS (SELECT 1 FROM workspaces WHERE id = ?)
+		`), id).Scan(&exists)
+		if verifyErr == nil && !exists {
+			r.notifyWorkspaceCascadeTaskQueues(verifyCtx, tasks)
+		}
+		return tasks, workflows, errors.Join(err, verifyErr)
 	}
+	r.notifyWorkspaceCascadeTaskQueues(ctx, tasks)
+	return tasks, workflows, nil
+}
+
+func (r *Repository) notifyWorkspaceCascadeTaskQueues(ctx context.Context, tasks []*models.Task) {
 	for _, task := range tasks {
 		r.notifyTaskQueuePurged(ctx, task.ID)
 	}
-	return tasks, workflows, nil
 }
 
 func (r *Repository) purgeWorkspaceTaskQueuesInTx(ctx context.Context, tx *sqlx.Tx, tasks []*models.Task) error {
