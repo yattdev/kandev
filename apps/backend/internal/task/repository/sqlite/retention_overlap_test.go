@@ -120,7 +120,7 @@ func newOverlappingSQLitePair(t *testing.T) (*Repository, *Repository, *overlapC
 		control := &overlapControl{}
 		name := fmt.Sprintf("retention-overlap-%d", overlapDriverSequence.Add(1))
 		sql.Register(name, overlapDriver{control: control})
-		raw, err := sql.Open(name, "file:"+path+"?_foreign_keys=on&_busy_timeout=5000&_journal_mode=WAL")
+		raw, err := sql.Open(name, "file:"+path+"?_foreign_keys=on&_busy_timeout=150&_journal_mode=WAL")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,17 +166,26 @@ func runOverlappingTransactions(t *testing.T, firstControl, secondControl *overl
 	firstControl.commit = firstGate
 	secondControl.exec, secondControl.match = secondGate, secondMatch
 	defer firstGate.open()
-	defer secondGate.open()
+	secondGate.open()
 	firstResult := make(chan error, 1)
 	go func() { firstResult <- first() }()
 	awaitOverlap(t, firstGate.entered)
 	secondResult := make(chan error, 1)
 	go func() { secondResult <- second() }()
 	awaitOverlap(t, secondGate.entered)
+	assertSQLiteContended(t, overlapResult(t, secondResult))
 	firstGate.open()
 	firstErr := overlapResult(t, firstResult)
-	secondGate.open()
-	return firstErr, overlapResult(t, secondResult)
+	return firstErr, second()
+}
+
+func assertSQLiteContended(t *testing.T, err error) {
+	t.Helper()
+	var sqliteErr sqlite3.Error
+	if !errors.As(err, &sqliteErr) ||
+		(sqliteErr.Code != sqlite3.ErrBusy && sqliteErr.Code != sqlite3.ErrLocked) {
+		t.Fatalf("contender did not reach a live SQLite writer lock: %v", err)
+	}
 }
 
 func TestRetentionAdmission_OverlappingSQLiteWinnerOrders(t *testing.T) {
