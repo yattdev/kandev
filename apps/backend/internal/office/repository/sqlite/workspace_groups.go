@@ -325,6 +325,22 @@ func (r *Repository) lockWorkspaceGroupMemberTasks(ctx context.Context, tx *sqlx
 	return nil
 }
 
+// lockWorkspaceGroupRow serializes a new membership with a cleanup claim on
+// PostgreSQL. SQLite's shared single-writer pool provides the same exclusion.
+func (r *Repository) lockWorkspaceGroupRow(ctx context.Context, tx *sqlx.Tx, id string) error {
+	if r.db.DriverName() != "pgx" {
+		return nil
+	}
+	var locked string
+	err := tx.QueryRowContext(ctx, tx.Rebind(`
+		SELECT id FROM task_workspace_groups WHERE id = ? FOR UPDATE
+	`), id).Scan(&locked)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("workspace group %s: not found", id)
+	}
+	return err
+}
+
 // ClaimWorkspaceGroupCleanup reserves destructive cleanup for one ownership
 // generation. The active-member predicate is part of the same write so a
 // caller cannot race a membership admission between its read and this claim.
@@ -335,6 +351,9 @@ func (r *Repository) ClaimWorkspaceGroupCleanup(ctx context.Context, id string, 
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := r.lockWorkspaceGroupMemberTasks(ctx, tx, id); err != nil {
+		return false, err
+	}
+	if err := r.lockWorkspaceGroupRow(ctx, tx, id); err != nil {
 		return false, err
 	}
 	result, err := tx.ExecContext(ctx, tx.Rebind(`
@@ -409,7 +428,7 @@ func (r *Repository) UpdateWorkspaceGroupRestoreStatus(ctx context.Context, id, 
 }
 
 // AddWorkspaceGroupMember inserts a membership row. role defaults to "member"
-// when empty. INSERT OR IGNORE: re-adding the same task is a no-op.
+// when empty. Re-adding the same task is a no-op.
 //
 // Takes the shared task-row lock before writing: office and the task package
 // share the same tasks table through the same SQLite writer pool, so this
@@ -433,14 +452,18 @@ func (r *Repository) AddWorkspaceGroupMember(ctx context.Context, groupID, taskI
 		!errors.Is(lockErr, kandevdb.ErrTaskRowNotFound) {
 		return lockErr
 	}
+	if err := r.lockWorkspaceGroupRow(ctx, tx, groupID); err != nil {
+		return err
+	}
 
-	result, err := tx.ExecContext(ctx, r.db.Rebind(`
-		INSERT OR IGNORE INTO task_workspace_group_members (
+	result, err := tx.ExecContext(ctx, tx.Rebind(`
+		INSERT INTO task_workspace_group_members (
 			workspace_group_id, task_id, role, created_at
 		)
 		SELECT id, ?, ?, ?
 		FROM task_workspace_groups
 		WHERE id = ? AND cleanup_status IN ('active', 'cleanup_failed')
+		ON CONFLICT(workspace_group_id, task_id) DO NOTHING
 	`), taskID, role, time.Now().UTC(), groupID)
 	if err != nil {
 		return err

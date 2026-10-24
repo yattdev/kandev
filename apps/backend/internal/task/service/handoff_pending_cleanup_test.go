@@ -83,6 +83,45 @@ func pendingCleanupFixture(t *testing.T) (*HandoffService, *officesqlite.Reposit
 	return handoff, groups, tasks
 }
 
+type claimResponseLostRepo struct{ *officesqlite.Repository }
+
+func (r claimResponseLostRepo) ClaimWorkspaceGroupCleanup(ctx context.Context, id string, generation int64) (bool, error) {
+	claimed, err := r.Repository.ClaimWorkspaceGroupCleanup(ctx, id, generation)
+	if err != nil || !claimed {
+		return claimed, err
+	}
+	return false, errors.New("claim response lost after commit")
+}
+
+func TestWorkspaceGroupClaimResponseLossKeepsClaimedPending(t *testing.T) {
+	ctx := context.Background()
+	_, groups, tasks := pendingCleanupFixture(t)
+	cleaner := &fakeWorkspaceCleaner{}
+	lost := NewHandoffService(tasks, tasks, nil, nil, claimResponseLostRepo{groups}, nil)
+	lost.SetSessionReader(tasks)
+	lost.SetWorkspaceCleaner(cleaner)
+	if err := lost.evaluateWorkspaceGroupCleanup(ctx, "pending-cleanup-group"); err == nil {
+		t.Fatal("lost claim response must surface an error")
+	}
+	group, err := groups.GetWorkspaceGroup(ctx, "pending-cleanup-group")
+	if err != nil || group == nil || group.CleanupStatus != office.WorkspaceCleanupStatusPending || group.CleanupError != "" {
+		t.Fatalf("durable claimed state = %+v, %v", group, err)
+	}
+	if err := lost.ReconcileDeferredWorkspaceGroupCleanups(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := lost.evaluateWorkspaceGroupCleanup(ctx, group.ID); err != nil {
+		t.Fatal(err)
+	}
+	group, err = groups.GetWorkspaceGroup(ctx, group.ID)
+	if err != nil || group == nil || group.CleanupStatus != office.WorkspaceCleanupStatusPending || group.CleanupError != "" {
+		t.Fatalf("ambiguous claim changed on retry: group=%+v err=%v", group, err)
+	}
+	if len(cleaner.plainFolders) != 0 {
+		t.Fatalf("ambiguous claim dispatched cleanup %d times", len(cleaner.plainFolders))
+	}
+}
+
 func TestWorkspaceGroupPendingCleanupRetriesAfterExecutorStops(t *testing.T) {
 	ctx := context.Background()
 	handoff, groups, tasks := pendingCleanupFixture(t)
