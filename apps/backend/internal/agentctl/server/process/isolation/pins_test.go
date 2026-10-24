@@ -84,6 +84,24 @@ func TestPinnedDirectoryDetectsReplacementAndClosesDescriptor(t *testing.T) {
 	}
 }
 
+func TestPinnedObjectRejectsClosedDescriptor(t *testing.T) {
+	root := t.TempDir()
+	identity, err := Capture(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin, err := Pin(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pin.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := pin.Validate(); err == nil {
+		t.Fatal("closed descriptor validated as a retained isolation object")
+	}
+}
+
 func TestPinRetainsMissingLeafParent(t *testing.T) {
 	root := t.TempDir()
 	leaf := filepath.Join(root, "refs", "heads", "ref.lock")

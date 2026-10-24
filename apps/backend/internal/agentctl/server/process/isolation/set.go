@@ -26,6 +26,10 @@ func PinAll(identities []Identity) (*Set, error) {
 		}
 		set.grants[identity.Path] = pin
 	}
+	if err := set.Validate(); err != nil {
+		_ = set.Close()
+		return nil, err
+	}
 	return set, nil
 }
 

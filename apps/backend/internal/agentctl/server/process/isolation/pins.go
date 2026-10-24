@@ -15,6 +15,8 @@ type Identity struct {
 	ParentIno  uint64 `json:"parent_ino"`
 }
 
+func (i Identity) IsDirectory() bool { return i.Exists && i.Mode == 0o040000 }
+
 // Pinned holds a source object, or the parent of an absent leaf, until teardown.
 type Pinned struct {
 	identity Identity

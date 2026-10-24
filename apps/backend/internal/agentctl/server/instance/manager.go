@@ -251,6 +251,14 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 	if m.afterTrackerStart != nil {
 		m.afterTrackerStart()
 	}
+	if err := procMgr.ValidateIsolationPins(); err != nil {
+		m.abandonWG.Add(1)
+		go func() {
+			defer m.abandonWG.Done()
+			m.abandonPartialInstance(id, port, listener, procMgr)
+		}()
+		return nil, fmt.Errorf("workspace isolation changed during instance creation: %w", err)
+	}
 
 	// Starting the trackers is the slow part of creation, so re-check: a caller
 	// that was still waiting when we took the lock can time out during it.

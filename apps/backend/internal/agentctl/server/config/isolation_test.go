@@ -38,6 +38,94 @@ func TestWorkspaceIsolationBindsEveryGrantObject(t *testing.T) {
 	}
 }
 
+func TestWorkspaceIsolationRejectsMissingMandatoryDirectory(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("object pinning requires Linux")
+	}
+	for _, missing := range []string{"shared", "private", "objects", "workspace"} {
+		t.Run(missing, func(t *testing.T) {
+			root := t.TempDir()
+			shared := filepath.Join(root, "repo", ".git")
+			private := filepath.Join(shared, "worktrees", "task")
+			objects := filepath.Join(private, "kandev-agent-git", "objects")
+			workspace := filepath.Join(root, "task")
+			for _, path := range []string{objects, workspace} {
+				if err := os.MkdirAll(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			manifest := WorkspaceIsolation{
+				SharedCommonDirs:       []string{shared},
+				WritablePaths:          []string{private, objects},
+				PrivateAdminPaths:      []string{private},
+				WritableWorkspaceRoots: []string{workspace},
+				RequiredDirectories:    []string{objects},
+			}
+			paths := map[string]string{"shared": shared, "private": private, "objects": objects, "workspace": workspace}
+			if err := os.RemoveAll(paths[missing]); err != nil {
+				t.Fatal(err)
+			}
+			if err := manifest.CaptureObjects(); err == nil {
+				t.Fatalf("captured missing %s directory as a grant", missing)
+			}
+		})
+	}
+}
+
+func TestWorkspaceIsolationConfirmsMandatoryObjectAfterValidation(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("object pinning requires Linux")
+	}
+	root := t.TempDir()
+	shared := filepath.Join(root, "repo", ".git")
+	private := filepath.Join(shared, "worktrees", "task")
+	workspace := filepath.Join(root, "task")
+	for _, path := range []string{private, workspace} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := WorkspaceIsolation{
+		SharedCommonDirs: []string{shared}, WritablePaths: []string{private},
+		PrivateAdminPaths: []string{private}, WritableWorkspaceRoots: []string{workspace},
+	}
+	if err := manifest.CaptureObjects(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(private, private+"-old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(private, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.ConfirmObjects(); err == nil {
+		t.Fatal("confirmed a private directory replaced during validation")
+	}
+}
+
+func TestWorkspaceIsolationRejectsRegularFileWorkspace(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("object pinning requires Linux")
+	}
+	root := t.TempDir()
+	shared := filepath.Join(root, "repo", ".git")
+	private := filepath.Join(shared, "worktrees", "task")
+	workspace := filepath.Join(root, "task")
+	if err := os.MkdirAll(private, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(workspace, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := WorkspaceIsolation{
+		SharedCommonDirs: []string{shared}, WritablePaths: []string{private},
+		PrivateAdminPaths: []string{private}, WritableWorkspaceRoots: []string{workspace},
+	}
+	if err := manifest.CaptureObjects(); err == nil {
+		t.Fatal("captured a regular file as writable workspace directory")
+	}
+}
+
 func TestWorkspaceIsolationRejectsWritableSharedCommonDirectory(t *testing.T) {
 	manifest := WorkspaceIsolation{SharedCommonDirs: []string{"/repo/.git"}, WritablePaths: []string{"/repo/.git/refs"}, WritableWorkspaceRoots: []string{"/task"}}
 	if err := manifest.Validate(); err == nil {

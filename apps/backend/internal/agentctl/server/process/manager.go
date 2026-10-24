@@ -108,9 +108,10 @@ const processStderrDrainTimeout = time.Second
 
 // Manager manages the agent subprocess
 type Manager struct {
-	cfg           *config.InstanceConfig
-	logger        *logger.Logger
-	isolationPins *isolation.Set
+	cfg                *config.InstanceConfig
+	logger             *logger.Logger
+	isolationPins      *isolation.Set
+	isolationCloseOnce sync.Once
 
 	// Process state
 	cmd                *exec.Cmd
@@ -303,6 +304,17 @@ type Manager struct {
 
 // SetIsolationPins transfers ownership of verified grant descriptors to this manager.
 func (m *Manager) SetIsolationPins(pins *isolation.Set) { m.isolationPins = pins }
+
+// ValidateIsolationPins rejects a changed grant before instance publication or installation.
+func (m *Manager) ValidateIsolationPins() error {
+	if m.cfg.WorkspaceIsolation == nil {
+		return nil
+	}
+	if m.isolationPins == nil {
+		return errors.New("isolation grant descriptors are missing")
+	}
+	return m.isolationPins.Validate()
+}
 
 // ErrManagerStopping indicates that process admission is closed for teardown.
 var ErrManagerStopping = errors.New("process manager is stopping")
@@ -2059,6 +2071,18 @@ func (m *Manager) StopForTeardown(ctx context.Context) error {
 	m.CloseAdmission()
 	previewErr := m.CloseWorkspacePreview(ctx)
 	if err := m.WaitForAdmission(ctx); err != nil {
+		m.isolationCloseOnce.Do(func() {
+			if m.isolationPins == nil {
+				return
+			}
+			m.admissionMu.Lock()
+			drained := m.admissionDrained
+			m.admissionMu.Unlock()
+			go func() {
+				<-drained
+				_ = m.isolationPins.Close()
+			}()
+		})
 		return errors.Join(previewErr, fmt.Errorf("wait for process admission to drain: %w", err))
 	}
 	stopErr := m.stop(ctx)

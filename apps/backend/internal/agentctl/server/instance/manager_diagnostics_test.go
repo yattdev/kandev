@@ -104,6 +104,7 @@ func TestCreateInstanceCarriesValidatedWorkspaceIsolationIntoConfig(t *testing.T
 		WritablePaths:          []string{private},
 		PrivateAdminPaths:      []string{private},
 		WritableWorkspaceRoots: []string{workspace},
+		RequiredDirectories:    []string{private},
 	}
 	if err := isolation.CaptureObjects(); err != nil {
 		t.Fatal(err)
@@ -127,6 +128,10 @@ func TestCreateInstanceCarriesValidatedWorkspaceIsolationIntoConfig(t *testing.T
 	isolation.WritableWorkspaceRoots[0] = filepath.Join(root, "changed")
 	if captured.WorkspaceIsolation.WritableWorkspaceRoots[0] == isolation.WritableWorkspaceRoots[0] {
 		t.Fatal("instance config retained mutable workspace roots")
+	}
+	isolation.RequiredDirectories[0] = filepath.Join(root, "changed-directory")
+	if captured.WorkspaceIsolation.RequiredDirectories[0] == isolation.RequiredDirectories[0] {
+		t.Fatal("instance config retained mutable required directories")
 	}
 	isolation.ObjectIdentities[0].Path = filepath.Join(root, "forged")
 	if captured.WorkspaceIsolation.ObjectIdentities[0].Path == isolation.ObjectIdentities[0].Path {

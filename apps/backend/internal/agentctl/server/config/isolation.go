@@ -15,7 +15,18 @@ type WorkspaceIsolation struct {
 	WritablePaths          []string             `json:"writable_paths"`
 	PrivateAdminPaths      []string             `json:"private_admin_paths"`
 	WritableWorkspaceRoots []string             `json:"writable_workspace_roots"`
+	RequiredDirectories    []string             `json:"required_directories"`
 	ObjectIdentities       []isolation.Identity `json:"object_identities"`
+}
+
+func (m WorkspaceIsolation) requiredDirectoryPaths() map[string]struct{} {
+	paths := make(map[string]struct{})
+	for _, group := range [][]string{m.SharedCommonDirs, m.PrivateAdminPaths, m.WritableWorkspaceRoots, m.RequiredDirectories} {
+		for _, path := range group {
+			paths[path] = struct{}{}
+		}
+	}
+	return paths
 }
 
 func (m WorkspaceIsolation) grantPaths() map[string]struct{} {
@@ -35,6 +46,7 @@ func (m *WorkspaceIsolation) CaptureObjects() error {
 	}
 	m.ObjectIdentities = nil
 	paths := m.grantPaths()
+	required := m.requiredDirectoryPaths()
 	ordered := make([]string, 0, len(paths))
 	for path := range paths {
 		ordered = append(ordered, path)
@@ -45,6 +57,10 @@ func (m *WorkspaceIsolation) CaptureObjects() error {
 		if err != nil {
 			m.ObjectIdentities = nil
 			return fmt.Errorf("capture isolation object: %w", err)
+		}
+		if _, mustExist := required[path]; mustExist && !identity.IsDirectory() {
+			m.ObjectIdentities = nil
+			return fmt.Errorf("required isolation directory is missing or changed")
 		}
 		m.ObjectIdentities = append(m.ObjectIdentities, identity)
 	}
@@ -57,6 +73,12 @@ func (m WorkspaceIsolation) ValidateObjects() error {
 		return err
 	}
 	paths := m.grantPaths()
+	required := m.requiredDirectoryPaths()
+	for path := range required {
+		if _, ok := paths[path]; !ok {
+			return fmt.Errorf("required isolation directory is not a grant")
+		}
+	}
 	if len(paths) != len(m.ObjectIdentities) {
 		return fmt.Errorf("isolation object inventory does not match grants")
 	}
@@ -64,10 +86,27 @@ func (m WorkspaceIsolation) ValidateObjects() error {
 		if _, ok := paths[identity.Path]; !ok {
 			return fmt.Errorf("isolation object inventory contains an unexpected path")
 		}
+		if _, mustExist := required[identity.Path]; mustExist && !identity.IsDirectory() {
+			return fmt.Errorf("required isolation directory is missing or changed")
+		}
 		delete(paths, identity.Path)
 	}
 	if len(paths) != 0 {
 		return fmt.Errorf("isolation object inventory is incomplete")
+	}
+	return nil
+}
+
+// ConfirmObjects detects a change while trusted projection validation runs.
+func (m WorkspaceIsolation) ConfirmObjects() error {
+	if err := m.ValidateObjects(); err != nil {
+		return err
+	}
+	for _, want := range m.ObjectIdentities {
+		got, err := isolation.Capture(want.Path)
+		if err != nil || got != want {
+			return fmt.Errorf("isolation object changed during projection validation")
+		}
 	}
 	return nil
 }
@@ -101,7 +140,7 @@ func (m WorkspaceIsolation) validatePaths() error {
 			return fmt.Errorf("shared common directory cannot be a filesystem root")
 		}
 	}
-	for _, paths := range [][]string{m.SharedCommonDirs, m.WritablePaths, m.PrivateAdminPaths, m.WritableWorkspaceRoots} {
+	for _, paths := range [][]string{m.SharedCommonDirs, m.WritablePaths, m.PrivateAdminPaths, m.WritableWorkspaceRoots, m.RequiredDirectories} {
 		for _, path := range paths {
 			if !filepath.IsAbs(path) || filepath.Clean(path) != path || strings.ContainsRune(path, 0) {
 				return fmt.Errorf("workspace isolation path is not canonical")

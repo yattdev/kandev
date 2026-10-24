@@ -303,6 +303,34 @@ func standaloneGitCheckouts(workspacePath string) (map[string]struct{}, error) {
 	return checkouts, nil
 }
 
+func standaloneWorkspaceIsolation(req *ExecutorCreateRequest) (*config.WorkspaceIsolation, error) {
+	if len(req.GitMetadataProjections) == 0 {
+		return nil, nil
+	}
+	isolation := &config.WorkspaceIsolation{WritableWorkspaceRoots: []string{req.WorkspacePath}}
+	for _, projection := range req.GitMetadataProjections {
+		if err := projection.Revalidate(); err != nil {
+			return nil, errors.New(gitMetadataProjectionInvalid)
+		}
+		isolation.SharedCommonDirs = append(isolation.SharedCommonDirs, projection.SharedCommonDir)
+		isolation.WritablePaths = append(isolation.WritablePaths, projection.AgentWritablePaths...)
+		isolation.PrivateAdminPaths = append(isolation.PrivateAdminPaths, projection.GitDir)
+		isolation.RequiredDirectories = append(isolation.RequiredDirectories, projection.ObjectDir)
+	}
+	if err := isolation.CaptureObjects(); err != nil {
+		return nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
+	}
+	for _, projection := range req.GitMetadataProjections {
+		if err := projection.Revalidate(); err != nil {
+			return nil, errors.New(gitMetadataProjectionInvalid)
+		}
+	}
+	if err := isolation.ConfirmObjects(); err != nil {
+		return nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
+	}
+	return isolation, nil
+}
+
 func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCreateRequest) (*ExecutorInstance, error) {
 	if err := r.waitForReady(ctx); err != nil {
 		return nil, err
@@ -353,24 +381,11 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 	createReq := buildStandaloneCreateInstanceRequest(
 		req, env, agentType, disableAskQuestion, assumeMcpSse, assumeMcpHttp, requiresProcessKill, stripEnv,
 	)
-	if len(req.GitMetadataProjections) > 0 {
-		isolation := &config.WorkspaceIsolation{WritableWorkspaceRoots: []string{req.WorkspacePath}}
-		for _, projection := range req.GitMetadataProjections {
-			if err := projection.Revalidate(); err != nil {
-				return nil, errors.New(gitMetadataProjectionInvalid)
-			}
-			isolation.SharedCommonDirs = append(isolation.SharedCommonDirs, projection.SharedCommonDir)
-			isolation.WritablePaths = append(isolation.WritablePaths, projection.AgentWritablePaths...)
-			isolation.PrivateAdminPaths = append(isolation.PrivateAdminPaths, projection.GitDir)
-		}
-		if err := isolation.Validate(); err != nil {
-			return nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
-		}
-		if err := isolation.CaptureObjects(); err != nil {
-			return nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
-		}
-		createReq.WorkspaceIsolation = isolation
+	isolation, err := standaloneWorkspaceIsolation(req)
+	if err != nil {
+		return nil, err
 	}
+	createReq.WorkspaceIsolation = isolation
 
 	r.logger.Info("CreateInstance: sending request to agentctl",
 		zap.String("instance_id", req.InstanceID),

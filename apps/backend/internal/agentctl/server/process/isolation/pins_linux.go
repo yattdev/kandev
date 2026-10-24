@@ -128,9 +128,35 @@ func pinExisting(parent *os.File, leaf string, want Identity) (*os.File, error) 
 
 // Validate must run immediately before installation to reject path replacement.
 func (p *Pinned) Validate() error {
+	if err := p.validateRetainedHandles(); err != nil {
+		return err
+	}
 	got, err := Capture(p.identity.Path)
 	if err != nil || got != p.identity {
 		return errors.New("isolation object changed after pinning")
+	}
+	return nil
+}
+
+func (p *Pinned) validateRetainedHandles() error {
+	if p.file == nil {
+		return errors.New("isolation grant descriptor is missing")
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(int(p.file.Fd()), &stat); err != nil {
+		return fmt.Errorf("isolation grant descriptor is closed: %w", err)
+	}
+	if !p.identity.Exists {
+		if stat.Dev != p.identity.ParentDev || stat.Ino != p.identity.ParentIno {
+			return errors.New("isolation parent descriptor changed")
+		}
+		return nil
+	}
+	if stat.Dev != p.identity.Dev || stat.Ino != p.identity.Ino || stat.Mode&unix.S_IFMT != p.identity.Mode || p.parent == nil {
+		return errors.New("isolation object descriptor changed")
+	}
+	if err := unix.Fstat(int(p.parent.Fd()), &stat); err != nil || stat.Dev != p.identity.ParentDev || stat.Ino != p.identity.ParentIno {
+		return errors.New("isolation parent descriptor changed")
 	}
 	return nil
 }
