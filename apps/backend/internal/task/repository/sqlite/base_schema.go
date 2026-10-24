@@ -38,6 +38,7 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		r.initDynamicRoutingSchema,
 		r.initStepTransitionsSchema,
 		r.initStepEntriesSchema,
+		r.initCompletionIntentSchema,
 		r.initTaskUsageEventsSchema,
 		r.initAttachmentsSchema,
 		r.initPreviewFeedbackSchema,

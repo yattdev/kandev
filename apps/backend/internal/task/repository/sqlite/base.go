@@ -57,9 +57,12 @@ type Repository struct {
 	// agentDeliveryRetentionFailpoint injects transaction failures at durable
 	// retention write boundaries for rollback tests.
 	agentDeliveryRetentionFailpoint func(string) error
-	agentDeliveryReloadStatements   agentDeliveryReloadStatementCache
-	agentDeliveryOwnerStatements    agentDeliveryOwnerStatementCache
-	agentDeliveryReceiptStatements  agentDeliveryReceiptStatementCache
+	// completionSettlementFailpoint injects a post-write transaction failure
+	// for settlement rollback tests. It is never configured in production.
+	completionSettlementFailpoint  func(string) error
+	agentDeliveryReloadStatements  agentDeliveryReloadStatementCache
+	agentDeliveryOwnerStatements   agentDeliveryOwnerStatementCache
+	agentDeliveryReceiptStatements agentDeliveryReceiptStatementCache
 	// failUsageEventAttempts/failUsageEventErr are a test-only failpoint for
 	// CreateTaskUsageEvent's AC-32 transient-retry loop: while
 	// failUsageEventAttempts > 0, insertUsageEventAndRollup returns

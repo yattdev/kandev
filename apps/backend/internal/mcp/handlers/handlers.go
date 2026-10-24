@@ -2596,7 +2596,7 @@ func (h *Handlers) handleStepComplete(ctx context.Context, msg *ws.Message) (*ws
 		return errMsg, err
 	}
 
-	launchStepID, launchEntryID, err := h.stepCompletionLaunchStep(ctx, req.SessionID, task.WorkflowStepID)
+	launchStepID, launchEntryID, turnID, err := h.stepCompletionLaunchStep(ctx, req.SessionID, task.WorkflowStepID)
 	if err != nil {
 		h.logger.Error("failed to resolve step-completion turn",
 			zap.String("task_id", req.TaskID),
@@ -2625,7 +2625,7 @@ func (h *Handlers) handleStepComplete(ctx context.Context, msg *ws.Message) (*ws
 		Blockers:                 boundedBlockers,
 		SignaledAt:               time.Now().UTC(),
 	}
-	signal, stored, err := h.claimStepCompletionSignal(ctx, req.TaskID, req.SessionID, launchStepID, signal)
+	signal, stored, err := h.claimStepCompletionSignal(ctx, req.TaskID, req.SessionID, turnID, launchStepID, signal)
 	if err != nil {
 		h.logger.Error("failed to persist step-completion signal",
 			zap.String("task_id", req.TaskID),
