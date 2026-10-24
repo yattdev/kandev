@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kandev/kandev/internal/agentctl/server/adapter"
 	"github.com/kandev/kandev/internal/agentctl/server/config"
+	"github.com/kandev/kandev/internal/agentctl/server/process/isolation"
 	"github.com/kandev/kandev/internal/agentctl/server/shell"
 	"github.com/kandev/kandev/internal/agentctl/server/utility"
 	"github.com/kandev/kandev/internal/agentctl/types"
@@ -107,8 +108,9 @@ const processStderrDrainTimeout = time.Second
 
 // Manager manages the agent subprocess
 type Manager struct {
-	cfg    *config.InstanceConfig
-	logger *logger.Logger
+	cfg           *config.InstanceConfig
+	logger        *logger.Logger
+	isolationPins *isolation.Set
 
 	// Process state
 	cmd                *exec.Cmd
@@ -298,6 +300,9 @@ type Manager struct {
 	waitGroupExitFn  func(context.Context, int) bool
 	managerWaitFn    func(context.Context, <-chan struct{}, time.Duration) bool
 }
+
+// SetIsolationPins transfers ownership of verified grant descriptors to this manager.
+func (m *Manager) SetIsolationPins(pins *isolation.Set) { m.isolationPins = pins }
 
 // ErrManagerStopping indicates that process admission is closed for teardown.
 var ErrManagerStopping = errors.New("process manager is stopping")
@@ -2056,7 +2061,11 @@ func (m *Manager) StopForTeardown(ctx context.Context) error {
 	if err := m.WaitForAdmission(ctx); err != nil {
 		return errors.Join(previewErr, fmt.Errorf("wait for process admission to drain: %w", err))
 	}
-	return errors.Join(previewErr, m.stop(ctx))
+	stopErr := m.stop(ctx)
+	if m.isolationPins != nil {
+		stopErr = errors.Join(stopErr, m.isolationPins.Close())
+	}
+	return errors.Join(previewErr, stopErr)
 }
 
 func (m *Manager) stop(ctx context.Context) error {

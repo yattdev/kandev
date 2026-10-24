@@ -1,6 +1,42 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+func TestWorkspaceIsolationBindsEveryGrantObject(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("object pinning requires Linux")
+	}
+	root := t.TempDir()
+	shared := filepath.Join(root, "shared", ".git")
+	private := filepath.Join(shared, "worktrees", "task")
+	workspace := filepath.Join(root, "task")
+	for _, path := range []string{private, workspace} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := WorkspaceIsolation{
+		SharedCommonDirs:       []string{shared},
+		WritablePaths:          []string{private},
+		PrivateAdminPaths:      []string{private},
+		WritableWorkspaceRoots: []string{workspace},
+	}
+	if err := manifest.CaptureObjects(); err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.ValidateObjects(); err != nil {
+		t.Fatalf("valid object binding rejected: %v", err)
+	}
+	manifest.WritablePaths = append(manifest.WritablePaths, filepath.Join(private, "new.lock"))
+	if err := manifest.ValidateObjects(); err == nil {
+		t.Fatal("manifest accepted writable grant without an object binding")
+	}
+}
 
 func TestWorkspaceIsolationRejectsWritableSharedCommonDirectory(t *testing.T) {
 	manifest := WorkspaceIsolation{SharedCommonDirs: []string{"/repo/.git"}, WritablePaths: []string{"/repo/.git/refs"}, WritableWorkspaceRoots: []string{"/task"}}

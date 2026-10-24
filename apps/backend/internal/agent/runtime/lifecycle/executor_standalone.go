@@ -366,6 +366,9 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 		if err := isolation.Validate(); err != nil {
 			return nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
 		}
+		if err := isolation.CaptureObjects(); err != nil {
+			return nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
+		}
 		createReq.WorkspaceIsolation = isolation
 	}
 

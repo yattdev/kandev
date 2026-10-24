@@ -5,14 +5,19 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/kandev/kandev/internal/agentctl/server/config"
 	"github.com/kandev/kandev/internal/worktree"
 )
 
 func TestStandaloneExecutorCreatesTaskScopedGitMetadataBeforeAgentctl(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("standalone object pinning requires Linux")
+	}
 	repo := filepath.Join(t.TempDir(), "repo")
 	runContainerGit(t, "", "init", "-b", "main", repo)
 	runContainerGit(t, repo, "config", "user.email", "test@example.com")
@@ -75,12 +80,7 @@ func TestStandaloneExecutorCreatesTaskScopedGitMetadataBeforeAgentctl(t *testing
 		t.Fatal(err)
 	}
 	var handoff struct {
-		WorkspaceIsolation struct {
-			SharedCommonDirs       []string `json:"shared_common_dirs"`
-			WritablePaths          []string `json:"writable_paths"`
-			PrivateAdminPaths      []string `json:"private_admin_paths"`
-			WritableWorkspaceRoots []string `json:"writable_workspace_roots"`
-		} `json:"workspace_isolation"`
+		WorkspaceIsolation config.WorkspaceIsolation `json:"workspace_isolation"`
 	}
 	if err := json.Unmarshal(encoded, &handoff); err != nil {
 		t.Fatal(err)
@@ -90,6 +90,9 @@ func TestStandaloneExecutorCreatesTaskScopedGitMetadataBeforeAgentctl(t *testing
 		!slices.Contains(handoff.WorkspaceIsolation.PrivateAdminPaths, projection.GitDir) ||
 		!slices.Contains(handoff.WorkspaceIsolation.WritableWorkspaceRoots, checkout) {
 		t.Fatalf("create handoff lacks the validated Git isolation grant: %+v", handoff.WorkspaceIsolation)
+	}
+	if err := handoff.WorkspaceIsolation.ValidateObjects(); err != nil {
+		t.Fatalf("create handoff lost pinned object identities: %v", err)
 	}
 	if err := os.RemoveAll(filepath.Join(checkout, "nested-clone")); err != nil {
 		t.Fatal(err)
@@ -174,6 +177,9 @@ func TestPreparedGitCheckoutPathsPreserveBindingWithoutProjection(t *testing.T) 
 }
 
 func TestStandaloneExecutorCarriesIndependentMultiRepoIsolation(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("standalone object pinning requires Linux")
+	}
 	workspace := t.TempDir()
 	var projections []*worktree.GitMetadataProjection
 	var checkouts []string
@@ -208,6 +214,9 @@ func TestStandaloneExecutorCarriesIndependentMultiRepoIsolation(t *testing.T) {
 	if isolation == nil || !slices.Equal(isolation.WritableWorkspaceRoots, []string{workspace}) ||
 		len(isolation.SharedCommonDirs) != 2 || len(isolation.PrivateAdminPaths) != 2 {
 		t.Fatalf("multi-repo isolation = %+v", isolation)
+	}
+	if err := isolation.ValidateObjects(); err != nil {
+		t.Fatalf("multi-repo isolation object inventory: %v", err)
 	}
 	for _, projection := range projections {
 		if !slices.Contains(isolation.SharedCommonDirs, projection.SharedCommonDir) ||

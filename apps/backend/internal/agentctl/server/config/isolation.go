@@ -3,15 +3,73 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/kandev/kandev/internal/agentctl/server/process/isolation"
 )
 
 // WorkspaceIsolation describes canonical paths granted to an agent instance.
 type WorkspaceIsolation struct {
-	SharedCommonDirs       []string `json:"shared_common_dirs"`
-	WritablePaths          []string `json:"writable_paths"`
-	PrivateAdminPaths      []string `json:"private_admin_paths"`
-	WritableWorkspaceRoots []string `json:"writable_workspace_roots"`
+	SharedCommonDirs       []string             `json:"shared_common_dirs"`
+	WritablePaths          []string             `json:"writable_paths"`
+	PrivateAdminPaths      []string             `json:"private_admin_paths"`
+	WritableWorkspaceRoots []string             `json:"writable_workspace_roots"`
+	ObjectIdentities       []isolation.Identity `json:"object_identities"`
+}
+
+func (m WorkspaceIsolation) grantPaths() map[string]struct{} {
+	paths := make(map[string]struct{})
+	for _, group := range [][]string{m.SharedCommonDirs, m.WritablePaths, m.PrivateAdminPaths, m.WritableWorkspaceRoots} {
+		for _, path := range group {
+			paths[path] = struct{}{}
+		}
+	}
+	return paths
+}
+
+// CaptureObjects binds every manifest grant to its current filesystem object.
+func (m *WorkspaceIsolation) CaptureObjects() error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	m.ObjectIdentities = nil
+	paths := m.grantPaths()
+	ordered := make([]string, 0, len(paths))
+	for path := range paths {
+		ordered = append(ordered, path)
+	}
+	sort.Strings(ordered)
+	for _, path := range ordered {
+		identity, err := isolation.Capture(path)
+		if err != nil {
+			m.ObjectIdentities = nil
+			return fmt.Errorf("capture isolation object: %w", err)
+		}
+		m.ObjectIdentities = append(m.ObjectIdentities, identity)
+	}
+	return nil
+}
+
+// ValidateObjects requires an exact object identity for every lexical grant.
+func (m WorkspaceIsolation) ValidateObjects() error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	paths := m.grantPaths()
+	if len(paths) != len(m.ObjectIdentities) {
+		return fmt.Errorf("isolation object inventory does not match grants")
+	}
+	for _, identity := range m.ObjectIdentities {
+		if _, ok := paths[identity.Path]; !ok {
+			return fmt.Errorf("isolation object inventory contains an unexpected path")
+		}
+		delete(paths, identity.Path)
+	}
+	if len(paths) != 0 {
+		return fmt.Errorf("isolation object inventory is incomplete")
+	}
+	return nil
 }
 
 // Validate rejects writable grants that overlap a shared Git common directory.

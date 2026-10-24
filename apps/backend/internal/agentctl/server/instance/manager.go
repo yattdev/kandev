@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kandev/kandev/internal/agentctl/server/config"
 	"github.com/kandev/kandev/internal/agentctl/server/process"
+	"github.com/kandev/kandev/internal/agentctl/server/process/isolation"
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/common/netutil"
 	"github.com/kandev/kandev/pkg/agent"
@@ -115,7 +116,7 @@ func (m *Manager) SetServerFactory(factory ServerFactory) {
 // CreateInstance creates a new agent instance.
 func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 	if req.WorkspaceIsolation != nil {
-		if err := req.WorkspaceIsolation.Validate(); err != nil {
+		if err := req.WorkspaceIsolation.ValidateObjects(); err != nil {
 			return nil, fmt.Errorf("invalid workspace isolation: %w", err)
 		}
 	}
@@ -150,6 +151,19 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 			zap.String("workspace_path", req.WorkspacePath),
 			zap.Error(err))
 		return nil, fmt.Errorf("create instance abandoned while queued: %w", err)
+	}
+	var pins *isolation.Set
+	if req.WorkspaceIsolation != nil {
+		var err error
+		pins, err = isolation.PinAll(req.WorkspaceIsolation.ObjectIdentities)
+		if err != nil {
+			return nil, fmt.Errorf("pin workspace isolation: %w", err)
+		}
+		defer func() {
+			if pins != nil {
+				_ = pins.Close()
+			}
+		}()
 	}
 
 	agentEnv, err := config.CollectAgentEnvWithError(req.Env)
@@ -219,6 +233,8 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 
 	// Create process manager
 	procMgr := process.NewManager(instanceCfg, m.logger)
+	procMgr.SetIsolationPins(pins)
+	pins = nil
 	// Wire retained-outcome recording (AC-EXECUTORS-SURVIVAL-004) before
 	// anything that could reach Start(): this manager satisfies
 	// process.TurnOutcomeRecorder via RetainTurnOutcome above, and nothing
