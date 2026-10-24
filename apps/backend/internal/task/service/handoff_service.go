@@ -364,19 +364,8 @@ func (s *HandoffService) SetSessionCeilingReleaser(releaser SessionCeilingReleas
 	s.sessionCeilingReleaser = releaser
 }
 
-// TaskResourceCleaner tears down a task's runtime resources (container,
-// sandbox, worktree, executor_running rows, quick-chat dir, task_environment
-// row) AFTER the cascade has stamped the task's DB row. The cascade paths
-// (ArchiveTaskTree, DeleteTaskTree) bypass Service.ArchiveTask /
-// Service.DeleteTask — which means they also bypass the env-cleanup branch
-// those wrappers run via runAsyncTaskCleanup. Without this wiring the agent
-// gets stopped (its container exits) but the container itself is never
-// removed and leaks indefinitely.
-//
-// Implemented by *Service via CleanupTaskResources. Optional — when nil the
-// cascade still completes, it just leaks runtime resources (matches the
-// pre-fix behaviour). deleteEnvRow is true for delete cascades and false for
-// archive (archive preserves the env row for later inspection).
+// TaskResourceCleaner starts a previously prepared durable cleanup after a
+// cascade mutation. Missing admission is returned to the cascade caller.
 type TaskResourceCleaner interface {
 	CleanupTaskResources(ctx context.Context, taskID string, deleteEnvRow bool) error
 }

@@ -5,7 +5,16 @@ import (
 	"testing"
 
 	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/task/repository"
 )
+
+type missingCleanupReadback struct {
+	repository.TaskResourceCleanupRepository
+}
+
+func (*missingCleanupReadback) GetTaskResourceCleanupJobByOperationID(context.Context, string) (*models.TaskResourceCleanupJob, error) {
+	return nil, nil
+}
 
 func TestRetentionCleanupAdmission_ArchiveRequiresDurableStore(t *testing.T) {
 	svc, repo := setupOfficeTest(t)
@@ -35,5 +44,25 @@ func TestRetentionCleanupAdmission_LegacyCallbackNeedsDurableInventory(t *testin
 	}
 	if legacy.calls != 0 {
 		t.Fatalf("legacy cleanup ran before durable admission: %d calls", legacy.calls)
+	}
+}
+
+func TestRetentionCleanupAdmission_MissingReservationReadbackHasNoDeleteEffects(t *testing.T) {
+	svc, repo := setupOfficeTest(t)
+	ctx := context.Background()
+	if err := repo.CreateTask(ctx, &models.Task{ID: "missing-readback", WorkspaceID: "ws-1", Title: "Task"}); err != nil {
+		t.Fatal(err)
+	}
+	canvas := &retentionCanvasCleanup{}
+	svc.SetCanvasCleanup(canvas)
+	svc.resourceCleanups = &missingCleanupReadback{TaskResourceCleanupRepository: repo}
+	if err := svc.DeleteTask(ctx, "missing-readback"); err == nil {
+		t.Fatal("delete succeeded without verified cleanup reservation")
+	}
+	if canvas.taskCalls != 0 {
+		t.Fatalf("canvas cleanup ran before verified reservation: %d", canvas.taskCalls)
+	}
+	if _, err := repo.GetTask(ctx, "missing-readback"); err != nil {
+		t.Fatalf("delete changed task without verified reservation: %v", err)
 	}
 }

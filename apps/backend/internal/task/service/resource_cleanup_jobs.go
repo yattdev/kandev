@@ -243,7 +243,15 @@ func (s *Service) persistTaskResourceCleanup(
 	if err := s.resourceCleanups.CreateTaskResourceCleanupJob(ctx, job); err != nil {
 		return nil, fmt.Errorf("persist task resource cleanup intent: %w", err)
 	}
-	return s.resourceCleanups.GetTaskResourceCleanupJobByOperationID(ctx, operationID)
+	persisted, err := s.resourceCleanups.GetTaskResourceCleanupJobByOperationID(ctx, operationID)
+	if err != nil {
+		return nil, err
+	}
+	if persisted == nil || persisted.TaskID != taskID || persisted.OperationID != operationID ||
+		persisted.Trigger != trigger {
+		return nil, ErrTaskCleanupAdmissionRequired
+	}
+	return persisted, nil
 }
 
 func (s *Service) updateReservedCleanupEnvironmentSnapshot(

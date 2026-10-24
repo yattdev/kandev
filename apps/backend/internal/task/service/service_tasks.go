@@ -2538,14 +2538,9 @@ func (s *Service) ArchiveTask(ctx context.Context, id string) error {
 		zap.Duration("duration", time.Since(start)))
 
 	// 6. Background: Stop agents and cleanup worktrees
-	if cleanupJob != nil {
-		if err := s.StartPreparedTaskResourceCleanup(context.WithoutCancel(finalizeCtx), cleanupJob.OperationID); err != nil {
-			s.logger.Warn("start committed archive resource cleanup",
-				zap.String("job_id", cleanupJob.ID), zap.String("task_id", id), zap.Error(err))
-		}
-	} else if len(stopTargets) > 0 || s.worktreeCleanup != nil || len(sessions) > 0 || taskEnv != nil {
-		s.runAsyncTaskCleanup(id, sessions, worktrees, stopTargets, envCleanup, false,
-			"task archived", "failed to stop session on task archive", "task archive cleanup completed")
+	if err := s.StartPreparedTaskResourceCleanup(context.WithoutCancel(finalizeCtx), cleanupJob.OperationID); err != nil {
+		s.logger.Warn("start committed archive resource cleanup",
+			zap.String("job_id", cleanupJob.ID), zap.String("task_id", id), zap.Error(err))
 	}
 
 	if postCommitErr != nil {
@@ -3194,15 +3189,9 @@ func (s *Service) deleteTaskWithReasonAndDBDelete(
 	//    envCleanup struct so the task environment row is reset alongside
 	//    the worktrees (an extra task.taskEnv != nil branch keeps the
 	//    cleanup running when only the env needs reclaiming).
-	hasCleanup := len(stopTargets) > 0 || s.worktreeCleanup != nil || len(sessions) > 0 || task.IsEphemeral || taskEnv != nil
-	if cleanupJob != nil {
-		if err := s.StartPreparedTaskResourceCleanup(context.WithoutCancel(operationCtx), cleanupJob.OperationID); err != nil {
-			s.logger.Warn("start committed delete resource cleanup",
-				zap.String("job_id", cleanupJob.ID), zap.String("task_id", id), zap.Error(err))
-		}
-	} else if hasCleanup {
-		s.runAsyncTaskCleanup(id, sessions, worktrees, stopTargets, envCleanup, true,
-			"task deleted", "failed to stop session on task delete", "task cleanup completed")
+	if err := s.StartPreparedTaskResourceCleanup(context.WithoutCancel(operationCtx), cleanupJob.OperationID); err != nil {
+		s.logger.Warn("start committed delete resource cleanup",
+			zap.String("job_id", cleanupJob.ID), zap.String("task_id", id), zap.Error(err))
 	}
 
 	return true, nil
@@ -3224,22 +3213,9 @@ func (s *Service) deleteTaskStopTargets(ctx context.Context, id string) ([]taskS
 	return stopTargets, nil
 }
 
-// CleanupTaskResources tears down a task's runtime resources (container,
-// sandbox, worktree, executor_running rows, quick-chat dir, task_environment
-// row) AFTER the task row has been archived or deleted by another path.
-//
-// Used by HandoffService.ArchiveTaskTree / DeleteTaskTree, which bypass
-// Service.ArchiveTask / Service.DeleteTask and therefore miss the runtime
-// teardown those wrappers run via runAsyncTaskCleanup. Without this call the
-// agent gets stopped but its container/sandbox leaks indefinitely.
-//
-// The caller may already have cancelled active runs separately (cascade does
-// this via runCanceller before invoking us), but terminal sessions can still
-// have executors_running rows. We still derive runtime stop targets from
-// executors_running here so cascade cleanup does not drop durable handles.
-// deleteEnvRow controls whether the task_environment row is removed (true
-// for delete cascade, false for archive — archive preserves the row). Runtime
-// inventory failures abort cleanup so durable stop handles remain retryable.
+// CleanupTaskResources starts a unique prepared cascade cleanup after the
+// matching task mutation has committed. The durable snapshot supplies every
+// resource target; a caller without that admission cannot start cleanup.
 func (s *Service) CleanupTaskResources(ctx context.Context, taskID string, deleteEnvRow bool) error {
 	prepared, err := s.findPreparedCascadeCleanup(ctx, taskID, deleteEnvRow)
 	if err != nil {

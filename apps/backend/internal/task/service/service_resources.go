@@ -640,21 +640,19 @@ func (s *Service) runWorkspaceDeleteTaskCleanupJobs(jobs []workspaceDeleteTaskCl
 }
 
 func (s *Service) runWorkspaceDeleteTaskCleanup(cleanup workspaceDeleteTaskCleanup) {
-	if cleanup.cleanupJob != nil {
-		transitionCtx, cancel := detachedCleanupTransitionContext(context.Background())
-		defer cancel()
-		if err := s.StartPreparedTaskResourceCleanup(
-			transitionCtx, cleanup.cleanupJob.OperationID,
-		); err != nil {
-			s.logger.Warn("start workspace delete task cleanup job",
-				zap.String("job_id", cleanup.cleanupJob.ID),
-				zap.String("task_id", cleanup.cleanupJob.TaskID), zap.Error(err))
-		}
+	if cleanup.cleanupJob == nil {
+		s.logger.Error("workspace delete task cleanup lacks admission")
 		return
 	}
-	envCleanup := taskEnvironmentCleanup{env: cleanup.taskEnv, deleteRow: false}
-	s.runTaskCleanup(cleanup.task.ID, cleanup.sessions, cleanup.worktrees, cleanup.stopTargets, envCleanup, true,
-		"task deleted", "failed to stop session on task delete", "task cleanup completed")
+	transitionCtx, cancel := detachedCleanupTransitionContext(context.Background())
+	defer cancel()
+	if err := s.StartPreparedTaskResourceCleanup(
+		transitionCtx, cleanup.cleanupJob.OperationID,
+	); err != nil {
+		s.logger.Warn("start workspace delete task cleanup job",
+			zap.String("job_id", cleanup.cleanupJob.ID),
+			zap.String("task_id", cleanup.cleanupJob.TaskID), zap.Error(err))
+	}
 }
 
 func (s *Service) mapWorkspaceDeleteError(id string, err error) error {
