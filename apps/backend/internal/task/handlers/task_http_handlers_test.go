@@ -1953,7 +1953,7 @@ func TestCommitFreshBranchRollsBackTaskWhenPersistedRepositoriesCannotBeLoaded(t
 		Workspaces: repo, Tasks: repo, TaskRepos: repo, Workflows: repo,
 		Messages: repo, Turns: repo, Sessions: repo, GitSnapshots: repo,
 		RepoEntities: repo, Executors: repo, Environments: repo,
-		TaskEnvironments: repo, Reviews: repo,
+		TaskEnvironments: repo, Reviews: repo, ResourceCleanups: &handlerCleanupAdmission{},
 	}, nil, log, service.RepositoryDiscoveryConfig{})
 	handler := &TaskHandlers{service: svc, logger: log}
 	recorder := httptest.NewRecorder()

@@ -415,7 +415,7 @@ func TestHTTPArchiveFallbackReportsCommittedProjectionFailureAsPending(t *testin
 		Workflows: repo, Messages: repo, Turns: repo,
 		Sessions: repo, GitSnapshots: repo, RepoEntities: repo,
 		Executors: repo, Environments: repo, TaskEnvironments: repo,
-		Reviews: repo,
+		Reviews: repo, ResourceCleanups: &handlerCleanupAdmission{},
 	}, nil, log, service.RepositoryDiscoveryConfig{})
 	h := &TaskHandlers{service: svc, logger: log}
 	c, rec := taskRequestAs(t, "", http.MethodDelete, "/api/v1/tasks/task-1", "task-1")

@@ -31,6 +31,7 @@ import (
 // handler managed to issue.
 type authzDeleteRepo struct {
 	mockRepository
+	*handlerCleanupAdmission
 
 	mu sync.Mutex
 	// deleted records each delete alongside the liveness of the context it
@@ -117,13 +118,14 @@ func (r *authzDeleteRepo) deliveredLive() bool {
 
 func newAuthzTaskHandlers(t *testing.T, repo *authzDeleteRepo) *TaskHandlers {
 	t.Helper()
+	repo.handlerCleanupAdmission = &handlerCleanupAdmission{}
 	log := newTestLogger(t)
 	svc := service.NewService(service.Repos{
 		Workspaces: repo, Tasks: repo, TaskRepos: repo,
 		Workflows: repo, Messages: repo, Turns: repo,
 		Sessions: repo, GitSnapshots: repo, RepoEntities: repo,
 		Executors: repo, Environments: repo, TaskEnvironments: repo,
-		Reviews: repo,
+		Reviews: repo, ResourceCleanups: repo,
 	}, nil, log, service.RepositoryDiscoveryConfig{})
 	return &TaskHandlers{service: svc, repo: repo, logger: log}
 }
