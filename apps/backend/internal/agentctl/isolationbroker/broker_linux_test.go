@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -202,13 +203,99 @@ func TestBrokerTransfersPinnedObjectsOnce(t *testing.T) {
 	}
 }
 
-func TestBrokerRejectsBodyGenerationAndClosesPendingOnEOF(t *testing.T) {
+func TestBrokerCanceledRegistrationDoesNotTransfer(t *testing.T) {
 	parent, child, err := SocketPair()
 	if err != nil {
 		t.Fatal(err)
 	}
 	epoch := make(chan struct{})
 	server, err := NewServer(child, func() <-chan struct{} { return epoch })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = server.Close() }()
+	client, err := NewClient(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	root := t.TempDir()
+	identity, err := isolation.Capture(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins, err := isolation.PinAll([]isolation.Identity{identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pins.Close() }()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reg := Registration{TaskID: "task", SessionID: "session", InstanceID: "instance", Workspace: root, Identities: []isolation.Identity{identity}}
+	if _, err := client.Register(ctx, []byte("body"), reg, pins); err == nil {
+		t.Fatal("canceled registration succeeded")
+	}
+	server.mu.Lock()
+	remaining := len(server.entries)
+	server.mu.Unlock()
+	if remaining != 0 {
+		t.Fatalf("canceled registration retained %d entries", remaining)
+	}
+}
+
+func TestBrokerTimeoutQuarantinesConnection(t *testing.T) {
+	parent, child, err := SocketPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch := make(chan struct{})
+	server, err := NewServer(child, func() <-chan struct{} { return epoch })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = server.Close() }()
+	client, err := NewClient(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	root := t.TempDir()
+	identity, err := isolation.Capture(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins, err := isolation.PinAll([]isolation.Identity{identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pins.Close() }()
+	reg := Registration{TaskID: "task", SessionID: "session", InstanceID: "instance", Workspace: root, Identities: []isolation.Identity{identity}}
+	server.mu.Lock()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	_, err = client.Register(ctx, []byte("first"), reg, pins)
+	cancel()
+	server.mu.Unlock()
+	if err == nil {
+		t.Fatal("held ACK did not time out")
+	}
+	if _, err := client.Register(context.Background(), []byte("second"), reg, pins); err == nil {
+		t.Fatal("ambiguous broker connection was reused")
+	}
+}
+
+func TestBrokerRejectsBodyGenerationAndClosesPendingOnEOF(t *testing.T) {
+	parent, child, err := SocketPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch := make(chan struct{})
+	var epochMu sync.RWMutex
+	current := func() <-chan struct{} {
+		epochMu.RLock()
+		defer epochMu.RUnlock()
+		return epoch
+	}
+	server, err := NewServer(child, current)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,28 +329,43 @@ func TestBrokerRejectsBodyGenerationAndClosesPendingOnEOF(t *testing.T) {
 	}
 	stale := epoch
 	close(epoch)
+	epochMu.Lock()
 	epoch = make(chan struct{})
+	epochMu.Unlock()
 	if _, err := server.Consume(receipt, body, reg, stale); err == nil {
 		t.Fatal("stale control generation consumed registration")
 	}
-	receipt, err = client.Register(context.Background(), body, reg, source)
+	if _, err := client.Register(context.Background(), body, reg, source); err == nil {
+		t.Fatal("old broker accepted a new control generation")
+	}
+	parent2, child2, err := SocketPair()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt == "" {
-		t.Fatal("missing fresh receipt")
-	}
-	if err := client.Close(); err != nil {
+	server2, err := NewServer(child2, func() <-chan struct{} { return epoch })
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = server2.Close() }()
+	client2, err := NewClient(parent2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client2.Register(context.Background(), body, reg, source); err != nil {
+		t.Fatal(err)
+	}
+	if err := client2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_ = client.Close()
 	select {
-	case <-server.done:
+	case <-server2.done:
 	case <-time.After(time.Second):
 		t.Fatal("broker did not close pending descriptors on EOF")
 	}
-	server.mu.Lock()
-	remaining := len(server.entries)
-	server.mu.Unlock()
+	server2.mu.Lock()
+	remaining := len(server2.entries)
+	server2.mu.Unlock()
 	if remaining != 0 {
 		t.Fatalf("broker retained %d pending registrations after EOF", remaining)
 	}

@@ -51,6 +51,24 @@ func TestReconcileProtectedCreateRequiresExactReceiptInstance(t *testing.T) {
 	}
 }
 
+func TestReconcileProtectedCreateWaitsForClaimedReceipt(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"instance-1","port":45678}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := newTestControlClient(t, srv, WithControlAuthToken("owner"))
+	got, err := c.reconcileProtectedCreate("receipt-1", "instance-1")
+	if err != nil || got.ID != "instance-1" || requests != 2 {
+		t.Fatalf("pending receipt reconciliation = %+v, %v; requests=%d", got, err, requests)
+	}
+}
+
 // newTestControlClient builds a ControlClient pointed at srv, going through the
 // real constructor so base-URL assembly and the auth transport are exercised.
 func newTestControlClient(t *testing.T, srv *httptest.Server, opts ...ControlClientOption) *ControlClient {

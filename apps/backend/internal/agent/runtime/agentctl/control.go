@@ -375,28 +375,45 @@ func (c *ControlClient) reconcileAfterError(receipt, instanceID string) *CreateI
 }
 
 func (c *ControlClient) reconcileProtectedCreate(receipt, instanceID string) (*CreateInstanceResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	for {
+		created, pending, err := c.readIsolationReceipt(ctx, receipt, instanceID)
+		if err != nil || !pending {
+			return created, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("isolation receipt outcome remains pending: %w", ctx.Err())
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+func (c *ControlClient) readIsolationReceipt(ctx context.Context, receipt, instanceID string) (*CreateInstanceResponse, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/isolation/receipts/"+receipt, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusAccepted {
+		return nil, true, nil
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("isolation receipt outcome unavailable: %d", resp.StatusCode)
+		return nil, false, fmt.Errorf("isolation receipt outcome unavailable: %d", resp.StatusCode)
 	}
 	var created CreateInstanceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if created.ID != instanceID || created.Port <= 0 {
-		return nil, errors.New("isolation receipt outcome mismatched instance")
+		return nil, false, errors.New("isolation receipt outcome mismatched instance")
 	}
-	return &created, nil
+	return &created, false, nil
 }
 
 // DeleteInstance stops and removes an agent instance.

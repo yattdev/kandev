@@ -235,16 +235,20 @@ func controlCredentialAuth(creds *credentialState, adoptionOnlyPaths map[string]
 		}
 
 		var ok bool
+		var invalidated <-chan struct{}
 		if adoptionOnlyPaths[c.Request.URL.Path] {
 			ok = creds.AcceptsAdoptionOnly(token)
 		} else {
-			ok = creds.AcceptsFull(token)
+			ok, invalidated = creds.AcceptsFullWithInvalidation(token)
 		}
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{errKey: errInvalidAuthToken})
 			return
 		}
 
+		if invalidated != nil {
+			c.Set(credentialInvalidatedContextKey, invalidated)
+		}
 		c.Next()
 	}
 }
@@ -277,7 +281,7 @@ func (m *ControlServer) handleCredentialRotate(c *gin.Context) {
 		return
 	}
 	if m.isolationBroker != nil {
-		m.isolationBroker.Revoke()
+		_ = m.isolationBroker.Close()
 	}
 
 	if afterCredentialRotateAccepted != nil {

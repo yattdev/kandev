@@ -46,8 +46,9 @@ func (*Client) Register(context.Context, []byte, Registration, *isolation.Set) (
 func (*Server) Consume(string, []byte, Registration, <-chan struct{}) (*isolation.Set, error) {
 	return nil, errUnsupported
 }
-func (*Server) Revoke()                                         {}
-func (*Server) Forget(string)                                   {}
-func (*Server) MarkCreated(string, <-chan struct{}, Created)    {}
-func (*Server) Created(string, <-chan struct{}) (Created, bool) { return Created{}, false }
-func (*Server) Close() error                                    { return nil }
+func (*Server) Revoke()                                                     {}
+func (*Server) Forget(string)                                               {}
+func (*Server) CommitCreated(string, <-chan struct{}, Created, func()) bool { return false }
+func (*Server) Created(string, <-chan struct{}) (Created, bool)             { return Created{}, false }
+func (*Server) Lookup(string, <-chan struct{}) (Created, bool, bool)        { return Created{}, false, false }
+func (*Server) Close() error                                                { return nil }

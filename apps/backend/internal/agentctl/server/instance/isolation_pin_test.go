@@ -4,12 +4,15 @@ package instance
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/kandev/kandev/internal/agentctl/server/config"
+	"github.com/kandev/kandev/internal/agentctl/server/process"
 	"github.com/kandev/kandev/internal/agentctl/server/process/isolation"
+	"github.com/kandev/kandev/internal/common/logger"
 	"golang.org/x/sys/unix"
 )
 
@@ -120,6 +123,50 @@ func TestCreateInstanceRejectsStaleControlGenerationBeforePublishing(t *testing.
 	}
 	if err := unix.Fstat(fd, &unix.Stat_t{}); err != unix.EBADF {
 		t.Fatalf("stale create retained workspace FD: %v", err)
+	}
+}
+
+func TestCreateInstanceRejectsCancellationDuringHandlerConstruction(t *testing.T) {
+	root := t.TempDir()
+	shared := filepath.Join(root, "repo", ".git")
+	private := filepath.Join(shared, "worktrees", "task")
+	workspace := filepath.Join(root, "task")
+	for _, path := range []string{private, workspace} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := &config.WorkspaceIsolation{SharedCommonDirs: []string{shared}, WritablePaths: []string{private}, PrivateAdminPaths: []string{private}, WritableWorkspaceRoots: []string{workspace}}
+	if err := manifest.CaptureObjects(); err != nil {
+		t.Fatal(err)
+	}
+	pins, err := isolation.PinAll(manifest.ObjectIdentities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManager(&config.Config{Ports: config.PortConfig{Base: 0, Max: 0}}, newTestLogger(t))
+	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	started := make(chan struct{})
+	release := make(chan struct{})
+	mgr.SetServerFactory(func(_ *config.InstanceConfig, _ *process.Manager, _ *logger.Logger) http.Handler {
+		close(started)
+		<-release
+		return http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := mgr.CreateInstanceWithPinsFenced(ctx, &CreateRequest{ID: "late", WorkspacePath: workspace, WorkspaceIsolation: manifest}, pins, func(publish func()) bool { publish(); return true })
+		done <- err
+	}()
+	<-started
+	cancel()
+	close(release)
+	if err := <-done; err == nil {
+		t.Fatal("canceled protected create succeeded")
+	}
+	if len(mgr.ListInstances()) != 0 {
+		t.Fatal("canceled protected create published an instance")
 	}
 }
 

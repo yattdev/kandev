@@ -232,14 +232,16 @@ func (m *ControlServer) handleCreateInstance(c *gin.Context) {
 	var resp *instance.CreateResponse
 	var err error
 	var protectedReceipt string
-	var protectedEpoch <-chan struct{}
 	if req.WorkspaceIsolation != nil {
 		if m.credentials.Latest() == "" || extractBearerToken(c.Request) == "" || req.ID == "" || req.TaskID == "" || req.SessionID == "" {
 			c.JSON(http.StatusForbidden, gin.H{"error": "protected create requires full control ownership and task identity"})
 			return
 		}
-		epoch := m.credentials.Invalidated()
-		protectedEpoch = epoch
+		epoch := credentialInvalidatedFromContext(c)
+		if epoch == nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "protected create lacks authenticated control generation"})
+			return
+		}
 		protectedReceipt = c.GetHeader("X-Kandev-Isolation-Receipt")
 		registration := isolationbroker.Registration{TaskID: req.TaskID, SessionID: req.SessionID, InstanceID: req.ID, Workspace: req.WorkspacePath, Identities: req.WorkspaceIsolation.ObjectIdentities}
 		pins, consumeErr := m.isolationBroker.Consume(protectedReceipt, body, registration, epoch)
@@ -248,7 +250,10 @@ func (m *ControlServer) handleCreateInstance(c *gin.Context) {
 			return
 		}
 		resp, err = m.instMgr.CreateInstanceWithPinsFenced(c.Request.Context(), &req, pins,
-			func(publish func()) bool { return m.credentials.PublishIfCurrent(epoch, publish) })
+			func(publish func()) bool { return m.credentials.PublishIfCurrent(epoch, publish) },
+			func(created *instance.CreateResponse, publish func()) bool {
+				return m.isolationBroker.CommitCreated(protectedReceipt, epoch, isolationbroker.Created{ID: created.ID, Port: created.Port}, publish)
+			})
 	} else {
 		resp, err = m.instMgr.CreateInstance(c.Request.Context(), &req)
 	}
@@ -262,10 +267,6 @@ func (m *ControlServer) handleCreateInstance(c *gin.Context) {
 		})
 		return
 	}
-	if protectedReceipt != "" {
-		m.isolationBroker.MarkCreated(protectedReceipt, protectedEpoch, isolationbroker.Created{ID: resp.ID, Port: resp.Port})
-	}
-
 	c.JSON(http.StatusCreated, resp)
 }
 
@@ -274,7 +275,16 @@ func (m *ControlServer) handleIsolationReceipt(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "isolation receipt unavailable"})
 		return
 	}
-	created, ok := m.isolationBroker.Created(c.Param("receipt"), m.credentials.Invalidated())
+	epoch := credentialInvalidatedFromContext(c)
+	if epoch == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "isolation receipt unavailable"})
+		return
+	}
+	created, ok, pending := m.isolationBroker.Lookup(c.Param("receipt"), epoch)
+	if pending {
+		c.Status(http.StatusAccepted)
+		return
+	}
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "isolation receipt unavailable"})
 		return

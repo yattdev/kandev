@@ -141,7 +141,7 @@ func validateProtectedCreate(req *CreateRequest, pins *isolation.Set) error {
 
 // CreateInstanceWithPinsFenced publishes a protected instance only while its
 // authenticated control generation still owns the broker registration.
-func (m *Manager) CreateInstanceWithPinsFenced(ctx context.Context, req *CreateRequest, pins *isolation.Set, fence func(func()) bool) (*CreateResponse, error) {
+func (m *Manager) CreateInstanceWithPinsFenced(ctx context.Context, req *CreateRequest, pins *isolation.Set, fence func(func()) bool, commit ...func(*CreateResponse, func()) bool) (*CreateResponse, error) {
 	defer func() {
 		if pins != nil {
 			_ = pins.Close()
@@ -152,15 +152,12 @@ func (m *Manager) CreateInstanceWithPinsFenced(ctx context.Context, req *CreateR
 	}
 	// Include the mutex queue wait in create latency.
 	createStart := time.Now()
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
 	id, agentEnv, port, listener, err := m.prepareCreateResources(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-
 	agentCmd := m.resolveAgentCommand(req)
 
 	m.logger.Info("CreateInstance: received request",
@@ -209,11 +206,15 @@ func (m *Manager) CreateInstanceWithPinsFenced(ctx context.Context, req *CreateR
 	inst.MarkActivity()
 
 	handler := activityMiddleware(inst)(m.buildHTTPHandler(instanceCfg, procMgr))
-	publish := func() {
-		inst.server = m.startHTTPServer(port, listener, handler, id)
-		m.instances[id] = inst
+	if err := ctx.Err(); err != nil {
+		m.scheduleAbandonedCreate(id, port, listener, procMgr)
+		return nil, fmt.Errorf("create instance abandoned before publication: %w", err)
 	}
-	if !publishIfOwned(fence, publish) {
+	if err := procMgr.ValidateIsolationPins(); err != nil {
+		m.scheduleAbandonedCreate(id, port, listener, procMgr)
+		return nil, fmt.Errorf("workspace isolation changed before publication: %w", err)
+	}
+	if !m.publishCreatedInstance(fence, commit, id, port, listener, handler, inst) {
 		m.scheduleAbandonedCreate(id, port, listener, procMgr)
 		return nil, errors.New("control ownership changed before protected instance publication")
 	}
@@ -233,6 +234,23 @@ func (m *Manager) CreateInstanceWithPinsFenced(ctx context.Context, req *CreateR
 		zap.String("workspace", req.WorkspacePath))
 
 	return &CreateResponse{ID: id, Port: port}, nil
+}
+
+func (m *Manager) publishCreatedInstance(fence func(func()) bool, commit []func(*CreateResponse, func()) bool, id string, port int, listener net.Listener, handler http.Handler, inst *Instance) bool {
+	published := false
+	actualPublish := func() {
+		inst.server = m.startHTTPServer(port, listener, handler, id)
+		m.instances[id] = inst
+		published = true
+	}
+	publish := func() {
+		if len(commit) == 0 {
+			actualPublish()
+			return
+		}
+		_ = commit[0](&CreateResponse{ID: id, Port: port}, actualPublish)
+	}
+	return publishIfOwned(fence, publish) && published
 }
 
 func (m *Manager) createOverrides(req *CreateRequest, id string, agentEnv []string, agentCmd string) *config.InstanceOverrides {

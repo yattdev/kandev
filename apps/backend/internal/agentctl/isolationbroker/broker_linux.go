@@ -83,6 +83,9 @@ func NewClient(file *os.File) (*Client, error) {
 func (c *Client) Close() error { return c.conn.Close() }
 
 func (c *Client) Register(ctx context.Context, body []byte, reg Registration, source *isolation.Set) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if len(reg.Identities) == 0 || len(reg.Identities) > maxGrants || len(body) == 0 || source == nil {
 		return "", errors.New("invalid isolation registration")
 	}
@@ -97,8 +100,15 @@ func (c *Client) Register(ctx context.Context, body []byte, reg Registration, so
 	if err != nil {
 		return "", err
 	}
+	return c.exchangeWithContext(ctx, message, fds)
+}
+
+func (c *Client) exchangeWithContext(ctx context.Context, message []byte, fds []int) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	if value, ok := ctx.Deadline(); ok && value.Before(deadline) {
 		deadline = value
@@ -107,7 +117,28 @@ func (c *Client) Register(ctx context.Context, body []byte, reg Registration, so
 		return "", err
 	}
 	defer func() { _ = c.conn.SetDeadline(time.Time{}) }()
-	return c.exchange(message, fds)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-ctx.Done():
+			_ = c.conn.SetDeadline(time.Now())
+		case <-stop:
+		}
+	}()
+	receipt, err := c.exchange(message, fds)
+	close(stop)
+	<-done
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		// A missing ACK leaves the next reply ambiguous; EOF also revokes pending FDs.
+		_ = c.conn.Close()
+		return "", err
+	}
+	return receipt, nil
 }
 
 func (c *Client) exchange(message []byte, fds []int) (string, error) {
@@ -172,6 +203,7 @@ type completed struct {
 type Server struct {
 	conn      *net.UnixConn
 	current   func() <-chan struct{}
+	origin    <-chan struct{}
 	mu        sync.Mutex
 	entries   map[string]*pending
 	claimed   map[string]*time.Timer
@@ -185,7 +217,7 @@ func NewServer(file *os.File, current func() <-chan struct{}) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{conn: conn, current: current, entries: make(map[string]*pending), claimed: make(map[string]*time.Timer), completed: make(map[string]*completed), done: make(chan struct{})}
+	s := &Server{conn: conn, current: current, origin: current(), entries: make(map[string]*pending), claimed: make(map[string]*time.Timer), completed: make(map[string]*completed), done: make(chan struct{})}
 	go s.run()
 	return s, nil
 }
@@ -254,6 +286,17 @@ func (s *Server) accept(payload []byte, files []*os.File, parseErr error) respon
 	if err != nil {
 		return response{Error: err.Error()}
 	}
+	epoch := s.current()
+	if epoch != s.origin {
+		_ = pins.Close()
+		return response{Error: "isolation broker control generation changed"}
+	}
+	select {
+	case <-epoch:
+		_ = pins.Close()
+		return response{Error: "isolation broker control generation expired"}
+	default:
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || len(s.entries)+len(s.claimed)+len(s.completed) >= maxPending {
@@ -266,7 +309,7 @@ func (s *Server) accept(payload []byte, files []*os.File, parseErr error) respon
 		return response{Error: "isolation receipt unavailable"}
 	}
 	receipt := hex.EncodeToString(random[:])
-	entry := &pending{frame: message, pins: pins, epoch: s.current()}
+	entry := &pending{frame: message, pins: pins, epoch: epoch}
 	entry.timer = time.AfterFunc(pendingLifetime, func() { s.expire(receipt) })
 	s.entries[receipt] = entry
 	return response{Receipt: receipt}
@@ -303,8 +346,9 @@ func (s *Server) Consume(receipt string, body []byte, reg Registration, epoch <-
 		return nil, errors.New("isolation credential rotated")
 	default:
 	}
+	current := s.current()
 	s.mu.Lock()
-	if s.closed || epoch != s.current() {
+	if s.closed || epoch != current || epoch != s.origin {
 		s.mu.Unlock()
 		_ = entry.pins.Close()
 		return nil, errors.New("isolation ownership changed before claim")
@@ -335,17 +379,23 @@ func (s *Server) Revoke() {
 	}
 }
 
-// MarkCreated records the exact receipt outcome for a lost HTTP response.
-func (s *Server) MarkCreated(receipt string, epoch <-chan struct{}, created Created) {
+// CommitCreated publishes and records the outcome under one broker ownership lock.
+func (s *Server) CommitCreated(receipt string, epoch <-chan struct{}, created Created, publish func()) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed || epoch != s.current() {
-		return
+	if s.closed || epoch != s.origin {
+		return false
+	}
+	select {
+	case <-epoch:
+		return false
+	default:
 	}
 	timer, ok := s.claimed[receipt]
 	if !ok {
-		return
+		return false
 	}
+	publish()
 	timer.Stop()
 	delete(s.claimed, receipt)
 	entry := &completed{created: created, epoch: epoch}
@@ -355,6 +405,7 @@ func (s *Server) MarkCreated(receipt string, epoch <-chan struct{}, created Crea
 		s.mu.Unlock()
 	})
 	s.completed[receipt] = entry
+	return true
 }
 
 func (s *Server) Forget(receipt string) {
@@ -368,13 +419,32 @@ func (s *Server) Forget(receipt string) {
 }
 
 func (s *Server) Created(receipt string, epoch <-chan struct{}) (Created, bool) {
+	created, ok, _ := s.Lookup(receipt, epoch)
+	return created, ok
+}
+
+// Lookup reports a completed or still-owned registration for exact receipt reconciliation.
+func (s *Server) Lookup(receipt string, epoch <-chan struct{}) (Created, bool, bool) {
+	current := s.current()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entry, ok := s.completed[receipt]
-	if !ok || entry.epoch != epoch || epoch != s.current() {
-		return Created{}, false
+	if s.closed || epoch != current || epoch != s.origin {
+		return Created{}, false, false
 	}
-	return entry.created, true
+	select {
+	case <-epoch:
+		return Created{}, false, false
+	default:
+	}
+	entry, ok := s.completed[receipt]
+	if ok && entry.epoch == epoch {
+		return entry.created, true, false
+	}
+	if waiting, ok := s.entries[receipt]; ok && waiting.epoch == epoch {
+		return Created{}, false, true
+	}
+	_, pending := s.claimed[receipt]
+	return Created{}, false, pending
 }
 
 func (s *Server) Close() error {
