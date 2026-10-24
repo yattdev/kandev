@@ -251,6 +251,10 @@ type InstanceConfig struct {
 	// WorkDir is the working directory for the agent process
 	WorkDir string
 
+	// WorkspaceIsolation is a server-resolved filesystem grant for agent-owned
+	// commands. Callers must validate it before any sandbox helper is invoked.
+	WorkspaceIsolation *WorkspaceIsolation
+
 	// AgentEnv is the environment variables to pass to the agent
 	AgentEnv []string
 
@@ -741,6 +745,13 @@ func applyOverrides(cfg *InstanceConfig, overrides *InstanceOverrides) {
 	if overrides.WorkspaceSourceRoots != nil {
 		cfg.WorkspaceSourceRoots = append([]string(nil), overrides.WorkspaceSourceRoots...)
 	}
+	if overrides.WorkspaceIsolation != nil {
+		isolation := *overrides.WorkspaceIsolation
+		isolation.SharedCommonDirs = append([]string(nil), isolation.SharedCommonDirs...)
+		isolation.WritablePaths = append([]string(nil), isolation.WritablePaths...)
+		isolation.PrivateAdminPaths = append([]string(nil), isolation.PrivateAdminPaths...)
+		cfg.WorkspaceIsolation = &isolation
+	}
 }
 
 // applyApprovalOverrides sets approval-related instance overrides. Env is a
@@ -789,6 +800,7 @@ type InstanceOverrides struct {
 	RemoteContributions        map[string]models.RemoteContribution
 	ContributionDestinations   map[string]models.ContributionDestination
 	WorkspaceSourceRoots       []string
+	WorkspaceIsolation         *WorkspaceIsolation
 }
 
 func cloneComparisonTargets(values map[string]models.ComparisonTarget) map[string]models.ComparisonTarget {

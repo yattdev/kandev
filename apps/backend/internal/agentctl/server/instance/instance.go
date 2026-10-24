@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kandev/kandev/internal/agentctl/server/config"
 	"github.com/kandev/kandev/internal/common/acpprovider"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/task/models"
@@ -136,6 +137,7 @@ type McpServerConfig struct {
 
 // CreateRequest contains the parameters for creating a new agent instance.
 type CreateRequest struct {
+	WorkspaceIsolation *config.WorkspaceIsolation `json:"workspace_isolation,omitempty"`
 	// ID is an optional identifier for the instance. If empty, one will be generated.
 	ID string `json:"id,omitempty"`
 

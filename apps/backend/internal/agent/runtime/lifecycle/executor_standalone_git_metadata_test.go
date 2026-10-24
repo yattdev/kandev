@@ -2,8 +2,10 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -39,8 +41,46 @@ func TestStandaloneExecutorCreatesTaskScopedGitMetadataBeforeAgentctl(t *testing
 		WorkspacePath:          checkout,
 		GitMetadataProjections: []*worktree.GitMetadataProjection{projection},
 	}
+	request.GitMetadataProjections = nil
+	if _, err := control.executor(t).CreateInstance(context.Background(), request); err == nil {
+		t.Fatal("standalone launch accepted a linked checkout without its trusted projection")
+	}
+	request.GitMetadataProjections = []*worktree.GitMetadataProjection{projection}
+	untrusted, err := worktree.ResolveGitMetadata(checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.GitMetadataProjections = []*worktree.GitMetadataProjection{untrusted}
+	if _, err := control.executor(t).CreateInstance(context.Background(), request); err == nil {
+		t.Fatal("standalone launch accepted a projection without a trusted repository binding")
+	}
+	request.GitMetadataProjections = []*worktree.GitMetadataProjection{projection}
+	request.WorkspacePath = repo
+	if _, err := control.executor(t).CreateInstance(context.Background(), request); err == nil {
+		t.Fatal("standalone launch accepted a projection for another workspace")
+	}
+	request.WorkspacePath = checkout
 	if _, err := control.executor(t).CreateInstance(context.Background(), request); err != nil {
 		t.Fatalf("create standalone instance: %v", err)
+	}
+	encoded, err := json.Marshal(control.lastCreateRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handoff struct {
+		WorkspaceIsolation struct {
+			SharedCommonDirs  []string `json:"shared_common_dirs"`
+			WritablePaths     []string `json:"writable_paths"`
+			PrivateAdminPaths []string `json:"private_admin_paths"`
+		} `json:"workspace_isolation"`
+	}
+	if err := json.Unmarshal(encoded, &handoff); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(handoff.WorkspaceIsolation.SharedCommonDirs, projection.SharedCommonDir) ||
+		!slices.Contains(handoff.WorkspaceIsolation.WritablePaths, projection.GitDir) ||
+		!slices.Contains(handoff.WorkspaceIsolation.PrivateAdminPaths, projection.GitDir) {
+		t.Fatalf("create handoff lacks the validated Git isolation grant: %+v", handoff.WorkspaceIsolation)
 	}
 	privateGitDir := filepath.Join(projection.GitDir, "kandev-agent-git")
 	commondir, err := os.ReadFile(filepath.Join(projection.GitDir, "commondir"))

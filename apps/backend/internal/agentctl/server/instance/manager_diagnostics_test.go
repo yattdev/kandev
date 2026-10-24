@@ -74,3 +74,40 @@ func TestCreateInstance_PropagatesMCPToolNamePresentationCapability(t *testing.T
 		t.Fatalf("captured instance config = %+v, want namespaced MCP tools", captured)
 	}
 }
+
+func TestCreateInstanceCarriesValidatedWorkspaceIsolationIntoConfig(t *testing.T) {
+	log := newTestLogger(t)
+	mgr := NewManager(&config.Config{Ports: config.PortConfig{Base: 0, Max: 0}}, log)
+	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	var captured *config.InstanceConfig
+	mgr.SetServerFactory(func(cfg *config.InstanceConfig, _ *process.Manager, _ *logger.Logger) http.Handler {
+		captured = cfg
+		return http.NotFoundHandler()
+	})
+	isolation := &config.WorkspaceIsolation{
+		SharedCommonDirs:  []string{"/repo/.git"},
+		WritablePaths:     []string{"/repo/.git/worktrees/task"},
+		PrivateAdminPaths: []string{"/repo/.git/worktrees/task"},
+	}
+	resp, err := mgr.CreateInstance(context.Background(), &CreateRequest{
+		WorkspacePath: t.TempDir(), WorkspaceIsolation: isolation,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.StopInstance(context.Background(), resp.ID) })
+	if captured == nil || captured.WorkspaceIsolation == nil ||
+		len(captured.WorkspaceIsolation.PrivateAdminPaths) != 1 ||
+		captured.WorkspaceIsolation.PrivateAdminPaths[0] != isolation.PrivateAdminPaths[0] {
+		t.Fatalf("instance config lost isolation manifest: %+v", captured)
+	}
+	isolation.PrivateAdminPaths[0] = "/repo/.git/refs"
+	if captured.WorkspaceIsolation.PrivateAdminPaths[0] == isolation.PrivateAdminPaths[0] {
+		t.Fatal("instance config retained mutable request isolation paths")
+	}
+	if _, err := mgr.CreateInstance(context.Background(), &CreateRequest{
+		WorkspacePath: t.TempDir(), WorkspaceIsolation: isolation,
+	}); err == nil {
+		t.Fatal("create instance accepted a forged private administration path")
+	}
+}

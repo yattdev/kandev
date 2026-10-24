@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/kandev/kandev/internal/agent/agents"
 	"github.com/kandev/kandev/internal/agent/executor"
 	agentctl "github.com/kandev/kandev/internal/agent/runtime/agentctl"
+	"github.com/kandev/kandev/internal/agentctl/server/config"
 	"github.com/kandev/kandev/internal/agentctl/server/process"
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/common/subproc"
@@ -232,8 +235,62 @@ func buildStandaloneCreateInstanceRequest(
 	}
 }
 
+func validateStandaloneProjectionBindings(req *ExecutorCreateRequest) error {
+	if req.WorkspacePath == "" {
+		if len(req.GitMetadataProjections) > 0 {
+			return errors.New(gitMetadataProjectionInvalid)
+		}
+		return nil
+	}
+	checkouts, err := standaloneGitCheckouts(req.WorkspacePath)
+	if err != nil {
+		return err
+	}
+	if len(checkouts) != len(req.GitMetadataProjections) {
+		return errors.New(gitMetadataProjectionInvalid)
+	}
+	for _, projection := range req.GitMetadataProjections {
+		if projection == nil || projection.TrustedCommonDir == "" ||
+			projection.GitDir == projection.SharedCommonDir || projection.Revalidate() != nil {
+			return errors.New(gitMetadataProjectionInvalid)
+		}
+		if _, ok := checkouts[projection.CheckoutPath]; !ok {
+			return errors.New(gitMetadataProjectionInvalid)
+		}
+		delete(checkouts, projection.CheckoutPath)
+	}
+	return nil
+}
+
+func standaloneGitCheckouts(workspacePath string) (map[string]struct{}, error) {
+	checkouts := map[string]struct{}{}
+	workspace := filepath.Clean(workspacePath)
+	paths := []string{workspace}
+	entries, err := os.ReadDir(workspace)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("%s: inspect workspace: %w", gitMetadataProjectionInvalid, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			paths = append(paths, filepath.Join(workspace, entry.Name()))
+		}
+	}
+	for _, path := range paths {
+		_, err := os.Lstat(filepath.Join(path, ".git"))
+		if err == nil {
+			checkouts[path] = struct{}{}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("%s: inspect checkout: %w", gitMetadataProjectionInvalid, err)
+		}
+	}
+	return checkouts, nil
+}
+
 func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCreateRequest) (*ExecutorInstance, error) {
 	if err := r.waitForReady(ctx); err != nil {
+		return nil, err
+	}
+	if err := validateStandaloneProjectionBindings(req); err != nil {
 		return nil, err
 	}
 	for _, projection := range req.GitMetadataProjections {
@@ -279,6 +336,21 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 	createReq := buildStandaloneCreateInstanceRequest(
 		req, env, agentType, disableAskQuestion, assumeMcpSse, assumeMcpHttp, requiresProcessKill, stripEnv,
 	)
+	if len(req.GitMetadataProjections) > 0 {
+		isolation := &config.WorkspaceIsolation{}
+		for _, projection := range req.GitMetadataProjections {
+			if err := projection.Revalidate(); err != nil {
+				return nil, errors.New(gitMetadataProjectionInvalid)
+			}
+			isolation.SharedCommonDirs = append(isolation.SharedCommonDirs, projection.SharedCommonDir)
+			isolation.WritablePaths = append(isolation.WritablePaths, projection.AgentWritablePaths...)
+			isolation.PrivateAdminPaths = append(isolation.PrivateAdminPaths, projection.GitDir)
+		}
+		if err := isolation.Validate(); err != nil {
+			return nil, fmt.Errorf("%s: %w", gitMetadataProjectionInvalid, err)
+		}
+		createReq.WorkspaceIsolation = isolation
+	}
 
 	r.logger.Info("CreateInstance: sending request to agentctl",
 		zap.String("instance_id", req.InstanceID),

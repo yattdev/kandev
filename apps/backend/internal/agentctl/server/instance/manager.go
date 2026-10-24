@@ -114,6 +114,11 @@ func (m *Manager) SetServerFactory(factory ServerFactory) {
 
 // CreateInstance creates a new agent instance.
 func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
+	if req.WorkspaceIsolation != nil {
+		if err := req.WorkspaceIsolation.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid workspace isolation: %w", err)
+		}
+	}
 	// createStart includes the m.mu queue wait deliberately: that wait is the
 	// leak pathology described below, and the diagnostic agentctl_create_ready_ms
 	// metric (api.handleSystemMetrics) exists to make it visible.
@@ -200,6 +205,7 @@ func (m *Manager) CreateInstance(ctx context.Context, req *CreateRequest) (*Crea
 		RemoteContributions:        req.RemoteContributions,
 		ContributionDestinations:   req.ContributionDestinations,
 		WorkspaceSourceRoots:       req.WorkspaceSourceRoots,
+		WorkspaceIsolation:         req.WorkspaceIsolation,
 	}
 
 	m.logger.Info("CreateInstance: applying overrides",
