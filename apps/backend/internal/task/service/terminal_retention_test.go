@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/task/repository/queuepurge"
 )
 
 type retentionCanvasCleanup struct{ taskCalls, workspaceCalls int }
@@ -46,19 +47,22 @@ func TestDirectCleanupStartsExactPreparedAdmission(t *testing.T) {
 	if err := repo.CreateTask(ctx, &models.Task{ID: "prepared-cleanup", WorkspaceID: "ws-1", Title: "Prepared"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.PrepareTaskResourceCleanup(ctx, "prepared-cleanup", models.TaskResourceCleanupTriggerCascadeArchive, "prepared-cleanup-op", false); err != nil {
+	const cascadeID = "fixture-cascade"
+	const operationID = "cascade_archive:" + cascadeID + ":prepared-cleanup"
+	if err := svc.PrepareTaskResourceCleanup(ctx, "prepared-cleanup", models.TaskResourceCleanupTriggerCascadeArchive, operationID, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.CleanupTaskResources(ctx, "prepared-cleanup", false); !errors.Is(err, ErrTaskCleanupAdmissionRequired) {
 		t.Fatalf("pre-archive cleanup error = %v, want admission required", err)
 	}
-	if err := repo.ArchiveTask(ctx, "prepared-cleanup"); err != nil {
-		t.Fatal(err)
+	mutationCtx := queuepurge.WithTaskQueuePurgeOperations(ctx, map[string]string{"prepared-cleanup": operationID})
+	if _, changed, err := repo.ArchiveTaskIfActiveWithVacatedStep(mutationCtx, "prepared-cleanup", cascadeID); err != nil || !changed {
+		t.Fatalf("archive matching cascade task: changed=%v error=%v", changed, err)
 	}
 	if err := svc.CleanupTaskResources(ctx, "prepared-cleanup", false); err != nil {
 		t.Fatalf("prepared direct cleanup: %v", err)
 	}
-	job, err := repo.GetTaskResourceCleanupJobByOperationID(ctx, "prepared-cleanup-op")
+	job, err := repo.GetTaskResourceCleanupJobByOperationID(ctx, operationID)
 	if err != nil || job == nil || job.State == models.TaskResourceCleanupStatePrepared {
 		t.Fatalf("prepared job was not started: %+v, %v", job, err)
 	}

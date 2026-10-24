@@ -353,6 +353,24 @@ func (s *HandoffService) archiveTaskTree(
 		cleanupOps, out, vacatedStepIDs,
 	)
 	if mutationErr != nil {
+		var committed *CascadePostCommitError
+		if errors.As(mutationErr, &committed) {
+			if len(out.ArchivedTaskIDs)+len(out.SkippedTaskIDs) == len(all) {
+				var finishErr error
+				cleanupErrors, finishErr = s.finishArchiveTaskTree(
+					postArchiveCtx, transferCompensationCtx, archiveDeadline,
+					rootID, cascade, cascadeID, ownershipTransfers,
+					autoArchiveCandidate, out, cleanupErrors,
+				)
+				return out, errors.Join(mutationErr, finishErr, errors.Join(cleanupErrors...))
+			}
+			groupIDs, membershipErrors, membershipErr := s.releaseAndEvaluateMemberships(
+				postArchiveCtx, out.ArchivedTaskIDs,
+				orchmodels.WorkspaceReleaseReasonArchived, cascadeID,
+			)
+			out.ReleasedGroupIDs = groupIDs
+			return out, errors.Join(mutationErr, membershipErr, errors.Join(membershipErrors...), errors.Join(cleanupErrors...))
+		}
 		return out, mutationErr
 	}
 	cleanupErrors, finishErr := s.finishArchiveTaskTree(
@@ -426,6 +444,9 @@ func (s *HandoffService) applyArchiveTaskMutations(
 			cancelErr := s.cancelCascadeResourceCleanupRange(ctx, all[:i], cleanupOps)
 			if committed {
 				out.ArchivedTaskIDs = append(out.ArchivedTaskIDs, all[i])
+				if autoArchiveCandidate != nil {
+					s.cancelActiveRuns(ctx, []string{all[i]}, models.SessionArchiveTreeCancelReason)
+				}
 				if task, readErr := s.tasks.GetTask(ctx, all[i]); readErr == nil && task != nil {
 					recordVacatedStep(vacatedStepIDs, task.WorkflowStepID)
 				} else {
@@ -672,9 +693,15 @@ func (s *HandoffService) deleteTaskTreeWithReasonAndOptions(
 		if errors.Is(err, errCascadeMutationOutcomeUnknown) {
 			return out, err
 		}
-		return out, errors.Join(err, s.compensateDeleteFailure(
+		compensateErr := s.compensateDeleteFailure(
 			deleteCompensationCtx, all, cascadeID, out.ArchivedTaskIDs, noCascadeSnapshots,
-		))
+		)
+		var committed *CascadePostCommitError
+		if errors.As(err, &committed) {
+			return out, errors.Join(err, compensateErr,
+				errors.Join(s.evaluateWorkspaceGroups(postDeleteCtx, groupIDs)...))
+		}
+		return out, errors.Join(err, compensateErr)
 	}
 
 	cleanupErrors = append(cleanupErrors, s.evaluateWorkspaceGroups(postDeleteCtx, groupIDs)...)
