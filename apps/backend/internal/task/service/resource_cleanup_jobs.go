@@ -665,21 +665,21 @@ func (s *Service) reconcilePreparedTaskResourceCleanupJobs(
 					} else if current != nil && current.State == models.TaskResourceCleanupStatePrepared {
 						errs = append(errs, fmt.Errorf("%w: prepared cleanup %s changed concurrently", ErrCleanupCancellationRace, job.ID))
 					} else if current != nil && current.State == models.TaskResourceCleanupStateCancelled {
-						s.resolvePreparedTaskQueuePurge(ctx, job.TaskID, false)
+						s.resolvePreparedTaskQueuePurge(ctx, job, false)
 					}
 				} else {
-					s.resolvePreparedTaskQueuePurge(ctx, job.TaskID, false)
+					s.resolvePreparedTaskQueuePurge(ctx, job, false)
 				}
 			} else if err := s.resourceCleanups.CompleteTaskResourceCleanupJob(
 				ctx, job.ID, models.TaskResourceCleanupStateCancelled, "", nil,
 			); err != nil {
 				errs = append(errs, fmt.Errorf("cancel uncommitted prepared cleanup %s: %w", job.ID, err))
 			} else {
-				s.resolvePreparedTaskQueuePurge(ctx, job.TaskID, false)
+				s.resolvePreparedTaskQueuePurge(ctx, job, false)
 			}
 			continue
 		}
-		s.resolvePreparedTaskQueuePurge(ctx, job.TaskID, true)
+		s.resolvePreparedTaskQueuePurge(ctx, job, true)
 		if err := s.activatePreparedTaskResourceCleanupJob(ctx, job); err != nil {
 			errs = append(errs, fmt.Errorf("start committed prepared cleanup %s: %w", job.ID, err))
 		}
@@ -687,14 +687,14 @@ func (s *Service) reconcilePreparedTaskResourceCleanupJobs(
 	return errors.Join(errs...)
 }
 
-func (s *Service) resolvePreparedTaskQueuePurge(ctx context.Context, taskID string, committed bool) {
-	if taskID == "" {
+func (s *Service) resolvePreparedTaskQueuePurge(ctx context.Context, job *models.TaskResourceCleanupJob, committed bool) {
+	if job == nil || job.TaskID == "" || job.OperationID == "" {
 		return
 	}
 	if resolver, ok := s.tasks.(interface {
-		ResolveTaskQueuePurge(context.Context, string, bool)
+		ResolveTaskQueuePurgeForOperation(context.Context, string, string, bool)
 	}); ok {
-		resolver.ResolveTaskQueuePurge(ctx, taskID, committed)
+		resolver.ResolveTaskQueuePurgeForOperation(ctx, job.TaskID, job.OperationID, committed)
 	}
 }
 
@@ -1152,7 +1152,7 @@ func (s *Service) resolveTaskResourceCleanupAfterMutationError(ctx context.Conte
 				zap.String("job_id", job.ID), zap.String("task_id", job.TaskID), zap.Error(err))
 			return
 		}
-		s.resolvePreparedTaskQueuePurge(transitionCtx, job.TaskID, true)
+		s.resolvePreparedTaskQueuePurge(transitionCtx, job, true)
 		return
 	}
 	if err := s.resourceCleanups.CompleteTaskResourceCleanupJob(
@@ -1162,7 +1162,7 @@ func (s *Service) resolveTaskResourceCleanupAfterMutationError(ctx context.Conte
 			zap.String("job_id", job.ID), zap.String("task_id", job.TaskID), zap.Error(err))
 		return
 	}
-	s.resolvePreparedTaskQueuePurge(transitionCtx, job.TaskID, false)
+	s.resolvePreparedTaskQueuePurge(transitionCtx, job, false)
 }
 
 func (s *Service) retryTaskResourceCleanupJob(ctx context.Context, job *models.TaskResourceCleanupJob, cleanupErr error) error {

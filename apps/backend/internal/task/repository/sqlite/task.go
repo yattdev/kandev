@@ -4407,7 +4407,7 @@ func (r *Repository) purgeTaskQueueInTx(
 	sessions []string,
 	deleteTask bool,
 ) error {
-	r.recordTaskQueuePurgeTx(tx, taskID)
+	r.recordTaskQueuePurgeTx(ctx, tx, taskID)
 	r.notifyTaskQueuePurging(ctx, taskID)
 	if dialect.IsPostgres(r.db.DriverName()) {
 		return r.purgeTaskQueuePostgres(ctx, tx, taskID, sessions, deleteTask)

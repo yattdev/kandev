@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/kandev/kandev/internal/task/models"
@@ -10,11 +11,57 @@ import (
 
 type taskQueuePurgeOutcomeSpy struct {
 	repository.TaskRepository
-	outcomes []bool
+	outcomes   []bool
+	operations []string
 }
 
-func (s *taskQueuePurgeOutcomeSpy) ResolveTaskQueuePurge(_ context.Context, _ string, committed bool) {
+func (s *taskQueuePurgeOutcomeSpy) ResolveTaskQueuePurgeForOperation(_ context.Context, _, operationID string, committed bool) {
 	s.outcomes = append(s.outcomes, committed)
+	s.operations = append(s.operations, operationID)
+}
+
+func TestWorkspacePartialCancellationSettlesOnlyCancelledJob(t *testing.T) {
+	ctx := context.Background()
+	svc, _, repo := createTestService(t)
+	first := &models.TaskResourceCleanupJob{
+		ID: "partial-first", OperationID: "workspace-delete:first", TaskID: "partial-task-first",
+		Trigger: models.TaskResourceCleanupTriggerWorkspaceDelete,
+		State:   models.TaskResourceCleanupStatePrepared, ResourceSnapshot: `{}`,
+	}
+	second := &models.TaskResourceCleanupJob{
+		ID: "partial-second", OperationID: "workspace-delete:second", TaskID: "partial-task-second",
+		Trigger: models.TaskResourceCleanupTriggerWorkspaceDelete,
+		State:   models.TaskResourceCleanupStateRunning, ResourceSnapshot: `{}`,
+	}
+	for _, job := range []*models.TaskResourceCleanupJob{first, second} {
+		seedCleanupTaskAndSession(t, repo, job.TaskID, "session-"+job.TaskID)
+		if err := repo.CreateTaskResourceCleanupJob(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spy := &taskQueuePurgeOutcomeSpy{TaskRepository: repo}
+	svc.tasks = spy
+	err := svc.cancelWorkspaceDeleteTaskCleanupJobs(ctx, []workspaceDeleteTaskCleanup{
+		{cleanupJob: first}, {cleanupJob: second},
+	})
+	if !errors.Is(err, ErrCleanupCancellationRace) {
+		t.Fatalf("partial cancellation error = %v", err)
+	}
+	if len(spy.operations) != 1 || spy.operations[0] != first.OperationID || spy.outcomes[0] {
+		t.Fatalf("resolved operations = %v outcomes = %v", spy.operations, spy.outcomes)
+	}
+	for _, tc := range []struct {
+		job   *models.TaskResourceCleanupJob
+		state models.TaskResourceCleanupState
+	}{
+		{first, models.TaskResourceCleanupStateCancelled},
+		{second, models.TaskResourceCleanupStateRunning},
+	} {
+		current, err := repo.GetTaskResourceCleanupJob(ctx, tc.job.ID)
+		if err != nil || current.State != tc.state {
+			t.Fatalf("job %s state = %v, error = %v", tc.job.ID, current, err)
+		}
+	}
 }
 
 func TestKnownTaskMutationOutcomeSettlesQueueAfterDurableJobTransition(t *testing.T) {

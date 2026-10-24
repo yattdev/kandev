@@ -12,6 +12,7 @@ import (
 
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/db"
+	"github.com/kandev/kandev/internal/task/repository/queuepurge"
 )
 
 // Repository provides SQLite-based task storage operations.
@@ -29,7 +30,7 @@ type Repository struct {
 	queuePurgeReopen        func(context.Context, string, uint64)
 	queuePurgeNotify        func(context.Context, string)
 	queuePurgeTxMu          sync.Mutex
-	queuePurgeTransactions  map[*sqlx.Tx][]string
+	queuePurgeTransactions  map[*sqlx.Tx][]taskQueuePurgeIdentity
 	queuePurgeUnknown       map[string]int
 	queueSessionPurgeNotify func(context.Context, string, string)
 	// stepArrivalLocks holds one *sync.Mutex per workflow step, serializing
@@ -226,13 +227,21 @@ func (r *Repository) notifyTaskQueuePurging(ctx context.Context, taskID string) 
 	}
 }
 
-func (r *Repository) recordTaskQueuePurgeTx(tx *sqlx.Tx, taskID string) {
+type taskQueuePurgeIdentity struct {
+	taskID, operationID string
+}
+
+func (id taskQueuePurgeIdentity) key() string { return id.taskID + "\x00" + id.operationID }
+
+func (r *Repository) recordTaskQueuePurgeTx(ctx context.Context, tx *sqlx.Tx, taskID string) {
 	r.queuePurgeTxMu.Lock()
 	defer r.queuePurgeTxMu.Unlock()
 	if r.queuePurgeTransactions == nil {
-		r.queuePurgeTransactions = make(map[*sqlx.Tx][]string)
+		r.queuePurgeTransactions = make(map[*sqlx.Tx][]taskQueuePurgeIdentity)
 	}
-	r.queuePurgeTransactions[tx] = append(r.queuePurgeTransactions[tx], taskID)
+	r.queuePurgeTransactions[tx] = append(r.queuePurgeTransactions[tx], taskQueuePurgeIdentity{
+		taskID: taskID, operationID: queuepurge.TaskQueuePurgeOperation(ctx, taskID),
+	})
 }
 
 func (r *Repository) finishTaskQueuePurgeTx(ctx context.Context, tx *sqlx.Tx, rolledBack, uncertain bool) {
@@ -243,16 +252,16 @@ func (r *Repository) finishTaskQueuePurgeTx(ctx context.Context, tx *sqlx.Tx, ro
 		if r.queuePurgeUnknown == nil {
 			r.queuePurgeUnknown = make(map[string]int)
 		}
-		for _, taskID := range ids {
-			r.queuePurgeUnknown[taskID]++
+		for _, id := range ids {
+			r.queuePurgeUnknown[id.key()]++
 		}
 	}
 	r.queuePurgeTxMu.Unlock()
 	if !rolledBack {
 		return
 	}
-	for _, taskID := range ids {
-		r.notifyTaskQueuePurgeAborted(ctx, taskID)
+	for _, id := range ids {
+		r.notifyTaskQueuePurgeAborted(ctx, id.taskID)
 	}
 }
 
@@ -287,21 +296,36 @@ func (r *Repository) notifyTaskQueuePurgeReopened(ctx context.Context, taskID st
 // ResolveTaskQueuePurge settles a retained process-local fence after durable
 // prepared-job reconciliation proves the task mutation's outcome.
 func (r *Repository) ResolveTaskQueuePurge(ctx context.Context, taskID string, committed bool) {
+	r.resolveTaskQueuePurge(ctx, taskQueuePurgeIdentity{taskID: taskID}, committed)
+}
+
+// ResolveTaskQueuePurgeForOperation can only settle the purge retained for
+// this exact prepared operation. A delayed replay cannot consume a later
+// unknown purge for the same task.
+func (r *Repository) ResolveTaskQueuePurgeForOperation(ctx context.Context, taskID, operationID string, committed bool) {
+	if taskID == "" || operationID == "" {
+		return
+	}
+	r.resolveTaskQueuePurge(ctx, taskQueuePurgeIdentity{taskID: taskID, operationID: operationID}, committed)
+}
+
+func (r *Repository) resolveTaskQueuePurge(ctx context.Context, id taskQueuePurgeIdentity, committed bool) {
 	r.queuePurgeTxMu.Lock()
-	if r.queuePurgeUnknown[taskID] == 0 {
+	key := id.key()
+	if r.queuePurgeUnknown[key] == 0 {
 		r.queuePurgeTxMu.Unlock()
 		return
 	}
-	r.queuePurgeUnknown[taskID]--
-	if r.queuePurgeUnknown[taskID] == 0 {
-		delete(r.queuePurgeUnknown, taskID)
+	r.queuePurgeUnknown[key]--
+	if r.queuePurgeUnknown[key] == 0 {
+		delete(r.queuePurgeUnknown, key)
 	}
 	r.queuePurgeTxMu.Unlock()
 	if committed {
-		r.notifyTaskQueuePurged(ctx, taskID)
+		r.notifyTaskQueuePurged(ctx, id.taskID)
 		return
 	}
-	r.notifyTaskQueuePurgeAborted(ctx, taskID)
+	r.notifyTaskQueuePurgeAborted(ctx, id.taskID)
 }
 
 func (r *Repository) notifyTaskQueuePurged(ctx context.Context, taskID string) {

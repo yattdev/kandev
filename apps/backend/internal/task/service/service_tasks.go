@@ -27,6 +27,7 @@ import (
 	"github.com/kandev/kandev/internal/steptelemetry"
 	"github.com/kandev/kandev/internal/task/models"
 	taskrepo "github.com/kandev/kandev/internal/task/repository"
+	"github.com/kandev/kandev/internal/task/repository/queuepurge"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 	wfmodels "github.com/kandev/kandev/internal/workflow/models"
 	"github.com/kandev/kandev/internal/worktree"
@@ -2500,7 +2501,8 @@ func (s *Service) ArchiveTask(ctx context.Context, id string) (archiveErr error)
 	}
 
 	// 3. Set archived_at in DB
-	if err := s.tasks.ArchiveTask(archiveCtx, id); err != nil {
+	archiveMutationCtx := queuepurge.WithTaskQueuePurgeOperations(archiveCtx, map[string]string{id: cleanupJob.OperationID})
+	if err := s.tasks.ArchiveTask(archiveMutationCtx, id); err != nil {
 		archiveCommitted = true // The resolver owns committed, aborted, and ambiguous outcomes.
 		s.resolveTaskResourceCleanupAfterMutationError(archiveCtx, cleanupJob)
 		return err
@@ -3176,7 +3178,8 @@ func (s *Service) deleteTaskWithReasonAndDBDelete(
 	}
 
 	// 4. Delete from DB (sync, fast)
-	deleted, err := deleteFromDB(operationCtx, id)
+	deleteMutationCtx := queuepurge.WithTaskQueuePurgeOperations(operationCtx, map[string]string{id: cleanupJob.OperationID})
+	deleted, err := deleteFromDB(deleteMutationCtx, id)
 	if err != nil {
 		mutationCommitted = true // The resolver owns committed, aborted, and ambiguous outcomes.
 		s.resolveTaskResourceCleanupAfterMutationError(operationCtx, cleanupJob)

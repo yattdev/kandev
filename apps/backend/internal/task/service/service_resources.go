@@ -24,6 +24,7 @@ import (
 	"github.com/kandev/kandev/internal/secrets"
 	"github.com/kandev/kandev/internal/task/models"
 	taskrepo "github.com/kandev/kandev/internal/task/repository"
+	"github.com/kandev/kandev/internal/task/repository/queuepurge"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 	"github.com/kandev/kandev/internal/worktree"
 	"github.com/kandev/kandev/internal/worktree/copyfiles"
@@ -378,6 +379,13 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 	transactionalCascade, hasTransactionalCascade := s.workspaces.(transactionalWorkspaceCascade)
 	useTransactionalCleanup := hasTransactionalCascade &&
 		(hasTransactionalCleanup || s.attachmentSvc != nil)
+	purgeOperations := make(map[string]string, len(cleanups))
+	for _, cleanup := range cleanups {
+		if job := cleanup.cleanupJob; job != nil && job.TaskID != "" {
+			purgeOperations[job.TaskID] = job.OperationID
+		}
+	}
+	cascadeCtx := queuepurge.WithTaskQueuePurgeOperations(ctx, purgeOperations)
 	switch {
 	case useTransactionalCleanup:
 		cleanup := func(cleanupCtx context.Context, tx *sqlx.Tx) error {
@@ -398,14 +406,14 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 			return nil
 		}
 		if confirmedName == nil {
-			deletedTasks, deletedWorkflows, err = transactionalCascade.DeleteWorkspaceCascadeWithSecretCleanup(ctx, workspace.ID, cleanup)
+			deletedTasks, deletedWorkflows, err = transactionalCascade.DeleteWorkspaceCascadeWithSecretCleanup(cascadeCtx, workspace.ID, cleanup)
 		} else {
-			deletedTasks, deletedWorkflows, err = transactionalCascade.DeleteWorkspaceCascadeWithNameAndSecretCleanup(ctx, workspace.ID, *confirmedName, cleanup)
+			deletedTasks, deletedWorkflows, err = transactionalCascade.DeleteWorkspaceCascadeWithNameAndSecretCleanup(cascadeCtx, workspace.ID, *confirmedName, cleanup)
 		}
 	case confirmedName == nil:
-		deletedTasks, deletedWorkflows, err = s.workspaces.DeleteWorkspaceCascade(ctx, workspace.ID)
+		deletedTasks, deletedWorkflows, err = s.workspaces.DeleteWorkspaceCascade(cascadeCtx, workspace.ID)
 	default:
-		deletedTasks, deletedWorkflows, err = s.workspaces.DeleteWorkspaceCascadeWithName(ctx, workspace.ID, *confirmedName)
+		deletedTasks, deletedWorkflows, err = s.workspaces.DeleteWorkspaceCascadeWithName(cascadeCtx, workspace.ID, *confirmedName)
 	}
 	var postCommitErr error
 	recoveredCommitOutcome := false
@@ -417,13 +425,6 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 		}
 		if !committed {
 			cancelErr := s.cancelWorkspaceDeleteTaskCleanupJobs(ctx, cleanups)
-			if cancelErr == nil {
-				for _, cleanup := range cleanups {
-					if cleanup.cleanupJob != nil {
-						s.resolvePreparedTaskQueuePurge(ctx, cleanup.cleanupJob.TaskID, false)
-					}
-				}
-			}
 			return s.mapWorkspaceDeleteError(workspace.ID, errors.Join(err, cancelErr))
 		}
 		recoveredCommitOutcome = true
@@ -457,7 +458,7 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 				postCommitErr = errors.Join(postCommitErr, startErr)
 				continue
 			}
-			s.resolvePreparedTaskQueuePurge(ctx, cleanup.cleanupJob.TaskID, true)
+			s.resolvePreparedTaskQueuePurge(ctx, cleanup.cleanupJob, true)
 		}
 	}
 	s.runWorkspaceDeleteTaskCleanups(cleanups, deletedTasks)
@@ -621,6 +622,8 @@ func (s *Service) cancelWorkspaceDeleteTaskCleanupJobs(ctx context.Context, clea
 			cancellationErrs = append(cancellationErrs,
 				fmt.Errorf("%w: workspace-delete cleanup %s was claimed concurrently",
 					ErrCleanupCancellationRace, cleanup.cleanupJob.ID))
+		} else {
+			s.resolvePreparedTaskQueuePurge(transitionCtx, cleanup.cleanupJob, false)
 		}
 	}
 	if len(cancellationErrs) > 0 {
