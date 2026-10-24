@@ -193,7 +193,12 @@ func (r *Repository) deleteWorkspaceCascade(
 	if err != nil {
 		return nil, nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	commitUncertain := false
+	commitSucceeded := false
+	defer func() {
+		_ = tx.Rollback()
+		r.finishTaskQueuePurgeTx(ctx, tx, !commitUncertain && !commitSucceeded, commitUncertain && !commitSucceeded)
+	}()
 
 	// Lock the workspace row BEFORE inventorying its tasks: task creation
 	// takes the same lock, so a task created after this point either commits
@@ -290,6 +295,7 @@ func (r *Repository) deleteWorkspaceCascade(
 		return nil, nil, err
 	}
 	if err := tx.Commit(); err != nil {
+		commitUncertain = true
 		verifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		var exists bool
@@ -297,11 +303,15 @@ func (r *Repository) deleteWorkspaceCascade(
 			SELECT EXISTS (SELECT 1 FROM workspaces WHERE id = ?)
 		`), id).Scan(&exists)
 		if verifyErr == nil && !exists {
+			commitSucceeded = true
 			r.notifyWorkspaceCascadeTaskQueues(verifyCtx, tasks)
+		} else if verifyErr == nil {
+			commitUncertain = false
 		}
 		return tasks, workflows, errors.Join(err, verifyErr)
 	}
 	r.notifyWorkspaceCascadeTaskQueues(ctx, tasks)
+	commitSucceeded = true
 	return tasks, workflows, nil
 }
 

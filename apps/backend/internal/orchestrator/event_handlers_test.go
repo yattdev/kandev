@@ -1081,11 +1081,16 @@ func createTestServiceWithAgent(repo *sqliterepo.Repository, stepGetter *mockSte
 		agentFamilyResolver: agentRegistry,
 	}
 	repo.SetTaskQueuePurger(func(ctx context.Context, taskID string) {
+		svc.fencePassthroughDispatches(taskID)
 		_, _ = svc.messageQueue.PurgeTask(ctx, taskID)
 	})
 	repo.SetTaskQueuePurgePreparer(func(_ context.Context, taskID string) {
-		svc.cancelPassthroughDispatches(taskID)
+		svc.fencePassthroughDispatches(taskID)
 	})
+	repo.SetTaskQueuePurgeAborter(func(_ context.Context, taskID string) {
+		svc.releasePassthroughPurgeFence(taskID)
+	})
+	repo.SetTaskQueuePurgeReopener(svc.passthroughPurgeFenceGeneration, svc.reopenPassthroughPurgeFence)
 	// Mirror production: after task-scoped queue purge, publish queue-status
 	// so the status-summary projector can zero queued_prompt_count.
 	repo.SetTaskQueuePurgeNotifier(func(ctx context.Context, taskID string) {
@@ -1905,8 +1910,12 @@ func createTestServiceWithScheduler(repo *sqliterepo.Repository, stepGetter *moc
 		_, _ = svc.messageQueue.PurgeTask(ctx, taskID)
 	})
 	repo.SetTaskQueuePurgePreparer(func(_ context.Context, taskID string) {
-		svc.cancelPassthroughDispatches(taskID)
+		svc.fencePassthroughDispatches(taskID)
 	})
+	repo.SetTaskQueuePurgeAborter(func(_ context.Context, taskID string) {
+		svc.releasePassthroughPurgeFence(taskID)
+	})
+	repo.SetTaskQueuePurgeReopener(svc.passthroughPurgeFenceGeneration, svc.reopenPassthroughPurgeFence)
 	// Mirror production: after task-scoped queue purge, publish queue-status
 	// so the status-summary projector can zero queued_prompt_count.
 	repo.SetTaskQueuePurgeNotifier(func(ctx context.Context, taskID string) {

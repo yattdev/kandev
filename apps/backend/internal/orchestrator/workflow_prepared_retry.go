@@ -64,93 +64,19 @@ func (s *Service) reconcilePreparedWorkflowSessionsOnStartup(ctx context.Context
 // another session or create a worktree. The source remains primary until the
 // destination has passed the ordinary workspace inventory and attach checks.
 func (s *Service) retryPreparedWorkflowSession(ctx context.Context, req *LaunchSessionRequest) (*LaunchSessionResponse, error) {
-	task, err := s.repo.GetTask(ctx, req.TaskID)
+	loaded, err := s.loadPreparedWorkflowRetryRoute(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("load workflow retry task: %w", err)
+		return nil, err
 	}
-	if task == nil {
-		return nil, fmt.Errorf("load workflow retry task: task is missing")
-	}
-	route, ok := models.LoadWorkflowSessionRoute(task.Metadata)
-	if !ok || route.Phase != workflowSessionRoutePrepared || route.DestinationID == "" ||
-		route.DestinationID != req.SessionID || route.SourceSessionID == "" ||
-		route.DestinationStepID != task.WorkflowStepID || route.EntryIdentity != s.workflowEntryIdentity(ctx, req.TaskID) ||
-		(task.State != v1.TaskStateScheduling && task.State != v1.TaskStateFailed) {
-		return nil, fmt.Errorf("prepared workflow route is not current for requested session")
-	}
-	reader, ok := s.repo.(workflowRetryTransitionReader)
-	if !ok {
-		return nil, fmt.Errorf("workflow transition reader is unavailable")
-	}
-	transitions, err := reader.ListTaskStepTransitions(ctx, req.TaskID, 0, 1)
-	if err != nil || len(transitions) != 1 || route.EntryIdentity != fmt.Sprintf("entry:%020d", transitions[0].ID) ||
-		transitions[0].ToWorkflowStepID == nil || *transitions[0].ToWorkflowStepID != route.DestinationStepID ||
-		transitions[0].FromWorkflowStepID == nil {
-		return nil, fmt.Errorf("prepared workflow transition is unavailable or stale: %w", err)
-	}
-	step, err := s.workflowStepGetter.GetStep(ctx, route.DestinationStepID)
-	if err != nil || step == nil {
-		return nil, fmt.Errorf("load workflow retry step: %w", err)
-	}
-	// Retry only the simple automatic prompt path. Steps with other entry
-	// actions need their full event dispatcher and must not be replayed here.
-	if step.SessionTarget != nil || len(step.Events.OnEnter) != 1 || step.Events.OnEnter[0].Type != wfmodels.OnEnterAutoStartAgent {
-		return nil, fmt.Errorf("prepared workflow step has non-retryable entry actions")
-	}
-	sourceStep, err := s.workflowStepGetter.GetStep(ctx, *transitions[0].FromWorkflowStepID)
-	if err != nil || sourceStep == nil {
-		return nil, fmt.Errorf("load workflow retry source step: %w", err)
-	}
-	source, err := s.repo.GetTaskSession(ctx, route.SourceSessionID)
-	if err != nil || source == nil {
-		return nil, fmt.Errorf("load workflow retry source session: %w", err)
-	}
-	destination, err := s.repo.GetTaskSession(ctx, req.SessionID)
-	if err != nil || destination == nil {
-		return nil, fmt.Errorf("load workflow retry destination session: %w", err)
-	}
-	if source.TaskID != req.TaskID || destination.TaskID != req.TaskID ||
-		!source.IsPrimary || source.State != models.TaskSessionStateWaitingForInput ||
-		destination.IsPrimary || (destination.State != models.TaskSessionStateCreated && destination.State != models.TaskSessionStateFailed) ||
-		destination.IsPassthrough ||
-		destination.AgentProfileID != route.AgentProfileID ||
-		source.TaskEnvironmentID == "" || source.TaskEnvironmentID != destination.TaskEnvironmentID {
-		return nil, fmt.Errorf("prepared workflow session ownership changed")
+	task, route, step, sourceStep := loaded.task, loaded.route, loaded.step, loaded.sourceStep
+	source, destination, err := s.loadPreparedWorkflowRetrySessions(ctx, req, route)
+	if err != nil {
+		return nil, err
 	}
 	if destination.State == models.TaskSessionStateFailed {
-		rearmer, ok := s.repo.(workflowRetryRearmStore)
-		if !ok {
-			return nil, fmt.Errorf("conditional prepared workflow rearm is unavailable")
+		if err := s.rearmPreparedWorkflowSession(ctx, task, destination); err != nil {
+			return nil, err
 		}
-		// This bounded rearm covers a failed attach before any turn was created.
-		// It cannot turn a failed agent turn or an active runtime into a second
-		// writer. The state changes use conditional repository APIs.
-		if destination.ErrorMessage != workflowRetryAttachFailure {
-			return nil, fmt.Errorf("prepared workflow failure is not an attach failure")
-		}
-		turns, err := rearmer.ListTurnsBySession(ctx, destination.ID)
-		if err != nil || len(turns) != 0 {
-			return nil, fmt.Errorf("prepared workflow destination has a turn or turn lookup failed: %w", err)
-		}
-		running, err := s.repo.GetExecutorRunningBySessionID(ctx, destination.ID)
-		if err != nil && !errors.Is(err, models.ErrExecutorRunningNotFound) {
-			return nil, fmt.Errorf("inspect prepared workflow runtime: %w", err)
-		}
-		if running != nil {
-			return nil, fmt.Errorf("prepared workflow destination still owns a runtime")
-		}
-		if task.State == v1.TaskStateFailed {
-			changed, err := s.taskRepo.UpdateTaskStateIfCurrentIn(ctx, task.ID, v1.TaskStateScheduling, []v1.TaskState{v1.TaskStateFailed})
-			if err != nil || !changed {
-				return nil, fmt.Errorf("rearm prepared workflow task: changed=%t: %w", changed, err)
-			}
-		}
-		changed, _, err := rearmer.UpdateTaskSessionStateIfCurrent(ctx, destination.ID,
-			models.TaskSessionStateFailed, models.TaskSessionStateCreated, "")
-		if err != nil || !changed {
-			return nil, fmt.Errorf("rearm prepared workflow session: changed=%t: %w", changed, err)
-		}
-		destination.State = models.TaskSessionStateCreated
 	} else if task.State != v1.TaskStateScheduling {
 		return nil, fmt.Errorf("prepared workflow task is not scheduling")
 	}
@@ -184,4 +110,143 @@ func (s *Service) retryPreparedWorkflowSession(ctx context.Context, req *LaunchS
 		Success: true, TaskID: req.TaskID, SessionID: destination.ID,
 		AgentProfileID: destination.AgentProfileID, State: string(models.TaskSessionStateStarting),
 	}, nil
+}
+
+type preparedWorkflowRetryRoute struct {
+	task       *models.Task
+	route      models.WorkflowSessionRoute
+	step       *wfmodels.WorkflowStep
+	sourceStep *wfmodels.WorkflowStep
+}
+
+func (s *Service) loadPreparedWorkflowRetryRoute(
+	ctx context.Context, req *LaunchSessionRequest,
+) (*preparedWorkflowRetryRoute, error) {
+	task, err := s.repo.GetTask(ctx, req.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("load workflow retry task: %w", err)
+	}
+	if task == nil {
+		return nil, fmt.Errorf("load workflow retry task: task is missing")
+	}
+	route, ok := models.LoadWorkflowSessionRoute(task.Metadata)
+	if !s.preparedWorkflowRetryRouteCurrent(ctx, req, task, route, ok) {
+		return nil, fmt.Errorf("prepared workflow route is not current for requested session")
+	}
+	reader, ok := s.repo.(workflowRetryTransitionReader)
+	if !ok {
+		return nil, fmt.Errorf("workflow transition reader is unavailable")
+	}
+	transitions, err := reader.ListTaskStepTransitions(ctx, req.TaskID, 0, 1)
+	if !workflowRetryTransitionCurrent(transitions, route, err) {
+		return nil, fmt.Errorf("prepared workflow transition is unavailable or stale: %w", err)
+	}
+	step, err := s.workflowStepGetter.GetStep(ctx, route.DestinationStepID)
+	if err != nil || step == nil {
+		return nil, fmt.Errorf("load workflow retry step: %w", err)
+	}
+	// Retry only the simple automatic prompt path. Steps with other entry
+	// actions need their full event dispatcher and must not be replayed here.
+	if !workflowRetrySimpleAutoStartStep(step) {
+		return nil, fmt.Errorf("prepared workflow step has non-retryable entry actions")
+	}
+	sourceStep, err := s.workflowStepGetter.GetStep(ctx, *transitions[0].FromWorkflowStepID)
+	if err != nil || sourceStep == nil {
+		return nil, fmt.Errorf("load workflow retry source step: %w", err)
+	}
+	return &preparedWorkflowRetryRoute{task: task, route: route, step: step, sourceStep: sourceStep}, nil
+}
+
+func workflowRetryTransitionCurrent(
+	transitions []models.StepTransition, route models.WorkflowSessionRoute, err error,
+) bool {
+	return err == nil && len(transitions) == 1 &&
+		route.EntryIdentity == fmt.Sprintf("entry:%020d", transitions[0].ID) &&
+		transitions[0].ToWorkflowStepID != nil && *transitions[0].ToWorkflowStepID == route.DestinationStepID &&
+		transitions[0].FromWorkflowStepID != nil
+}
+
+func (s *Service) loadPreparedWorkflowRetrySessions(
+	ctx context.Context, req *LaunchSessionRequest, route models.WorkflowSessionRoute,
+) (*models.TaskSession, *models.TaskSession, error) {
+	source, err := s.repo.GetTaskSession(ctx, route.SourceSessionID)
+	if err != nil || source == nil {
+		return nil, nil, fmt.Errorf("load workflow retry source session: %w", err)
+	}
+	destination, err := s.repo.GetTaskSession(ctx, req.SessionID)
+	if err != nil || destination == nil {
+		return nil, nil, fmt.Errorf("load workflow retry destination session: %w", err)
+	}
+	if !workflowRetrySessionsOwned(req, route, source, destination) {
+		return nil, nil, fmt.Errorf("prepared workflow session ownership changed")
+	}
+	return source, destination, nil
+}
+
+func workflowRetrySessionsOwned(
+	req *LaunchSessionRequest, route models.WorkflowSessionRoute,
+	source, destination *models.TaskSession,
+) bool {
+	return source.TaskID == req.TaskID && destination.TaskID == req.TaskID &&
+		source.IsPrimary && source.State == models.TaskSessionStateWaitingForInput &&
+		!destination.IsPrimary &&
+		(destination.State == models.TaskSessionStateCreated || destination.State == models.TaskSessionStateFailed) &&
+		!destination.IsPassthrough && destination.AgentProfileID == route.AgentProfileID &&
+		source.TaskEnvironmentID != "" && source.TaskEnvironmentID == destination.TaskEnvironmentID
+}
+
+func workflowRetrySimpleAutoStartStep(step *wfmodels.WorkflowStep) bool {
+	return step.SessionTarget == nil && len(step.Events.OnEnter) == 1 &&
+		step.Events.OnEnter[0].Type == wfmodels.OnEnterAutoStartAgent
+}
+
+func (s *Service) preparedWorkflowRetryRouteCurrent(
+	ctx context.Context, req *LaunchSessionRequest, task *models.Task,
+	route models.WorkflowSessionRoute, loaded bool,
+) bool {
+	return loaded && route.Phase == workflowSessionRoutePrepared && route.DestinationID != "" &&
+		route.DestinationID == req.SessionID && route.SourceSessionID != "" &&
+		route.DestinationStepID == task.WorkflowStepID && route.EntryIdentity == s.workflowEntryIdentity(ctx, req.TaskID) &&
+		(task.State == v1.TaskStateScheduling || task.State == v1.TaskStateFailed)
+}
+
+// rearmPreparedWorkflowSession is the failed-attach branch of the exact route
+// retry. It keeps the original read and conditional-write order intact.
+func (s *Service) rearmPreparedWorkflowSession(
+	ctx context.Context, task *models.Task, destination *models.TaskSession,
+) error {
+	rearmer, ok := s.repo.(workflowRetryRearmStore)
+	if !ok {
+		return fmt.Errorf("conditional prepared workflow rearm is unavailable")
+	}
+	// This bounded rearm covers a failed attach before any turn was created.
+	// It cannot turn a failed agent turn or an active runtime into a second
+	// writer. The state changes use conditional repository APIs.
+	if destination.ErrorMessage != workflowRetryAttachFailure {
+		return fmt.Errorf("prepared workflow failure is not an attach failure")
+	}
+	turns, err := rearmer.ListTurnsBySession(ctx, destination.ID)
+	if err != nil || len(turns) != 0 {
+		return fmt.Errorf("prepared workflow destination has a turn or turn lookup failed: %w", err)
+	}
+	running, err := s.repo.GetExecutorRunningBySessionID(ctx, destination.ID)
+	if err != nil && !errors.Is(err, models.ErrExecutorRunningNotFound) {
+		return fmt.Errorf("inspect prepared workflow runtime: %w", err)
+	}
+	if running != nil {
+		return fmt.Errorf("prepared workflow destination still owns a runtime")
+	}
+	if task.State == v1.TaskStateFailed {
+		changed, err := s.taskRepo.UpdateTaskStateIfCurrentIn(ctx, task.ID, v1.TaskStateScheduling, []v1.TaskState{v1.TaskStateFailed})
+		if err != nil || !changed {
+			return fmt.Errorf("rearm prepared workflow task: changed=%t: %w", changed, err)
+		}
+	}
+	changed, _, err := rearmer.UpdateTaskSessionStateIfCurrent(ctx, destination.ID,
+		models.TaskSessionStateFailed, models.TaskSessionStateCreated, "")
+	if err != nil || !changed {
+		return fmt.Errorf("rearm prepared workflow session: changed=%t: %w", changed, err)
+	}
+	destination.State = models.TaskSessionStateCreated
+	return nil
 }

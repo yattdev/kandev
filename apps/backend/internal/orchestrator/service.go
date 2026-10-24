@@ -697,6 +697,8 @@ type Service struct {
 	// Message queue service for queueing messages while agent is running
 	messageQueue                   *messagequeue.Service
 	passthroughDispatchMu          sync.Mutex
+	passthroughPurgeFences         map[string]passthroughPurgeFence
+	passthroughPurgeNextEpoch      uint64
 	passthroughDispatches          map[string]map[*passthroughDispatchToken]struct{}
 	initialCreatePromptMu          sync.Mutex
 	initialCreatePromptPassthrough map[string]initialCreatePromptPassthroughEvidence
@@ -1231,6 +1233,9 @@ type Service struct {
 	// narrow interval after handleAgentReady releases its per-session guard
 	// and before it starts a deferred durable-lifecycle dispatch.
 	afterReadyLifecycleReservation func()
+	// afterReadyBeforePassthroughDispatch pauses after the authoritative session
+	// read and before a passthrough dispatch token is registered (tests only).
+	afterReadyBeforePassthroughDispatch func()
 	// agentReadyReservationWaitTimeout is a deterministic test seam. Zero uses
 	// the production timeout derived from the prompt dispatch budgets.
 	agentReadyReservationWaitTimeout time.Duration
@@ -1747,8 +1752,20 @@ func NewService(
 		SetTaskQueuePurgePreparer(func(context.Context, string))
 	}); ok {
 		registrar.SetTaskQueuePurgePreparer(func(_ context.Context, taskID string) {
-			s.cancelPassthroughDispatches(taskID)
+			s.fencePassthroughDispatches(taskID)
 		})
+	}
+	if registrar, ok := repo.(interface {
+		SetTaskQueuePurgeAborter(func(context.Context, string))
+	}); ok {
+		registrar.SetTaskQueuePurgeAborter(func(_ context.Context, taskID string) {
+			s.releasePassthroughPurgeFence(taskID)
+		})
+	}
+	if registrar, ok := repo.(interface {
+		SetTaskQueuePurgeReopener(func(context.Context, string) uint64, func(context.Context, string, uint64))
+	}); ok {
+		registrar.SetTaskQueuePurgeReopener(s.passthroughPurgeFenceGeneration, s.reopenPassthroughPurgeFence)
 	}
 	// Always publish queue-status after a task-scoped queue purge so the
 	// status-summary projector zeros queued_prompt_count. Unlike the
@@ -1879,6 +1896,11 @@ func (s *Service) beginPassthroughDispatch(
 	dispatchCtx, cancel := context.WithCancel(parent)
 	token := &passthroughDispatchToken{cancel: cancel}
 	s.passthroughDispatchMu.Lock()
+	if s.passthroughPurgeFences[taskID].count != 0 {
+		s.passthroughDispatchMu.Unlock()
+		cancel()
+		return dispatchCtx, func() {}
+	}
 	if s.passthroughDispatches == nil {
 		s.passthroughDispatches = make(map[string]map[*passthroughDispatchToken]struct{})
 	}
@@ -1900,6 +1922,55 @@ func (s *Service) beginPassthroughDispatch(
 		s.passthroughDispatchMu.Unlock()
 		cancel()
 	}
+}
+
+type passthroughPurgeFence struct {
+	count      uint
+	generation uint64
+}
+
+func (s *Service) fencePassthroughDispatches(taskID string) {
+	s.passthroughDispatchMu.Lock()
+	if s.passthroughPurgeFences == nil {
+		s.passthroughPurgeFences = make(map[string]passthroughPurgeFence)
+	}
+	fence := s.passthroughPurgeFences[taskID]
+	fence.count++
+	s.passthroughPurgeNextEpoch++
+	fence.generation = s.passthroughPurgeNextEpoch
+	s.passthroughPurgeFences[taskID] = fence
+	tokens := s.passthroughDispatches[taskID]
+	delete(s.passthroughDispatches, taskID)
+	for token := range tokens {
+		token.cancel()
+	}
+	s.passthroughDispatchMu.Unlock()
+}
+
+func (s *Service) releasePassthroughPurgeFence(taskID string) {
+	s.passthroughDispatchMu.Lock()
+	fence := s.passthroughPurgeFences[taskID]
+	if fence.count <= 1 {
+		delete(s.passthroughPurgeFences, taskID)
+	} else {
+		fence.count--
+		s.passthroughPurgeFences[taskID] = fence
+	}
+	s.passthroughDispatchMu.Unlock()
+}
+
+func (s *Service) passthroughPurgeFenceGeneration(_ context.Context, taskID string) uint64 {
+	s.passthroughDispatchMu.Lock()
+	defer s.passthroughDispatchMu.Unlock()
+	return s.passthroughPurgeFences[taskID].generation
+}
+
+func (s *Service) reopenPassthroughPurgeFence(_ context.Context, taskID string, expected uint64) {
+	s.passthroughDispatchMu.Lock()
+	if s.passthroughPurgeFences[taskID].generation == expected {
+		delete(s.passthroughPurgeFences, taskID)
+	}
+	s.passthroughDispatchMu.Unlock()
 }
 
 func (s *Service) cancelPassthroughDispatches(taskID string) {

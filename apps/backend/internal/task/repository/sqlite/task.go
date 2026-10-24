@@ -3178,7 +3178,12 @@ func (r *Repository) DeleteTaskWithVacatedStep(ctx context.Context, id string) (
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = tx.Rollback() }()
+	commitUncertain := false
+	commitSucceeded := false
+	defer func() {
+		_ = tx.Rollback()
+		r.finishTaskQueuePurgeTx(ctx, tx, !commitUncertain && !commitSucceeded, commitUncertain && !commitSucceeded)
+	}()
 	// Lock the task's step first, so a concurrent ReorderStepTasks of that
 	// step cannot straddle this delete (see lockTaskStepForWrite): either the
 	// reorder's whole read-then-write runs first and sees this task still
@@ -3227,8 +3232,10 @@ func (r *Repository) DeleteTaskWithVacatedStep(ctx context.Context, id string) (
 		return "", err
 	}
 	if err := tx.Commit(); err != nil {
+		commitUncertain = true
 		return "", err
 	}
+	commitSucceeded = true
 	r.notifyTaskQueuePurged(ctx, id)
 	return vacatedStepID, nil
 }
@@ -4186,7 +4193,12 @@ func (r *Repository) ArchiveTask(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	commitUncertain := false
+	commitSucceeded := false
+	defer func() {
+		_ = tx.Rollback()
+		r.finishTaskQueuePurgeTx(ctx, tx, !commitUncertain && !commitSucceeded, commitUncertain && !commitSucceeded)
+	}()
 	if err := r.lockTaskStepForWrite(ctx, tx, id); err != nil {
 		return err
 	}
@@ -4209,8 +4221,10 @@ func (r *Repository) ArchiveTask(ctx context.Context, id string) error {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
+		commitUncertain = true
 		return err
 	}
+	commitSucceeded = true
 	r.notifyTaskQueuePurged(ctx, id)
 	return nil
 }
@@ -4244,7 +4258,12 @@ func (r *Repository) ArchiveTaskIfAutoArchiveEligible(
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	commitUncertain := false
+	commitSucceeded := false
+	defer func() {
+		_ = tx.Rollback()
+		r.finishTaskQueuePurgeTx(ctx, tx, !commitUncertain && !commitSucceeded, commitUncertain && !commitSucceeded)
+	}()
 	if err := r.lockTaskRowInTx(ctx, tx, id); err != nil {
 		if errors.Is(err, ErrTaskNotFound) {
 			return false, nil
@@ -4286,8 +4305,10 @@ func (r *Repository) ArchiveTaskIfAutoArchiveEligible(
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
+		commitUncertain = true
 		return false, err
 	}
+	commitSucceeded = true
 	r.notifyTaskQueuePurged(ctx, id)
 	return true, nil
 }
@@ -4303,7 +4324,12 @@ func (r *Repository) ArchiveTaskIfActiveWithVacatedStep(
 	if err != nil {
 		return "", false, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	commitUncertain := false
+	commitSucceeded := false
+	defer func() {
+		_ = tx.Rollback()
+		r.finishTaskQueuePurgeTx(ctx, tx, !commitUncertain && !commitSucceeded, commitUncertain && !commitSucceeded)
+	}()
 	if err := r.lockTaskStepForWrite(ctx, tx, id); err != nil {
 		return "", false, err
 	}
@@ -4337,8 +4363,10 @@ func (r *Repository) ArchiveTaskIfActiveWithVacatedStep(
 		return "", false, err
 	}
 	if err := tx.Commit(); err != nil {
+		commitUncertain = true
 		return "", false, err
 	}
+	commitSucceeded = true
 	r.notifyTaskQueuePurged(ctx, id)
 	return vacatedStepID, true, nil
 }
@@ -4379,6 +4407,7 @@ func (r *Repository) purgeTaskQueueInTx(
 	sessions []string,
 	deleteTask bool,
 ) error {
+	r.recordTaskQueuePurgeTx(tx, taskID)
 	r.notifyTaskQueuePurging(ctx, taskID)
 	if dialect.IsPostgres(r.db.DriverName()) {
 		return r.purgeTaskQueuePostgres(ctx, tx, taskID, sessions, deleteTask)
@@ -4513,8 +4542,12 @@ func (r *Repository) UnarchiveTaskByCascade(ctx context.Context, id, cascadeID s
 		return false, err
 	}
 	rows, _ := result.RowsAffected()
+	generation := r.taskQueuePurgeGeneration(ctx, id)
 	if err := tx.Commit(); err != nil {
 		return false, err
+	}
+	if rows > 0 {
+		r.notifyTaskQueuePurgeReopened(ctx, id, generation)
 	}
 	return rows > 0, nil
 }
@@ -4543,8 +4576,12 @@ func (r *Repository) UnarchiveTask(ctx context.Context, id string) (bool, error)
 		return false, err
 	}
 	rows, _ := result.RowsAffected()
+	generation := r.taskQueuePurgeGeneration(ctx, id)
 	if err := tx.Commit(); err != nil {
 		return false, err
+	}
+	if rows > 0 {
+		r.notifyTaskQueuePurgeReopened(ctx, id, generation)
 	}
 	return rows > 0, nil
 }

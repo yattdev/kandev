@@ -24,7 +24,13 @@ type Repository struct {
 	queuePurgeMu            sync.RWMutex
 	queuePurger             func(context.Context, string)
 	queuePurgePrepare       func(context.Context, string)
+	queuePurgeAbort         func(context.Context, string)
+	queuePurgeGeneration    func(context.Context, string) uint64
+	queuePurgeReopen        func(context.Context, string, uint64)
 	queuePurgeNotify        func(context.Context, string)
+	queuePurgeTxMu          sync.Mutex
+	queuePurgeTransactions  map[*sqlx.Tx][]string
+	queuePurgeUnknown       map[string]int
 	queueSessionPurgeNotify func(context.Context, string, string)
 	// stepArrivalLocks holds one *sync.Mutex per workflow step, serializing
 	// this process's own arrival-position writes (assignArrivalPosition)
@@ -180,6 +186,25 @@ func (r *Repository) SetTaskQueuePurgePreparer(prepare func(context.Context, str
 	r.queuePurgePrepare = prepare
 }
 
+// SetTaskQueuePurgeAborter releases a task's process-local dispatch fence only
+// after the transaction that prepared its queue purge is known to have rolled back.
+func (r *Repository) SetTaskQueuePurgeAborter(abort func(context.Context, string)) {
+	r.queuePurgeMu.Lock()
+	defer r.queuePurgeMu.Unlock()
+	r.queuePurgeAbort = abort
+}
+
+// SetTaskQueuePurgeReopener clears a terminal fence after an unarchive commits.
+func (r *Repository) SetTaskQueuePurgeReopener(
+	generation func(context.Context, string) uint64,
+	reopen func(context.Context, string, uint64),
+) {
+	r.queuePurgeMu.Lock()
+	defer r.queuePurgeMu.Unlock()
+	r.queuePurgeGeneration = generation
+	r.queuePurgeReopen = reopen
+}
+
 // SetTaskQueuePurgeNotifier registers a post-commit observer for every path
 // that purges a task's queued_messages (archive/delete/workspace cascade).
 // Callers must not purge the production SQLite queue again — that already
@@ -199,6 +224,84 @@ func (r *Repository) notifyTaskQueuePurging(ctx context.Context, taskID string) 
 	if prepare != nil {
 		prepare(ctx, taskID)
 	}
+}
+
+func (r *Repository) recordTaskQueuePurgeTx(tx *sqlx.Tx, taskID string) {
+	r.queuePurgeTxMu.Lock()
+	defer r.queuePurgeTxMu.Unlock()
+	if r.queuePurgeTransactions == nil {
+		r.queuePurgeTransactions = make(map[*sqlx.Tx][]string)
+	}
+	r.queuePurgeTransactions[tx] = append(r.queuePurgeTransactions[tx], taskID)
+}
+
+func (r *Repository) finishTaskQueuePurgeTx(ctx context.Context, tx *sqlx.Tx, rolledBack, uncertain bool) {
+	r.queuePurgeTxMu.Lock()
+	ids := r.queuePurgeTransactions[tx]
+	delete(r.queuePurgeTransactions, tx)
+	if uncertain {
+		if r.queuePurgeUnknown == nil {
+			r.queuePurgeUnknown = make(map[string]int)
+		}
+		for _, taskID := range ids {
+			r.queuePurgeUnknown[taskID]++
+		}
+	}
+	r.queuePurgeTxMu.Unlock()
+	if !rolledBack {
+		return
+	}
+	for _, taskID := range ids {
+		r.notifyTaskQueuePurgeAborted(ctx, taskID)
+	}
+}
+
+func (r *Repository) notifyTaskQueuePurgeAborted(ctx context.Context, taskID string) {
+	r.queuePurgeMu.RLock()
+	abort := r.queuePurgeAbort
+	r.queuePurgeMu.RUnlock()
+	if abort != nil {
+		abort(ctx, taskID)
+	}
+}
+
+func (r *Repository) taskQueuePurgeGeneration(ctx context.Context, taskID string) uint64 {
+	r.queuePurgeMu.RLock()
+	generation := r.queuePurgeGeneration
+	r.queuePurgeMu.RUnlock()
+	if generation != nil {
+		return generation(ctx, taskID)
+	}
+	return 0
+}
+
+func (r *Repository) notifyTaskQueuePurgeReopened(ctx context.Context, taskID string, expected uint64) {
+	r.queuePurgeMu.RLock()
+	reopen := r.queuePurgeReopen
+	r.queuePurgeMu.RUnlock()
+	if reopen != nil {
+		reopen(ctx, taskID, expected)
+	}
+}
+
+// ResolveTaskQueuePurge settles a retained process-local fence after durable
+// prepared-job reconciliation proves the task mutation's outcome.
+func (r *Repository) ResolveTaskQueuePurge(ctx context.Context, taskID string, committed bool) {
+	r.queuePurgeTxMu.Lock()
+	if r.queuePurgeUnknown[taskID] == 0 {
+		r.queuePurgeTxMu.Unlock()
+		return
+	}
+	r.queuePurgeUnknown[taskID]--
+	if r.queuePurgeUnknown[taskID] == 0 {
+		delete(r.queuePurgeUnknown, taskID)
+	}
+	r.queuePurgeTxMu.Unlock()
+	if committed {
+		r.notifyTaskQueuePurged(ctx, taskID)
+		return
+	}
+	r.notifyTaskQueuePurgeAborted(ctx, taskID)
 }
 
 func (r *Repository) notifyTaskQueuePurged(ctx context.Context, taskID string) {

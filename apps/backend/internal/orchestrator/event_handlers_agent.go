@@ -989,8 +989,14 @@ func (s *Service) handleAgentReady(ctx context.Context, data watcher.AgentEventD
 
 	// Passthrough sessions: deliver queued messages via PTY stdin instead of ACP.
 	if s.agentManager.IsPassthroughSession(ctx, data.SessionID) {
+		if hook := s.afterReadyBeforePassthroughDispatch; hook != nil {
+			hook()
+		}
 		dispatchCtx, finishDispatch := s.beginPassthroughDispatch(ctx, data.TaskID)
 		defer finishDispatch()
+		if dispatchCtx.Err() != nil {
+			return
+		}
 		identity, err := s.messageQueue.ResolveSessionIdentity(dispatchCtx, data.TaskID, data.SessionID)
 		if err != nil {
 			return
