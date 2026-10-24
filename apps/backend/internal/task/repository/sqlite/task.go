@@ -229,6 +229,10 @@ func (r *Repository) CreateTaskWithWorkflowStepAdmission(
 	if err := r.prepareTaskForCreate(task); err != nil {
 		return err
 	}
+	groupMembersAvailable, err := workspaceGroupGuardTableExists(ctx, r.db)
+	if err != nil {
+		return fmt.Errorf("check workspace group membership schema: %w", err)
+	}
 
 	// The actual placement (target or feeder) is decided inside tx by
 	// applyAdmissionPlacement below, so both candidates' arrival locks must
@@ -269,7 +273,7 @@ func (r *Repository) CreateTaskWithWorkflowStepAdmission(
 		return err
 	}
 
-	entryID, err := r.insertTaskTx(ctx, tx, task)
+	entryID, err := r.insertTaskTx(ctx, tx, task, groupMembersAvailable)
 	if err != nil {
 		return err
 	}
@@ -324,6 +328,10 @@ func (r *Repository) createTask(ctx context.Context, task *models.Task, targetSt
 	if err := r.prepareTaskForCreate(task); err != nil {
 		return err
 	}
+	groupMembersAvailable, err := workspaceGroupGuardTableExists(ctx, r.db)
+	if err != nil {
+		return fmt.Errorf("check workspace group membership schema: %w", err)
+	}
 
 	// task.WorkflowStepID (not targetStepID) is the row's actual destination
 	// — see the assignArrivalPosition call below — and is already final at
@@ -367,7 +375,7 @@ func (r *Repository) createTask(ctx context.Context, task *models.Task, targetSt
 		}
 	}
 
-	entryID, err := r.insertTaskTx(ctx, tx, task)
+	entryID, err := r.insertTaskTx(ctx, tx, task, groupMembersAvailable)
 	if err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
 			return fmt.Errorf("failed to rollback task insert: %w", rollbackErr)
@@ -401,8 +409,11 @@ func (r *Repository) prepareTaskForCreate(task *models.Task) error {
 	return nil
 }
 
-func (r *Repository) insertTaskTx(ctx context.Context, tx *sql.Tx, task *models.Task) (entryID string, err error) {
+func (r *Repository) insertTaskTx(ctx context.Context, tx *sql.Tx, task *models.Task, groupMembersAvailable bool) (entryID string, err error) {
 	if err := r.workspaceDeleteAdmissionLocked(ctx, tx, task.WorkspaceID); err != nil {
+		return "", err
+	}
+	if err := r.rejectRetainedWorkspaceGroupTaskID(ctx, tx, task.ID, groupMembersAvailable); err != nil {
 		return "", err
 	}
 	metadata, err := json.Marshal(task.Metadata)
@@ -461,6 +472,27 @@ func (r *Repository) insertTaskTx(ctx context.Context, tx *sql.Tx, task *models.
 		}
 	}
 	return entryID, nil
+}
+
+// rejectRetainedWorkspaceGroupTaskID keeps a deleted historical member ID
+// absent while a cleanup claim skips its missing task row. The lookup shares
+// the task creation transaction; a query error is never interpreted as an
+// empty membership set. The structural probe ran before tx began because
+// PostgreSQL aborts a transaction on an undefined-table error.
+func (r *Repository) rejectRetainedWorkspaceGroupTaskID(ctx context.Context, tx *sql.Tx, taskID string, groupMembersAvailable bool) error {
+	if !groupMembersAvailable {
+		return nil
+	}
+	var retained bool
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT EXISTS (SELECT 1 FROM task_workspace_group_members WHERE task_id = ?)
+	`), taskID).Scan(&retained); err != nil {
+		return fmt.Errorf("check retained workspace group task id: %w", err)
+	}
+	if retained {
+		return fmt.Errorf("task id %s is retained in workspace group membership", taskID)
+	}
+	return nil
 }
 
 func (r *Repository) lockWorkflowStepsForAdmission(ctx context.Context, tx *sql.Tx, targetStepID, feederStepID string) error {
