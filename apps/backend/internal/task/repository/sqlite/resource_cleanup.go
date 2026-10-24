@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,6 +42,10 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 			return errors.New("workspace cleanup reservation requires a workspace snapshot")
 		}
 		workspaceID = snapshot.WorkspaceID
+		if strings.HasPrefix(job.OperationID, "workspace_delete_admission:") &&
+			job.OperationID != models.WorkspaceDeleteAdmissionOperationID(workspaceID) {
+			return fmt.Errorf("%w: workspace fence identity", errCleanupReservationConflict)
+		}
 	}
 	if job.ID == "" {
 		job.ID = uuid.NewString()

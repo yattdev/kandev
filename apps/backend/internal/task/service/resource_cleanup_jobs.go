@@ -275,6 +275,10 @@ func (s *Service) prepareWorkspaceDeleteAdmission(ctx context.Context, workspace
 	if job == nil || job.State != models.TaskResourceCleanupStatePrepared {
 		return nil, ErrTaskCleanupAdmissionRequired
 	}
+	var snapshot taskResourceCleanupSnapshot
+	if err := json.Unmarshal([]byte(job.ResourceSnapshot), &snapshot); err != nil || snapshot.WorkspaceID != workspaceID {
+		return nil, ErrTaskCleanupAdmissionRequired
+	}
 	return job, nil
 }
 

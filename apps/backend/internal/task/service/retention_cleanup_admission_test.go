@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/kandev/kandev/internal/task/models"
@@ -10,6 +11,37 @@ import (
 
 type missingCleanupReadback struct {
 	repository.TaskResourceCleanupRepository
+}
+
+type mismatchedWorkspaceCleanupReadback struct {
+	repository.TaskResourceCleanupRepository
+}
+
+func (r *mismatchedWorkspaceCleanupReadback) GetTaskResourceCleanupJobByOperationID(
+	ctx context.Context, operationID string,
+) (*models.TaskResourceCleanupJob, error) {
+	job, err := r.TaskResourceCleanupRepository.GetTaskResourceCleanupJobByOperationID(ctx, operationID)
+	if err != nil || job == nil {
+		return job, err
+	}
+	job.ResourceSnapshot = `{"workspace_id":"another-workspace"}`
+	return job, nil
+}
+
+func TestRetentionCleanupAdmission_WorkspaceFenceRequiresMatchingSnapshot(t *testing.T) {
+	svc, repo := setupOfficeTest(t)
+	ctx := context.Background()
+	if err := repo.CreateWorkspace(ctx, &models.Workspace{ID: "fenced-workspace", Name: "Fenced"}); err != nil {
+		t.Fatal(err)
+	}
+	svc.resourceCleanups = &mismatchedWorkspaceCleanupReadback{TaskResourceCleanupRepository: repo}
+	if _, err := svc.prepareWorkspaceDeleteAdmission(ctx, "fenced-workspace"); !errors.Is(err, ErrTaskCleanupAdmissionRequired) {
+		t.Fatalf("mismatched workspace fence admission = %v", err)
+	}
+	workspace, err := repo.GetWorkspace(ctx, "fenced-workspace")
+	if err != nil || workspace == nil {
+		t.Fatalf("workspace changed after rejected admission: %+v, %v", workspace, err)
+	}
 }
 
 func (*missingCleanupReadback) GetTaskResourceCleanupJobByOperationID(context.Context, string) (*models.TaskResourceCleanupJob, error) {

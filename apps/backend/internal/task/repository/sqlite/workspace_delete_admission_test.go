@@ -45,6 +45,26 @@ func TestWorkspaceDeleteCreationFence_TwoSQLiteConnections(t *testing.T) {
 	exerciseWorkspaceDeleteCreationFence(t, first, second)
 }
 
+func TestWorkspaceDeleteCreationFence_RejectsSnapshotIdentityMismatch(t *testing.T) {
+	repo := newBarrierTestRepo(t)
+	seedWorkspace(t, repo, "workspace-a")
+	seedWorkspace(t, repo, "workspace-b")
+	job := &models.TaskResourceCleanupJob{
+		OperationID:      models.WorkspaceDeleteAdmissionOperationID("workspace-a"),
+		Trigger:          models.TaskResourceCleanupTriggerWorkspaceDelete,
+		State:            models.TaskResourceCleanupStatePrepared,
+		ResourceSnapshot: `{"workspace_id":"workspace-b"}`,
+	}
+	if err := repo.CreateTaskResourceCleanupJob(context.Background(), job); err == nil {
+		t.Fatal("mismatched workspace fence identity accepted")
+	}
+	var count int
+	if err := repo.db.GetContext(context.Background(), &count,
+		`SELECT COUNT(*) FROM task_resource_cleanup_jobs WHERE operation_id = ?`, job.OperationID); err != nil || count != 0 {
+		t.Fatalf("mismatched workspace fence count = %d, %v", count, err)
+	}
+}
+
 func TestWorkspaceDeleteCreationFence_TwoPostgresConnections(t *testing.T) {
 	first, second, _ := newTaskPostgresRepoPair(t)
 	exerciseWorkspaceDeleteCreationFence(t, first, second)
