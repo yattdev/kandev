@@ -243,6 +243,9 @@ func (r *Repository) deleteWorkspaceCascade(
 		if err := r.lockTaskRowInTx(ctx, tx, taskID); err != nil {
 			return nil, nil, fmt.Errorf("guard cascade task row %s: %w", taskID, err)
 		}
+		if err := r.ensureTaskNotHeldInTx(ctx, tx, taskID); err != nil {
+			return nil, nil, err
+		}
 	}
 	if err := r.purgeWorkspaceTaskQueuesInTx(ctx, tx, tasks); err != nil {
 		return nil, nil, err

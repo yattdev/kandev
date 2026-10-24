@@ -341,14 +341,6 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 	if err != nil {
 		return err
 	}
-	// Record canvas artifact cleanup before the workspace cascade removes its
-	// task and workspace rows. This keeps the release ownership boundary
-	// durable across a process stop between the two operations.
-	if s.canvasCleanup != nil {
-		if err := s.canvasCleanup.CleanupWorkspaceCanvases(ctx, workspace.ID); err != nil {
-			return fmt.Errorf("cleanup workspace canvases before workspace delete: %w", err)
-		}
-	}
 	cleanups := make([]workspaceDeleteTaskCleanup, 0, len(tasks)+1)
 	if workspaceAttachmentCleanup != nil {
 		cleanups = append(cleanups, workspaceDeleteTaskCleanup{cleanupJob: workspaceAttachmentCleanup})
@@ -359,6 +351,14 @@ func (s *Service) deleteWorkspace(ctx context.Context, workspace *models.Workspa
 		return errors.Join(err, cancelErr)
 	}
 	cleanups = append(cleanups, taskCleanups...)
+	// Admit every task cleanup before revoking workspace canvas authority. A
+	// held task rejects admission and leaves its canvases untouched.
+	if s.canvasCleanup != nil {
+		if err := s.canvasCleanup.CleanupWorkspaceCanvases(ctx, workspace.ID); err != nil {
+			cancelErr := s.cancelWorkspaceDeleteTaskCleanupJobs(ctx, cleanups)
+			return errors.Join(fmt.Errorf("cleanup workspace canvases before workspace delete: %w", err), cancelErr)
+		}
+	}
 
 	var deletedWorkspaceAttachments []*models.TaskMessageAttachment
 	var deletedTasks []*models.Task

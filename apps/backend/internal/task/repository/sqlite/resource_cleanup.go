@@ -3,14 +3,17 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/recoveryclaim"
+	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 )
 
 const taskResourceCleanupColumns = `
@@ -21,6 +24,21 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 	if job == nil {
 		return errors.New("task resource cleanup job is nil")
 	}
+	if job.OperationID == "" || job.Trigger == "" {
+		return errors.New("task cleanup reservation requires task, operation, and trigger")
+	}
+	workspaceOnly := job.TaskID == "" && job.Trigger == models.TaskResourceCleanupTriggerWorkspaceDelete
+	if job.TaskID == "" && !workspaceOnly {
+		return errors.New("task cleanup reservation requires a task")
+	}
+	if workspaceOnly {
+		var snapshot struct {
+			WorkspaceID string `json:"workspace_id"`
+		}
+		if err := json.Unmarshal([]byte(job.ResourceSnapshot), &snapshot); err != nil || snapshot.WorkspaceID == "" {
+			return errors.New("workspace cleanup reservation requires a workspace snapshot")
+		}
+	}
 	if job.ID == "" {
 		job.ID = uuid.NewString()
 	}
@@ -30,13 +48,45 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 	if job.State == "" {
 		job.State = models.TaskResourceCleanupStatePending
 	}
+	if !validTaskResourceCleanupState(job.State) {
+		return fmt.Errorf("%w: unsupported reservation state %s", errCleanupReservationConflict, job.State)
+	}
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := recoveryclaim.EnsureTaskAvailableTx(ctx, r.db, tx, job.TaskID); err != nil {
-		return err
+	found := workspaceOnly
+	if !workspaceOnly {
+		if err := recoveryclaim.EnsureTaskAvailableTx(ctx, r.db, tx, job.TaskID); err != nil {
+			return err
+		}
+		held, taskFound, err := r.taskRetentionInTx(ctx, tx, job.TaskID)
+		if err != nil {
+			return err
+		}
+		if held {
+			return fmt.Errorf("%w: %s", errTaskRetentionHeld, job.TaskID)
+		}
+		found = taskFound
+	}
+	if !found {
+		var existingTaskID string
+		var existingTrigger models.TaskResourceCleanupTrigger
+		var existingState models.TaskResourceCleanupState
+		err := tx.QueryRowContext(ctx, r.db.Rebind(`
+			SELECT task_id, trigger, state FROM task_resource_cleanup_jobs WHERE operation_id = ?
+		`), job.OperationID).Scan(&existingTaskID, &existingTrigger, &existingState)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: %s", repoerrors.ErrTaskNotFound, job.TaskID)
+		}
+		if err != nil {
+			return err
+		}
+		if existingTaskID != job.TaskID || existingTrigger != job.Trigger || !validTaskResourceCleanupState(existingState) {
+			return fmt.Errorf("%w: %s", errCleanupReservationConflict, job.OperationID)
+		}
+		return tx.Commit()
 	}
 	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_resource_cleanup_jobs (`+taskResourceCleanupColumns+`)
@@ -48,7 +98,30 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 	if err != nil {
 		return err
 	}
+	var existingTaskID string
+	var existingTrigger models.TaskResourceCleanupTrigger
+	var existingState models.TaskResourceCleanupState
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT task_id, trigger, state FROM task_resource_cleanup_jobs WHERE operation_id = ?
+	`), job.OperationID).Scan(&existingTaskID, &existingTrigger, &existingState); err != nil {
+		return err
+	}
+	if existingTaskID != job.TaskID || existingTrigger != job.Trigger || !validTaskResourceCleanupState(existingState) {
+		return fmt.Errorf("%w: %s", errCleanupReservationConflict, job.OperationID)
+	}
 	return tx.Commit()
+}
+
+func validTaskResourceCleanupState(state models.TaskResourceCleanupState) bool {
+	switch state {
+	case models.TaskResourceCleanupStatePrepared, models.TaskResourceCleanupStatePending,
+		models.TaskResourceCleanupStateRunning, models.TaskResourceCleanupStateRetryWait,
+		models.TaskResourceCleanupStateSucceeded, models.TaskResourceCleanupStateFailed,
+		models.TaskResourceCleanupStateCancelled:
+		return true
+	default:
+		return false
+	}
 }
 
 // UpdateTaskResourceCleanupSnapshot writes the resource inventory captured
@@ -56,11 +129,23 @@ func (r *Repository) CreateTaskResourceCleanupJob(ctx context.Context, job *mode
 // inventory query so concurrent session/worktree creation is rejected while
 // the snapshot is being assembled.
 func (r *Repository) UpdateTaskResourceCleanupSnapshot(ctx context.Context, operationID, snapshot string) error {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	job, err := r.GetTaskResourceCleanupJobByOperationID(ctx, operationID)
+	if err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := r.lockCleanupTaskInTx(ctx, tx, job.ID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET resource_snapshot = ?, updated_at = ?
-		WHERE operation_id = ? AND state = ?
-	`), snapshot, time.Now().UTC(), operationID, models.TaskResourceCleanupStatePrepared)
+		WHERE id = ? AND operation_id = ? AND state = ?
+	`), snapshot, time.Now().UTC(), job.ID, operationID, models.TaskResourceCleanupStatePrepared)
 	if err != nil {
 		return err
 	}
@@ -68,14 +153,25 @@ func (r *Repository) UpdateTaskResourceCleanupSnapshot(ctx context.Context, oper
 	if rows == 0 {
 		return fmt.Errorf("task resource cleanup job %s not found or not prepared", operationID)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // UpdateClaimedTaskResourceCleanupSnapshot persists outcomes produced by one
 // exact running cleanup attempt. A newer retry or cancellation wins when the
 // claim no longer matches.
 func (r *Repository) UpdateClaimedTaskResourceCleanupSnapshot(ctx context.Context, id string, attempt int, snapshot string) (bool, error) {
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := r.lockCleanupTaskInTx(ctx, tx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET resource_snapshot = ?, updated_at = ?
 		WHERE id = ? AND state = ? AND attempts = ?
@@ -84,7 +180,7 @@ func (r *Repository) UpdateClaimedTaskResourceCleanupSnapshot(ctx context.Contex
 		return false, err
 	}
 	rows, _ := result.RowsAffected()
-	return rows == 1, nil
+	return rows == 1, tx.Commit()
 }
 
 // HasActiveTaskResourceCleanupJob reports whether teardown has been admitted
@@ -231,32 +327,56 @@ func (r *Repository) ListDueTaskResourceCleanupJobs(ctx context.Context, now tim
 }
 
 func (r *Repository) MarkTaskResourceCleanupJobRunning(ctx context.Context, id string) (bool, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	taskID, err := r.lockCleanupTaskInTx(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, attempts = attempts + 1, next_attempt_at = NULL, updated_at = ?
-		WHERE id = ? AND state IN (?, ?)
-	`), models.TaskResourceCleanupStateRunning, now, id,
+		WHERE id = ? AND task_id = ? AND state IN (?, ?)
+	`), models.TaskResourceCleanupStateRunning, now, id, taskID,
 		models.TaskResourceCleanupStatePending, models.TaskResourceCleanupStateRetryWait)
 	if err != nil {
 		return false, err
 	}
 	count, _ := result.RowsAffected()
-	return count == 1, nil
+	return count == 1, tx.Commit()
 }
 
 func (r *Repository) StartPreparedTaskResourceCleanupJob(ctx context.Context, id string) (bool, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	taskID, err := r.lockCleanupTaskInTx(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, next_attempt_at = NULL, updated_at = ?
-		WHERE id = ? AND state = ?
-	`), models.TaskResourceCleanupStatePending, now, id, models.TaskResourceCleanupStatePrepared)
+		WHERE id = ? AND task_id = ? AND state = ?
+	`), models.TaskResourceCleanupStatePending, now, id, taskID, models.TaskResourceCleanupStatePrepared)
 	if err != nil {
 		return false, err
 	}
 	count, _ := result.RowsAffected()
-	return count == 1, nil
+	return count == 1, tx.Commit()
 }
 
 func (r *Repository) CompleteTaskResourceCleanupJob(
@@ -266,6 +386,24 @@ func (r *Repository) CompleteTaskResourceCleanupJob(
 	lastError string,
 	nextAttemptAt *time.Time,
 ) error {
+	switch state {
+	case models.TaskResourceCleanupStatePrepared, models.TaskResourceCleanupStateCancelled,
+		models.TaskResourceCleanupStateSucceeded, models.TaskResourceCleanupStateFailed,
+		models.TaskResourceCleanupStateRetryWait:
+	default:
+		return fmt.Errorf("%w: unsupported cleanup completion state %s", errCleanupReservationConflict, state)
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := r.lockCleanupTaskInTx(ctx, tx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: cleanup %s is missing", errCleanupReservationConflict, id)
+		}
+		return err
+	}
 	now := time.Now().UTC()
 	var completedAt *time.Time
 	if state == models.TaskResourceCleanupStateSucceeded ||
@@ -273,12 +411,23 @@ func (r *Repository) CompleteTaskResourceCleanupJob(
 		state == models.TaskResourceCleanupStateCancelled {
 		completedAt = &now
 	}
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, last_error = ?, next_attempt_at = ?, completed_at = ?, updated_at = ?
-		WHERE id = ?
-	`), state, lastError, nextAttemptAt, completedAt, now, id)
-	return err
+		WHERE id = ? AND state IN (?, ?)
+	`), state, lastError, nextAttemptAt, completedAt, now, id,
+		models.TaskResourceCleanupStatePrepared, models.TaskResourceCleanupStatePending)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return fmt.Errorf("%w: cleanup %s no longer has an unclaimed state", errCleanupReservationConflict, id)
+	}
+	return tx.Commit()
 }
 
 // RestoreCancelledTaskResourceCleanupJobIfUnchanged re-prepares only the
@@ -291,18 +440,30 @@ func (r *Repository) RestoreCancelledTaskResourceCleanupJobIfUnchanged(
 	attempts int,
 	lastError string,
 ) (bool, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	taskID, err := r.lockCleanupTaskInTx(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, last_error = ?, next_attempt_at = NULL, completed_at = NULL, updated_at = ?
-		WHERE id = ? AND state = ? AND attempts = ?
+		WHERE id = ? AND task_id = ? AND state = ? AND attempts = ?
 	`), models.TaskResourceCleanupStatePrepared, lastError, now,
-		id, models.TaskResourceCleanupStateCancelled, attempts)
+		id, taskID, models.TaskResourceCleanupStateCancelled, attempts)
 	if err != nil {
 		return false, err
 	}
 	count, _ := result.RowsAffected()
-	return count == 1, nil
+	return count == 1, tx.Commit()
 }
 
 // CancelTaskResourceCleanupJobIfPending cancels only an eligible cleanup
@@ -337,6 +498,23 @@ func (r *Repository) CompleteClaimedTaskResourceCleanupJob(
 	lastError string,
 	nextAttemptAt *time.Time,
 ) (bool, error) {
+	switch state {
+	case models.TaskResourceCleanupStateSucceeded, models.TaskResourceCleanupStateFailed,
+		models.TaskResourceCleanupStateRetryWait, models.TaskResourceCleanupStateCancelled:
+	default:
+		return false, fmt.Errorf("%w: unsupported claimed completion state %s", errCleanupReservationConflict, state)
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := r.lockCleanupTaskInTx(ctx, tx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
 	now := time.Now().UTC()
 	var completedAt *time.Time
 	if state == models.TaskResourceCleanupStateSucceeded ||
@@ -344,7 +522,7 @@ func (r *Repository) CompleteClaimedTaskResourceCleanupJob(
 		state == models.TaskResourceCleanupStateCancelled {
 		completedAt = &now
 	}
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_resource_cleanup_jobs
 		SET state = ?, last_error = ?, next_attempt_at = ?, completed_at = ?, updated_at = ?
 		WHERE id = ? AND state = ? AND attempts = ?
@@ -354,7 +532,7 @@ func (r *Repository) CompleteClaimedTaskResourceCleanupJob(
 		return false, err
 	}
 	count, _ := result.RowsAffected()
-	return count == 1, nil
+	return count == 1, tx.Commit()
 }
 
 func (r *Repository) CancelArchiveTaskResourceCleanupJobs(ctx context.Context, taskID string) error {
@@ -371,10 +549,51 @@ func (r *Repository) CancelArchiveTaskResourceCleanupJobs(ctx context.Context, t
 }
 
 func (r *Repository) ResetRunningTaskResourceCleanupJobs(ctx context.Context) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, r.db.Rebind(`
+		SELECT id, task_id FROM task_resource_cleanup_jobs WHERE state = ?
+	`), models.TaskResourceCleanupStateRunning)
+	if err != nil {
+		return err
+	}
+	type runningJob struct{ id, taskID string }
+	jobs := make([]runningJob, 0)
+	for rows.Next() {
+		var job runningJob
+		if err := rows.Scan(&job.id, &job.taskID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	_ = rows.Close()
+	sort.Slice(jobs, func(i, j int) bool {
+		if jobs[i].taskID != jobs[j].taskID {
+			return jobs[i].taskID < jobs[j].taskID
+		}
+		return jobs[i].id < jobs[j].id
+	})
 	now := time.Now().UTC()
-	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
-		UPDATE task_resource_cleanup_jobs
-		SET state = ?, next_attempt_at = ?, updated_at = ? WHERE state = ?
-	`), models.TaskResourceCleanupStateRetryWait, now, now, models.TaskResourceCleanupStateRunning)
-	return err
+	for _, job := range jobs {
+		if _, err := r.lockCleanupTaskInTx(ctx, tx, job.id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, r.db.Rebind(`
+			UPDATE task_resource_cleanup_jobs
+			SET state = ?, next_attempt_at = ?, updated_at = ?
+			WHERE id = ? AND task_id = ? AND state = ?
+		`), models.TaskResourceCleanupStateRetryWait, now, now, job.id, job.taskID,
+			models.TaskResourceCleanupStateRunning); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

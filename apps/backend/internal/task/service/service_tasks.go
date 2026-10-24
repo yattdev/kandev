@@ -79,6 +79,10 @@ var ErrTaskAlreadyArchived = errors.New("task is already archived")
 // retention hold until a scoped caller clears that hold.
 var ErrTaskArchiveHeld = errors.New("task has a terminal retention hold")
 
+// ErrTaskCleanupAdmissionRequired means a post-mutation cleanup caller lacks
+// a unique durable prepared job with a scoped resource snapshot.
+var ErrTaskCleanupAdmissionRequired = errors.New("task cleanup requires a prepared admission")
+
 // ErrAutoTitlePromptRequired is returned when auto-title creation has neither
 // a prompt nor a usable provisional title.
 var ErrAutoTitlePromptRequired = errors.New("description or title is required when auto_title is enabled")
@@ -136,6 +140,13 @@ type taskEnvironmentOwnerTransferer interface {
 		envID, expectedTaskID string,
 		expectedGeneration int64,
 		taskID string,
+	) error
+}
+
+type taskEnvironmentCleanupOwnerTransferer interface {
+	TransferTaskEnvironmentOwnershipForCleanup(
+		ctx context.Context, envID, expectedTaskID string, expectedGeneration int64,
+		taskID, operationID string,
 	) error
 }
 
@@ -2078,9 +2089,19 @@ func (s *Service) UpdateTask(ctx context.Context, id string, req *UpdateTaskRequ
 		})
 	}
 	var updateErr error
-	if req.Position != nil {
+	switch {
+	case req.TerminalRetention != nil:
+		retentionWriter, ok := s.tasks.(interface {
+			UpdateTaskWithParentRetention(context.Context, *models.Task, string, string, bool, bool) error
+		})
+		if !ok {
+			return nil, errors.New("atomic parent retention writer unavailable")
+		}
+		updateErr = retentionWriter.UpdateTaskWithParentRetention(updateCtx, task,
+			req.RetentionParentTaskID, req.RetentionWorkspaceID, *req.TerminalRetention, req.Position != nil)
+	case req.Position != nil:
 		updateErr = s.tasks.UpdateTaskWithExplicitPosition(updateCtx, task)
-	} else {
+	default:
 		updateErr = s.tasks.UpdateTaskPreservingDeferredLaunch(updateCtx, task)
 	}
 	if updateErr != nil {
@@ -3040,6 +3061,9 @@ func (s *Service) deleteTaskWithReasonAndDBDelete(
 	if err != nil {
 		return false, err
 	}
+	if models.IsTerminalRetentionHeld(task.Metadata) {
+		return false, fmt.Errorf("%w: %s", ErrTaskArchiveHeld, id)
+	}
 
 	// 2. Gather data needed for cleanup BEFORE delete (sync, fast)
 	sessions, err := s.sessions.ListTaskSessions(operationCtx, id)
@@ -3099,24 +3123,6 @@ func (s *Service) deleteTaskWithReasonAndDBDelete(
 	if err != nil {
 		return false, err
 	}
-	if preserved, err := s.preserveTaskEnvironmentForActiveBorrower(operationCtx, id, taskEnv); err != nil {
-		return false, err
-	} else if preserved {
-		s.logger.Info("transferred borrowed task environment before task delete",
-			zap.String("task_id", id),
-			zap.String("env_id", taskEnvironmentID(taskEnv)),
-			zap.String("new_owner_task_id", taskEnv.TaskID))
-	}
-	// Remove task-scoped canvas authority while the task identity still exists.
-	// Promoted canvases have no task_id and are therefore preserved by the
-	// canvas service. A failure aborts the task mutation so the active release
-	// cannot be orphaned by a successful task delete.
-	if s.canvasCleanup != nil {
-		if err := s.canvasCleanup.CleanupTaskCanvases(ctx, id); err != nil {
-			return false, fmt.Errorf("cleanup task canvases for delete: %w", err)
-		}
-	}
-
 	envCleanup := taskEnvironmentCleanup{
 		env: taskEnv, deleteRow: false, discardWorktreeChanges: options.DiscardWorktreeChanges,
 	}
@@ -3125,6 +3131,22 @@ func (s *Service) deleteTaskWithReasonAndDBDelete(
 	)
 	if err != nil {
 		return false, err
+	}
+	if preserved, err := s.preserveTaskEnvironmentForReservedCleanup(operationCtx, id, taskEnv, cleanupJob); err != nil {
+		s.resolveTaskResourceCleanupAfterMutationError(operationCtx, cleanupJob)
+		return false, err
+	} else if preserved {
+		s.logger.Info("transferred borrowed task environment after delete reservation",
+			zap.String("task_id", id), zap.String("env_id", taskEnvironmentID(taskEnv)),
+			zap.String("new_owner_task_id", taskEnv.TaskID))
+	}
+	// Reserve cleanup before revoking canvas authority. A retention hold that
+	// wins admission must leave the task's canvas resources untouched.
+	if s.canvasCleanup != nil {
+		if err := s.canvasCleanup.CleanupTaskCanvases(ctx, id); err != nil {
+			s.resolveTaskResourceCleanupAfterMutationError(operationCtx, cleanupJob)
+			return false, fmt.Errorf("cleanup task canvases for delete: %w", err)
+		}
 	}
 
 	// 4. Delete from DB (sync, fast)
@@ -3218,94 +3240,31 @@ func (s *Service) deleteTaskStopTargets(ctx context.Context, id string) ([]taskS
 // deleteEnvRow controls whether the task_environment row is removed (true
 // for delete cascade, false for archive — archive preserves the row). Runtime
 // inventory failures abort cleanup so durable stop handles remain retryable.
-func (s *Service) CleanupTaskResources(ctx context.Context, taskID string, deleteEnvRow bool) {
-	// Capture the lifecycle disposition before borrower ownership transfer can
-	// change whether the environment row itself is deleted.
-	preserveBranches := !deleteEnvRow
-	taskDeleted := deleteEnvRow
-	if deleteEnvRow && s.attachmentSvc != nil {
-		if err := s.attachmentSvc.DeleteByTask(context.WithoutCancel(ctx), taskID); err != nil {
-			s.logger.Warn("failed to remove task attachment bytes during resource cleanup",
-				zap.String("task_id", taskID), zap.Error(err))
-		}
-	}
-	sessions, err := s.sessions.ListTaskSessions(ctx, taskID)
+func (s *Service) CleanupTaskResources(ctx context.Context, taskID string, deleteEnvRow bool) error {
+	prepared, err := s.findPreparedCascadeCleanup(ctx, taskID, deleteEnvRow)
 	if err != nil {
-		s.logger.Warn("failed to list sessions for cascade cleanup",
-			zap.String("task_id", taskID),
-			zap.Error(err))
+		return err
 	}
-	var stopTargets []taskStopTarget
-	if s.executionStopper != nil {
-		stopTargets, err = s.buildStopTargets(ctx, taskID, sessions)
-		if err != nil {
-			s.logger.Warn("skipping cascade cleanup because runtime inventory failed",
-				zap.String("task_id", taskID),
-				zap.Error(err))
-			return
-		}
-	}
-	worktrees, err := s.gatherWorktreesForDelete(ctx, taskID)
+	committed, err := s.preparedTaskCleanupMutationCommitted(ctx, prepared)
 	if err != nil {
-		s.logger.Warn("skipping cascade cleanup because worktree inventory failed",
-			zap.String("task_id", taskID), zap.Error(err))
-		return
+		return err
 	}
-	taskEnv, err := s.gatherTaskEnvironmentForCleanup(ctx, taskID)
-	if err != nil {
-		s.logger.Warn("skipping cascade cleanup because task environment inventory failed",
-			zap.String("task_id", taskID), zap.Error(err))
-		return
+	if !committed {
+		return ErrTaskCleanupAdmissionRequired
 	}
-	if deleteEnvRow {
-		preserved, err := s.preserveTaskEnvironmentForActiveBorrower(ctx, taskID, taskEnv)
-		if err != nil {
-			s.logger.Warn("skipping cascade cleanup because task environment could not be preserved for borrower",
-				zap.String("task_id", taskID),
-				zap.String("env_id", taskEnvironmentID(taskEnv)),
-				zap.Error(err))
-			return
-		}
-		if preserved {
-			deleteEnvRow = false
-			s.logger.Info("transferred borrowed task environment before cascade delete",
-				zap.String("task_id", taskID),
-				zap.String("env_id", taskEnvironmentID(taskEnv)),
-				zap.String("new_owner_task_id", taskEnv.TaskID))
-		}
-	}
-	envCleanup := taskEnvironmentCleanup{
-		env: taskEnv, deleteRow: deleteEnvRow, preserveBranches: preserveBranches,
-	}
-	if len(sessions) == 0 && len(worktrees) == 0 && len(stopTargets) == 0 && taskEnv == nil {
-		return
-	}
-	reason := "cascade archive"
-	if deleteEnvRow {
-		reason = "cascade delete"
-	}
-	s.runAsyncTaskCleanup(taskID, sessions, worktrees, stopTargets, envCleanup, taskDeleted,
-		reason, "failed to stop session on cascade cleanup", "cascade cleanup completed")
+	return s.StartPreparedTaskResourceCleanup(ctx, prepared.OperationID)
 }
 
 // gatherWorktreesForDelete collects worktrees for a task before it is deleted.
-// For legacy WorktreeCleanup implementations that do not implement WorktreeProvider,
-// it triggers cleanup immediately and returns nil.
+// Cleanup requires an inventory provider so the durable job can capture its
+// targets before any destructive callback runs.
 func (s *Service) gatherWorktreesForDelete(ctx context.Context, taskID string) ([]*worktree.Worktree, error) {
 	if s.worktreeCleanup == nil {
 		return nil, nil
 	}
 	provider, ok := s.worktreeCleanup.(WorktreeProvider)
 	if !ok {
-		// Durable cleanup must persist its intent before invoking a destructive
-		// legacy callback. Non-durable test/legacy wiring keeps the old behavior.
-		if s.resourceCleanups == nil {
-			if err := s.worktreeCleanup.OnTaskDeleted(ctx, taskID); err != nil {
-				s.logger.Warn("failed to cleanup worktree on task deletion",
-					zap.String("task_id", taskID), zap.Error(err))
-			}
-		}
-		return nil, nil
+		return nil, fmt.Errorf("worktree cleanup for task %s requires durable inventory", taskID)
 	}
 	worktrees, err := provider.GetAllByTaskID(ctx, taskID)
 	if err != nil {
@@ -4172,6 +4131,40 @@ func (s *Service) preserveTaskEnvironmentForActiveBorrower(ctx context.Context, 
 		return false, fmt.Errorf("transfer task environment %s to %s: %w", env.ID, borrowerTaskID, err)
 	}
 	env.TaskID = borrowerTaskID
+	return true, nil
+}
+
+func (s *Service) preserveTaskEnvironmentForReservedCleanup(
+	ctx context.Context, taskID string, env *models.TaskEnvironment, job *models.TaskResourceCleanupJob,
+) (bool, error) {
+	if env == nil || env.ID == "" || s.sessions == nil {
+		return false, nil
+	}
+	finder, ok := s.sessions.(taskEnvironmentSessionBorrowerFinder)
+	if !ok {
+		return false, nil
+	}
+	borrowerTaskID, err := finder.FindActiveTaskSessionTaskIDByTaskEnvironmentExcludingTask(ctx, env.ID, taskID)
+	if err != nil {
+		return false, fmt.Errorf("find task environment borrower %s: %w", env.ID, err)
+	}
+	if borrowerTaskID == "" {
+		return false, nil
+	}
+	transfer, ok := s.taskEnvironments.(taskEnvironmentCleanupOwnerTransferer)
+	if !ok || job == nil || job.OperationID == "" {
+		return false, errors.New("reserved cleanup environment ownership transfer is unavailable")
+	}
+	if err := transfer.TransferTaskEnvironmentOwnershipForCleanup(
+		ctx, env.ID, env.TaskID, env.OwnershipGeneration, borrowerTaskID, job.OperationID,
+	); err != nil {
+		return false, fmt.Errorf("transfer task environment %s to %s: %w", env.ID, borrowerTaskID, err)
+	}
+	env.TaskID = borrowerTaskID
+	env.OwnershipGeneration++
+	if err := s.updateReservedCleanupEnvironmentSnapshot(ctx, job, env); err != nil {
+		return true, err
+	}
 	return true, nil
 }
 

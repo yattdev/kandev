@@ -1969,12 +1969,18 @@ func (h *Handlers) handleUpdateTask(ctx context.Context, msg *ws.Message) (*ws.M
 		state = &normalized
 	}
 
-	task, err := h.taskSvc.UpdateTask(ctx, req.TaskID, &service.UpdateTaskRequest{
+	updateReq := &service.UpdateTaskRequest{
 		Title:             req.Title,
 		Description:       req.Description,
 		State:             state,
 		TerminalRetention: req.TerminalRetention,
-	})
+	}
+	if req.TerminalRetention != nil {
+		principal, _ := mcpscope.PrincipalFromContext(ctx)
+		updateReq.RetentionParentTaskID = principal.CallerTaskID
+		updateReq.RetentionWorkspaceID = principal.WorkspaceID
+	}
+	task, err := h.taskSvc.UpdateTask(ctx, req.TaskID, updateReq)
 	if err != nil {
 		h.logger.Error("failed to update task", zap.Error(err))
 		if errors.Is(err, service.ErrTaskTitleTooLong) {

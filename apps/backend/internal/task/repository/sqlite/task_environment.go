@@ -729,14 +729,14 @@ func (r *Repository) TransferTaskEnvironmentOwnership(
 	expectedGeneration int64,
 	taskID string,
 ) error {
-	return r.transferTaskEnvironmentOwnership(ctx, envID, expectedTaskID, expectedGeneration, taskID)
+	return r.transferTaskEnvironmentOwnership(ctx, envID, expectedTaskID, expectedGeneration, taskID, "")
 }
 
 func (r *Repository) transferTaskEnvironmentOwnership(
 	ctx context.Context,
 	envID, expectedTaskID string,
 	expectedGeneration int64,
-	taskID string,
+	taskID, operationID string,
 ) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -768,9 +768,14 @@ func (r *Repository) transferTaskEnvironmentOwnership(
 		return err
 	}
 	if currentTaskID == taskID {
+		if operationID != "" {
+			if err := r.authorizeTaskEnvironmentTransfer(ctx, tx, currentTaskID, operationID); err != nil {
+				return err
+			}
+		}
 		return tx.Commit()
 	}
-	if err := r.taskCleanupBarrierLocked(ctx, tx, currentTaskID); err != nil {
+	if err := r.authorizeTaskEnvironmentTransfer(ctx, tx, currentTaskID, operationID); err != nil {
 		return err
 	}
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`
@@ -788,6 +793,42 @@ func (r *Repository) transferTaskEnvironmentOwnership(
 		return fmt.Errorf("%w: %s", ErrTaskEnvironmentNotFound, envID)
 	}
 	return tx.Commit()
+}
+
+// TransferTaskEnvironmentOwnershipForCleanup permits the owner transfer that
+// belongs to an already reserved delete, while rejecting unrelated barriers.
+func (r *Repository) TransferTaskEnvironmentOwnershipForCleanup(
+	ctx context.Context, envID, expectedTaskID string, expectedGeneration int64,
+	taskID, operationID string,
+) error {
+	if expectedTaskID == "" || operationID == "" || taskID == "" {
+		return errors.New("cleanup environment transfer requires owner, borrower, and operation")
+	}
+	return r.transferTaskEnvironmentOwnership(ctx, envID, expectedTaskID, expectedGeneration, taskID, operationID)
+}
+
+func (r *Repository) authorizeTaskEnvironmentTransfer(
+	ctx context.Context, tx *sqlx.Tx, expectedTaskID, operationID string,
+) error {
+	if operationID == "" {
+		return r.taskCleanupBarrierLocked(ctx, tx, expectedTaskID)
+	}
+	var reservedTask string
+	var state models.TaskResourceCleanupState
+	var trigger models.TaskResourceCleanupTrigger
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT task_id, state, trigger FROM task_resource_cleanup_jobs WHERE operation_id = ?
+	`), operationID).Scan(&reservedTask, &state, &trigger)
+	if err != nil {
+		return err
+	}
+	if reservedTask != expectedTaskID || state != models.TaskResourceCleanupStatePrepared ||
+		trigger != models.TaskResourceCleanupTriggerDelete &&
+			trigger != models.TaskResourceCleanupTriggerCascadeDelete &&
+			trigger != models.TaskResourceCleanupTriggerQuickChatExpire {
+		return fmt.Errorf("%w: environment transfer operation %s", errCleanupReservationConflict, operationID)
+	}
+	return nil
 }
 
 // ClaimTaskEnvironmentReset reserves destructive environment reset behind the

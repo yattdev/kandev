@@ -16,7 +16,9 @@ type mcpPostCommitCleanupFailure struct {
 	err error
 }
 
-func (c *mcpPostCommitCleanupFailure) CleanupTaskResources(context.Context, string, bool) {}
+func (c *mcpPostCommitCleanupFailure) CleanupTaskResources(context.Context, string, bool) error {
+	return nil
+}
 func (c *mcpPostCommitCleanupFailure) PrepareTaskResourceCleanup(
 	context.Context,
 	string,

@@ -135,6 +135,27 @@ func createTestService(t *testing.T) (*Service, *MockEventBus, *sqliterepo.Repos
 	})
 }
 
+// admitCascadeCleanupForTest exercises the production reservation and task
+// mutation ordering before a post-commit cleanup caller starts its job.
+func admitCascadeCleanupForTest(t *testing.T, svc *Service, repo *sqliterepo.Repository, taskID string, deleteTask bool) {
+	t.Helper()
+	trigger := models.TaskResourceCleanupTriggerCascadeArchive
+	if deleteTask {
+		trigger = models.TaskResourceCleanupTriggerCascadeDelete
+	}
+	operationID := "test-cascade:" + taskID
+	if err := svc.PrepareTaskResourceCleanup(context.Background(), taskID, trigger, operationID, deleteTask); err != nil {
+		t.Fatalf("prepare task cleanup %s: %v", taskID, err)
+	}
+	if deleteTask {
+		if err := repo.DeleteTask(context.Background(), taskID); err != nil {
+			t.Fatalf("delete task %s after reservation: %v", taskID, err)
+		}
+	} else if err := repo.ArchiveTask(context.Background(), taskID); err != nil {
+		t.Fatalf("archive task %s after reservation: %v", taskID, err)
+	}
+}
+
 // testWorkflowStepGetter keeps legacy service tests focused on their own
 // behavior while mirroring production's required workflow-step dependency.
 // Integrity tests install an exact getter (or nil) for boundary assertions.
@@ -2693,7 +2714,12 @@ func TestService_CleanupTaskResourcesFailsClosedWhenRuntimeInventoryFails(t *tes
 		t.Fatalf("mkdir session dir: %v", err)
 	}
 
-	svc.CleanupTaskResources(ctx, "task-123", true)
+	if err := svc.PrepareTaskResourceCleanup(ctx, "task-123", models.TaskResourceCleanupTriggerCascadeDelete, "inventory-failure-cleanup", true); !errors.Is(err, inventoryErr) {
+		t.Fatalf("prepare cleanup error = %v, want inventory failure", err)
+	}
+	if err := svc.CleanupTaskResources(ctx, "task-123", true); !errors.Is(err, ErrTaskCleanupAdmissionRequired) {
+		t.Fatalf("unprepared cleanup error = %v, want admission required", err)
+	}
 
 	if _, err := repo.GetExecutorRunningBySessionID(ctx, "session-completed"); err != nil {
 		t.Fatalf("executor row should remain when runtime inventory fails: %v", err)

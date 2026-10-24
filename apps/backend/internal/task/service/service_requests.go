@@ -150,15 +150,19 @@ type CreateTaskRequest struct {
 
 // UpdateTaskRequest contains the data for updating a task
 type UpdateTaskRequest struct {
-	Title             *string                `json:"title,omitempty"`
-	TerminalRetention *bool                  `json:"terminal_retention,omitempty"`
-	Description       *string                `json:"description,omitempty"`
-	Priority          *string                `json:"priority,omitempty"`
-	State             *v1.TaskState          `json:"state,omitempty"`
-	WorkflowStepID    *string                `json:"workflow_step_id,omitempty"`
-	Repositories      []TaskRepositoryInput  `json:"repositories,omitempty"`
-	Position          *int                   `json:"position,omitempty"`
-	Metadata          map[string]interface{} `json:"metadata,omitempty"`
+	Title             *string `json:"title,omitempty"`
+	TerminalRetention *bool   `json:"terminal_retention,omitempty"`
+	// These fields are supplied from the authenticated MCP stream principal,
+	// never from the tool payload. The repository rechecks the live relation.
+	RetentionParentTaskID string                 `json:"-"`
+	RetentionWorkspaceID  string                 `json:"-"`
+	Description           *string                `json:"description,omitempty"`
+	Priority              *string                `json:"priority,omitempty"`
+	State                 *v1.TaskState          `json:"state,omitempty"`
+	WorkflowStepID        *string                `json:"workflow_step_id,omitempty"`
+	Repositories          []TaskRepositoryInput  `json:"repositories,omitempty"`
+	Position              *int                   `json:"position,omitempty"`
+	Metadata              map[string]interface{} `json:"metadata,omitempty"`
 	// ParentID nests the task under another task ("subtask"). A nil pointer
 	// leaves the relationship untouched; a pointer to "" clears it (un-nests
 	// back to a root task); a non-empty value nests it under that parent.

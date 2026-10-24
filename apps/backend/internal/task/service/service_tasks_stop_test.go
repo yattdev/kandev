@@ -730,8 +730,11 @@ func TestCleanupTaskResources_TerminalSessionRuntimeAbsenceDoesNotBlockCleanup(t
 	svc.setCleanupDoneForTestHook(make(chan struct{}, 1))
 
 	seedCascadeFixtures(t, repo, "ws-c1", "wf-c1", "task-c1", "sess-cancelled", "exec-cancelled", models.TaskSessionStateCancelled)
+	admitCascadeCleanupForTest(t, svc, repo, "task-c1", false)
 
-	svc.CleanupTaskResources(context.Background(), "task-c1", false)
+	if err := svc.CleanupTaskResources(context.Background(), "task-c1", false); err != nil {
+		t.Fatal(err)
+	}
 	waitForCleanupDone(t, svc)
 
 	_, err := repo.GetExecutorRunningBySessionID(context.Background(), "sess-cancelled")
@@ -753,7 +756,10 @@ func TestCleanupTaskResources_NonTerminalSessionStopFailureBlocksCleanup(t *test
 
 	seedCascadeFixtures(t, repo, "ws-c2", "wf-c2", "task-c2", "sess-running", "exec-running", models.TaskSessionStateRunning)
 
-	svc.CleanupTaskResources(context.Background(), "task-c2", false)
+	admitCascadeCleanupForTest(t, svc, repo, "task-c2", false)
+	if err := svc.CleanupTaskResources(context.Background(), "task-c2", false); err != nil {
+		t.Fatal(err)
+	}
 	waitForCleanupDone(t, svc)
 
 	if _, err := repo.GetExecutorRunningBySessionID(context.Background(), "sess-running"); err != nil {
@@ -805,7 +811,10 @@ func TestCleanupTaskResources_NonTerminalDeadLocalSessionGetsCleanedUp(t *testin
 
 	seedDeadLocalSessionOnly(t, repo, "ws-dl", "wf-dl", "task-dl", "sess-dead-local", "", models.TaskSessionStateCreated)
 
-	svc.CleanupTaskResources(context.Background(), "task-dl", false)
+	admitCascadeCleanupForTest(t, svc, repo, "task-dl", false)
+	if err := svc.CleanupTaskResources(context.Background(), "task-dl", false); err != nil {
+		t.Fatal(err)
+	}
 	waitForCleanupDone(t, svc)
 
 	if _, err := repo.GetExecutorRunningBySessionID(context.Background(), "sess-dead-local"); err == nil {
@@ -830,7 +839,10 @@ func TestCleanupTaskResources_DeadLocalResumeSafeSessionRepairedNotDeleted(t *te
 	// preservation driver.
 	seedDeadLocalSessionOnly(t, repo, "ws-rs", "wf-rs", "task-rs", "sess-resume-safe", "tok-keep", models.TaskSessionStateCreated)
 
-	svc.CleanupTaskResources(context.Background(), "task-rs", false)
+	admitCascadeCleanupForTest(t, svc, repo, "task-rs", false)
+	if err := svc.CleanupTaskResources(context.Background(), "task-rs", false); err != nil {
+		t.Fatal(err)
+	}
 	waitForCleanupDone(t, svc)
 
 	row, err := repo.GetExecutorRunningBySessionID(context.Background(), "sess-resume-safe")
@@ -879,7 +891,10 @@ func TestCleanupTaskResources_SkipsBorrowedInheritedWorktree(t *testing.T) {
 	svc.SetWorktreeCleanup(cleanup)
 	svc.setCleanupDoneForTestHook(make(chan struct{}, 1))
 
-	svc.CleanupTaskResources(ctx, "child-task", true)
+	admitCascadeCleanupForTest(t, svc, repo, "child-task", true)
+	if err := svc.CleanupTaskResources(ctx, "child-task", true); err != nil {
+		t.Fatal(err)
+	}
 	waitForCleanupDone(t, svc)
 
 	if cleanedIDs := cleanup.cleanedIDs(); len(cleanedIDs) != 0 {
@@ -905,7 +920,10 @@ func TestCleanupTaskResources_SkipsWorktreeWhenSessionOwnershipUnknown(t *testin
 	svc.SetWorktreeCleanup(cleanup)
 	svc.setCleanupDoneForTestHook(make(chan struct{}, 1))
 
-	svc.CleanupTaskResources(ctx, "child-task", true)
+	admitCascadeCleanupForTest(t, svc, repo, "child-task", true)
+	if err := svc.CleanupTaskResources(ctx, "child-task", true); err != nil {
+		t.Fatal(err)
+	}
 	waitForCleanupDone(t, svc)
 
 	if cleanedIDs := cleanup.cleanedIDs(); len(cleanedIDs) != 0 {
@@ -957,7 +975,10 @@ func TestCleanupTaskResources_PreservesOwnedEnvironmentWithActiveInheritedChild(
 	svc.SetWorktreeCleanup(cleanup)
 	svc.setCleanupDoneForTestHook(make(chan struct{}, 1))
 
-	svc.CleanupTaskResources(ctx, "parent-task", false)
+	admitCascadeCleanupForTest(t, svc, repo, "parent-task", false)
+	if err := svc.CleanupTaskResources(ctx, "parent-task", false); err != nil {
+		t.Fatal(err)
+	}
 	waitForCleanupDone(t, svc)
 
 	if len(destroyer.worktreeCalls) != 0 {
@@ -1025,11 +1046,11 @@ func TestCleanupTaskResources_TransfersBorrowedEnvironmentBeforeCascadeDelete(t 
 	}
 	svc.setCleanupDoneForTestHook(make(chan struct{}, 1))
 
-	svc.CleanupTaskResources(ctx, "parent-task", true)
-	waitForCleanupDone(t, svc)
-	if err := repo.DeleteTask(ctx, "parent-task"); err != nil {
-		t.Fatalf("delete parent task: %v", err)
+	admitCascadeCleanupForTest(t, svc, repo, "parent-task", true)
+	if err := svc.CleanupTaskResources(ctx, "parent-task", true); err != nil {
+		t.Fatal(err)
 	}
+	waitForCleanupDone(t, svc)
 
 	env, err := repo.GetTaskEnvironment(ctx, "env-parent")
 	if err != nil {

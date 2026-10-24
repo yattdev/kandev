@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -1179,6 +1180,9 @@ func (r *Repository) setTaskMetadataKeyWithExecutor(
 	value interface{},
 	updatedAt time.Time,
 ) error {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return err
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -1273,6 +1277,9 @@ func (r *Repository) setTaskMetadataKeyIfAbsentWithoutTimestampWithExecutor(ctx 
 }
 
 func (r *Repository) setTaskMetadataKeyIfAbsentWithExecutorOptions(ctx context.Context, exec taskSessionExecutor, taskID, key string, value interface{}, updateTaskTimestamp bool) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return false, err
@@ -3700,19 +3707,57 @@ func (r *Repository) CountActiveTaskSessionsByRepository(ctx context.Context, re
 // that are using the specified agent profile. This is used during profile deletion
 // to clean up transient quick chat / config chat tasks.
 func (r *Repository) DeleteEphemeralTasksByAgentProfile(ctx context.Context, agentProfileID string) (int64, error) {
-	// Delete tasks that are ephemeral and have sessions using this profile.
-	// CASCADE will handle session deletion.
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
-		DELETE FROM tasks
-		WHERE is_ephemeral = 1
-		  AND id IN (
-			SELECT DISTINCT task_id FROM task_sessions WHERE agent_profile_id = ?
-		  )
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, r.db.Rebind(`
+		SELECT DISTINCT t.id FROM tasks t
+		JOIN task_sessions s ON s.task_id = t.id
+		WHERE t.is_ephemeral = 1 AND s.agent_profile_id = ?
 	`), agentProfileID)
 	if err != nil {
 		return 0, err
 	}
-	return result.RowsAffected()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, err
+	}
+	_ = rows.Close()
+	sort.Strings(ids)
+	var deleted int64
+	for _, id := range ids {
+		if err := r.lockTaskRowInTx(ctx, tx, id); err != nil {
+			return 0, err
+		}
+		if err := r.ensureTaskNotHeldInTx(ctx, tx, id); err != nil {
+			return 0, err
+		}
+		result, err := tx.ExecContext(ctx, r.db.Rebind(`
+			DELETE FROM tasks WHERE id = ? AND is_ephemeral = 1 AND EXISTS (
+				SELECT 1 FROM task_sessions WHERE task_id = ? AND agent_profile_id = ?
+			)
+		`), id, id, agentProfileID)
+		if err != nil {
+			return 0, err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		deleted += count
+	}
+	return deleted, tx.Commit()
 }
 
 // scanTaskSessions is a helper to scan multiple agent session rows

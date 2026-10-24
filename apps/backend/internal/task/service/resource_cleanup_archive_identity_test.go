@@ -31,6 +31,12 @@ func (c *policyRecordingWorktreeCleanup) GetAllByTaskID(context.Context, string)
 	return c.worktrees, nil
 }
 
+func (c *policyRecordingWorktreeCleanup) CaptureArchiveSourceManifests(
+	ctx context.Context, worktrees []*worktree.Worktree,
+) (map[string]worktree.ArchiveSourceManifest, error) {
+	return (&recordingWorktreeCleanup{}).CaptureArchiveSourceManifests(ctx, worktrees)
+}
+
 func (c *policyRecordingWorktreeCleanup) CleanupWorktrees(context.Context, []*worktree.Worktree) error {
 	c.defaultCalls++
 	return nil
@@ -414,7 +420,10 @@ func TestCleanupTaskResources_CascadeArchivePreservesBranches(t *testing.T) {
 	svc.SetWorktreeCleanup(cleanup)
 	svc.setCleanupDoneForTestHook(make(chan struct{}, 1))
 
-	svc.CleanupTaskResources(context.Background(), taskID, false)
+	admitCascadeCleanupForTest(t, svc, repo, taskID, false)
+	if err := svc.CleanupTaskResources(context.Background(), taskID, false); err != nil {
+		t.Fatal(err)
+	}
 	waitForCleanupDone(t, svc)
 
 	if cleanup.preservingCalls != 1 || cleanup.defaultCalls != 0 {

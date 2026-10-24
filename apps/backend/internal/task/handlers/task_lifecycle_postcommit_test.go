@@ -17,7 +17,9 @@ type postCommitCleanupFailure struct {
 	err error
 }
 
-func (c *postCommitCleanupFailure) CleanupTaskResources(context.Context, string, bool) {}
+func (c *postCommitCleanupFailure) CleanupTaskResources(context.Context, string, bool) error {
+	return nil
+}
 
 func (c *postCommitCleanupFailure) PrepareTaskResourceCleanup(
 	context.Context,

@@ -1139,6 +1139,7 @@ func TestPrepareTaskResourceCleanupReadmitsCancelledIntent(t *testing.T) {
 
 func TestTaskResourceCleanupRetriesCompletionPersistenceFailure(t *testing.T) {
 	taskSvc, repo := setupOfficeTest(t)
+	seedCleanupJobTask(t, repo, "task-completion-failure")
 	job := &models.TaskResourceCleanupJob{
 		ID: "completion-failure", OperationID: "delete:completion-failure",
 		TaskID: "task-completion-failure", Trigger: models.TaskResourceCleanupTriggerDelete,
@@ -1165,6 +1166,21 @@ func TestTaskResourceCleanupRetriesCompletionPersistenceFailure(t *testing.T) {
 	}
 	if got.NextAttemptAt == nil {
 		t.Fatal("retry_wait cleanup has no next attempt time")
+	}
+}
+
+func seedCleanupJobTask(t *testing.T, repo interface {
+	CreateWorkspace(context.Context, *models.Workspace) error
+	CreateTask(context.Context, *models.Task) error
+}, taskID string) {
+	t.Helper()
+	ctx := context.Background()
+	workspaceID := "ws-" + taskID
+	if err := repo.CreateWorkspace(ctx, &models.Workspace{ID: workspaceID, Name: "Cleanup fixture"}); err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
+	}
+	if err := repo.CreateTask(ctx, &models.Task{ID: taskID, WorkspaceID: workspaceID, Title: "Cleanup fixture", Priority: "medium"}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
 	}
 }
 func TestCancelPreparedTaskResourceCleanupIgnoresExpiredDeadline(t *testing.T) {
@@ -1406,6 +1422,7 @@ func TestTaskResourceCleanupMissingResourcesSucceed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			taskSvc, repo := setupOfficeTest(t)
 			taskSvc.StopTaskResourceCleanupWorker()
+			seedCleanupJobTask(t, repo, "deleted-task")
 			if test.destroyer != nil {
 				taskSvc.SetEnvironmentDestroyer(test.destroyer)
 			}
@@ -1427,6 +1444,9 @@ func TestTaskResourceCleanupMissingResourcesSucceed(t *testing.T) {
 			}
 			if err := repo.CreateTaskResourceCleanupJob(context.Background(), job); err != nil {
 				t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
+			}
+			if err := repo.DeleteTask(context.Background(), job.TaskID); err != nil {
+				t.Fatalf("DeleteTask after cleanup admission: %v", err)
 			}
 
 			if err := taskSvc.processTaskResourceCleanupJob(context.Background(), job.ID); err != nil {
@@ -1451,6 +1471,7 @@ func TestTaskResourceCleanupMissingResourcesSucceed(t *testing.T) {
 func TestTaskResourceCleanupJobSnapshotRoundTripsMultiRepoWorktrees(t *testing.T) {
 	taskSvc, repo := setupOfficeTest(t)
 	taskSvc.StopTaskResourceCleanupWorker()
+	seedCleanupJobTask(t, repo, "deleted-multi-repo-task")
 	destroyer := &stubDestroyer{}
 	taskSvc.SetEnvironmentDestroyer(destroyer)
 
@@ -1478,6 +1499,9 @@ func TestTaskResourceCleanupJobSnapshotRoundTripsMultiRepoWorktrees(t *testing.T
 	}
 	if err := repo.CreateTaskResourceCleanupJob(context.Background(), job); err != nil {
 		t.Fatalf("CreateTaskResourceCleanupJob: %v", err)
+	}
+	if err := repo.DeleteTask(context.Background(), job.TaskID); err != nil {
+		t.Fatalf("DeleteTask after cleanup admission: %v", err)
 	}
 
 	if err := taskSvc.processTaskResourceCleanupJob(context.Background(), job.ID); err != nil {

@@ -202,7 +202,9 @@ type recordingDeleteAdmissionCleaner struct {
 	dirtyErr error
 }
 
-func (c *recordingDeleteAdmissionCleaner) CleanupTaskResources(context.Context, string, bool) {}
+func (c *recordingDeleteAdmissionCleaner) CleanupTaskResources(context.Context, string, bool) error {
+	return nil
+}
 
 func (c *recordingDeleteAdmissionCleaner) ValidateTaskDeleteWorktrees(
 	_ context.Context, taskIDs []string, discardWorktreeChanges bool,
@@ -218,10 +220,11 @@ func (c *recordingDeleteAdmissionCleaner) ValidateTaskDeleteWorktrees(
 	return nil
 }
 
-func (c *recordingCleanupCoordinator) CleanupTaskResources(_ context.Context, taskID string, _ bool) {
+func (c *recordingCleanupCoordinator) CleanupTaskResources(_ context.Context, taskID string, _ bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cleaned = append(c.cleaned, taskID)
+	return nil
 }
 
 type recordingRunCanceller struct {
@@ -1695,10 +1698,11 @@ type resourceCleanerCall struct {
 	deleteEnvRow bool
 }
 
-func (f *fakeResourceCleaner) CleanupTaskResources(_ context.Context, taskID string, deleteEnvRow bool) {
+func (f *fakeResourceCleaner) CleanupTaskResources(_ context.Context, taskID string, deleteEnvRow bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, resourceCleanerCall{taskID: taskID, deleteEnvRow: deleteEnvRow})
+	return nil
 }
 
 type fakeWorkspaceCleaner struct {

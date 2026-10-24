@@ -48,7 +48,10 @@ func TestCleanupTaskResourcesRecoversPersistedKubernetesRuntimeAfterRestart(t *t
 				t.Fatalf("create session dir: %v", err)
 			}
 
-			svc.CleanupTaskResources(ctx, "task-k8s", false)
+			admitCascadeCleanupForTest(t, svc, repo, "task-k8s", false)
+			if err := svc.CleanupTaskResources(ctx, "task-k8s", false); err != nil {
+				t.Fatal(err)
+			}
 			waitForCleanupDone(t, svc)
 
 			_, rowErr := repo.GetExecutorRunningBySessionID(ctx, "session-k8s")

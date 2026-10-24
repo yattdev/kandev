@@ -40,6 +40,49 @@ type taskResourceCleanupTaskInspector interface {
 	ListTaskResourceCleanupJobs(ctx context.Context, taskID string) ([]*models.TaskResourceCleanupJob, error)
 }
 
+func (s *Service) findPreparedCascadeCleanup(
+	ctx context.Context, taskID string, deleteEnvRow bool,
+) (*models.TaskResourceCleanupJob, error) {
+	inspector, ok := s.resourceCleanups.(taskResourceCleanupTaskInspector)
+	if !ok || taskID == "" {
+		return nil, ErrTaskCleanupAdmissionRequired
+	}
+	jobs, err := inspector.ListTaskResourceCleanupJobs(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	trigger := models.TaskResourceCleanupTriggerCascadeArchive
+	if deleteEnvRow {
+		trigger = models.TaskResourceCleanupTriggerCascadeDelete
+	}
+	var prepared *models.TaskResourceCleanupJob
+	for _, job := range jobs {
+		if job == nil || job.TaskID != taskID || job.Trigger != trigger || job.State != models.TaskResourceCleanupStatePrepared {
+			continue
+		}
+		if prepared != nil || !validCascadeCleanupSnapshot(job.ResourceSnapshot, taskID, deleteEnvRow) {
+			return nil, ErrTaskCleanupAdmissionRequired
+		}
+		prepared = job
+	}
+	if prepared == nil {
+		return nil, ErrTaskCleanupAdmissionRequired
+	}
+	return prepared, nil
+}
+
+func validCascadeCleanupSnapshot(raw, taskID string, deleteEnvRow bool) bool {
+	var snapshot taskResourceCleanupSnapshot
+	if err := json.Unmarshal([]byte(raw), &snapshot); err != nil || snapshot.WorkspaceID == "" {
+		return false
+	}
+	if snapshot.DeleteEnvironmentRow == deleteEnvRow {
+		return true
+	}
+	return deleteEnvRow && !snapshot.DeleteEnvironmentRow && snapshot.TaskEnvironment != nil &&
+		snapshot.TaskEnvironment.TaskID != taskID
+}
+
 var taskResourceCleanupRetryDelays = []time.Duration{
 	time.Minute,
 	5 * time.Minute,
@@ -143,7 +186,7 @@ func (s *Service) persistTaskResourceCleanup(
 	workspaceID string,
 ) (*models.TaskResourceCleanupJob, error) {
 	if s.resourceCleanups == nil {
-		return nil, nil
+		return nil, errors.New("task resource cleanup persistence is required")
 	}
 	if operationID == "" {
 		operationID = newTaskResourceCleanupOperationID(trigger, taskID)
@@ -201,6 +244,28 @@ func (s *Service) persistTaskResourceCleanup(
 		return nil, fmt.Errorf("persist task resource cleanup intent: %w", err)
 	}
 	return s.resourceCleanups.GetTaskResourceCleanupJobByOperationID(ctx, operationID)
+}
+
+func (s *Service) updateReservedCleanupEnvironmentSnapshot(
+	ctx context.Context, job *models.TaskResourceCleanupJob, env *models.TaskEnvironment,
+) error {
+	if job == nil || job.State != models.TaskResourceCleanupStatePrepared {
+		return errors.New("environment cleanup snapshot requires a prepared job")
+	}
+	var snapshot taskResourceCleanupSnapshot
+	if err := json.Unmarshal([]byte(job.ResourceSnapshot), &snapshot); err != nil {
+		return fmt.Errorf("decode reserved cleanup snapshot: %w", err)
+	}
+	snapshot.TaskEnvironment = env
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return fmt.Errorf("encode reserved cleanup snapshot: %w", err)
+	}
+	if err := s.resourceCleanups.UpdateTaskResourceCleanupSnapshot(ctx, job.OperationID, string(encoded)); err != nil {
+		return fmt.Errorf("persist transferred environment snapshot: %w", err)
+	}
+	job.ResourceSnapshot = string(encoded)
+	return nil
 }
 
 func (s *Service) captureWorktreeCleanupHeadOIDs(
@@ -1202,6 +1267,15 @@ func (s *Service) PrepareTaskResourceCleanupWithOptions(
 	if err != nil {
 		return cancelPrepared(fmt.Errorf("lookup task environment for cleanup: %w", err))
 	}
+	if deleteEnvironmentRow {
+		preserved, err := s.preserveTaskEnvironmentForReservedCleanup(ctx, taskID, taskEnv, job)
+		if err != nil {
+			return cancelPrepared(err)
+		}
+		if preserved {
+			deleteEnvironmentRow = false
+		}
+	}
 	sshTaskDirs, err := s.gatherSSHReclaimTargets(ctx, taskID)
 	if err != nil {
 		return cancelPrepared(fmt.Errorf("list remote task directories for cleanup snapshot: %w", err))
@@ -1279,8 +1353,20 @@ func (s *Service) activatePreparedTaskResourceCleanupJob(
 	job *models.TaskResourceCleanupJob,
 ) error {
 	started, err := s.resourceCleanups.StartPreparedTaskResourceCleanupJob(ctx, job.ID)
-	if err != nil || !started {
+	if err != nil {
 		return err
+	}
+	if !started {
+		current, err := s.resourceCleanups.GetTaskResourceCleanupJob(ctx, job.ID)
+		if err != nil {
+			return err
+		}
+		if current != nil && (current.State == models.TaskResourceCleanupStatePending ||
+			current.State == models.TaskResourceCleanupStateRunning ||
+			current.State == models.TaskResourceCleanupStateSucceeded) {
+			return nil
+		}
+		return fmt.Errorf("%w: prepared cleanup %s did not start", ErrTaskCleanupAdmissionRequired, job.OperationID)
 	}
 	job.State = models.TaskResourceCleanupStatePending
 	s.startTaskResourceCleanup(job)

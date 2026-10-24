@@ -378,7 +378,7 @@ func (s *HandoffService) SetSessionCeilingReleaser(releaser SessionCeilingReleas
 // pre-fix behaviour). deleteEnvRow is true for delete cascades and false for
 // archive (archive preserves the env row for later inspection).
 type TaskResourceCleaner interface {
-	CleanupTaskResources(ctx context.Context, taskID string, deleteEnvRow bool)
+	CleanupTaskResources(ctx context.Context, taskID string, deleteEnvRow bool) error
 }
 
 type archiveTaskResourceCleanupCanceller interface {

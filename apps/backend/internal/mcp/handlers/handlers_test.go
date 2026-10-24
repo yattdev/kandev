@@ -106,6 +106,7 @@ func newTestTaskServiceWithEventBus(t *testing.T) (*service.Service, *sqliterepo
 		Executors:        repo,
 		Environments:     repo,
 		TaskEnvironments: repo,
+		ResourceCleanups: repo,
 		Reviews:          repo,
 	}, eventBus, log, service.RepositoryDiscoveryConfig{})
 	svc.SetWorkspacePolicyAttacher(testWorkspacePolicyAttacher{})

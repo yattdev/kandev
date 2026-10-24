@@ -1035,7 +1035,7 @@ func (r *Repository) UpdateTaskPreservingDeferredLaunch(ctx context.Context, tas
 func (r *Repository) updateTaskCommit(ctx context.Context, task *models.Task, expectedWorkflowID string, preservePosition, protectDeferredLaunch bool) error {
 	metadata, err := json.Marshal(task.Metadata)
 	if err != nil {
-		metadata = []byte("{}")
+		return err
 	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -1246,6 +1246,10 @@ func (r *Repository) updateTaskTx(
 		return "", 0, err
 	}
 	metadata, err = r.preserveLiveHandoffProvenance(ctx, tx, task.ID, metadata)
+	if err != nil {
+		return "", 0, err
+	}
+	metadata, err = r.preserveLiveRetentionInTx(ctx, tx, task.ID, metadata)
 	if err != nil {
 		return "", 0, err
 	}
@@ -1868,7 +1872,7 @@ func (r *Repository) updateTaskWithWorkflowStepAdmissionAttempt(
 	}
 	metadata, err := json.Marshal(task.Metadata)
 	if err != nil {
-		metadata = []byte("{}")
+		return false, false, err
 	}
 	entryID, markerEntryID, err := r.updateTaskTx(ctx, tx, task, metadata, expectedWorkflowID, false, false, workflowChangeSource)
 	if err != nil {
@@ -1915,6 +1919,9 @@ func (r *Repository) RemoveTaskMetadataKeyIfValue(
 	ctx context.Context,
 	taskID, key, expectedValue string,
 ) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	if strings.TrimSpace(expectedValue) == "" {
 		return false, nil
 	}
@@ -2013,6 +2020,9 @@ func (r *Repository) RemoveTaskMetadataKeyIfStamp(
 	ctx context.Context,
 	taskID, key, expectedStamp string,
 ) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	if strings.TrimSpace(expectedStamp) == "" {
 		return false, nil
 	}
@@ -2112,6 +2122,9 @@ func (r *Repository) removeTaskMetadataKeyWithExecutor(
 	exec taskSessionExecutor,
 	taskID, key string,
 ) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	var query string
 	if dialect.IsPostgres(r.db.DriverName()) {
 		query = `
@@ -2240,6 +2253,9 @@ func (r *Repository) SetTaskTitleIfPending(ctx context.Context, taskID, sessionI
 // SetTaskMetadataKey updates one metadata key without replacing concurrent
 // task fields. It is used to restore a deferred launch after a failed launch.
 func (r *Repository) SetTaskMetadataKey(ctx context.Context, taskID, key string, value interface{}) error {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return err
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -2264,6 +2280,9 @@ func (r *Repository) SetTaskMetadataKey(ctx context.Context, taskID, key string,
 func (r *Repository) SetTaskMetadataKeyIfNoActiveSession(
 	ctx context.Context, taskID, key string, value interface{},
 ) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return false, err
@@ -2306,6 +2325,9 @@ func (r *Repository) SetTaskMetadataKeyIfNoActiveSession(
 // guard read and the metadata write can never leave a marker on an archived
 // task (the check and the write are one statement).
 func (r *Repository) SetTaskMetadataKeyIfNotArchived(ctx context.Context, taskID, key string, value interface{}) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return false, err
@@ -2333,6 +2355,9 @@ func (r *Repository) SetTaskMetadataKeyIfNotArchived(ctx context.Context, taskID
 // compare-and-set boundary so an older settlement cannot overwrite a newer
 // interruption generation.
 func (r *Repository) SetTaskMetadataKeyIfAbsentNotArchived(ctx context.Context, taskID, key string, value interface{}) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return false, err
@@ -2374,6 +2399,9 @@ func (r *Repository) SetTaskMetadataKeyIfRecoveryCurrent(
 	expectedRecoveryToken, key string,
 	value interface{},
 ) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	if taskID == "" || sessionID == "" || expectedRecoveryToken == "" {
 		return false, nil
 	}
@@ -2447,6 +2475,9 @@ func (r *Repository) SetTaskMetadataKeyIfRecoveryCurrent(
 // there would resurrect a launch intent that a just-started task had already
 // consumed, and the gate would then fire a second session.
 func (r *Repository) SetTaskMetadataKeyIfPresent(ctx context.Context, taskID, key string, value interface{}) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return false, err
@@ -2475,6 +2506,9 @@ func (r *Repository) SetTaskMetadataKeyIfPresent(ctx context.Context, taskID, ke
 // is absent. The predicate and write share one statement so concurrent first
 // session creation cannot replace the immutable workflow snapshot.
 func (r *Repository) SetTaskMetadataKeyIfAbsent(ctx context.Context, taskID, key string, value interface{}) (bool, error) {
+	if err := rejectRetentionMetadataKey(key); err != nil {
+		return false, err
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return false, err
@@ -2901,7 +2935,7 @@ func detachTaskQuery(driver string) string {
 func (r *Repository) UpdateTaskIfWorkflowStepHasCapacity(ctx context.Context, task *models.Task, targetStepID, excludeTaskID string, limit int) error {
 	metadata, err := json.Marshal(task.Metadata)
 	if err != nil {
-		metadata = []byte("{}")
+		return err
 	}
 	workflowAgentOverrides, err := encodeWorkflowAgentOverridesValue(task.WorkflowAgentOverrides)
 	if err != nil {
@@ -2941,6 +2975,10 @@ func (r *Repository) UpdateTaskIfWorkflowStepHasCapacity(ctx context.Context, ta
 	}
 
 	fromWorkflowID, fromStepID, _, err := r.readTaskStepInTx(ctx, tx, task.ID)
+	if err != nil {
+		return err
+	}
+	metadata, err = r.preserveLiveRetentionInTx(ctx, tx, task.ID, metadata)
 	if err != nil {
 		return err
 	}
@@ -3002,7 +3040,7 @@ func (r *Repository) PromoteQueuedTaskIfWorkflowStepHasCapacity(
 ) (bool, error) {
 	metadata, err := json.Marshal(task.Metadata)
 	if err != nil {
-		metadata = []byte("{}")
+		return false, err
 	}
 	workflowAgentOverrides, err := encodeWorkflowAgentOverridesValue(task.WorkflowAgentOverrides)
 	if err != nil {
@@ -3066,6 +3104,10 @@ func (r *Repository) PromoteQueuedTaskIfWorkflowStepHasCapacity(
 	}
 
 	fromWorkflowID, _, _, err := r.readTaskStepInTx(ctx, tx, task.ID)
+	if err != nil {
+		return false, err
+	}
+	metadata, err = r.preserveLiveRetentionInTx(ctx, tx, task.ID, metadata)
 	if err != nil {
 		return false, err
 	}
@@ -3157,6 +3199,9 @@ func (r *Repository) DeleteTaskWithVacatedStep(ctx context.Context, id string) (
 		return "", fmt.Errorf("%w: %s", ErrTaskNotFound, id)
 	}
 	if err := recoveryclaim.EnsureTaskAvailableTx(ctx, r.db, tx, id); err != nil {
+		return "", err
+	}
+	if err := r.ensureTaskNotHeldInTx(ctx, tx, id); err != nil {
 		return "", err
 	}
 	sessions, err := r.taskQueueSessionsInTx(ctx, tx, id)
@@ -3791,16 +3836,24 @@ func (r *Repository) RestoreTaskParentIfUnchanged(
 		return fmt.Errorf("task %s parent changed during compensation", taskID)
 	}
 
-	metadata := map[string]interface{}{}
-	if len(metadataJSON) > 0 {
-		if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
-			return fmt.Errorf("decode task %s metadata during compensation: %w", taskID, err)
-		}
+	metadata, err := parseRetentionDocument(string(metadataJSON))
+	if err != nil {
+		return fmt.Errorf("decode task %s metadata during compensation: %w", taskID, err)
 	}
 	if restoredWorkspaceMode == taskWorkspaceModeInheritParent {
-		if workspace, ok := metadata["workspace"].(map[string]interface{}); ok &&
-			workspace["mode"] == taskWorkspaceModeSharedGroup {
-			workspace["mode"] = restoredWorkspaceMode
+		if rawWorkspace, ok := metadata["workspace"]; ok {
+			var workspace map[string]json.RawMessage
+			if err := json.Unmarshal(rawWorkspace, &workspace); err != nil {
+				return fmt.Errorf("decode task %s workspace metadata during compensation: %w", taskID, err)
+			}
+			if string(workspace["mode"]) == `"shared_group"` {
+				workspace["mode"] = json.RawMessage(`"inherit_parent"`)
+				encodedWorkspace, err := json.Marshal(workspace)
+				if err != nil {
+					return err
+				}
+				metadata["workspace"] = encodedWorkspace
+			}
 		}
 	}
 	metadataJSON, err = json.Marshal(metadata)
@@ -4134,6 +4187,9 @@ func (r *Repository) ArchiveTask(ctx context.Context, id string) error {
 	if err := r.lockTaskStepForWrite(ctx, tx, id); err != nil {
 		return err
 	}
+	if err := r.ensureTaskNotHeldInTx(ctx, tx, id); err != nil {
+		return err
+	}
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET archived_at = ?, updated_at = ? WHERE id = ?`), now, now, id)
 	if err != nil {
 		return err
@@ -4186,6 +4242,15 @@ func (r *Repository) ArchiveTaskIfAutoArchiveEligible(
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(ctx, tx, id); err != nil {
+		if errors.Is(err, ErrTaskNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := r.ensureTaskNotHeldInTx(ctx, tx, id); err != nil {
+		return false, err
+	}
 	now := time.Now().UTC()
 	query := fmt.Sprintf(`
 		UPDATE tasks AS t
@@ -4245,6 +4310,9 @@ func (r *Repository) ArchiveTaskIfActiveWithVacatedStep(
 	}
 	if !found {
 		return "", false, tx.Commit()
+	}
+	if err := r.ensureTaskNotHeldInTx(ctx, tx, id); err != nil {
+		return "", false, err
 	}
 	now := time.Now().UTC()
 	result, err := tx.ExecContext(ctx, r.db.Rebind(`
@@ -4598,6 +4666,20 @@ func (r *Repository) ListExpiredQuickChatTasks(ctx context.Context, cutoff time.
 // DeleteExpiredQuickChatTask deletes id only when it still matches the expired
 // quick-chat predicate at delete time.
 func (r *Repository) DeleteExpiredQuickChatTask(ctx context.Context, id string, cutoff time.Time) (bool, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockTaskRowInTx(ctx, tx, id); err != nil {
+		if errors.Is(err, ErrTaskNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := r.ensureTaskNotHeldInTx(ctx, tx, id); err != nil {
+		return false, err
+	}
 	drv := r.db.DriverName()
 	sessionActivity := "COALESCE(MAX(ts.updated_at), t.updated_at)"
 	lastActivity := dialect.GreatestTimestamp(drv, "t.updated_at", sessionActivity)
@@ -4628,7 +4710,7 @@ func (r *Repository) DeleteExpiredQuickChatTask(ctx context.Context, id string, 
 		excludeConfigModePredicate(drv, "t.metadata"),
 		lastActivity,
 	)
-	result, err := r.db.ExecContext(ctx, r.db.Rebind(query),
+	result, err := tx.ExecContext(ctx, r.db.Rebind(query),
 		id,
 		models.TaskOriginAutomationRun,
 		models.TaskSessionStateRunning,
@@ -4640,7 +4722,7 @@ func (r *Repository) DeleteExpiredQuickChatTask(ctx context.Context, id string, 
 		return false, err
 	}
 	rows, _ := result.RowsAffected()
-	return rows > 0, nil
+	return rows > 0, tx.Commit()
 }
 
 // isSafeMetadataKey reports whether s is a safe JSON metadata key to splice

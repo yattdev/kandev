@@ -436,7 +436,9 @@ func (s *HandoffService) applyArchiveTaskMutations(
 					cleanupErrors = append(cleanupErrors, fmt.Errorf("start cleanup %s: %w", operationID, err))
 				}
 			} else if s.resourceCleaner != nil {
-				s.resourceCleaner.CleanupTaskResources(ctx, all[i], false)
+				if err := s.resourceCleaner.CleanupTaskResources(ctx, all[i], false); err != nil {
+					cleanupErrors = append(cleanupErrors, fmt.Errorf("cleanup archived task %s: %w", all[i], err))
+				}
 			}
 		} else {
 			if err := s.cancelSkippedCascadeResourceCleanup(ctx, all[i], cascadeID, cleanupOps[all[i]]); err != nil {
@@ -785,7 +787,9 @@ func (s *HandoffService) deleteTaskTreeRows(
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("start cleanup %s: %w", operationID, err))
 			}
 		} else if s.resourceCleaner != nil {
-			s.resourceCleaner.CleanupTaskResources(postDeleteCtx, all[i], true)
+			if err := s.resourceCleaner.CleanupTaskResources(postDeleteCtx, all[i], true); err != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("cleanup deleted task %s: %w", all[i], err))
+			}
 		}
 		if s.eventPublisher != nil && snapshot != nil {
 			s.publishDeletedTaskEvent(postDeleteCtx, snapshot, reason)
