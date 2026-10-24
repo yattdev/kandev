@@ -54,6 +54,7 @@ func TestRetentionAdmission_ReservationRejectsHeldTaskAndConflictingReplay(t *te
 func TestRetentionAdmission_WorkspaceOnlyCleanupKeepsDurableTransitions(t *testing.T) {
 	repo := newBarrierTestRepo(t)
 	ctx := context.Background()
+	seedWorkspace(t, repo, "ws-1")
 	job := &models.TaskResourceCleanupJob{
 		OperationID: "workspace-attachments:one", Trigger: models.TaskResourceCleanupTriggerWorkspaceDelete,
 		State: models.TaskResourceCleanupStatePrepared, ResourceSnapshot: `{"workspace_id":"ws-1"}`,
