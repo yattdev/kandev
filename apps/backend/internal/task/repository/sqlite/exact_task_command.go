@@ -321,10 +321,14 @@ func (r *Repository) UpsertExactTaskCommandApproval(ctx context.Context, approva
 	}
 	defer func() { _ = tx.Rollback() }()
 	var revision uint64
+	var receiptAuditID string
 	var revokedAt sql.NullTime
-	err = tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT revision, revoked_at FROM exact_task_command_approvals WHERE installation_id = ? AND workspace_id = ? AND capability_id = ?`), approval.InstallationID, approval.WorkspaceID, approval.CapabilityID).Scan(&revision, &revokedAt)
+	err = tx.QueryRowxContext(ctx, r.db.Rebind(`SELECT revision, receipt_audit_id, revoked_at FROM exact_task_command_approvals WHERE installation_id = ? AND workspace_id = ? AND capability_id = ?`), approval.InstallationID, approval.WorkspaceID, approval.CapabilityID).Scan(&revision, &receiptAuditID, &revokedAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
+	}
+	if sameActiveExactCommandApproval(err, revokedAt, revision, receiptAuditID, approval) {
+		return nil
 	}
 	if err == nil && ((!revokedAt.Valid && approval.Revision != revision+1) || (revokedAt.Valid && approval.Revision < revision)) {
 		return ErrExactTaskCommandUnavailable
@@ -337,6 +341,10 @@ func (r *Repository) UpsertExactTaskCommandApproval(ctx context.Context, approva
 		return err
 	}
 	return tx.Commit()
+}
+
+func sameActiveExactCommandApproval(queryErr error, revokedAt sql.NullTime, revision uint64, receiptAuditID string, approval ExactTaskCommandApproval) bool {
+	return queryErr == nil && !revokedAt.Valid && approval.Revision == revision && approval.ReceiptAuditID == receiptAuditID
 }
 
 // RevokeExactTaskCommandApproval revokes the exact projection and every live

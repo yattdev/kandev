@@ -20,6 +20,8 @@ func (s *Service) approvalLedger() *approvalLedger {
 }
 
 func (s *Service) approvalGrant(installationID, workspaceID string, revision uint64, manifestDigest string, capabilityIDs []string, actor, reason, auditID string) (CapabilityApproval, error) {
+	s.approvalMutationMu.Lock()
+	defer s.approvalMutationMu.Unlock()
 	ledger := s.approvalLedger()
 	if ledger == nil {
 		return CapabilityApproval{}, fmt.Errorf("plugins: approval ledger not configured")
@@ -31,8 +33,12 @@ func (s *Service) approvalGrant(installationID, workspaceID string, revision uin
 	if err := s.validateApprovalManifest(installationID, manifestDigest, canonical); err != nil {
 		return CapabilityApproval{}, err
 	}
+	replay, err := ledger.previewGrant(installationID, workspaceID, revision, manifestDigest, canonical, actor, reason, auditID)
+	if err != nil {
+		return CapabilityApproval{}, err
+	}
 	bridge := s.exactTaskCommandApprovalBridge()
-	if bridge != nil {
+	if bridge != nil && !replay {
 		if err := bridge.RevokeWorkspace(context.Background(), installationID, workspaceID); err != nil {
 			return CapabilityApproval{}, err
 		}
@@ -40,6 +46,13 @@ func (s *Service) approvalGrant(installationID, workspaceID string, revision uin
 	approval, err := ledger.grant(installationID, workspaceID, revision, manifestDigest, canonical, actor, reason, auditID, time.Now().UTC())
 	if err != nil {
 		return CapabilityApproval{}, err
+	}
+	current, ok, err := ledger.get(installationID, workspaceID)
+	if err != nil {
+		return CapabilityApproval{}, err
+	}
+	if !ok || current.Revision != approval.Revision || current.State != ApprovalStateActive {
+		return CapabilityApproval{}, ErrApprovalRevisionConflict
 	}
 	if bridge != nil {
 		if err := bridge.Grant(context.Background(), approval, auditID); err != nil {
@@ -77,6 +90,8 @@ func (s *Service) validateApprovalManifest(installationID, manifestDigest string
 }
 
 func (s *Service) approvalRevoke(installationID, workspaceID, actor, reason, auditID string) (CapabilityApproval, error) {
+	s.approvalMutationMu.Lock()
+	defer s.approvalMutationMu.Unlock()
 	ledger := s.approvalLedger()
 	if ledger == nil {
 		return CapabilityApproval{}, fmt.Errorf("plugins: approval ledger not configured")
@@ -97,6 +112,8 @@ func (s *Service) approvalRevoke(installationID, workspaceID, actor, reason, aud
 }
 
 func (s *Service) approvalTombstoneInstallation(installationID string) error {
+	s.approvalMutationMu.Lock()
+	defer s.approvalMutationMu.Unlock()
 	ledger := s.approvalLedger()
 	if ledger == nil {
 		return nil

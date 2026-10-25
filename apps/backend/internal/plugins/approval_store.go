@@ -199,6 +199,44 @@ func approvalIdempotencyKey(eventType CapabilityApprovalEventType, auditID, inst
 	return string(eventType) + "\x00" + auditID + "\x00" + installationID + "\x00" + workspaceID
 }
 
+// previewGrant validates a replacement before the exact-command bridge
+// invalidates the current projection. The Service serializes the preview and
+// commit with its other approval mutations.
+func (l *approvalLedger) previewGrant(installationID, workspaceID string, revision uint64, manifestDigest string, capabilityIDs []string, actor, reason, auditID string) (bool, error) {
+	if err := validateApprovalMutation(installationID, workspaceID, actor, reason, auditID); err != nil {
+		return false, err
+	}
+	if revision == 0 {
+		return false, ErrApprovalRevisionConflict
+	}
+	if strings.TrimSpace(auditID) == "" {
+		return false, errors.New("plugins: approval audit id is required")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	file, err := l.load()
+	if err != nil {
+		return false, err
+	}
+	if _, tombstoned := file.Tombstones[installationID]; tombstoned {
+		return false, ErrApprovalInstallationTombstoned
+	}
+	current := file.Approvals[approvalKey(installationID, workspaceID)]
+	if replayed, found, err := approvalGrantReplay(file, installationID, workspaceID, revision, manifestDigest, capabilityIDs, actor, reason, auditID); found || err != nil {
+		if err != nil {
+			return false, err
+		}
+		if current.Revision != replayed.Revision || current.State != ApprovalStateActive {
+			return false, ErrApprovalRevisionConflict
+		}
+		return true, nil
+	}
+	if !approvalRevisionFollows(current.Revision, revision) {
+		return false, ErrApprovalRevisionConflict
+	}
+	return false, nil
+}
+
 func (l *approvalLedger) grant(installationID, workspaceID string, revision uint64, manifestDigest string, capabilityIDs []string, actor, reason, auditID string, at time.Time) (CapabilityApproval, error) {
 	if err := validateApprovalMutation(installationID, workspaceID, actor, reason, auditID); err != nil {
 		return CapabilityApproval{}, err

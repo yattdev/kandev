@@ -318,12 +318,109 @@ func TestFailedApprovalReplacementStillAllowsHumanRevocation(t *testing.T) {
 	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 1, digest, []string{"host.v2.write:tasks"}, "human", "grant", "grant-audit"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 1, digest, []string{"host.v2.write:tasks"}, "human", "grant", "grant-audit"); err != nil {
+		t.Fatalf("replay of active approval: %v", err)
+	}
 	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 3, digest, []string{"host.v2.write:tasks"}, "human", "invalid revision", "invalid-audit"); !errors.Is(err, ErrApprovalRevisionConflict) {
 		t.Fatalf("invalid replacement = %v, want revision conflict", err)
+	}
+	decision, err := svc.AuthorizeAndRecordExactCapability(record.InstallationID, "workspace-1", "host.v2.write:tasks", 1, "command-after-conflict", "exact-command")
+	if err != nil || !decision.Allowed {
+		t.Fatalf("active approval cannot authorize after rejected replacement: decision=%+v, err=%v", decision, err)
 	}
 	if _, err := svc.RevokeCapabilityApproval(record.InstallationID, "workspace-1", 1, "human", "revoke", "revoke-audit"); err != nil {
 		t.Fatalf("revoke after failed replacement: %v", err)
 	}
+}
+
+// TestApprovalBridgeFailureCanRetryTheSameRevision documents recovery after
+// the ledger commits but the SQLite projection is temporarily unavailable.
+func TestApprovalBridgeFailureCanRetryTheSameRevision(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := newExactCommandCompositionRepository(t)
+	svc, _, _ := newTestService(t)
+	bridge, err := NewSQLiteExactTaskCommandApprovalBridge(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.SetExactTaskCommandApprovalBridge(bridge)
+	record, err := svc.Install(ctx, exactTaskAccessPackage(t, "kandev-plugin-exact-retry"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := ManifestCapabilityDigest(record.Manifest)
+	capabilities := []string{"host.v2.write:tasks"}
+	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 1, digest, capabilities, "human", "grant", "grant-audit"); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetExactTaskCommandApprovalBridge(&failOnceExactApprovalGrant{ExactTaskCommandApprovalBridge: bridge})
+	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 2, digest, capabilities, "human", "replace", "replace-audit"); err == nil {
+		t.Fatal("first replacement unexpectedly succeeded")
+	}
+	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 2, digest, capabilities, "human", "replace", "replace-audit"); err != nil {
+		t.Fatalf("retry replacement: %v", err)
+	}
+	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 1, digest, capabilities, "human", "grant", "grant-audit"); !errors.Is(err, ErrApprovalRevisionConflict) {
+		t.Fatalf("historical replay = %v, want revision conflict", err)
+	}
+	decision, err := svc.AuthorizeAndRecordExactCapability(record.InstallationID, "workspace-1", "host.v2.write:tasks", 2, "command-after-retry", "exact-command")
+	if err != nil || !decision.Allowed {
+		t.Fatalf("retried approval cannot authorize: decision=%+v, err=%v", decision, err)
+	}
+}
+
+func TestApprovalReplacementKeepsOldRevisionWhenBridgeRevokeFails(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := newExactCommandCompositionRepository(t)
+	svc, _, _ := newTestService(t)
+	bridge, err := NewSQLiteExactTaskCommandApprovalBridge(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.SetExactTaskCommandApprovalBridge(bridge)
+	record, err := svc.Install(ctx, exactTaskAccessPackage(t, "kandev-plugin-exact-revoke-failure"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := ManifestCapabilityDigest(record.Manifest)
+	capabilities := []string{"host.v2.write:tasks"}
+	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 1, digest, capabilities, "human", "grant", "grant-audit"); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetExactTaskCommandApprovalBridge(&failOnceExactApprovalRevoke{ExactTaskCommandApprovalBridge: bridge})
+	if _, err := svc.GrantCapabilityApproval(record.InstallationID, "workspace-1", 2, digest, capabilities, "human", "replace", "replace-audit"); err == nil {
+		t.Fatal("replacement unexpectedly succeeded")
+	}
+	current, ok, err := svc.approvalCurrent(record.InstallationID, "workspace-1")
+	if err != nil || !ok || current.Revision != 1 {
+		t.Fatalf("approval after failed bridge revoke: current=%+v, ok=%v, err=%v", current, ok, err)
+	}
+}
+
+type failOnceExactApprovalRevoke struct {
+	ExactTaskCommandApprovalBridge
+	failed bool
+}
+
+func (b *failOnceExactApprovalRevoke) RevokeWorkspace(ctx context.Context, installationID, workspaceID string) error {
+	if !b.failed {
+		b.failed = true
+		return errors.New("injected approval revoke failure")
+	}
+	return b.ExactTaskCommandApprovalBridge.RevokeWorkspace(ctx, installationID, workspaceID)
+}
+
+type failOnceExactApprovalGrant struct {
+	ExactTaskCommandApprovalBridge
+	failed bool
+}
+
+func (b *failOnceExactApprovalGrant) Grant(ctx context.Context, approval CapabilityApproval, auditID string) error {
+	if !b.failed {
+		b.failed = true
+		return errors.New("injected approval bridge failure")
+	}
+	return b.ExactTaskCommandApprovalBridge.Grant(ctx, approval, auditID)
 }
 
 // exactCommandTaskSource fills only the Host's broader legacy data-source
