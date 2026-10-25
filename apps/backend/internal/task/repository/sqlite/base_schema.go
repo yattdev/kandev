@@ -76,6 +76,7 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		r.initConversationSourceSchema,
 		r.cleanupLegacyConversationJournal,
 		r.initConversationSearch,
+		r.ensureDependencyMutationSchema,
 	}
 	// Every boundary is checked before and after its step. The task repository
 	// passes the same context to startup SQL through migrationContext, so a
@@ -92,6 +93,49 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		}
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("startup schema canceled after step %d: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func (r *Repository) ensureDependencyMutationSchema() error {
+	if err := r.migrate.Apply("tasks.dependency_revision",
+		`ALTER TABLE tasks ADD COLUMN dependency_revision BIGINT NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("add task dependency revision: %w", err)
+	}
+	if err := r.migrate.Apply("task_dependency_mutation_audit.table", `
+		CREATE TABLE IF NOT EXISTS task_dependency_mutation_audit (
+			event_id TEXT PRIMARY KEY,
+			correlation_id TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			operation TEXT NOT NULL,
+			origin_class TEXT NOT NULL,
+			outcome TEXT NOT NULL,
+			reason_code TEXT NOT NULL,
+			changed INTEGER NOT NULL,
+			caller_task_id TEXT NOT NULL DEFAULT '',
+			caller_session_id TEXT NOT NULL DEFAULT '',
+			caller_execution_id TEXT NOT NULL DEFAULT '',
+			caller_workspace_id TEXT NOT NULL DEFAULT '',
+			caller_user_id TEXT NOT NULL DEFAULT '',
+			dependent_task_id TEXT NOT NULL DEFAULT '',
+			predecessor_task_id TEXT NOT NULL DEFAULT '',
+			dependent_id_present INTEGER NOT NULL DEFAULT 0,
+			predecessor_id_present INTEGER NOT NULL DEFAULT 0,
+			dependent_id_canonical INTEGER NOT NULL DEFAULT 0,
+			predecessor_id_canonical INTEGER NOT NULL DEFAULT 0,
+			dependent_revision BIGINT,
+			predecessor_revision BIGINT
+		)`); err != nil {
+		return fmt.Errorf("create task dependency mutation audit: %w", err)
+	}
+	for _, index := range []struct{ key, statement string }{
+		{"task_dependency_mutation_audit.workspace_time", `CREATE INDEX IF NOT EXISTS idx_task_dependency_mutation_audit_workspace_time ON task_dependency_mutation_audit(caller_workspace_id, created_at)`},
+		{"task_dependency_mutation_audit.dependent_time", `CREATE INDEX IF NOT EXISTS idx_task_dependency_mutation_audit_dependent_time ON task_dependency_mutation_audit(dependent_task_id, created_at)`},
+		{"task_dependency_mutation_audit.correlation", `CREATE INDEX IF NOT EXISTS idx_task_dependency_mutation_audit_correlation ON task_dependency_mutation_audit(correlation_id)`},
+	} {
+		if err := r.migrate.Apply(index.key, index.statement); err != nil {
+			return fmt.Errorf("index task dependency mutation audit: %w", err)
 		}
 	}
 	return nil

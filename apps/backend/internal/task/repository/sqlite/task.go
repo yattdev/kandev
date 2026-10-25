@@ -102,6 +102,7 @@ var taskScanColumns = []taskScanColumn{
 	{name: "is_from_office", selectExpr: func(alias string) string {
 		return isFromOfficeProjection(alias) + ` AS is_from_office`
 	}},
+	{name: "dependency_revision"},
 }
 
 // taskSelectColumns returns the column projection (with runner subquery)
@@ -4716,6 +4717,7 @@ func (r *Repository) scanSingleTask(row *sql.Row) (*models.Task, error) {
 		&task.CreatedAt, &task.UpdatedAt,
 		&task.AssigneeAgentProfileID, &task.AssigneeUserID, &task.Origin, &task.ProjectID,
 		&task.Labels, &identifier, &externalID, &externalIDSettledAt, &task.IsFromOffice,
+		&task.DependencyRevision,
 	)
 	if err != nil {
 		return nil, err
@@ -4769,6 +4771,7 @@ func (r *Repository) scanTaskRows(rows *sql.Rows, includeEntryIdentity bool) ([]
 			&task.CreatedAt, &task.UpdatedAt,
 			&task.AssigneeAgentProfileID, &task.AssigneeUserID, &task.Origin, &task.ProjectID,
 			&task.Labels, &identifier, &externalID, &externalIDSettledAt, &task.IsFromOffice,
+			&task.DependencyRevision,
 		}
 		if includeEntryIdentity {
 			destinations = append(destinations, &task.WorkflowStepTransitionID)

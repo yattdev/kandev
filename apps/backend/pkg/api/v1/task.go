@@ -173,6 +173,7 @@ type Task struct {
 	CreatedBy              string                 `json:"created_by"`
 	CreatedAt              time.Time              `json:"created_at"`
 	UpdatedAt              time.Time              `json:"updated_at"`
+	DependencyRevision     int64                  `json:"dependency_revision"`
 	StartedAt              *time.Time             `json:"started_at,omitempty"`
 	CompletedAt            *time.Time             `json:"completed_at,omitempty"`
 	Metadata               map[string]interface{} `json:"metadata,omitempty"`

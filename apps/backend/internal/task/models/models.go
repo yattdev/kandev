@@ -1582,6 +1582,7 @@ type Task struct {
 	ArchivedByCascadeID string    `json:"archived_by_cascade_id,omitempty"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+	DependencyRevision  int64     `json:"dependency_revision"`
 	// WorkflowStepTransitionID is the immutable ledger row identifier for the
 	// latest workflow-step write. Repositories populate it after a transition;
 	// it is transient and is not stored in the tasks table.
@@ -3679,6 +3680,7 @@ func (t *Task) ToAPI() *v1.Task {
 		Repositories:           repositories,
 		CreatedAt:              t.CreatedAt,
 		UpdatedAt:              t.UpdatedAt,
+		DependencyRevision:     t.DependencyRevision,
 		Metadata:               PublicTaskMetadata(t.Metadata),
 		Interrupted:            t.Metadata[MetaKeyInterruptedAt] != nil,
 		AutoStartFailed:        t.Metadata[MetaKeyAutoStartFailed] != nil,

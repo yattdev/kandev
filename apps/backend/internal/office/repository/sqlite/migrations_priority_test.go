@@ -56,9 +56,20 @@ func TestMigrate_PriorityIntegerToText(t *testing.T) {
 	`); err != nil {
 		t.Fatalf("seed legacy schema: %v", err)
 	}
+	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN dependency_revision BIGINT NOT NULL DEFAULT 0;
+		UPDATE tasks SET dependency_revision = 7 WHERE id = 't1'`); err != nil {
+		t.Fatalf("seed dependency revision: %v", err)
+	}
 
 	if _, err := sqlite.NewWithDB(db, db, nil); err != nil {
 		t.Fatalf("init office repo (run migrations): %v", err)
+	}
+	var revision int64
+	if err := db.Get(&revision, `SELECT dependency_revision FROM tasks WHERE id = 't1'`); err != nil {
+		t.Fatalf("read migrated dependency revision: %v", err)
+	}
+	if revision != 7 {
+		t.Fatalf("migrated dependency revision = %d, want 7", revision)
 	}
 
 	// Column type should now be TEXT.
