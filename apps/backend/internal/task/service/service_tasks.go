@@ -1960,6 +1960,99 @@ func (s *Service) GetTasksByIDs(ctx context.Context, ids []string) ([]*models.Ta
 	return s.tasks.GetTasksByIDs(ctx, ids)
 }
 
+// OpenExactTaskSnapshot exposes the repository's bounded task projection to
+// Host adapters without granting legacy task-reader authority.
+func (s *Service) OpenExactTaskSnapshot(ctx context.Context, request models.ExactTaskSnapshotRequest) (*models.ExactTaskSnapshot, error) {
+	reader, ok := s.tasks.(taskrepo.ExactTaskSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactTaskSnapshotUnavailable
+	}
+	return reader.OpenExactTaskSnapshot(ctx, request)
+}
+
+func (s *Service) PageExactTaskSnapshot(ctx context.Context, token string, offset, limit int) ([]models.ExactTaskSnapshotTask, error) {
+	reader, ok := s.tasks.(taskrepo.ExactTaskSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactTaskSnapshotUnavailable
+	}
+	return reader.PageExactTaskSnapshot(ctx, token, offset, limit)
+}
+
+func (s *Service) GetExactTaskSnapshotTask(ctx context.Context, token, taskID string) (*models.ExactTaskSnapshotTask, error) {
+	reader, ok := s.tasks.(taskrepo.ExactTaskSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactTaskSnapshotUnavailable
+	}
+	return reader.GetExactTaskSnapshotTask(ctx, token, taskID)
+}
+
+// OpenExactSessionSnapshot exposes the repository's bounded session projection
+// only when the installed task repository explicitly supports it.
+func (s *Service) OpenExactSessionSnapshot(ctx context.Context, request models.ExactSessionSnapshotRequest) (*models.ExactSessionSnapshot, error) {
+	reader, ok := s.tasks.(taskrepo.ExactSessionSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactSessionSnapshotUnavailable
+	}
+	return reader.OpenExactSessionSnapshot(ctx, request)
+}
+
+func (s *Service) PageExactSessionSnapshot(ctx context.Context, token string, offset, limit int) ([]models.ExactSessionSnapshotSession, error) {
+	reader, ok := s.tasks.(taskrepo.ExactSessionSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactSessionSnapshotUnavailable
+	}
+	return reader.PageExactSessionSnapshot(ctx, token, offset, limit)
+}
+
+func (s *Service) GetExactSessionSnapshotSession(ctx context.Context, token, sessionID string) (*models.ExactSessionSnapshotSession, error) {
+	reader, ok := s.tasks.(taskrepo.ExactSessionSnapshotReader)
+	if !ok {
+		return nil, taskrepo.ErrExactSessionSnapshotUnavailable
+	}
+	return reader.GetExactSessionSnapshotSession(ctx, token, sessionID)
+}
+
+// OpenExactSessionMessageSnapshot derives the private message-snapshot fence
+// from persisted task/session state. Callers cannot supply a session generation.
+func (s *Service) OpenExactSessionMessageSnapshot(ctx context.Context, installationID, workspaceID, taskID, sessionID string) (*models.ExactSessionMessageSnapshot, error) {
+	reader, ok := s.tasks.(interface {
+		taskrepo.ExactSessionMessageSnapshotReader
+		GetTaskSession(context.Context, string) (*models.TaskSession, error)
+	})
+	if !ok {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	session, err := reader.GetTaskSession(ctx, sessionID)
+	if err != nil || session == nil || session.TaskID != taskID {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	task, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil || task == nil || task.WorkspaceID != workspaceID {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	return reader.OpenExactSessionMessageSnapshot(ctx, models.ExactSessionMessageSnapshotRequest{InstallationID: installationID, WorkspaceID: workspaceID, TaskID: taskID, SessionID: sessionID, QueueIncarnationID: session.QueueIncarnationID, RouteGeneration: session.RouteGeneration, SessionResourceVersion: session.ResourceVersion})
+}
+
+func (s *Service) PageExactSessionMessageSnapshot(ctx context.Context, installationID, workspaceID, taskID, sessionID, token string, offset, limit int) ([]models.ExactSessionMessageSnapshotMessage, error) {
+	reader, ok := s.tasks.(interface {
+		taskrepo.ExactSessionMessageSnapshotReader
+		GetTaskSession(context.Context, string) (*models.TaskSession, error)
+	})
+	if !ok {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	session, err := reader.GetTaskSession(ctx, sessionID)
+	if err != nil || session == nil || session.TaskID != taskID {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	task, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil || task == nil || task.WorkspaceID != workspaceID {
+		return nil, taskrepo.ErrExactSessionMessageSnapshotUnavailable
+	}
+	request := models.ExactSessionMessageSnapshotPageRequest{ExactSessionMessageSnapshotRequest: models.ExactSessionMessageSnapshotRequest{InstallationID: installationID, WorkspaceID: workspaceID, TaskID: taskID, SessionID: sessionID, QueueIncarnationID: session.QueueIncarnationID, RouteGeneration: session.RouteGeneration, SessionResourceVersion: session.ResourceVersion}, Token: token, Offset: offset, Limit: limit}
+	return reader.PageExactSessionMessageSnapshot(ctx, request)
+}
+
 // GetWorkflowStep resolves one workflow step by ID for a caller that has
 // already authorized the owning task/workspace, mirroring GetTasksByIDs.
 // The Inbox History read uses this to test whether a task's current step

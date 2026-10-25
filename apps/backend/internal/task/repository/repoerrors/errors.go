@@ -15,6 +15,19 @@ var ErrWorkflowNotFound = errors.New("workflow not found")
 // ErrTaskNotFound reports that no task row matched the supplied id.
 var ErrTaskNotFound = errors.New("task not found")
 
+// ErrExactTaskSnapshotUnavailable reports an expired, unknown, or invalidated
+// exact task snapshot. Callers must re-open a snapshot; materialized rows are
+// never returned after the workspace fence has changed.
+var ErrExactTaskSnapshotUnavailable = errors.New("exact task snapshot unavailable")
+
+// ErrExactSessionSnapshotUnavailable reports an expired, unknown, or
+// invalidated exact session snapshot.
+var ErrExactSessionSnapshotUnavailable = errors.New("exact session snapshot unavailable")
+
+// ErrExactSessionMessageSnapshotUnavailable reports an expired, unknown, or
+// identity-mismatched exact session message snapshot.
+var ErrExactSessionMessageSnapshotUnavailable = errors.New("exact session message snapshot unavailable")
+
 // ErrNoPrimarySession reports that a task exists but has no primary session.
 // Callers can repair that state without hiding other repository failures.
 var ErrNoPrimarySession = errors.New("no primary session")

@@ -68,3 +68,64 @@ func TestAgentFamilyResolverIsWired(t *testing.T) {
 		t.Errorf("SetAgentFamilyResolver is wired with %q, want the agent registry (agentRegistry)", resolverArg)
 	}
 }
+
+// TestProvideOrchestratorWiresExactTaskDecisionEvidence guards the only
+// production composition site for the SQLite-only composite projection. The
+// plugin service can start before the orchestrator, so omitting this wire
+// leaves every exact decision-evidence request fail-closed as unavailable.
+func TestProvideOrchestratorWiresExactTaskDecisionEvidence(t *testing.T) {
+	provideFn := findFuncDecl(t, "orchestrator.go", "wireExactPluginEvidence")
+	wired := false
+	ast.Inspect(provideFn, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "SetExactTaskDecisionEvidence" {
+			return true
+		}
+		receiver, receiverOK := selector.X.(*ast.Ident)
+		argument, argumentOK := call.Args[0].(*ast.Ident)
+		wired = receiverOK && receiver.Name == "pluginsSvc" && argumentOK && argument.Name == "composite"
+		return true
+	})
+	if !wired {
+		t.Fatal("wireExactPluginEvidence does not wire the composite exact decision evidence reader into plugins")
+	}
+}
+
+// TestProvideOrchestratorWiresExactTaskCommandGrantIssuer guards the private
+// command-admission seam. The public Host writer remains unavailable until the
+// complete contract is ready, but production composition must still attach the
+// same queue authority to grant issuance as it does to command application.
+func TestProvideOrchestratorWiresExactTaskCommandGrantIssuer(t *testing.T) {
+	provideFn := findFuncDecl(t, "orchestrator.go", "wireExactPluginEvidence")
+	wired, publishesUpdates := false, false
+	ast.Inspect(provideFn, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "NewSQLiteExactTaskCommandGrantIssuerWithTaskUpdatePublisher" && len(call.Args) == 3 {
+			publisher, publisherOK := call.Args[2].(*ast.Ident)
+			publishesUpdates = publisherOK && publisher.Name == "taskSvc"
+		}
+		if len(call.Args) != 1 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "SetExactTaskCommandGrantIssuer" {
+			return true
+		}
+		receiver, receiverOK := selector.X.(*ast.Ident)
+		wired = receiverOK && receiver.Name == "pluginsSvc"
+		return true
+	})
+	if !wired {
+		t.Fatal("wireExactPluginEvidence does not wire the exact task command grant issuer into plugins")
+	}
+	if !publishesUpdates {
+		t.Fatal("wireExactPluginEvidence does not attach the task-service exact command outbox publisher")
+	}
+}

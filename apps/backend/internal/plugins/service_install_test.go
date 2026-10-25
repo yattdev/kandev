@@ -184,18 +184,17 @@ func TestServiceInstallUpgradeReviewFailureRestartsPreviousRuntime(t *testing.T)
 		t.Fatalf("grant approval: %v", err)
 	}
 
-	// An empty manifest resource is accepted by package extraction but is
-	// rejected while deriving the exact approval capability set. This fails
-	// after the old runtime has been stopped and the new record persisted.
+	// Invalid exact capability declarations are rejected during manifest
+	// validation, before they can disturb the active installation.
 	_, err = svc.Install(context.Background(), testPackageWithAPIRead(t, "kandev-plugin-slack", "1.1.0", "*"))
 	if err == nil {
 		t.Fatal("upgrade with invalid capability expected an approval review error")
 	}
 	if !rt.Running("kandev-plugin-slack") {
-		t.Fatal("previous runtime was not restarted after approval review failure")
+		t.Fatal("previous runtime stopped after invalid manifest rejection")
 	}
-	if got := rt.startCallCount("kandev-plugin-slack"); got != 2 {
-		t.Fatalf("runtime Start called %d times, want initial start plus rollback restart", got)
+	if got := rt.startCallCount("kandev-plugin-slack"); got != 1 {
+		t.Fatalf("runtime Start called %d times, want only the initial install", got)
 	}
 	onDisk, err := svc.Get("kandev-plugin-slack")
 	if err != nil {
@@ -206,15 +205,10 @@ func TestServiceInstallUpgradeReviewFailureRestartsPreviousRuntime(t *testing.T)
 	}
 }
 
-func TestServiceInstallUpgradeReviewRollbackFailureKeepsNewRecordCoherent(t *testing.T) {
+func TestServiceInstallInvalidExactCapabilityKeepsExistingRecordCoherent(t *testing.T) {
 	dir := t.TempDir()
 	fsStore := store.NewFSStore(dir)
-	failing := &failMatchingSaveStore{
-		Store:   fsStore,
-		match:   func(rec *store.Record) bool { return rec.Version == "1.0.0" },
-		failErr: errors.New("simulated compensating save failure"),
-	}
-	svc := NewService(failing, NewRegistry(), nil, testLogger(t))
+	svc := NewService(fsStore, NewRegistry(), nil, testLogger(t))
 	if err := svc.SetPluginsDir(dir); err != nil {
 		t.Fatalf("SetPluginsDir: %v", err)
 	}
@@ -223,24 +217,23 @@ func TestServiceInstallUpgradeReviewRollbackFailureKeepsNewRecordCoherent(t *tes
 	if _, err := svc.Install(context.Background(), testPackageWithAPIRead(t, "kandev-plugin-slack", "1.0.0", "tasks")); err != nil {
 		t.Fatalf("install initial plugin: %v", err)
 	}
-	failing.arm()
 	_, err := svc.Install(context.Background(), testPackageWithAPIRead(t, "kandev-plugin-slack", "1.1.0", "*"))
-	if err == nil || !strings.Contains(err.Error(), "compensating save failure") {
-		t.Fatalf("upgrade error = %v, want compensating save failure", err)
+	if err == nil || !strings.Contains(err.Error(), "host_v2_read") {
+		t.Fatalf("upgrade error = %v, want exact capability validation failure", err)
 	}
 	onDisk, getErr := fsStore.Get("kandev-plugin-slack")
 	if getErr != nil {
 		t.Fatalf("store.Get(): %v", getErr)
 	}
-	if onDisk.Version != "1.1.0" {
-		t.Fatalf("persisted version = %q, want retained new version 1.1.0", onDisk.Version)
+	if onDisk.Version != "1.0.0" {
+		t.Fatalf("persisted version = %q, want retained version 1.0.0", onDisk.Version)
 	}
 	if _, statErr := os.Stat(onDisk.InstallPath); statErr != nil {
-		t.Fatalf("retained new install path missing: %v", statErr)
+		t.Fatalf("existing install path missing: %v", statErr)
 	}
 	current, getErr := svc.Get("kandev-plugin-slack")
-	if getErr != nil || current.Version != "1.1.0" {
-		t.Fatalf("registry record = %#v, err=%v; want coherent new record", current, getErr)
+	if getErr != nil || current.Version != "1.0.0" {
+		t.Fatalf("registry record = %#v, err=%v; want coherent existing record", current, getErr)
 	}
 }
 
@@ -572,7 +565,7 @@ func testPackageWithAPIRead(t *testing.T, id, version string, resources ...strin
 	for _, resource := range resources {
 		quotedResources = append(quotedResources, fmt.Sprintf("%q", resource))
 	}
-	minimumVersion := ""
+	minimumVersion := "min_kandev_version: \"0.91.1\"\n"
 	for _, resource := range resources {
 		if resource == "messages" {
 			minimumVersion = fmt.Sprintf("min_kandev_version: %q\n", manifest.MinimumMessagesCapabilityVersion)
@@ -587,11 +580,12 @@ display_name: Test Plugin
 %s
 capabilities:
   api_read: [%s]
+  host_v2_read: [%s]
 runtime:
   type: binary
   executables:
     %s: server/plugin
-`, id, version, minimumVersion, strings.Join(quotedResources, ", "), platformKey)
+`, id, version, minimumVersion, strings.Join(quotedResources, ", "), strings.Join(quotedResources, ", "), platformKey)
 
 	var buf bytes.Buffer
 	if err := pkgtartest.WritePackage(&buf, map[string][]byte{

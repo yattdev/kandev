@@ -79,6 +79,21 @@ service Host {
   // the plugin.
   rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
 
+  // GetCapabilityContext reports the connection-bound Host identity and
+  // current approval ledger state. It is informational only: every exact
+  // read or command independently authorizes its own capability.
+  rpc GetCapabilityContext(GetCapabilityContextRequest) returns (GetCapabilityContextResponse);
+  rpc ListWorkspacesExact(ListWorkspacesExactRequest) returns (ListWorkspacesExactResponse);
+  rpc ListWorkflowsExact(ListWorkflowsExactRequest) returns (ListWorkflowsExactResponse);
+  rpc ListWorkflowStepsExact(ListWorkflowStepsExactRequest) returns (ListWorkflowStepsExactResponse);
+  rpc ListTasksExact(ListTasksExactRequest) returns (ListTasksExactResponse);
+  rpc GetTaskExact(GetTaskExactRequest) returns (GetTaskExactResponse);
+  rpc ListSessionsExact(ListSessionsExactRequest) returns (ListSessionsExactResponse);
+  rpc GetSessionExact(GetSessionExactRequest) returns (GetSessionExactResponse);
+  rpc ListSessionMessagesExact(ListSessionMessagesExactRequest) returns (ListSessionMessagesExactResponse);
+  rpc ListTaskDecisionEvidenceExact(ListTaskDecisionEvidenceExactRequest) returns (ListTaskDecisionEvidenceExactResponse);
+  rpc UpdateTaskExact(UpdateTaskExactRequest) returns (UpdateTaskExactResponse);
+
   // Reads — capability api_read:<resource>
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
@@ -1109,4 +1124,196 @@ message AutomationWebhookResponse {
   string outcome = 1;
   string event_kind = 2;
   bytes data = 3;
+}
+
+// An empty request deliberately carries no installation, workspace, or
+// approval identity. The Host derives all of those from the broker-bound
+// plugin installation.
+message GetCapabilityContextRequest {}
+message CapabilityApprovalContext {
+  string approval_id = 1;
+  string workspace_id = 2;
+  uint64 revision = 3;
+  string status = 4; // active | revoked
+}
+message GetCapabilityContextResponse {
+  string contract_version = 1;
+  string installation_id = 2;
+  string manifest_digest = 3;
+  repeated CapabilityApprovalContext approvals = 4;
+}
+
+message ExactPage {
+  int32 limit = 1;
+  string cursor = 2;
+  string snapshot_version = 3;
+}
+message ExactPageInfo {
+  string next_cursor = 1;
+  bool has_more = 2;
+  string snapshot_version = 3;
+  string audit_id = 4;
+}
+message ListWorkspacesExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListWorkspacesExactResponse {
+  repeated Workspace workspaces = 1;
+  ExactPageInfo page_info = 2;
+}
+message ListWorkflowsExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListWorkflowsExactResponse {
+  repeated Workflow workflows = 1;
+  ExactPageInfo page_info = 2;
+}
+message ListWorkflowStepsExactRequest {
+  string workspace_id = 1;
+  string workflow_id = 2;
+  uint64 capability_revision = 3;
+  ExactPage page = 4;
+}
+message ListWorkflowStepsExactResponse {
+  repeated WorkflowStep steps = 1;
+  ExactPageInfo page_info = 2;
+}
+message ExactTask {
+  string id = 1;
+  string workspace_id = 2;
+  string workflow_id = 3;
+  string workflow_step_id = 4;
+  string title = 5;
+  string description = 6;
+  string state = 7;
+  string priority = 8;
+  int32 position = 9;
+  bool archived = 10;
+  int64 resource_version = 11;
+}
+message ListTasksExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListTasksExactResponse {
+  repeated ExactTask tasks = 1;
+  ExactPageInfo page_info = 2;
+}
+message GetTaskExactRequest {
+  string workspace_id = 1;
+  string task_id = 2;
+  uint64 capability_revision = 3;
+  string snapshot_version = 4;
+}
+message GetTaskExactResponse { ExactTask task = 1; }
+message ExactSession {
+  string id = 1;
+  string task_id = 2;
+  string workspace_id = 3;
+  string queue_incarnation_id = 4;
+  string state = 5;
+  int64 route_generation = 6;
+  string started_at = 7;
+  string completed_at = 8;
+  string updated_at = 9;
+  bool is_primary = 10;
+  int64 resource_version = 11;
+}
+message ListSessionsExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListSessionsExactResponse {
+  repeated ExactSession sessions = 1;
+  ExactPageInfo page_info = 2;
+}
+message GetSessionExactRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+  uint64 capability_revision = 3;
+  string snapshot_version = 4;
+}
+message GetSessionExactResponse { ExactSession session = 1; }
+message ExactSessionMessage {
+  string id = 1;
+  string author_type = 2;
+  string content = 3;
+  string type = 4;
+  bool requests_input = 5;
+  string created_at = 6;
+  string updated_at = 7;
+}
+message ListSessionMessagesExactRequest {
+  string workspace_id = 1;
+  string task_id = 2;
+  string session_id = 3;
+  uint64 capability_revision = 4;
+  ExactPage page = 5;
+}
+message ListSessionMessagesExactResponse {
+  repeated ExactSessionMessage messages = 1;
+  ExactPageInfo page_info = 2;
+}
+message ExactTaskRelation {
+  string task_id = 1;
+  string blocker_task_id = 2;
+  string workspace_id = 3;
+  int64 task_resource_version = 4;
+  int64 blocker_resource_version = 5;
+  int64 resource_version = 6;
+}
+message ExactPendingTaskTransition {
+  string session_id = 1;
+  string task_id = 2;
+  string workspace_id = 3;
+  string session_incarnation_id = 4;
+  string workflow_id = 5;
+  string workflow_step_id = 6;
+  int32 step_position = 7;
+  int64 resource_version = 8;
+  int64 task_resource_version = 9;
+  int64 session_resource_version = 10;
+  int64 queue_generation = 11;
+  string queued_at = 12;
+}
+message ListTaskDecisionEvidenceExactRequest {
+  string workspace_id = 1;
+  uint64 capability_revision = 2;
+  ExactPage page = 3;
+}
+message ListTaskDecisionEvidenceExactResponse {
+  repeated ExactTaskRelation relations = 1;
+  repeated ExactPendingTaskTransition pending_transitions = 2;
+  ExactPageInfo page_info = 3;
+}
+// UpdateTaskExact is the bounded exact marker command. The Host derives the
+// grant and workspace fence; the request carries only observed evidence and
+// the task version the plugin read.
+message UpdateTaskExactRequest {
+  string workspace_id = 1;
+  string task_id = 2;
+  uint64 capability_revision = 3;
+  string decision_evidence_snapshot_version = 4;
+  ExactPendingTaskTransition pending_transition = 5;
+  string marker = 6;
+  string idempotency_key = 7;
+  int64 expected_resource_version = 8;
+}
+message UpdateTaskExactResponse {
+  string audit_id = 1;
+  int64 resource_version = 2;
+  ExactTaskUpdateOutcome outcome = 3;
+}
+enum ExactTaskUpdateOutcome {
+  EXACT_TASK_UPDATE_OUTCOME_UNSPECIFIED = 0;
+  // The marker, audit, and task.updated outbox acknowledgement are durable.
+  EXACT_TASK_UPDATE_OUTCOME_DURABLE = 1;
+  // The marker and audit committed; task.updated delivery remains unresolved.
+  EXACT_TASK_UPDATE_OUTCOME_PENDING = 2;
 }

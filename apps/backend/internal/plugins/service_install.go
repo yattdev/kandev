@@ -169,6 +169,8 @@ func (s *Service) Install(ctx context.Context, r io.Reader) (*store.Record, erro
 }
 
 func (s *Service) reviewInstalledApprovals(rec *store.Record) error {
+	s.approvalMutationMu.Lock()
+	defer s.approvalMutationMu.Unlock()
 	ledger := s.approvalLedger()
 	if ledger == nil {
 		return nil
@@ -176,6 +178,11 @@ func (s *Service) reviewInstalledApprovals(rec *store.Record) error {
 	caps, err := ManifestCapabilityIDs(rec.Manifest)
 	if err != nil {
 		return err
+	}
+	if bridge := s.exactTaskCommandApprovalBridge(); bridge != nil {
+		if err := bridge.RevokeInstallation(context.Background(), rec.InstallationID); err != nil {
+			return err
+		}
 	}
 	return ledger.reviewManifestChange(rec.InstallationID, ManifestCapabilityDigest(rec.Manifest), caps, time.Now().UTC(), true)
 }

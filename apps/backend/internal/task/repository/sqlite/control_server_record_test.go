@@ -23,6 +23,30 @@ func TestGetControlServerRecordNotFound(t *testing.T) {
 	}
 }
 
+func TestControlServerRecordSchemaDoesNotCarryTaskResourceVersion(t *testing.T) {
+	repo := newRepoForSessionTests(t)
+	rows, err := repo.db.QueryContext(context.Background(), `PRAGMA table_info(control_server_records)`)
+	if err != nil {
+		t.Fatalf("inspect control-server schema: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatalf("scan control-server schema: %v", err)
+		}
+		if name == "resource_version" {
+			t.Fatal("control-server records must not inherit the exact task resource version")
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate control-server schema: %v", err)
+	}
+}
+
 // TestUpsertControlServerRecordThenGetRoundTrips pins that every field
 // written by UpsertControlServerRecord (endpoint, identity, credential
 // reference, capability set, diagnostic log location) survives a round trip

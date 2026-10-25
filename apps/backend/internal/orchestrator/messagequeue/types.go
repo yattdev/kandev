@@ -614,3 +614,29 @@ type PendingMoveRecord struct {
 	SessionID string
 	Move      PendingMove
 }
+
+// ExactPendingTransitionSnapshotRequest scopes an authoritative deferred-move
+// projection to one workspace.
+type ExactPendingTransitionSnapshotRequest struct {
+	WorkspaceID string
+	TTL         time.Duration
+}
+type ExactPendingTransitionSnapshot struct {
+	Token       string
+	WorkspaceID string
+	ExpiresAt   time.Time
+}
+type ExactPendingTransition struct {
+	SessionID              string    `db:"session_id"`
+	TaskID                 string    `db:"task_id"`
+	WorkspaceID            string    `db:"workspace_id"`
+	SessionIncarnationID   string    `db:"session_incarnation_id"`
+	WorkflowID             string    `db:"workflow_id"`
+	WorkflowStepID         string    `db:"workflow_step_id"`
+	Position               int       `db:"step_position"`
+	QueuedAt               time.Time `db:"queued_at"`
+	ResourceVersion        int64     `db:"resource_version"`
+	TaskResourceVersion    int64     `db:"task_resource_version"`
+	SessionResourceVersion int64     `db:"session_resource_version"`
+	QueueGeneration        int64     `db:"queue_generation"`
+}

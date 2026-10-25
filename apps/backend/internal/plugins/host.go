@@ -38,8 +38,16 @@ type pluginHost struct {
 	// host_data.go; this embed only remains as defense-in-depth.
 	pluginsdk.UnimplementedHostData
 
-	pluginID     string
-	capabilities manifest.Capabilities
+	pluginID string
+	// installationID and manifestDigest are captured when this Host is bound to
+	// its broker connection. Neither comes from an RPC request.
+	installationID   string
+	manifestDigest   string
+	exactApprovals   exactApprovalReader
+	exactAuthorize   exactReadAuthorizer
+	exactReadReceipt exactReadReceiptRecorder
+	exactSnapshots   *exactSnapshotStore
+	capabilities     manifest.Capabilities
 	// repositoryProviders is the manifest-declared set of provider IDs this
 	// plugin owns. Only these IDs may use the trusted remote-descriptor path
 	// when creating a task; a plugin cannot claim another provider merely by
@@ -77,7 +85,15 @@ type pluginHost struct {
 	// phase 2, capability api_write:tasks). Wired via SetDataSources like the
 	// readers — the task service is available at data-source wiring time. See
 	// host_write.go.
-	taskWriter taskWriter
+	taskWriter            taskWriter
+	exactDecisionEvidence exactDecisionEvidenceSource
+	// exactDecisionEvidenceDep resolves the composite reader at request time.
+	// Plugin hosts can be created before orchestration finishes wiring its
+	// SQLite-only composite reader.
+	exactDecisionEvidenceDep func() exactDecisionEvidenceSource
+	// exactTaskCommandGrantIssuerDep resolves the unadvertised Host grant
+	// authority after orchestration has composed queue evidence.
+	exactTaskCommandGrantIssuerDep func() ExactTaskCommandGrantIssuer
 
 	// writeDeps returns the live task messenger and task starter behind the
 	// SendMessage RPC (api_write:messages) and CreateTask's start_agent. Read

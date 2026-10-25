@@ -1,6 +1,11 @@
 package messagequeue
 
-import "context"
+import (
+	"context"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/exactsnapshotauthority"
+)
 
 // RepositorySnapshot is one identity-validated queue/state read. A policy-only
 // failure preserves independently readable queue entries and Auto-run state.
@@ -309,6 +314,32 @@ type Repository interface {
 	// entry is removed in the same transaction. Reports whether the move row was
 	// removed; a missing or replaced row is a successful no-op, not an error.
 	DeletePendingMoveIfMatch(ctx context.Context, expected PendingMoveRecord, handoffEntryID string) (bool, error)
+}
+
+// ExactPendingTransitionReader is optional because queue databases may be
+// intentionally deployed without the task/session authority tables.
+type ExactPendingTransitionReader interface {
+	OpenExactPendingTransitionSnapshot(context.Context, ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error)
+	PageExactPendingTransitionSnapshot(context.Context, string, int, int) ([]ExactPendingTransition, error)
+	GetExactPendingTransition(context.Context, string, string) (*ExactPendingTransition, error)
+	CleanupExpiredExactPendingTransitionSnapshots(context.Context, int) (int, error)
+}
+
+// ExactPendingTransitionTransactionReader is the SQLite-only seam for a
+// future shared-authority compositor. The transaction must be issued by the
+// same reader's BeginExactPendingTransitionSnapshotTx method.
+type ExactPendingTransitionTransactionReader interface {
+	BeginExactPendingTransitionSnapshotTx(context.Context) (*sqlx.Tx, error)
+	OpenExactPendingTransitionSnapshotInTx(context.Context, *sqlx.Tx, ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error)
+}
+
+// ExactPendingTransitionAuthorityReader materializes queue evidence only with
+// a provenance-checked transaction from the shared SQLite authority.
+type ExactPendingTransitionAuthorityReader interface {
+	ValidateExactPendingTransitionSnapshotAuthority(*exactsnapshotauthority.Authority) error
+	BeginExactPendingTransitionSnapshotAuthorityTx(context.Context, *exactsnapshotauthority.Authority) (*exactsnapshotauthority.Transaction, error)
+	OpenExactPendingTransitionSnapshotInAuthorityTx(context.Context, *exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, ExactPendingTransitionSnapshotRequest) (*ExactPendingTransitionSnapshot, error)
+	ValidateExactPendingTransitionInAuthorityTx(context.Context, *exactsnapshotauthority.Authority, *exactsnapshotauthority.Transaction, string, ExactPendingTransition) error
 }
 
 // applyMetadataUpdates merges metadata key updates into current; a nil value removes the key.

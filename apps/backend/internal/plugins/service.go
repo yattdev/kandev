@@ -50,8 +50,10 @@ type userStateCleanupStore interface {
 //     (e.g. proxies checking a plugin's manifest/capabilities without
 //     going through Service's error-wrapping Get).
 type Service struct {
-	automationRevoker func(string) error
-	mu                sync.Mutex
+	// approvalMutationMu serializes ledger and exact-command projection changes.
+	approvalMutationMu sync.Mutex
+	automationRevoker  func(string) error
+	mu                 sync.Mutex
 	// ownershipMu makes cross-plugin provider/reference ownership checks and
 	// transitions into active one atomic reservation. Per-plugin lifecycle
 	// locks cannot protect two different IDs claiming the same identity.
@@ -141,8 +143,11 @@ type Service struct {
 	interactionData  interactionDataSource
 	// taskPRs is guarded by mu and read through taskPRSourceDep, because hosts can
 	// outlive the late SetTaskPRSource wiring.
-	taskPRs    taskPRSource
-	taskWriter taskWriter
+	taskPRs                     taskPRSource
+	taskWriter                  taskWriter
+	exactDecisionEvidence       exactDecisionEvidenceSource
+	exactTaskCommandGrantIssuer ExactTaskCommandGrantIssuer
+	exactCommandApprovals       ExactTaskCommandApprovalBridge
 
 	// Utility agent invocation dependencies, wired via SetUtilityAgent.
 	utilityDefaultProfile utilityDefaultProfileSource
@@ -554,6 +559,19 @@ func (s *Service) taskPRSourceDep() taskPRSource {
 	return s.taskPRs
 }
 
+// SetExactTaskDecisionEvidence wires the atomic exact relation/pending projection.
+func (s *Service) SetExactTaskDecisionEvidence(reader exactDecisionEvidenceSource) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.exactDecisionEvidence = reader
+}
+
+func (s *Service) exactTaskDecisionEvidenceDep() exactDecisionEvidenceSource {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.exactDecisionEvidence
+}
+
 func (s *Service) SetInteractionResponder(responder interactionResponder) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -795,29 +813,40 @@ func (s *Service) hostForPlugin(pluginID string) pluginsdk.Host {
 	if err != nil {
 		rec = &store.Record{} // every capability check below denies; should not happen in practice
 	}
+	snapshots, _ := newConnectionExactSnapshotStore()
 	return &pluginHost{
-		pluginID:            pluginID,
-		capabilities:        rec.Capabilities,
-		repositoryProviders: rec.RepositoryProviders,
-		configSchema:        rec.ConfigSchema,
-		state:               s.state,
-		secrets:             s.secrets,
-		bus:                 s.eventBus,
-		configs:             s.store,
-		taskData:            s.taskData,
-		workflows:           s.workflows,
-		workflowSteps:       s.workflowSteps,
-		agentProfiles:       s.agentProfiles,
-		sessionCodeStats:    s.sessionCodeStats,
-		messageData:         s.messageData,
-		interactionData:     s.interactionData,
-		taskPRsDep:          s.taskPRSourceDep,
-		taskWriter:          s.taskWriter,
-		utilityDeps:         s.utilityAgentDeps,
-		writeDeps:           s.writeDependencies,
-		interactionDeps:     s.interactionResponderDep,
-		agentConversations:  s.agentConversationDeps,
-		log:                 s.log,
+		pluginID:       pluginID,
+		installationID: rec.InstallationID,
+		manifestDigest: ManifestCapabilityDigest(rec.Manifest),
+		exactApprovals: s.approvalListByInstallation,
+		exactAuthorize: func(workspaceID string, revision uint64, capabilityID, requestDigest string) ApprovalDecision {
+			return s.authorizePluginCapability(rec.InstallationID, workspaceID, capabilityID, revision, requestDigest, "exact-read")
+		},
+		exactReadReceipt:               s.recordExactReadReceipt,
+		exactSnapshots:                 snapshots,
+		capabilities:                   rec.Capabilities,
+		repositoryProviders:            rec.RepositoryProviders,
+		configSchema:                   rec.ConfigSchema,
+		state:                          s.state,
+		secrets:                        s.secrets,
+		bus:                            s.eventBus,
+		configs:                        s.store,
+		taskData:                       s.taskData,
+		workflows:                      s.workflows,
+		workflowSteps:                  s.workflowSteps,
+		agentProfiles:                  s.agentProfiles,
+		sessionCodeStats:               s.sessionCodeStats,
+		messageData:                    s.messageData,
+		interactionData:                s.interactionData,
+		taskPRsDep:                     s.taskPRSourceDep,
+		taskWriter:                     s.taskWriter,
+		exactDecisionEvidenceDep:       s.exactTaskDecisionEvidenceDep,
+		exactTaskCommandGrantIssuerDep: s.exactTaskCommandGrantIssuerDep,
+		utilityDeps:                    s.utilityAgentDeps,
+		writeDeps:                      s.writeDependencies,
+		interactionDeps:                s.interactionResponderDep,
+		agentConversations:             s.agentConversationDeps,
+		log:                            s.log,
 	}
 }
 

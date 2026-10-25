@@ -4,7 +4,35 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kandev/kandev/internal/plugins/manifest"
 )
+
+// @covers AC-1
+func TestManifestCapabilityIDsDoesNotPromoteLegacyV1Declarations(t *testing.T) {
+	ids, err := ManifestCapabilityIDs(manifest.Manifest{Capabilities: manifest.Capabilities{
+		APIRead: []string{"tasks"}, APIWrite: []string{"tasks"},
+	}})
+	if err != nil {
+		t.Fatalf("ManifestCapabilityIDs() error = %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("legacy v1 declarations became exact capability ids: %#v", ids)
+	}
+}
+
+// @covers AC-1
+func TestManifestCapabilityIDsUsesExplicitExactDeclarations(t *testing.T) {
+	ids, err := ManifestCapabilityIDs(manifest.Manifest{Capabilities: manifest.Capabilities{
+		HostV2Read: []string{"tasks"}, HostV2Write: []string{"tasks"},
+	}})
+	if err != nil {
+		t.Fatalf("ManifestCapabilityIDs() error = %v", err)
+	}
+	if want := []string{"host.v2.read:tasks", "host.v2.write:tasks"}; !equalStrings(ids, want) {
+		t.Fatalf("exact capability ids = %#v, want %#v", ids, want)
+	}
+}
 
 func TestCanonicalCapabilityListSortsDeduplicatesAndTrims(t *testing.T) {
 	got, err := CanonicalCapabilityList([]string{" host.v2.write:tasks ", "host.v2.read:tasks", "host.v2.write:tasks"})

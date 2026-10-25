@@ -12,6 +12,8 @@ import (
 
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/db"
+	"github.com/kandev/kandev/internal/exactsnapshotcomposite"
+	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 )
 
 // Repository provides SQLite-based task storage operations.
@@ -37,6 +39,19 @@ type Repository struct {
 	// clockNow is a test-only clock seam. Set it before any concurrent
 	// repository call; it carries no synchronization.
 	clockNow func() time.Time
+	// exactSnapshotReadAfterFenceHook is a test-only synchronization seam. It
+	// runs after Page/Get has validated and locked a snapshot fence, before
+	// materialized rows are read, so tests can prove a concurrent task writer
+	// serializes after the coherent read rather than producing a mixed page.
+	exactSnapshotReadAfterFenceHook func()
+	// exactSessionSnapshotReadAfterFenceHook is the session-snapshot equivalent
+	// of exactSnapshotReadAfterFenceHook.
+	exactSessionSnapshotReadAfterFenceHook func()
+	// exactTaskCommandBeforeAudit is a test-only failpoint after the task CAS
+	// and grant reservation. It proves the deferred rollback restores both.
+	exactTaskCommandBeforeAudit        func() error
+	exactTaskCommandPendingValidator   messagequeue.ExactPendingTransitionAuthorityReader
+	exactTaskCommandCompositeValidator *exactsnapshotcomposite.Repository
 	// failCutoverAfter is a test-only failpoint for the worktree ownership
 	// cutover: when set to a cutover step name, the migration aborts at that
 	// step so tests can prove rollback restores the pre-upgrade state.

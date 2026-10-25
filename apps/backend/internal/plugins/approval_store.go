@@ -15,8 +15,9 @@ import (
 type ApprovalState string
 
 const (
-	ApprovalStateActive  ApprovalState = "active"
-	ApprovalStateRevoked ApprovalState = "revoked"
+	ApprovalStateActive    ApprovalState = "active"
+	ApprovalStateRevoked   ApprovalState = "revoked"
+	approvalReceiptAllowed               = "allowed"
 )
 
 // HumanPolicyVersionImmutable is the only Human-policy version H6 currently
@@ -71,6 +72,29 @@ type approvalLedgerFile struct {
 	Tombstones        map[string]time.Time                `json:"tombstones"`
 	Idempotency       map[string]CapabilityApproval       `json:"idempotency,omitempty"`
 	IdempotencyInputs map[string]approvalIdempotencyInput `json:"idempotency_inputs,omitempty"`
+	ReadReceipts      []ApprovalReceipt                   `json:"read_receipts,omitempty"`
+	ExactTaskGrants   map[string]ExactTaskGrant           `json:"exact_task_grants,omitempty"`
+}
+
+// recordReadReceipt durably records an allowed exact-read authorization. A
+// denied decision never reaches this method.
+func (l *approvalLedger) recordReadReceipt(receipt ApprovalReceipt) error {
+	if receipt.Result != approvalReceiptAllowed || receipt.AuditID == "" {
+		return errors.New("plugins: read receipt is not authorized")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	file, err := l.load()
+	if err != nil {
+		return err
+	}
+	for _, current := range file.ReadReceipts {
+		if current.AuditID == receipt.AuditID {
+			return nil
+		}
+	}
+	file.ReadReceipts = append(file.ReadReceipts, receipt)
+	return l.save(file)
 }
 
 type approvalIdempotencyInput struct {
@@ -109,6 +133,7 @@ func (l *approvalLedger) load() (*approvalLedgerFile, error) {
 				Tombstones:        map[string]time.Time{},
 				Idempotency:       map[string]CapabilityApproval{},
 				IdempotencyInputs: map[string]approvalIdempotencyInput{},
+				ExactTaskGrants:   map[string]ExactTaskGrant{},
 			}, nil
 		}
 		return nil, err
@@ -128,6 +153,9 @@ func (l *approvalLedger) load() (*approvalLedgerFile, error) {
 	}
 	if file.IdempotencyInputs == nil {
 		file.IdempotencyInputs = map[string]approvalIdempotencyInput{}
+	}
+	if file.ExactTaskGrants == nil {
+		file.ExactTaskGrants = map[string]ExactTaskGrant{}
 	}
 	return &file, nil
 }
@@ -169,6 +197,44 @@ func approvalKey(installationID, workspaceID string) string {
 
 func approvalIdempotencyKey(eventType CapabilityApprovalEventType, auditID, installationID, workspaceID string) string {
 	return string(eventType) + "\x00" + auditID + "\x00" + installationID + "\x00" + workspaceID
+}
+
+// previewGrant validates a replacement before the exact-command bridge
+// invalidates the current projection. The Service serializes the preview and
+// commit with its other approval mutations.
+func (l *approvalLedger) previewGrant(installationID, workspaceID string, revision uint64, manifestDigest string, capabilityIDs []string, actor, reason, auditID string) (bool, error) {
+	if err := validateApprovalMutation(installationID, workspaceID, actor, reason, auditID); err != nil {
+		return false, err
+	}
+	if revision == 0 {
+		return false, ErrApprovalRevisionConflict
+	}
+	if strings.TrimSpace(auditID) == "" {
+		return false, errors.New("plugins: approval audit id is required")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	file, err := l.load()
+	if err != nil {
+		return false, err
+	}
+	if _, tombstoned := file.Tombstones[installationID]; tombstoned {
+		return false, ErrApprovalInstallationTombstoned
+	}
+	current := file.Approvals[approvalKey(installationID, workspaceID)]
+	if replayed, found, err := approvalGrantReplay(file, installationID, workspaceID, revision, manifestDigest, capabilityIDs, actor, reason, auditID); found || err != nil {
+		if err != nil {
+			return false, err
+		}
+		if current.Revision != replayed.Revision || current.State != ApprovalStateActive {
+			return false, ErrApprovalRevisionConflict
+		}
+		return true, nil
+	}
+	if !approvalRevisionFollows(current.Revision, revision) {
+		return false, ErrApprovalRevisionConflict
+	}
+	return false, nil
 }
 
 func (l *approvalLedger) grant(installationID, workspaceID string, revision uint64, manifestDigest string, capabilityIDs []string, actor, reason, auditID string, at time.Time) (CapabilityApproval, error) {

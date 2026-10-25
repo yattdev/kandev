@@ -34,8 +34,26 @@ type recordingHost struct {
 		name    string
 		payload map[string]any
 	}
-	deleteStateCalled bool
-	taskTrees         PluginOwnedTaskTreeManager
+	deleteStateCalled    bool
+	taskTrees            PluginOwnedTaskTreeManager
+	capabilityContext    *CapabilityContext
+	exactWorkspaces      []Workspace
+	exactPageInfo        *ExactPageInfo
+	exactWorkspaceErr    error
+	exactWorkspaceQuery  ExactWorkspaceQuery
+	exactTasks           []ExactTask
+	exactTask            *ExactTask
+	exactTaskPage        *ExactPageInfo
+	exactTaskQuery       ExactTaskQuery
+	exactTaskGetQuery    ExactTaskGetQuery
+	exactSessions        []ExactSession
+	exactSessionPage     *ExactPageInfo
+	exactSessionQuery    ExactSessionQuery
+	exactSession         *ExactSession
+	exactSessionGetQuery ExactSessionGetQuery
+	exactMessages        []ExactSessionMessage
+	exactMessagePage     *ExactPageInfo
+	exactMessageQuery    ExactSessionMessageQuery
 }
 
 func (h *recordingHost) PluginOwnedTaskTrees() PluginOwnedTaskTreeManager {
@@ -105,6 +123,40 @@ func (h *recordingHost) DeleteSecret(_ context.Context, key string) error {
 func (h *recordingHost) EmitEvent(_ context.Context, name string, payload map[string]any) error {
 	h.emitEvent.name, h.emitEvent.payload = name, payload
 	return nil
+}
+
+func (h *recordingHost) GetCapabilityContext(context.Context) (*CapabilityContext, error) {
+	return h.capabilityContext, nil
+}
+
+func (h *recordingHost) ListWorkspacesExact(_ context.Context, query ExactWorkspaceQuery) ([]Workspace, *ExactPageInfo, error) {
+	h.exactWorkspaceQuery = query
+	return h.exactWorkspaces, h.exactPageInfo, h.exactWorkspaceErr
+}
+
+func (h *recordingHost) ListTasksExact(_ context.Context, query ExactTaskQuery) ([]ExactTask, *ExactPageInfo, error) {
+	h.exactTaskQuery = query
+	return h.exactTasks, h.exactTaskPage, nil
+}
+
+func (h *recordingHost) GetTaskExact(_ context.Context, query ExactTaskGetQuery) (*ExactTask, error) {
+	h.exactTaskGetQuery = query
+	return h.exactTask, nil
+}
+
+func (h *recordingHost) ListSessionsExact(_ context.Context, query ExactSessionQuery) ([]ExactSession, *ExactPageInfo, error) {
+	h.exactSessionQuery = query
+	return h.exactSessions, h.exactSessionPage, nil
+}
+
+func (h *recordingHost) GetSessionExact(_ context.Context, query ExactSessionGetQuery) (*ExactSession, error) {
+	h.exactSessionGetQuery = query
+	return h.exactSession, nil
+}
+
+func (h *recordingHost) ListSessionMessagesExact(_ context.Context, query ExactSessionMessageQuery) ([]ExactSessionMessage, *ExactPageInfo, error) {
+	h.exactMessageQuery = query
+	return h.exactMessages, h.exactMessagePage, nil
 }
 
 // dialHostOverBufconn wires a grpcHostServer (wrapping impl) to a
@@ -205,6 +257,91 @@ func TestHost_GetConfig_EmptyIsNonNil(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, config)
 	require.Empty(t, config)
+}
+
+func TestHost_ExactCapabilityContext(t *testing.T) {
+	impl := &recordingHost{capabilityContext: &CapabilityContext{
+		ContractVersion: ExactHostContractVersion, InstallationID: "installation-1", ManifestDigest: "manifest-digest",
+		Approvals: []CapabilityApprovalContext{{ApprovalID: "approval-1", WorkspaceID: "workspace-1", Revision: 2, Status: CapabilityApprovalStatusActive}},
+	}}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := Exact(host)
+	require.True(t, ok)
+
+	capabilityContext, err := exact.GetCapabilityContext(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, impl.capabilityContext, capabilityContext)
+}
+
+func TestHost_ListWorkspacesExact(t *testing.T) {
+	impl := &recordingHost{
+		exactWorkspaces: []Workspace{{ID: "workspace-1", Name: "Exact"}},
+		exactPageInfo:   &ExactPageInfo{SnapshotVersion: "snapshot-1", AuditID: "workspace-read-audit"},
+	}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := ExactWorkspaces(host)
+	require.True(t, ok)
+
+	query := ExactWorkspaceQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: ExactPage{Limit: 1, SnapshotVersion: "snapshot-1"}}
+	workspaces, page, err := exact.ListWorkspacesExact(context.Background(), query)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactWorkspaces, workspaces)
+	require.Equal(t, impl.exactPageInfo, page)
+	require.Equal(t, query, impl.exactWorkspaceQuery)
+}
+
+func TestHost_ExactTasksOverWire(t *testing.T) {
+	impl := &recordingHost{exactTasks: []ExactTask{{ID: "task-1", WorkspaceID: "workspace-1", ResourceVersion: 3}}, exactTask: &ExactTask{ID: "task-1", WorkspaceID: "workspace-1", ResourceVersion: 3}, exactTaskPage: &ExactPageInfo{SnapshotVersion: "snapshot-1"}}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := ExactTasks(host)
+	require.True(t, ok)
+
+	listQuery := ExactTaskQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: ExactPage{Limit: 1}}
+	items, page, err := exact.ListTasksExact(context.Background(), listQuery)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactTasks, items)
+	require.Equal(t, impl.exactTaskPage, page)
+	require.Equal(t, listQuery, impl.exactTaskQuery)
+
+	getQuery := ExactTaskGetQuery{WorkspaceID: "workspace-1", TaskID: "task-1", CapabilityRevision: 2, SnapshotVersion: "snapshot-1"}
+	task, err := exact.GetTaskExact(context.Background(), getQuery)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactTask, task)
+	require.Equal(t, getQuery, impl.exactTaskGetQuery)
+}
+
+func TestHost_ExactSessionsOverWire(t *testing.T) {
+	impl := &recordingHost{exactSessions: []ExactSession{{ID: "session-1", TaskID: "task-1", WorkspaceID: "workspace-1", QueueIncarnationID: "generation-1", State: "RUNNING", RouteGeneration: 2, ResourceVersion: 3}}, exactSessionPage: &ExactPageInfo{SnapshotVersion: "snapshot-1", AuditID: "audit-1"}}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := ExactSessions(host)
+	require.True(t, ok)
+
+	query := ExactSessionQuery{WorkspaceID: "workspace-1", CapabilityRevision: 2, Page: ExactPage{Limit: 1, SnapshotVersion: "snapshot-1"}}
+	sessions, page, err := exact.ListSessionsExact(context.Background(), query)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactSessions, sessions)
+	require.Equal(t, impl.exactSessionPage, page)
+	require.Equal(t, query, impl.exactSessionQuery)
+	impl.exactSession = &impl.exactSessions[0]
+	getQuery := ExactSessionGetQuery{WorkspaceID: "workspace-1", SessionID: "session-1", CapabilityRevision: 2, SnapshotVersion: "snapshot-1"}
+	session, err := exact.GetSessionExact(context.Background(), getQuery)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactSession, session)
+	require.Equal(t, getQuery, impl.exactSessionGetQuery)
+}
+
+func TestHost_ExactSessionMessagesOverWire(t *testing.T) {
+	impl := &recordingHost{exactMessages: []ExactSessionMessage{{ID: "message-1", AuthorType: "agent", Content: "safe", Type: "message", RequestsInput: true, CreatedAt: "2026-09-28T00:00:00Z", UpdatedAt: "2026-09-28T00:00:01Z"}}, exactMessagePage: &ExactPageInfo{SnapshotVersion: "snapshot-1", NextCursor: "cursor-1", HasMore: true, AuditID: "audit-1"}}
+	host := dialHostOverBufconn(t, impl)
+	exact, ok := ExactSessionMessages(host)
+	require.True(t, ok)
+
+	query := ExactSessionMessageQuery{WorkspaceID: "workspace-1", TaskID: "task-1", SessionID: "session-1", CapabilityRevision: 2, Page: ExactPage{Limit: 1, SnapshotVersion: "snapshot-1", Cursor: "cursor-1"}}
+	items, page, err := exact.ListSessionMessagesExact(context.Background(), query)
+	require.NoError(t, err)
+	require.Equal(t, impl.exactMessages, items)
+	require.Equal(t, impl.exactMessagePage, page)
+	require.Equal(t, query, impl.exactMessageQuery)
 }
 
 func TestHost_RevealSecret(t *testing.T) {

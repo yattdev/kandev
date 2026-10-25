@@ -127,6 +127,9 @@ func provideRepositories(ctx context.Context, cfg *config.Config, log *logger.Lo
 		return nil, nil, nil, err
 	}
 	officeRepo, officeCleanup, err := office.Provide(writer, reader, log)
+	if err == nil {
+		err = taskRepoImpl.RestoreExactTaskTriggersAfterOfficeMigration()
+	}
 	if err := recordRequiredStore(ctx, tracker, "office", err); err != nil {
 		return nil, nil, nil, fmt.Errorf("office repo: %w", err)
 	}

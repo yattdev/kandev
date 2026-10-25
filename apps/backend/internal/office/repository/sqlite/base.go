@@ -94,6 +94,12 @@ type Repository struct {
 	// before the companion alert-level insert, so a test can prove the
 	// pair rolls back together.
 	failBudgetExceededCompanionErr error
+
+	// exactRelationSnapshotsEnabled stays false until the task repository has
+	// installed task resource versions. PostgreSQL remains fail-closed pending
+	// its runtime conformance coverage.
+	exactRelationSnapshotsEnabled           bool
+	exactRelationSnapshotReadAfterFenceHook func()
 }
 
 // NewWithDB creates a new office repository with existing database connections.
@@ -156,6 +162,11 @@ func (r *Repository) initSchema() error {
 	}
 	if err := r.runMigrations(); err != nil {
 		return fmt.Errorf("required office migration: %w", err)
+	}
+	// Task priority migration may rebuild tasks. Install the exact relation
+	// mirrors only after it has completed so their task triggers survive.
+	if err := r.initExactRelationSnapshotSchema(); err != nil {
+		return fmt.Errorf("exact relation snapshot schema: %w", err)
 	}
 	r.activateRunOutcome()
 	r.activateLoopLiveness()

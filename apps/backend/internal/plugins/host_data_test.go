@@ -26,20 +26,28 @@ func int64Ptr(v int64) *int64 { return &v }
 // ── fakes for the narrow Host data API interfaces ───────────────────────
 
 type fakeTaskDataSource struct {
-	transitionRows   map[string][]taskmodels.StepTransition
-	transitionGroups map[string][]taskmodels.TransitionGroup
-	transitionCalls  int
-	groupCalls       int
-	workspaces       []*taskmodels.Workspace
-	tasksByWorkspace map[string][]*taskmodels.Task
-	tasksByID        map[string]*taskmodels.Task
-	repositories     map[string][]*taskmodels.Repository
-	sessionsByTask   map[string][]*taskmodels.TaskSession
-	executorRunning  map[string]*taskmodels.ExecutorRunning
-	executorProfiles []*taskmodels.ExecutorProfile
-	executors        map[string]*taskmodels.Executor
-	executorErrors   map[string]error
-	executorCalls    int
+	transitionRows      map[string][]taskmodels.StepTransition
+	transitionGroups    map[string][]taskmodels.TransitionGroup
+	transitionCalls     int
+	groupCalls          int
+	workspaces          []*taskmodels.Workspace
+	tasksByWorkspace    map[string][]*taskmodels.Task
+	tasksByID           map[string]*taskmodels.Task
+	exactSnapshots      map[string][]taskmodels.ExactTaskSnapshotTask
+	exactSnapshotTokens map[string]string
+	exactSnapshotErr    error
+	exactPageErr        error
+	exactSessions       map[string][]taskmodels.ExactSessionSnapshotSession
+	exactSessionErr     error
+	exactMessages       map[string][]taskmodels.ExactSessionMessageSnapshotMessage
+	exactMessageErr     error
+	repositories        map[string][]*taskmodels.Repository
+	sessionsByTask      map[string][]*taskmodels.TaskSession
+	executorRunning     map[string]*taskmodels.ExecutorRunning
+	executorProfiles    []*taskmodels.ExecutorProfile
+	executors           map[string]*taskmodels.Executor
+	executorErrors      map[string]error
+	executorCalls       int
 
 	// gotIncludeArchived records the includeArchived flag of every
 	// ListTasksByWorkspace call, in call order.
@@ -68,6 +76,93 @@ type fakeTaskDataSource struct {
 	// BuildDependencyViews/Bounded call, so tests can prove attachment
 	// derives over the right (e.g. post-filter) slice.
 	dependencyViewsTasks []string
+}
+
+func (f *fakeTaskDataSource) OpenExactTaskSnapshot(_ context.Context, request taskmodels.ExactTaskSnapshotRequest) (*taskmodels.ExactTaskSnapshot, error) {
+	if f.exactSnapshotErr != nil {
+		return nil, f.exactSnapshotErr
+	}
+	token := f.exactSnapshotTokens[request.WorkspaceID]
+	if token == "" {
+		token = "snapshot-" + request.WorkspaceID
+	}
+	return &taskmodels.ExactTaskSnapshot{Token: token, WorkspaceID: request.WorkspaceID}, nil
+}
+
+func (f *fakeTaskDataSource) PageExactTaskSnapshot(_ context.Context, token string, offset, limit int) ([]taskmodels.ExactTaskSnapshotTask, error) {
+	if f.exactPageErr != nil {
+		return nil, f.exactPageErr
+	}
+	rows := f.exactSnapshots[token]
+	if offset >= len(rows) {
+		return []taskmodels.ExactTaskSnapshotTask{}, nil
+	}
+	end := offset + limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	return rows[offset:end], nil
+}
+
+func (f *fakeTaskDataSource) GetExactTaskSnapshotTask(_ context.Context, token, taskID string) (*taskmodels.ExactTaskSnapshotTask, error) {
+	for _, row := range f.exactSnapshots[token] {
+		if row.ID == taskID {
+			return &row, nil
+		}
+	}
+	return nil, repoerrors.ErrTaskNotFound
+}
+
+func (f *fakeTaskDataSource) OpenExactSessionSnapshot(_ context.Context, request taskmodels.ExactSessionSnapshotRequest) (*taskmodels.ExactSessionSnapshot, error) {
+	return &taskmodels.ExactSessionSnapshot{Token: "sessions-" + request.WorkspaceID, WorkspaceID: request.WorkspaceID}, nil
+}
+
+func (f *fakeTaskDataSource) PageExactSessionSnapshot(_ context.Context, token string, offset, limit int) ([]taskmodels.ExactSessionSnapshotSession, error) {
+	if f.exactSessionErr != nil {
+		return nil, f.exactSessionErr
+	}
+	rows := f.exactSessions[token]
+	if offset >= len(rows) {
+		return []taskmodels.ExactSessionSnapshotSession{}, nil
+	}
+	end := offset + limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	return rows[offset:end], nil
+}
+
+func (f *fakeTaskDataSource) GetExactSessionSnapshotSession(_ context.Context, token, sessionID string) (*taskmodels.ExactSessionSnapshotSession, error) {
+	if f.exactSessionErr != nil {
+		return nil, f.exactSessionErr
+	}
+	for _, row := range f.exactSessions[token] {
+		if row.ID == sessionID {
+			return &row, nil
+		}
+	}
+	return nil, repoerrors.ErrExactSessionSnapshotUnavailable
+}
+
+func (f *fakeTaskDataSource) OpenExactSessionMessageSnapshot(_ context.Context, installationID, workspaceID, taskID, sessionID string) (*taskmodels.ExactSessionMessageSnapshot, error) {
+	if f.exactMessageErr != nil {
+		return nil, f.exactMessageErr
+	}
+	return &taskmodels.ExactSessionMessageSnapshot{Token: "messages-" + workspaceID + "-" + taskID + "-" + sessionID, InstallationID: installationID, WorkspaceID: workspaceID, TaskID: taskID, SessionID: sessionID}, nil
+}
+func (f *fakeTaskDataSource) PageExactSessionMessageSnapshot(_ context.Context, _ string, _ string, _ string, _ string, token string, offset, limit int) ([]taskmodels.ExactSessionMessageSnapshotMessage, error) {
+	if f.exactMessageErr != nil {
+		return nil, f.exactMessageErr
+	}
+	rows := f.exactMessages[token]
+	if offset >= len(rows) {
+		return []taskmodels.ExactSessionMessageSnapshotMessage{}, nil
+	}
+	end := offset + limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	return rows[offset:end], nil
 }
 
 func (f *fakeTaskDataSource) ListTaskStepTransitions(_ context.Context, taskID string, _ int, _ string) ([]taskmodels.StepTransition, string, error) {

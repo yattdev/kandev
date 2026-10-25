@@ -1266,6 +1266,7 @@ type Task struct {
 	ArchivedByCascadeID string    `json:"archived_by_cascade_id,omitempty"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+	ResourceVersion     int64     `json:"resource_version"`
 	// WorkflowStepTransitionID is the immutable ledger row identifier for the
 	// latest workflow-step write. Repositories populate it after a transition;
 	// it is transient and is not stored in the tasks table.
@@ -2049,6 +2050,9 @@ type TaskSession struct {
 	TokensIn       int64 `json:"tokens_in"`
 	TokensCachedIn int64 `json:"tokens_cached_in"`
 	TokensOut      int64 `json:"tokens_out"`
+	// ResourceVersion advances on every committed session-row mutation. Exact
+	// readers use it to identify the immutable session state they materialized.
+	ResourceVersion int64 `json:"resource_version"`
 }
 
 // ActiveSessionCancellationCandidate is the compare-and-set snapshot used by

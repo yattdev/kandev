@@ -776,6 +776,32 @@ type TaskBlocker struct {
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 }
 
+// ExactRelationSnapshotRequest scopes a complete blocker-edge read to one
+// workspace. The token produced by the repository cannot widen that scope.
+type ExactRelationSnapshotRequest struct {
+	WorkspaceID string
+	TTL         time.Duration
+}
+
+// ExactRelationSnapshot identifies a server-materialized blocker projection.
+type ExactRelationSnapshot struct {
+	Token       string
+	WorkspaceID string
+	ExpiresAt   time.Time
+}
+
+// ExactTaskRelation carries one directed task blocker edge and the immutable
+// versions needed to reject stale relation evidence.
+type ExactTaskRelation struct {
+	TaskID                 string    `db:"task_id"`
+	BlockerTaskID          string    `db:"blocker_task_id"`
+	WorkspaceID            string    `db:"workspace_id"`
+	TaskResourceVersion    int64     `db:"task_resource_version"`
+	BlockerResourceVersion int64     `db:"blocker_resource_version"`
+	ResourceVersion        int64     `db:"resource_version"`
+	CreatedAt              time.Time `db:"created_at"`
+}
+
 // Participant role values for the office_task_participants table.
 // The DB has a CHECK constraint that pins these to two literals.
 const (

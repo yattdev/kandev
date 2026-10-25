@@ -49,3 +49,11 @@ func TestMessagesMinimumVersionPolicyDoesNotAffectOtherResources(t *testing.T) {
 		t.Fatal("tasks-only manifest unexpectedly requires the messages capability minimum")
 	}
 }
+
+func TestExactHostCapabilityRequiresDeclaredMinimumVersion(t *testing.T) {
+	manifest := validManifest(t)
+	manifest.Capabilities.HostV2Read = []string{"tasks"}
+	if err := manifest.Validate(); err == nil {
+		t.Fatal("Validate() accepted an exact Host declaration without min_kandev_version")
+	}
+}
