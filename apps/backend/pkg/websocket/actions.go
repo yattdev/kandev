@@ -502,6 +502,7 @@ const (
 	ActionMCPAnswerQuestion                        = "mcp.answer_question"
 	ActionMCPCreateTaskPlan                        = "mcp.create_task_plan"
 	ActionMCPGetTaskPlan                           = "mcp.get_task_plan"
+	ActionMCPGetMessageQueueCensus                 = "mcp.message_queue_census"
 	ActionMCPUpdateTaskPlan                        = "mcp.update_task_plan"
 	ActionMCPEditTaskPlan                          = "mcp.edit_task_plan"
 	ActionMCPListTaskPlanRevisions                 = "mcp.list_task_plan_revisions"

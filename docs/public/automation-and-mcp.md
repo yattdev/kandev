@@ -372,6 +372,32 @@ An active turn keeps its current MCP list. Existing task sessions save a desired
 
 Kandev automatically injects a task-aware MCP server into supported agent sessions. You do not need to add it to the profile. It lets the active agent use current IDs and structured operations instead of inferring board state from text.
 
+### Observe pending message identities
+
+`get_message_queue_census_kandev` takes `{}` and is available to a running Kanban or Office task session for its own queue. It requires the current execution; a parent task, workspace administrator, external MCP client, automation, and configuration chat cannot use it to inspect another queue. The result contains no message body, attachment, sender, timestamp, reservation, or claim token.
+
+```json
+{
+  "version": 1,
+  "task_id": "own-task-id",
+  "session_id": "own-session-id",
+  "session_incarnation_id": "current-incarnation-id",
+  "snapshot_revision_sha256": "64 lowercase hex characters",
+  "complete": true,
+  "count": 1,
+  "capacity": 10,
+  "entries": [
+    {"id": "pending-entry-id", "ordinal": 1, "content_sha256": "64 lowercase hex characters", "content_bytes": 12}
+  ]
+}
+```
+
+Entries follow FIFO order, with ordinals starting at one. Each hash covers the exact UTF-8 content bytes; `content_bytes` is a byte count. `capacity` is the configured admission limit, where zero means unlimited admission. An empty pending queue returns `entries: []` and `count: 0`.
+
+The call returns a complete observation or an error. It rejects more than 128 visible entries, more than 1024 stored entries examined, more than 8 MiB of examined content and visibility metadata, more than 32 KiB of metadata on one row, an invalid or over-256-byte entry ID, or an MCP result over 65536 encoded bytes. Authorization, cancellation, and unavailable storage also fail without a partial list.
+
+The revision identifies the returned contents, capacity, and session incarnation. It is content-addressed, so a later identical observation can have the same revision. The queue can change as soon as the snapshot ends: absence does not prove delivery or cancellation, and an enqueue acknowledgement does not prove an entry is still pending. The tool never claims, removes, acknowledges, or wakes a message.
+
 ### Manage linked pull and merge requests
 
 Task MCP provides one shared contract for GitHub pull requests and GitLab merge
@@ -1008,10 +1034,11 @@ Office runs use a smaller MCP surface than regular task-mode sessions. The built
 - `list_related_tasks_kandev`;
 - `list_task_documents_kandev`, `get_task_document_kandev`, and `write_task_document_kandev`;
 - `show_rich_output_kandev`;
+- `get_message_queue_census_kandev` for the running Office task's own pending queue;
 - `transfer_task_kandev` is available only to a server-attested Office CEO session. It applies the atomic, audited transfer contract above.
 - `step_complete_kandev`, per ADR 0015: Kandev includes its completion instruction, and acts on its signal, only on Office steps whose auto-advance action explicitly requires that signal (office-default's `work` step is one such step).
 
-These tools cover human questions, the current task plan, plan edits and recovery, related-task discovery, task documents, the restricted transfer operation, and the step-completion signal. GitHub rate coordination stays internal, with operation-local details documented by features such as [Workflow Sync](workflow-sync.md). Office state changes use the injected `$KANDEV_CLI kandev ...` commands instead. An Office agent should not search for additional Kandev MCP tools: Kanban/configuration tools are task-mode only and are not registered in Office mode.
+These tools cover human questions, the current task plan, plan edits and recovery, related-task discovery, task documents, the own-queue census, the restricted transfer operation, and the step-completion signal. GitHub rate coordination stays internal, with operation-local details documented by features such as [Workflow Sync](workflow-sync.md). Office state changes use the injected `$KANDEV_CLI kandev ...` commands instead. Kanban/configuration tools are task-mode only and are not registered in Office mode.
 
 ### Runtime credentials
 

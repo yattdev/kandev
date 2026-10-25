@@ -846,7 +846,7 @@ drained:
 	// as in TestServerModeTask_ToolCount and
 	// TestRegisterTools_LoggedCountMatchesRegisteredTools (list_task_sessions_test.go),
 	// which pin the per-mode registration rather than this SetProviders rebuild.
-	require.Len(t, tools, 41, "final registry should contain the complete GitLab-only task tool set")
+	require.Len(t, tools, 42, "final registry should contain the complete GitLab-only task tool set")
 	assert.NotContains(t, tools, "get_github_rate_limit_kandev")
 	assert.Contains(t, tools, "get_task_change_requests_kandev")
 	assert.Contains(t, tools, "manage_task_change_request_kandev")
@@ -1027,7 +1027,7 @@ func TestServerModeTask_ToolCount(t *testing.T) {
 	// 1 step_complete (ADR 0015) + 1 interaction + 8 plan + 3 walkthrough +
 	// 1 publish_review_findings + 1 related-tasks + 1 diagnostic bundle
 	// + 2 task-dependency (add/remove) + 3 neutral task change-request tools +
-	// 1 neutral outcome tool + 1 rich-output. The exact count below guards
+	// 1 neutral outcome tool + 1 rich-output + 1 own-queue census. The exact count below guards
 	// the complete task-mode catalog.
 	// Task-document tools (list/get/write) are office-only.
 	assert.Contains(t, tools, "step_complete_kandev", "ADR 0015 explicit-completion signal must be registered in task mode")
@@ -1039,7 +1039,7 @@ func TestServerModeTask_ToolCount(t *testing.T) {
 	assert.Contains(t, tools, "add_task_dependency_kandev", "dependency edges must be manageable in task mode")
 	assert.Contains(t, tools, "remove_task_dependency_kandev")
 	assert.Contains(t, tools, "show_rich_output_kandev", "native rich output must be registered in task mode")
-	assert.Equal(t, 42, len(tools))
+	assert.Equal(t, 43, len(tools))
 }
 
 func TestServerStepCompleteTool_TaskAndOfficeOnlyAndDiscoverable(t *testing.T) {
@@ -1161,13 +1161,14 @@ func TestServerModeOffice_ToolCount(t *testing.T) {
 	s := New(backend, "test-session", "test-task", 10005, log, "", false, ModeOffice)
 	tools := getRegisteredToolNames(s)
 	// 8 plan + 1 interaction + 1 related-tasks + 3 task-documents
-	// + 1 rich-output + 1 step_complete (ADR 0015) + 1 transfer = 16.
+	// + 1 rich-output + 1 step_complete (ADR 0015) + 1 transfer
+	// + 1 own-queue census = 17.
 	// (delegate_task_kandev retired in favour of `agentctl kandev task create …`).
 	// (list_task_comments_kandev retired in favour of `agentctl kandev comment list …`).
 	// (record_step_decision_kandev retired in favour of the task-bound CLI.)
 	assert.Contains(t, tools, "step_complete_kandev", "office mode must register the ADR 0015 completion signal")
 	assert.Contains(t, tools, "transfer_task_kandev")
-	assert.Equal(t, 16, len(tools))
+	assert.Equal(t, 17, len(tools))
 }
 
 func TestServerModeOffice_DisableAskQuestion(t *testing.T) {
@@ -1185,10 +1186,10 @@ func TestServerModeOffice_DisableAskQuestion(t *testing.T) {
 	// the agentctl CLI as `agentctl kandev task create --parent …`).
 	assert.NotContains(t, tools, "delegate_task_kandev")
 	// 8 plan + 1 related-tasks + 3 task-documents + 1 rich-output
-	// + 1 step_complete (ADR 0015) + 1 transfer = 15
+	// + 1 step_complete (ADR 0015) + 1 transfer + 1 own-queue census = 16
 	// (no ask_user_question, no delegate, no list_task_comments)
 	assert.Contains(t, tools, "transfer_task_kandev")
-	assert.Equal(t, 15, len(tools))
+	assert.Equal(t, 16, len(tools))
 }
 
 func TestServerModeConstants(t *testing.T) {

@@ -561,6 +561,7 @@ func (h *Handlers) registerTaskModeHandlers(d *guardedMCPDispatcher) {
 }
 
 func (h *Handlers) registerTaskReadHandlers(d *guardedMCPDispatcher) {
+	d.RegisterFunc(ws.ActionMCPGetMessageQueueCensus, h.handleGetMessageQueueCensus)
 	d.RegisterFunc(ws.ActionMCPListWorkspaces, h.handleListWorkspaces)
 	if h.pluginSvc != nil {
 		d.RegisterFunc(ws.ActionMCPListPluginTools, h.handleListPluginTools)

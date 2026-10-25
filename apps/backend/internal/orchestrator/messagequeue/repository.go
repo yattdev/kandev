@@ -18,6 +18,7 @@ type RepositorySnapshot struct {
 type Repository interface {
 	ResolveSessionIdentity(ctx context.Context, taskID, sessionID string) (QueueSessionIdentity, error)
 	Snapshot(ctx context.Context, identity QueueSessionIdentity) (RepositorySnapshot, error)
+	ActiveQueueCensus(ctx context.Context, proof ActiveQueueCensusProof, capacity int) (*ActiveQueueCensus, error)
 
 	// Insert appends a new entry at the tail of the session's FIFO queue.
 	// Returns ErrQueueFull if maxPerSession > 0 and the count would exceed it.
