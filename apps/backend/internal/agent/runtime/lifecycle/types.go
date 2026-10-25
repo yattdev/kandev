@@ -1309,6 +1309,9 @@ func (ae *AgentExecution) CloseExecutionAdmission(ctx context.Context, generatio
 	if receipt == nil || receipt.ExecutionID != ae.ID || receipt.AgentctlGeneration != generation {
 		return nil, fmt.Errorf("agentctl returned mismatched execution fence receipt")
 	}
+	if receipt.AdmissionCutoffSequence == nil {
+		return nil, fmt.Errorf("agentctl returned an unknown admission cutoff sequence")
+	}
 	return receipt, nil
 }
 

@@ -117,6 +117,7 @@ func TestAgentExecutionAdvanceAgentctlGenerationRejectsControlFailure(t *testing
 func TestAgentExecutionCloseExecutionAdmissionUsesCurrentExactIdentity(t *testing.T) {
 	var gotInstance string
 	var gotRequest agentctl.ExecutionFenceRequest
+	sequence := uint64(0)
 	exec := &AgentExecution{
 		ID: "execution-fence", agentctlInstanceID: "agentctl-instance", startupAttemptGeneration: 2,
 		agentctlControl: fenceControllerFunc{
@@ -125,7 +126,10 @@ func TestAgentExecutionCloseExecutionAdmissionUsesCurrentExactIdentity(t *testin
 			},
 			fence: func(_ context.Context, instanceID string, request agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error) {
 				gotInstance, gotRequest = instanceID, request
-				return &agentctl.ExecutionFenceReceipt{ExecutionID: request.ExecutionID, AgentctlGeneration: request.AgentctlGeneration}, nil
+				return &agentctl.ExecutionFenceReceipt{
+					ExecutionID: request.ExecutionID, AgentctlGeneration: request.AgentctlGeneration,
+					AdmissionCutoffSequence: &sequence,
+				}, nil
 			},
 		},
 	}
@@ -134,6 +138,23 @@ func TestAgentExecutionCloseExecutionAdmissionUsesCurrentExactIdentity(t *testin
 	}
 	if gotInstance != "agentctl-instance" || gotRequest.ExecutionID != "execution-fence" || gotRequest.AgentctlGeneration != 2 {
 		t.Fatalf("fence request = (%q, %+v), want exact current identity", gotInstance, gotRequest)
+	}
+}
+
+func TestAgentExecutionCloseExecutionAdmissionRejectsLegacyUnknownSequence(t *testing.T) {
+	exec := &AgentExecution{
+		ID: "legacy-execution", agentctlInstanceID: "legacy-instance", startupAttemptGeneration: 1,
+		agentctlControl: fenceControllerFunc{
+			update: func(context.Context, string, agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error) {
+				return nil, nil
+			},
+			fence: func(_ context.Context, _ string, request agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error) {
+				return &agentctl.ExecutionFenceReceipt{ExecutionID: request.ExecutionID, AgentctlGeneration: request.AgentctlGeneration}, nil
+			},
+		},
+	}
+	if _, err := exec.CloseExecutionAdmission(t.Context(), 1); err == nil {
+		t.Fatal("legacy unknown sequence produced exact fence proof")
 	}
 }
 

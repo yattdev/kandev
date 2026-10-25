@@ -30,6 +30,16 @@ import (
 	ws "github.com/kandev/kandev/pkg/websocket"
 )
 
+func TestSameExecutionFenceCutoffRequiresKnownStableSequence(t *testing.T) {
+	zero, next := uint64(0), uint64(1)
+	at := time.Now().UTC()
+	first := &ExecutionFenceReceipt{AdmissionClosedAt: at, AdmissionCutoffSequence: &zero}
+	require.True(t, sameExecutionFenceCutoff(first, &ExecutionFenceReceipt{AdmissionClosedAt: at, AdmissionCutoffSequence: &zero}))
+	require.False(t, sameExecutionFenceCutoff(first, &ExecutionFenceReceipt{AdmissionClosedAt: at, AdmissionCutoffSequence: &next}))
+	require.False(t, sameExecutionFenceCutoff(first, &ExecutionFenceReceipt{AdmissionClosedAt: at}))
+	require.False(t, sameExecutionFenceCutoff(first, &ExecutionFenceReceipt{AdmissionClosedAt: at.Add(time.Second), AdmissionCutoffSequence: &zero}))
+}
+
 type restartProfileResolver struct {
 	profile *AgentProfileInfo
 	err     error

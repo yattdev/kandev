@@ -1422,7 +1422,8 @@ func (m *Manager) stopExecutionWithFenceLocked(
 	}
 	receipt := &ExecutionFenceReceipt{
 		ExecutionID: agentctlReceipt.ExecutionID, AgentctlGeneration: agentctlReceipt.AgentctlGeneration,
-		AdmissionClosedAt: agentctlReceipt.AdmissionClosedAt, ManagedProcessesDrained: agentctlReceipt.ManagedProcessesDrained,
+		AdmissionClosedAt: agentctlReceipt.AdmissionClosedAt, AdmissionCutoffSequence: agentctlReceipt.AdmissionCutoffSequence,
+		ManagedProcessesDrained: agentctlReceipt.ManagedProcessesDrained,
 	}
 	if receipt.ExecutionID != executionID || receipt.AgentctlGeneration != generation || receipt.AdmissionClosedAt.IsZero() {
 		return errors.New("agentctl returned a mismatched execution fence receipt")
@@ -1433,6 +1434,9 @@ func (m *Manager) stopExecutionWithFenceLocked(
 	terminalReceipt, err := execution.verifiedTerminalFenceReceipt(ctx, executionID, generation)
 	if err != nil {
 		return err
+	}
+	if !sameExecutionFenceCutoff(receipt, terminalReceipt) {
+		return errors.New("agentctl changed the exact admission cutoff on terminal retry")
 	}
 	receipt.ManagedProcessCount = terminalReceipt.ManagedProcessCount
 	receipt.AgentProcessTerminal = terminalReceipt.AgentProcessTerminal
@@ -1453,6 +1457,13 @@ func (m *Manager) stopExecutionWithFenceLocked(
 	return nil
 }
 
+func sameExecutionFenceCutoff(first, terminal *ExecutionFenceReceipt) bool {
+	return first != nil && terminal != nil && first.AdmissionCutoffSequence != nil &&
+		terminal.AdmissionCutoffSequence != nil &&
+		*first.AdmissionCutoffSequence == *terminal.AdmissionCutoffSequence &&
+		first.AdmissionClosedAt.Equal(terminal.AdmissionClosedAt)
+}
+
 func (e *AgentExecution) verifiedTerminalFenceReceipt(ctx context.Context, executionID string, generation uint64) (*ExecutionFenceReceipt, error) {
 	receipt, err := e.CloseExecutionAdmission(ctx, generation)
 	if err != nil {
@@ -1466,6 +1477,7 @@ func (e *AgentExecution) verifiedTerminalFenceReceipt(ctx context.Context, execu
 		ExecutionID:             receipt.ExecutionID,
 		AgentctlGeneration:      receipt.AgentctlGeneration,
 		AdmissionClosedAt:       receipt.AdmissionClosedAt,
+		AdmissionCutoffSequence: receipt.AdmissionCutoffSequence,
 		ManagedProcessCount:     receipt.ManagedProcessCount,
 		AgentProcessTerminal:    receipt.AgentProcessTerminal,
 		ManagedProcessesDrained: receipt.ManagedProcessesDrained,
@@ -2069,6 +2081,7 @@ type ExecutionFenceReceipt struct {
 	ExecutionID             string
 	AgentctlGeneration      uint64
 	AdmissionClosedAt       time.Time
+	AdmissionCutoffSequence *uint64
 	ManagedProcessCount     int
 	AgentProcessTerminal    bool
 	ManagedProcessesDrained bool
@@ -2090,7 +2103,8 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, executionID strin
 	}
 	return &ExecutionFenceReceipt{
 		ExecutionID: receipt.ExecutionID, AgentctlGeneration: receipt.AgentctlGeneration,
-		AdmissionClosedAt: receipt.AdmissionClosedAt, ManagedProcessCount: receipt.ManagedProcessCount,
+		AdmissionClosedAt: receipt.AdmissionClosedAt, AdmissionCutoffSequence: receipt.AdmissionCutoffSequence,
+		ManagedProcessCount:  receipt.ManagedProcessCount,
 		AgentProcessTerminal: receipt.AgentProcessTerminal, ManagedProcessesDrained: receipt.ManagedProcessesDrained,
 	}, nil
 }
