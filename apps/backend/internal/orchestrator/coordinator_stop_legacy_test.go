@@ -145,7 +145,7 @@ func newLegacyStopFixtureWithRepo(t *testing.T, repo *sqlite.Repository) (*sqlit
 	stops := &atomic.Int32{}
 	manager := &mockAgentManager{repoForExecutionLookup: repo}
 	manager.closeExecutionAdmissionFunc = func(_ context.Context, executionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
-		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: stopAdmissionCutoff(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
 	}
 	manager.stopAgentWithReasonFunc = func(ctx context.Context, _ string, _ string, force bool) error {
 		require.False(t, force)

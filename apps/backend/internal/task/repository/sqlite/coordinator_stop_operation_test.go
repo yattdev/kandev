@@ -68,6 +68,14 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 	require.Equal(t, agentctlCutoff, incompleteReceipt.AdmissionCutoff, "the durable receipt must contain agentctl's observed admission cutoff")
 	require.Equal(t, int64(0), *incompleteReceipt.AdmissionCutoffSequence, "zero is a known admission boundary")
 	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", models.CoordinatorStopFenceReceipt{
+		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: agentctlCutoff.Add(time.Second),
+		AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: false,
+	})
+	require.ErrorIs(t, err, models.ErrExecutionRotated, "replay must not change the timestamp paired with the sequence")
+	unchanged, err := repo.GetCoordinatorStopOperation(ctx, "stop-op-a")
+	require.NoError(t, err)
+	require.Equal(t, agentctlCutoff, unchanged.AdmissionCutoff)
+	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", models.CoordinatorStopFenceReceipt{
 		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: agentctlCutoff,
 		AdmissionCutoffSequence: stopCutoffSequence(1), ManagedProcessesDrained: false,
 	})

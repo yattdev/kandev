@@ -501,7 +501,7 @@ func markCoordinatorStopReceiptIncompleteTx(ctx context.Context, tx *sqlx.Tx, db
 		proofScope = models.CoordinatorStopProofScopeAgentctlFence
 	}
 	sequence := int64(*receipt.AdmissionCutoffSequence)
-	result, err := tx.ExecContext(ctx, db.Rebind(`UPDATE task_stop_operations SET admission_cutoff = ?, admission_cutoff_sequence = COALESCE(admission_cutoff_sequence, ?), status = ?, reason_code = ?, proof_scope = ?, updated_at = ? WHERE id = ? AND execution_id = ? AND agentctl_generation = ? AND status IN (?, ?) AND (admission_cutoff_sequence IS NULL OR admission_cutoff_sequence = ?)`), receipt.AdmissionClosedAt, sequence, models.CoordinatorStopOperationStatusIncomplete, reasonCode, proofScope, time.Now().UTC(), operationID, receipt.ExecutionID, receipt.AgentctlGeneration, models.CoordinatorStopOperationStatusFencing, models.CoordinatorStopOperationStatusIncomplete, sequence)
+	result, err := tx.ExecContext(ctx, db.Rebind(`UPDATE task_stop_operations SET admission_cutoff = CASE WHEN admission_cutoff_sequence IS NULL THEN ? ELSE admission_cutoff END, admission_cutoff_sequence = COALESCE(admission_cutoff_sequence, ?), status = ?, reason_code = ?, proof_scope = ?, updated_at = ? WHERE id = ? AND execution_id = ? AND agentctl_generation = ? AND status IN (?, ?) AND (admission_cutoff_sequence IS NULL OR (admission_cutoff_sequence = ? AND admission_cutoff = ?))`), receipt.AdmissionClosedAt, sequence, models.CoordinatorStopOperationStatusIncomplete, reasonCode, proofScope, time.Now().UTC(), operationID, receipt.ExecutionID, receipt.AgentctlGeneration, models.CoordinatorStopOperationStatusFencing, models.CoordinatorStopOperationStatusIncomplete, sequence, receipt.AdmissionClosedAt)
 	if err != nil {
 		return err
 	}

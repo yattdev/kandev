@@ -22,6 +22,8 @@ import (
 
 func stopCutoffSequence(value uint64) *uint64 { return &value }
 
+func stopAdmissionCutoff() time.Time { return time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC) }
+
 // @covers AC-STOP-FENCE-001, AC-STOP-FENCE-004
 func TestStopTaskForCoordinator_FencesCapturedExecutionBeforeGracefulTeardown(t *testing.T) {
 	ctx := context.Background()
@@ -40,7 +42,7 @@ func TestStopTaskForCoordinator_FencesCapturedExecutionBeforeGracefulTeardown(t 
 		fenceCalls.Add(1)
 		require.Equal(t, executionID, gotExecutionID)
 		require.Equal(t, uint64(1), generation)
-		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: stopAdmissionCutoff(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
 	}
 	manager.stopAgentWithReasonFunc = func(_ context.Context, gotExecutionID, _ string, force bool) error {
 		stopCalls.Add(1)
@@ -90,7 +92,7 @@ func TestStopTaskForCoordinatorOperation_RetryResumesOnlyBoundReceipt(t *testing
 	manager.closeExecutionAdmissionFunc = func(_ context.Context, gotExecutionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
 		require.Equal(t, executionID, gotExecutionID)
 		require.Equal(t, uint64(1), generation)
-		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: stopAdmissionCutoff(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
 	}
 	manager.stopAgentWithReasonFunc = func(_ context.Context, gotExecutionID, _ string, force bool) error {
 		require.Equal(t, executionID, gotExecutionID)
@@ -147,7 +149,7 @@ func TestStopTaskForCoordinatorOperation_RetryDoesNotCaptureLaterLiveSession(t *
 	seedStopRetrySession(t, repo, taskID, "first-session", "first-turn", "first-execution")
 	manager := &mockAgentManager{repoForExecutionLookup: repo}
 	manager.closeExecutionAdmissionFunc = func(_ context.Context, executionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
-		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: stopAdmissionCutoff(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
 	}
 	manager.stopAgentWithReasonFunc = func(context.Context, string, string, bool) error { return nil }
 	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), manager)
@@ -179,7 +181,7 @@ func TestReconcilePendingCoordinatorStopRequestsOnStartupResumesCapturedRequest(
 	manager.closeExecutionAdmissionFunc = func(_ context.Context, executionID string, generation uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
 		require.Equal(t, "execution-restart-stop", executionID)
 		require.Equal(t, uint64(1), generation)
-		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: generation, AdmissionClosedAt: stopAdmissionCutoff(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
 	}
 	manager.stopAgentWithReasonFunc = func(context.Context, string, string, bool) error {
 		stops.Add(1)
@@ -226,7 +228,7 @@ func TestStopTaskForCoordinatorOperation_NewKeyDoesNotClaimOlderPendingReceipt(t
 	}))
 	manager := &mockAgentManager{repoForExecutionLookup: repo}
 	manager.closeExecutionAdmissionFunc = func(_ context.Context, _ string, _ uint64) (*agentRuntime.ExecutionFenceReceipt, error) {
-		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
+		return &agentRuntime.ExecutionFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: stopAdmissionCutoff(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true}, nil
 	}
 	manager.stopAgentWithReasonFunc = func(_ context.Context, _ string, _ string, _ bool) error { return nil }
 	svc := newCoordinatorStopTestService(repo, newMockTaskRepo(), manager)
