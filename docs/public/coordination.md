@@ -177,6 +177,8 @@ Only a direct parent may interrupt its child. Halt-only stop is stricter: it acc
 
 Kandev persists each accepted session as `CANCELLED` and fences executor registration when no exact execution incarnation can be captured. The response includes `receipts` for exact execution operations and `session_fences` for sessions stopped at the launch boundary. `status: "incomplete"` means cancellation or admission fencing succeeded but terminal runtime proof is pending; retry resumes pending exact receipts. `status: "stopped"` is reserved for verified terminal process and executor-row proof. An already settled task with no pending stop receipt returns `not_running`.
 
+Each exact execution receipt retains `admission_cutoff` and reports `admission_cutoff_sequence_state` as `known` or `unknown`. A known sequence appears in `admission_cutoff_sequence` as a decimal string; `"0"` is a valid observed boundary. Older receipts without sequence evidence report `unknown` and omit the sequence field. Kandev will not promote a new exact execution receipt to `stopped` without a known cutoff sequence.
+
 After at least one accepted stop, Kandev attempts to move a regular, unarchived, non-Office task from `IN_PROGRESS` or `SCHEDULING` to `REVIEW`, provided no session remains working. Office, archived, and already non-active tasks keep their state, and a failed secondary `REVIEW` reconciliation does not undo accepted session stops.
 
 Stopping preserves the task record, worktrees, environments, commits, descendants, and existing queued messages. It sends no prompt, creates no replacement turn, and does not create a durable pause: a later user or workflow action can start the task again.

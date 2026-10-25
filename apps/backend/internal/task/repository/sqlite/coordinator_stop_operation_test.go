@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/stretchr/testify/require"
 )
+
+func stopCutoffSequence(value uint64) *uint64 { return &value }
 
 // @covers AC-STOP-FENCE-003
 func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testing.T) {
@@ -44,14 +47,37 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 	// An exact agentctl receipt only advances the durable operation to
 	// incomplete. The executor row remains running, so it cannot claim stopped.
 	agentctlCutoff := time.Now().UTC()
+	unknown := models.CoordinatorStopFenceReceipt{
+		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: agentctlCutoff,
+	}
+	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", unknown)
+	require.ErrorContains(t, err, "known signed-range cutoff sequence")
+	unknown.AdmissionCutoffSequence = stopCutoffSequence(math.MaxUint64)
+	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", unknown)
+	require.ErrorContains(t, err, "known signed-range cutoff sequence")
+	beforeProof, err := repo.GetCoordinatorStopOperation(ctx, "stop-op-a")
+	require.NoError(t, err)
+	require.Nil(t, beforeProof.AdmissionCutoffSequence)
 	incompleteReceipt, err := repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", models.CoordinatorStopFenceReceipt{
-		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: agentctlCutoff, ManagedProcessesDrained: false,
+		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: agentctlCutoff, AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: false,
 	})
 	require.NoError(t, err)
 	require.Equal(t, models.CoordinatorStopOperationStatusIncomplete, incompleteReceipt.Status)
 	require.Equal(t, "managed_processes_not_drained", incompleteReceipt.ReasonCode)
 	require.Equal(t, models.CoordinatorStopProofScopeAgentctlFence, incompleteReceipt.ProofScope)
 	require.Equal(t, agentctlCutoff, incompleteReceipt.AdmissionCutoff, "the durable receipt must contain agentctl's observed admission cutoff")
+	require.Equal(t, int64(0), *incompleteReceipt.AdmissionCutoffSequence, "zero is a known admission boundary")
+	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", models.CoordinatorStopFenceReceipt{
+		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: agentctlCutoff,
+		AdmissionCutoffSequence: stopCutoffSequence(1), ManagedProcessesDrained: false,
+	})
+	require.ErrorIs(t, err, models.ErrExecutionRotated, "replay must not change the immutable admission boundary")
+	replayed, err := repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", models.CoordinatorStopFenceReceipt{
+		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: agentctlCutoff,
+		AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: false,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(0), *replayed.AdmissionCutoffSequence)
 
 	// @covers AC-STOP-FENCE-002
 	late := &models.ExecutorRunning{
@@ -65,7 +91,7 @@ func TestCaptureCoordinatorStopOperationSettlesOnlyCapturedIncarnation(t *testin
 		Runtime: agentruntime.RuntimeStandalone, AgentExecutionID: "execution-a", AgentctlGeneration: 2, Status: models.ExecutorRunningStatusStarting,
 	}), "a distinct agentctl generation remains available to an explicit restart path")
 	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, "stop-op-a", models.CoordinatorStopFenceReceipt{
-		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true,
+		ExecutionID: "execution-a", AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true,
 	})
 	require.ErrorIs(t, err, models.ErrExecutionRotated, "a receipt for the old generation cannot mutate a replacement row")
 
@@ -224,7 +250,7 @@ func TestFinalizeCoordinatorStopOperationRequiresCapturedTerminalExecutor(t *tes
 	require.NoError(t, err)
 	op, _, err := repo.CaptureCoordinatorStopOperation(ctx, models.CoordinatorStopOperation{ID: "stop-op-finalize", TaskID: "task-finalize", SessionID: "session-finalize", TurnID: "turn-finalize", ExecutionID: "execution-finalize", AgentctlGeneration: 1, ExecutorStatus: running.Status, ExecutorUpdatedAt: running.UpdatedAt})
 	require.NoError(t, err)
-	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, op.ID, models.CoordinatorStopFenceReceipt{ExecutionID: op.ExecutionID, AgentctlGeneration: op.AgentctlGeneration, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true})
+	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, op.ID, models.CoordinatorStopFenceReceipt{ExecutionID: op.ExecutionID, AgentctlGeneration: op.AgentctlGeneration, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true})
 	require.NoError(t, err)
 
 	_, err = repo.FinalizeCoordinatorStopOperation(ctx, op.ID, op.ExecutionID, op.AgentctlGeneration)
@@ -268,7 +294,7 @@ func TestCoordinatorStopCannotRecordLifecycleProofWithoutDrainedAgentctlReceipt(
 				_, _, err = repo.MarkCoordinatorStopOperationIncomplete(ctx, op.ID, executionID, 1, "agentctl_unreachable")
 				require.NoError(t, err)
 			} else {
-				_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, op.ID, models.CoordinatorStopFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: test.processesDone})
+				_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, op.ID, models.CoordinatorStopFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: test.processesDone})
 				require.NoError(t, err)
 			}
 			require.NoError(t, repo.DeleteExecutorRunningBySessionID(ctx, sessionID))

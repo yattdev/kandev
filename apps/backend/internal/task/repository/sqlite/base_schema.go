@@ -214,6 +214,10 @@ func (r *Repository) initCoordinatorStopOperationSchema() error {
 		)`); err != nil {
 		return fmt.Errorf("create task stop operations table: %w", err)
 	}
+	if err := r.migrate.Apply("task_stop_operations.admission_cutoff_sequence", `
+		ALTER TABLE task_stop_operations ADD COLUMN admission_cutoff_sequence BIGINT`); err != nil {
+		return fmt.Errorf("add task stop admission cutoff sequence: %w", err)
+	}
 	if err := r.migrate.Apply("task_stop_operations.task_index", `
 		CREATE INDEX IF NOT EXISTS idx_task_stop_operations_task ON task_stop_operations(task_id, created_at)`); err != nil {
 		return fmt.Errorf("create task stop operations task index: %w", err)

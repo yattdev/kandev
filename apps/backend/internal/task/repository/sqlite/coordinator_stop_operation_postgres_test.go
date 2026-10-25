@@ -58,7 +58,7 @@ func TestPostgresFinalizeCoordinatorStopRequiresLifecycleProof(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = repo.CaptureCoordinatorStopOperation(ctx, models.CoordinatorStopOperation{ID: operationID, TaskID: taskID, SessionID: sessionID, TurnID: turnID, ExecutionID: executionID, AgentctlGeneration: 1, ExecutorStatus: running.Status, ExecutorUpdatedAt: running.UpdatedAt})
 	require.NoError(t, err)
-	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, operationID, models.CoordinatorStopFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), ManagedProcessesDrained: true})
+	_, err = repo.ConsumeCoordinatorStopFenceReceipt(ctx, operationID, models.CoordinatorStopFenceReceipt{ExecutionID: executionID, AgentctlGeneration: 1, AdmissionClosedAt: time.Now().UTC(), AdmissionCutoffSequence: stopCutoffSequence(0), ManagedProcessesDrained: true})
 	require.NoError(t, err)
 	require.NoError(t, repo.DeleteExecutorRunningBySessionID(ctx, sessionID))
 

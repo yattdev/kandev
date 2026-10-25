@@ -35,7 +35,8 @@ func (s *Service) stopWithCoordinatorFence(ctx context.Context, op *models.Coord
 		}
 		_, err := repo.ConsumeCoordinatorStopFenceReceipt(ctx, op.ID, models.CoordinatorStopFenceReceipt{
 			ExecutionID: receipt.ExecutionID, AgentctlGeneration: receipt.AgentctlGeneration,
-			AdmissionClosedAt: receipt.AdmissionClosedAt, ManagedProcessesDrained: receipt.ManagedProcessesDrained,
+			AdmissionClosedAt: receipt.AdmissionClosedAt, AdmissionCutoffSequence: receipt.AdmissionCutoffSequence,
+			ManagedProcessesDrained: receipt.ManagedProcessesDrained,
 		})
 		return err
 	}, func() error {

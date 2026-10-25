@@ -2331,11 +2331,31 @@ type CoordinatorStopOperation struct {
 	ExecutorStatus     string    `db:"executor_status" json:"executor_status"`
 	ExecutorUpdatedAt  time.Time `db:"executor_updated_at" json:"executor_updated_at"`
 	AdmissionCutoff    time.Time `db:"admission_cutoff" json:"admission_cutoff"`
-	Status             string    `db:"status" json:"status"`
-	ReasonCode         string    `db:"reason_code" json:"reason_code,omitempty"`
-	ProofScope         string    `db:"proof_scope" json:"proof_scope"`
-	CreatedAt          time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt          time.Time `db:"updated_at" json:"updated_at"`
+	// Null means a legacy receipt has no observed admission sequence.
+	AdmissionCutoffSequence *int64    `db:"admission_cutoff_sequence" json:"-"`
+	Status                  string    `db:"status" json:"status"`
+	ReasonCode              string    `db:"reason_code" json:"reason_code,omitempty"`
+	ProofScope              string    `db:"proof_scope" json:"proof_scope"`
+	CreatedAt               time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// MarshalJSON preserves timestamp compatibility while exposing sequence
+// presence explicitly and serializing the signed-BIGINT value without loss.
+func (o CoordinatorStopOperation) MarshalJSON() ([]byte, error) {
+	type operationAlias CoordinatorStopOperation
+	state := "unknown"
+	var sequence *string
+	if o.AdmissionCutoffSequence != nil {
+		state = "known"
+		value := strconv.FormatInt(*o.AdmissionCutoffSequence, 10)
+		sequence = &value
+	}
+	return json.Marshal(struct {
+		operationAlias
+		AdmissionCutoffSequence      *string `json:"admission_cutoff_sequence,omitempty"`
+		AdmissionCutoffSequenceState string  `json:"admission_cutoff_sequence_state"`
+	}{operationAlias(o), sequence, state})
 }
 
 // CoordinatorStopRequest binds one caller-supplied idempotency key to its
@@ -2381,6 +2401,7 @@ type CoordinatorStopFenceReceipt struct {
 	ExecutionID             string
 	AgentctlGeneration      uint64
 	AdmissionClosedAt       time.Time
+	AdmissionCutoffSequence *uint64
 	ManagedProcessesDrained bool
 }
 

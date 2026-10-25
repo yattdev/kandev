@@ -124,7 +124,7 @@ func assertCoordinatorRealRestart(t *testing.T, boundary string) {
 	}
 	if boundary == "terminal proof missing final receipt" {
 		require.NoError(t, mgr.StopExecutionWithFence(ctx, execution.ID, running.AgentctlGeneration, "owned restart proof", func(receipt *lifecycle.ExecutionFenceReceipt) error {
-			_, err := h.taskRepo.ConsumeCoordinatorStopFenceReceipt(ctx, "restart-intent", models.CoordinatorStopFenceReceipt{ExecutionID: receipt.ExecutionID, AgentctlGeneration: receipt.AgentctlGeneration, AdmissionClosedAt: receipt.AdmissionClosedAt, ManagedProcessesDrained: receipt.ManagedProcessesDrained})
+			_, err := h.taskRepo.ConsumeCoordinatorStopFenceReceipt(ctx, "restart-intent", models.CoordinatorStopFenceReceipt{ExecutionID: receipt.ExecutionID, AgentctlGeneration: receipt.AgentctlGeneration, AdmissionClosedAt: receipt.AdmissionClosedAt, AdmissionCutoffSequence: receipt.AdmissionCutoffSequence, ManagedProcessesDrained: receipt.ManagedProcessesDrained})
 			return err
 		}, func() error {
 			return h.taskRepo.RecordCoordinatorStopLifecycleProof(ctx, "restart-intent", execution.ID, running.AgentctlGeneration)

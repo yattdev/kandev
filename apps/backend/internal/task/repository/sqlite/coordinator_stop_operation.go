@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -62,7 +63,7 @@ func (r *Repository) CaptureCoordinatorStopOperation(ctx context.Context, operat
 	}
 	operation.AdmissionCutoff, operation.Status, operation.ProofScope = now, models.CoordinatorStopOperationStatusFencing, models.CoordinatorStopProofScopePending
 	operation.CreatedAt, operation.UpdatedAt = now, now
-	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_operations (id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, status, reason_code, proof_scope, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), operation.ID, operation.TaskID, operation.SessionID, operation.TurnID, operation.ExecutionID, operation.AgentctlGeneration, operation.ExecutorStatus, operation.ExecutorUpdatedAt, operation.AdmissionCutoff, operation.Status, operation.ReasonCode, operation.ProofScope, operation.CreatedAt, operation.UpdatedAt)
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_stop_operations (id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, admission_cutoff_sequence, status, reason_code, proof_scope, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), operation.ID, operation.TaskID, operation.SessionID, operation.TurnID, operation.ExecutionID, operation.AgentctlGeneration, operation.ExecutorStatus, operation.ExecutorUpdatedAt, operation.AdmissionCutoff, operation.AdmissionCutoffSequence, operation.Status, operation.ReasonCode, operation.ProofScope, operation.CreatedAt, operation.UpdatedAt)
 	if err != nil {
 		return nil, false, err
 	}
@@ -163,7 +164,7 @@ func (r *Repository) GetCoordinatorStopOperation(ctx context.Context, operationI
 		return nil, errors.New("coordinator stop operation ID is required")
 	}
 	operation := &models.CoordinatorStopOperation{}
-	err := r.ro.QueryRowxContext(ctx, r.ro.Rebind(`SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, status, reason_code, proof_scope, created_at, updated_at FROM task_stop_operations WHERE id = ?`), operationID).Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt)
+	err := r.ro.QueryRowxContext(ctx, r.ro.Rebind(`SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, admission_cutoff_sequence, status, reason_code, proof_scope, created_at, updated_at FROM task_stop_operations WHERE id = ?`), operationID).Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.AdmissionCutoffSequence, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("coordinator stop operation not found: %s", operationID)
 	}
@@ -175,7 +176,7 @@ func (r *Repository) GetCoordinatorStopOperation(ctx context.Context, operationI
 
 func (r *Repository) ListPendingCoordinatorStopOperations(ctx context.Context, taskID string) ([]*models.CoordinatorStopOperation, error) {
 	rows, err := r.ro.QueryxContext(ctx, r.ro.Rebind(`
-		SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, status, reason_code, proof_scope, created_at, updated_at
+		SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, admission_cutoff_sequence, status, reason_code, proof_scope, created_at, updated_at
 		FROM task_stop_operations
 		WHERE task_id = ? AND status IN (?, ?)
 		ORDER BY created_at ASC, id ASC
@@ -187,7 +188,7 @@ func (r *Repository) ListPendingCoordinatorStopOperations(ctx context.Context, t
 	var operations []*models.CoordinatorStopOperation
 	for rows.Next() {
 		operation := &models.CoordinatorStopOperation{}
-		if err := rows.Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt); err != nil {
+		if err := rows.Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.AdmissionCutoffSequence, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt); err != nil {
 			return nil, err
 		}
 		operations = append(operations, operation)
@@ -199,7 +200,7 @@ func (r *Repository) ListPendingCoordinatorStopOperations(ctx context.Context, t
 // request can report completed stops after the original response was lost.
 func (r *Repository) ListCoordinatorStopOperations(ctx context.Context, taskID string) ([]*models.CoordinatorStopOperation, error) {
 	rows, err := r.ro.QueryxContext(ctx, r.ro.Rebind(`
-		SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, status, reason_code, proof_scope, created_at, updated_at
+		SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, admission_cutoff_sequence, status, reason_code, proof_scope, created_at, updated_at
 		FROM task_stop_operations
 		WHERE task_id = ?
 		ORDER BY created_at ASC, id ASC
@@ -211,7 +212,7 @@ func (r *Repository) ListCoordinatorStopOperations(ctx context.Context, taskID s
 	var operations []*models.CoordinatorStopOperation
 	for rows.Next() {
 		operation := &models.CoordinatorStopOperation{}
-		if err := rows.Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt); err != nil {
+		if err := rows.Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.AdmissionCutoffSequence, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt); err != nil {
 			return nil, err
 		}
 		operations = append(operations, operation)
@@ -421,6 +422,9 @@ func (r *Repository) ConsumeCoordinatorStopFenceReceipt(
 	if operationID == "" || receipt.ExecutionID == "" || receipt.AgentctlGeneration == 0 || receipt.AdmissionClosedAt.IsZero() {
 		return nil, errors.New("coordinator stop fence receipt requires operation, execution, agentctl generation, and cutoff")
 	}
+	if receipt.AdmissionCutoffSequence == nil || *receipt.AdmissionCutoffSequence > math.MaxInt64 {
+		return nil, errors.New("coordinator stop fence receipt requires a known signed-range cutoff sequence")
+	}
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin coordinator stop receipt: %w", err)
@@ -455,6 +459,9 @@ func loadCoordinatorStopReceiptOperationTx(ctx context.Context, tx *sqlx.Tx, db 
 		return nil, err
 	}
 	if !found || op.ExecutionID != receipt.ExecutionID || op.AgentctlGeneration != receipt.AgentctlGeneration {
+		return nil, models.ErrExecutionRotated
+	}
+	if op.AdmissionCutoffSequence != nil && *op.AdmissionCutoffSequence != int64(*receipt.AdmissionCutoffSequence) {
 		return nil, models.ErrExecutionRotated
 	}
 	if err := kandevdb.LockTaskRowInTx(ctx, tx, driverName, op.TaskID); err != nil {
@@ -493,7 +500,8 @@ func markCoordinatorStopReceiptIncompleteTx(ctx context.Context, tx *sqlx.Tx, db
 		reasonCode = "managed_processes_not_drained"
 		proofScope = models.CoordinatorStopProofScopeAgentctlFence
 	}
-	result, err := tx.ExecContext(ctx, db.Rebind(`UPDATE task_stop_operations SET admission_cutoff = ?, status = ?, reason_code = ?, proof_scope = ?, updated_at = ? WHERE id = ? AND execution_id = ? AND agentctl_generation = ? AND status IN (?, ?)`), receipt.AdmissionClosedAt, models.CoordinatorStopOperationStatusIncomplete, reasonCode, proofScope, time.Now().UTC(), operationID, receipt.ExecutionID, receipt.AgentctlGeneration, models.CoordinatorStopOperationStatusFencing, models.CoordinatorStopOperationStatusIncomplete)
+	sequence := int64(*receipt.AdmissionCutoffSequence)
+	result, err := tx.ExecContext(ctx, db.Rebind(`UPDATE task_stop_operations SET admission_cutoff = ?, admission_cutoff_sequence = COALESCE(admission_cutoff_sequence, ?), status = ?, reason_code = ?, proof_scope = ?, updated_at = ? WHERE id = ? AND execution_id = ? AND agentctl_generation = ? AND status IN (?, ?) AND (admission_cutoff_sequence IS NULL OR admission_cutoff_sequence = ?)`), receipt.AdmissionClosedAt, sequence, models.CoordinatorStopOperationStatusIncomplete, reasonCode, proofScope, time.Now().UTC(), operationID, receipt.ExecutionID, receipt.AgentctlGeneration, models.CoordinatorStopOperationStatusFencing, models.CoordinatorStopOperationStatusIncomplete, sequence)
 	if err != nil {
 		return err
 	}
@@ -571,7 +579,7 @@ func (r *Repository) FinalizeCoordinatorStopOperation(ctx context.Context, opera
 }
 
 func validateCoordinatorStopTerminalBoundaryTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, op *models.CoordinatorStopOperation) error {
-	if op.Status != models.CoordinatorStopOperationStatusIncomplete || op.ProofScope != models.CoordinatorStopProofScopeLifecycleTerminal || op.AdmissionCutoff.IsZero() {
+	if !coordinatorStopTerminalProofPresent(op) {
 		return models.ErrExecutionRotated
 	}
 	var completed, successorOpen, cancelled bool
@@ -598,13 +606,19 @@ func validateCoordinatorStopTerminalBoundaryTx(ctx context.Context, tx *sqlx.Tx,
 	return nil
 }
 
+func coordinatorStopTerminalProofPresent(op *models.CoordinatorStopOperation) bool {
+	return op.Status == models.CoordinatorStopOperationStatusIncomplete &&
+		op.ProofScope == models.CoordinatorStopProofScopeLifecycleTerminal &&
+		!op.AdmissionCutoff.IsZero() && op.AdmissionCutoffSequence != nil
+}
+
 func terminalCoordinatorStopExecutorStatus(status string) bool {
 	return status == models.ExecutorRunningStatusStopped || status == models.ExecutorRunningStatusFailed || status == models.ExecutorRunningStatusComplete
 }
 
 func getCoordinatorStopOperationTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, id string) (*models.CoordinatorStopOperation, bool, error) {
 	operation := &models.CoordinatorStopOperation{}
-	err := tx.QueryRowxContext(ctx, db.Rebind(`SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, status, reason_code, proof_scope, created_at, updated_at FROM task_stop_operations WHERE id = ?`), id).Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt)
+	err := tx.QueryRowxContext(ctx, db.Rebind(`SELECT id, task_id, session_id, turn_id, execution_id, agentctl_generation, executor_status, executor_updated_at, admission_cutoff, admission_cutoff_sequence, status, reason_code, proof_scope, created_at, updated_at FROM task_stop_operations WHERE id = ?`), id).Scan(&operation.ID, &operation.TaskID, &operation.SessionID, &operation.TurnID, &operation.ExecutionID, &operation.AgentctlGeneration, &operation.ExecutorStatus, &operation.ExecutorUpdatedAt, &operation.AdmissionCutoff, &operation.AdmissionCutoffSequence, &operation.Status, &operation.ReasonCode, &operation.ProofScope, &operation.CreatedAt, &operation.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	}
