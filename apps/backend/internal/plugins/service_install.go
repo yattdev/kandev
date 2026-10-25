@@ -169,6 +169,8 @@ func (s *Service) Install(ctx context.Context, r io.Reader) (*store.Record, erro
 }
 
 func (s *Service) reviewInstalledApprovals(rec *store.Record) error {
+	s.approvalMutationMu.Lock()
+	defer s.approvalMutationMu.Unlock()
 	ledger := s.approvalLedger()
 	if ledger == nil {
 		return nil
