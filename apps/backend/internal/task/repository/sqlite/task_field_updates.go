@@ -9,6 +9,7 @@ import (
 	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository/hierarchy"
+	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 )
 
 type taskFieldMetadataOmittedKey struct{}
@@ -24,6 +25,10 @@ func (r *Repository) UpdateTaskFieldsWithParentAdmission(ctx context.Context, id
 	task, err := r.lockTaskFieldUpdate(ctx, tx, id, update)
 	if err != nil {
 		return nil, err
+	}
+	if scope := update.TerminalRetentionScope; scope != nil &&
+		(task.ParentID != scope.ParentID || task.WorkspaceID != scope.WorkspaceID) {
+		return nil, repoerrors.ErrTaskParentMismatch
 	}
 	if update.ParentID != nil {
 		if err := validate(ctx, taskHierarchyReader{r, tx}, task, *update.ParentID); err != nil {
@@ -49,6 +54,17 @@ func (r *Repository) UpdateTaskFieldsWithParentAdmission(ctx context.Context, id
 	entry, marker, err := r.updateTaskTx(updateCtx, tx, task, "", preservePosition, preservePosition, nil)
 	if err != nil {
 		return nil, err
+	}
+	if scope := update.TerminalRetentionScope; scope != nil {
+		if err := r.setTaskTerminalRetentionIfParentTx(
+			ctx, tx, task.ID, scope.ParentID, scope.WorkspaceID, scope.Held, task.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if task.Metadata == nil {
+			task.Metadata = make(map[string]interface{})
+		}
+		task.Metadata[models.MetaKeyTerminalRetention] = scope.Held
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

@@ -125,6 +125,8 @@ type PluginMessageFilter struct {
 // Task metadata keys used for deferred agent start (e.g., task.moved → handleTaskMovedNoSession).
 const (
 	MetaKeyAgentProfileID = "agent_profile_id"
+	// MetaKeyTerminalRetention keeps terminal task resources until an authorized release.
+	MetaKeyTerminalRetention = "terminal_retention"
 	// MetaKeyAutoStartError records why an asynchronous auto-start failed after
 	// its creating call already returned success. Without it the only evidence
 	// is a backend log line and the task sits in CREATED with no session,
@@ -539,6 +541,13 @@ type StepHandoffCarryToken struct {
 func IsAgentTitlePending(metadata map[string]interface{}) bool {
 	pending, ok := metadata[MetaKeyAgentTitlePending].(bool)
 	return ok && pending
+}
+
+// IsTerminalRetentionHeld reports an explicit task-scoped archive hold.
+// Only a literal boolean true enables the hold.
+func IsTerminalRetentionHeld(metadata map[string]interface{}) bool {
+	held, ok := metadata[MetaKeyTerminalRetention].(bool)
+	return ok && held
 }
 
 // AgentTitleOwnerSessionID returns the session that owns the pending title

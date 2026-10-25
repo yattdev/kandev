@@ -28,6 +28,7 @@ var ErrTaskCompletionGateBlocked = repoerrors.ErrTaskCompletionGateBlocked
 var ErrTaskCompletionCriteriaConflict = repoerrors.ErrTaskCompletionCriteriaConflict
 var ErrTaskCompletionEvidenceChanged = repoerrors.ErrTaskCompletionEvidenceChanged
 var ErrTaskCompletionHumanConfirmationRequired = repoerrors.ErrTaskCompletionHumanConfirmationRequired
+var ErrTaskArchiveHeld = repoerrors.ErrTaskArchiveHeld
 var ErrNoPrimarySession = repoerrors.ErrNoPrimarySession
 var ErrTaskHierarchyConflict = repoerrors.ErrTaskHierarchyConflict
 var ErrTaskParentMismatch = repoerrors.ErrTaskParentMismatch

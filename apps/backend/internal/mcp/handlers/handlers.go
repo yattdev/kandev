@@ -2115,6 +2115,7 @@ func (h *Handlers) handleUpdateTask(ctx context.Context, msg *ws.Message) (*ws.M
 		Title                *string `json:"title"`
 		Description          *string `json:"description"`
 		State                *string `json:"state"`
+		TerminalRetention    *bool   `json:"terminal_retention"`
 		DeferredLaunchPrompt *string `json:"deferred_launch_prompt"`
 	}
 	if err := json.Unmarshal(msg.Payload, &req); err != nil {
@@ -2122,6 +2123,27 @@ func (h *Handlers) handleUpdateTask(ctx context.Context, msg *ws.Message) (*ws.M
 	}
 	if req.TaskID == "" {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "task_id is required", nil)
+	}
+	if req.TerminalRetention != nil && req.DeferredLaunchPrompt != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation,
+			"terminal_retention and deferred_launch_prompt must be updated separately", nil)
+	}
+	var retentionParentID, retentionWorkspaceID string
+	if req.TerminalRetention != nil {
+		principal, ok := mcpscope.PrincipalFromContext(ctx)
+		if !ok || principal.IsAutomation() || principal.CallerTaskID == "" || principal.CallerTaskID == req.TaskID {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "parent task authority is required for terminal retention", nil)
+		}
+		target, err := h.taskSvc.GetTask(ctx, req.TaskID)
+		if err != nil {
+			h.logger.Error("failed to load terminal retention target", zap.Error(err))
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "Failed to load task", nil)
+		}
+		if target == nil || target.ParentID != principal.CallerTaskID || target.WorkspaceID != principal.WorkspaceID {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "parent task authority is required for terminal retention", nil)
+		}
+		retentionParentID = principal.CallerTaskID
+		retentionWorkspaceID = principal.WorkspaceID
 	}
 
 	// Applied before the ordinary field update so a rejected prompt edit does
@@ -2142,11 +2164,22 @@ func (h *Handlers) handleUpdateTask(ctx context.Context, msg *ws.Message) (*ws.M
 		state = &normalized
 	}
 
-	task, err := h.taskSvc.UpdateTask(ctx, req.TaskID, &service.UpdateTaskRequest{
+	updateReq := &service.UpdateTaskRequest{
 		Title:       req.Title,
 		Description: req.Description,
 		State:       state,
-	})
+	}
+	var task *models.Task
+	var err error
+	if req.TerminalRetention == nil {
+		task, err = h.taskSvc.UpdateTask(ctx, req.TaskID, updateReq)
+	} else {
+		var changed bool
+		task, changed, err = h.updateTaskWithTerminalRetention(ctx, req.TaskID, retentionParentID, retentionWorkspaceID, updateReq, *req.TerminalRetention)
+		if err == nil && !changed {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeForbidden, "parent task authority is required for terminal retention", nil)
+		}
+	}
 	if err != nil {
 		h.logger.Error("failed to update task", zap.Error(err))
 		if errors.Is(err, service.ErrTaskTitleTooLong) {
@@ -2156,6 +2189,12 @@ func (h *Handlers) handleUpdateTask(ctx context.Context, msg *ws.Message) (*ws.M
 	}
 
 	return ws.NewResponse(msg.ID, msg.Action, dto.FromTask(task))
+}
+
+func (h *Handlers) updateTaskWithTerminalRetention(
+	ctx context.Context, taskID, parentID, workspaceID string, updateReq *service.UpdateTaskRequest, held bool,
+) (*models.Task, bool, error) {
+	return h.taskSvc.UpdateTaskWithTerminalRetention(ctx, taskID, parentID, workspaceID, updateReq, held)
 }
 
 // handleSetTaskTitle resolves the one-shot provisional title created for a

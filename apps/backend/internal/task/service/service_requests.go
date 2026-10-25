@@ -189,14 +189,15 @@ type CreateTaskRequest struct {
 
 // UpdateTaskRequest contains the data for updating a task
 type UpdateTaskRequest struct {
-	Title          *string                `json:"title,omitempty"`
-	Description    *string                `json:"description,omitempty"`
-	Priority       *string                `json:"priority,omitempty"`
-	State          *v1.TaskState          `json:"state,omitempty"`
-	WorkflowStepID *string                `json:"workflow_step_id,omitempty"`
-	Repositories   []TaskRepositoryInput  `json:"repositories,omitempty"`
-	Position       *int                   `json:"position,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	Title             *string                `json:"title,omitempty"`
+	TerminalRetention *bool                  `json:"terminal_retention,omitempty"`
+	Description       *string                `json:"description,omitempty"`
+	Priority          *string                `json:"priority,omitempty"`
+	State             *v1.TaskState          `json:"state,omitempty"`
+	WorkflowStepID    *string                `json:"workflow_step_id,omitempty"`
+	Repositories      []TaskRepositoryInput  `json:"repositories,omitempty"`
+	Position          *int                   `json:"position,omitempty"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`
 	// ParentID nests the task under another task ("subtask"). A nil pointer
 	// leaves the relationship untouched; a pointer to "" clears it (un-nests
 	// back to a root task); a non-empty value nests it under that parent.
@@ -208,7 +209,13 @@ type UpdateTaskRequest struct {
 	// AllowReservedMetadata permits Metadata keys with the
 	// ReservedMetadataKeyPrefixCoordinator prefix; json:"-" as on
 	// CreateTaskRequest.
-	AllowReservedMetadata bool `json:"-"`
+	AllowReservedMetadata  bool `json:"-"`
+	terminalRetentionScope *terminalRetentionScope
+}
+
+type terminalRetentionScope struct {
+	parentID, workspaceID string
+	held                  bool
 }
 
 // CreateWorkflowRequest contains the data for creating a new workflow

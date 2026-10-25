@@ -3043,7 +3043,6 @@ func (s *Service) processStepExitAndEnterWithSteps(
 			return err
 		}
 	}
-	s.processOnExit(ctx, taskID, session, fromStep)
 
 	if targetStep == nil {
 		var err error
@@ -3055,6 +3054,12 @@ func (s *Service) processStepExitAndEnterWithSteps(
 			return err
 		}
 	}
+	// A completed silent terminal entry has no destination agent work. Preserve
+	// the existing session and avoid projecting an idle one onto the Done card.
+	if s.silentTerminalEntry(ctx, taskID, targetStep) {
+		return nil
+	}
+	s.processOnExit(ctx, taskID, session, fromStep)
 
 	clearReview := targetStep.HasOnEnterAction(wfmodels.OnEnterAutoStartAgent)
 	if err := s.finalizeStepEnter(ctx, taskID, session.ID, targetStep, taskDescription, clearReview, fromStep, entryIDs...); err != nil {
@@ -3066,10 +3071,21 @@ func (s *Service) processStepExitAndEnterWithSteps(
 	return nil
 }
 
+func (s *Service) silentTerminalEntry(ctx context.Context, taskID string, step *wfmodels.WorkflowStep) bool {
+	if step == nil || step.Prompt != "" || len(step.Events.OnEnter) != 0 || !s.workflowStepIsTerminal(ctx, step.ID) {
+		return false
+	}
+	task, err := s.repo.GetTask(ctx, taskID)
+	return err == nil && task != nil && task.WorkflowStepID == step.ID && task.State == v1.TaskStateCompleted
+}
+
 // finalizeStepEnter optionally clears review status, reloads the session, and
 // processes on_enter actions for the target step. Shared by executeStepTransition
 // and processStepExitAndEnter.
 func (s *Service) finalizeStepEnter(ctx context.Context, taskID, sessionID string, targetStep *wfmodels.WorkflowStep, taskDescription string, clearReview bool, sourceStep *wfmodels.WorkflowStep, entryIDs ...int64) error {
+	if s.silentTerminalEntry(ctx, taskID, targetStep) {
+		return nil
+	}
 	if clearReview {
 		if err := s.repo.UpdateSessionReviewStatus(ctx, sessionID, ""); err != nil {
 			s.logger.Warn("failed to clear session review status",
@@ -4560,6 +4576,9 @@ func (s *Service) dispatchOnEnterActions(ctx context.Context, taskID string, ses
 // entirely outside processOnEnter. See
 // docs/specs/office/system-design/step-entry-dispatch-convergence.md.
 func (s *Service) processOnEnter(ctx context.Context, taskID string, session *models.TaskSession, step *wfmodels.WorkflowStep, taskDescription string, transitionID int64, sourceStep *wfmodels.WorkflowStep) {
+	if s.silentTerminalEntry(ctx, taskID, step) {
+		return
+	}
 	// The step transition is already durable before on_enter runs. Its effects
 	// must finish even if the request or agent-event context that triggered the
 	// transition is cancelled.
@@ -5439,6 +5458,15 @@ func (s *Service) processStepExitAndEnterForDeferredMove(
 	if err != nil || current != identity || session.QueueIncarnationID != identity.SessionIncarnationID {
 		return
 	}
+	targetStep, err := s.loadWorkflowStepForLifecycle(ctx, toStepID, "deferred move target")
+	if err != nil {
+		return
+	}
+	// Apply the one-shot options before deciding whether this is a card-only entry.
+	entryStep := workflowmove.OverlayStep(targetStep, entryOptions)
+	if s.silentTerminalEntry(ctx, identity.TaskID, entryStep) {
+		return
+	}
 	fromStep, err := s.loadWorkflowStepForLifecycle(ctx, fromStepID, "deferred move source")
 	if err != nil {
 		return
@@ -5452,17 +5480,6 @@ func (s *Service) processStepExitAndEnterForDeferredMove(
 	fresh, err := s.repo.GetTaskSession(ctx, identity.SessionID)
 	if err != nil || fresh == nil || fresh.QueueIncarnationID != identity.SessionIncarnationID {
 		return
-	}
-	targetStep, err := s.loadWorkflowStepForLifecycle(ctx, toStepID, "deferred move target")
-	if err != nil {
-		return
-	}
-	// Overlay one-shot move options onto a transient copy of the target step so
-	// the ordinary on_enter path applies the reset and appended instructions;
-	// the durable step is never mutated.
-	entryStep := targetStep
-	if entryOptions != nil {
-		entryStep = workflowmove.OverlayStep(targetStep, entryOptions)
 	}
 	s.processOnEnter(ctx, identity.TaskID, fresh, entryStep, taskDescription, transitionID, fromStep)
 }

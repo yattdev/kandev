@@ -777,6 +777,13 @@ launch (agent profile, executor) is preserved. Once the task has started the
 update is rejected, because nothing would read the new prompt; send the new
 context with `message_task_kandev` instead.
 
+A parent task can set `terminal_retention: true` on one of its direct children
+with `update_task_kandev`. This keeps the child’s worktree and environment when
+it reaches Done by rejecting automatic, direct, and cascade archive cleanup.
+Only the direct parent can set or clear the hold. Clear it before archiving the
+child when its retained resources are no longer needed.
+Update `deferred_launch_prompt` in a separate call when changing both fields.
+
 ### Autopilot tasks and MCP profiles
 
 Task creation accepts one optional boolean:

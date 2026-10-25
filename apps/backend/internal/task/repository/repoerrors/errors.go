@@ -68,6 +68,9 @@ var ErrTaskOperationConflict = errors.New("task operation identity conflict")
 // different durable source identity.
 var ErrSilentRestoreAttemptConflict = errors.New("silent restore attempt identity conflict")
 
+// ErrTaskArchiveHeld prevents archive mutations while terminal resources are retained.
+var ErrTaskArchiveHeld = errors.New("task has a terminal retention hold")
+
 // ErrNoPrimarySession reports that a task exists but has no primary session.
 // Callers can repair that state without hiding other repository failures.
 var ErrNoPrimarySession = errors.New("no primary session")

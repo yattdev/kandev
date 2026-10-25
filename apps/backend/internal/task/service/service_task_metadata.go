@@ -28,6 +28,7 @@ func protectedTaskMetadataUpdate(existing, requested map[string]interface{}) map
 // separate trusted request field and are never accepted from Metadata.
 func protectedTaskMetadataForCreate(metadata map[string]interface{}, trustedHandoff bool) map[string]interface{} {
 	created := cloneTaskMetadata(metadata)
+	delete(created, models.MetaKeyTerminalRetention)
 	models.StripOfficeCarrierMetadata(created)
 	delete(created, models.MetaKeyDeferredLaunch)
 	delete(created, models.MetaKeyStepHandoffCarry)

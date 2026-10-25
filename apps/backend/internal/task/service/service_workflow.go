@@ -371,7 +371,7 @@ func (s *Service) updateTaskStateIfSessionState(
 }
 
 // UpdateTaskMetadata updates ordinary task metadata while preserving
-// server-managed deferred-launch and step-handoff records.
+// server-managed retention, deferred-launch, and step-handoff records.
 func (s *Service) UpdateTaskMetadata(ctx context.Context, id string, metadata map[string]interface{}) (*models.Task, error) {
 	if err := s.authorizeTaskScope(ctx, id, authz.ScopeTaskWrite); err != nil {
 		return nil, err
