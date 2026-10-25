@@ -8,6 +8,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/kandev/kandev/internal/agentctl/types/streams"
+	mcporigin "github.com/kandev/kandev/internal/mcp/origin"
 	"github.com/kandev/kandev/internal/task/dependencywrite"
 
 	ws "github.com/kandev/kandev/pkg/websocket"
@@ -22,6 +23,41 @@ import (
 type dependencyMutationPayload struct {
 	TaskID          string `json:"task_id"`
 	DependsOnTaskID string `json:"depends_on_task_id"`
+}
+
+// handleAuditTaskDependencyAttempt records a schema rejection before the
+// normal dependency action can reach its authorization guard.
+func (h *Handlers) handleAuditTaskDependencyAttempt(ctx context.Context, msg *ws.Message) (*ws.Message, error) {
+	if !mcporigin.IsTrustedInternalCall(ctx) {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeUnknownAction, "Unknown action", nil)
+	}
+	principal, ok := mcpscope.PrincipalFromContext(ctx)
+	if !ok || !principal.IsCoordinator() || !h.coordinatorWorkspaceMatches(ctx, principal) {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target not found", nil)
+	}
+	var request struct {
+		Operation            string `json:"operation"`
+		DependentIDPresent   bool   `json:"dependent_id_present"`
+		PredecessorIDPresent bool   `json:"predecessor_id_present"`
+	}
+	if err := json.Unmarshal(msg.Payload, &request); err != nil ||
+		(request.Operation != "add" && request.Operation != "remove") {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "invalid dependency audit payload", nil)
+	}
+	execution, _ := streams.MCPExecutionContextFromContext(ctx)
+	if err := h.coordinatorSvc.RecordDependencyDecision(ctx, principal.CoordinatorID,
+		principal.WorkspaceID, request.Operation, "", "", false); err != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "dependency audit failed", nil)
+	}
+	if err := h.taskSvc.RecordCoordinatorDependencyDenial(ctx, dependencywrite.DependencyMutationRequest{
+		Operation: request.Operation, WorkspaceID: principal.WorkspaceID,
+		CallerTaskID: principal.CallerTaskID, CallerSessionID: principal.CallerSessionID,
+		CallerExecutionID: execution.ExecutionID, OriginClass: "coordinator", CorrelationID: msg.ID,
+		DependentIDPresent: request.DependentIDPresent, PredecessorIDPresent: request.PredecessorIDPresent,
+	}, "invalid_payload"); err != nil {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "dependency audit failed", nil)
+	}
+	return ws.NewResponse(msg.ID, msg.Action, map[string]bool{"audited": true})
 }
 
 // handleAddTaskDependency backs add_task_dependency_kandev.

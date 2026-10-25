@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kandev/kandev/internal/mcp/origin"
 	"github.com/stretchr/testify/require"
 
 	orchmodels "github.com/kandev/kandev/internal/office/models"
@@ -14,6 +15,45 @@ import (
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	ws "github.com/kandev/kandev/pkg/websocket"
 )
+
+func TestCoordinatorDependencyInvalidPayloadIsDeniedAndAudited(t *testing.T) {
+	f := newSharedDependencyFixture(t)
+	ctx := f.ctxFor(f.binding("add_task_dependency_kandev"), true)
+	for _, payload := range []map[string]interface{}{
+		{"task_id": 42, "depends_on_task_id": "predecessor"},
+		{"task_id": "dependent", "depends_on_task_id": "predecessor", "extra": "private"},
+	} {
+		msg := makeWSMessage(t, ws.ActionMCPAddTaskDependency, payload)
+		response, _, err := f.h.authorizeCoordinatorRequest(ctx, msg)
+		require.NoError(t, err)
+		assertWSError(t, response, ws.ErrorCodeBadRequest)
+	}
+	var denied int
+	require.NoError(t, f.rawDB.Get(&denied,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE outcome = 'denied' AND reason_code = 'invalid_payload'`))
+	require.Equal(t, 2, denied)
+	var edges int
+	require.NoError(t, f.rawDB.Get(&edges, `SELECT COUNT(*) FROM task_blockers`))
+	require.Zero(t, edges)
+}
+
+func TestCoordinatorDependencyAuditActionIsInternalOnly(t *testing.T) {
+	f := newSharedDependencyFixture(t)
+	ctx := f.ctxFor(f.binding("add_task_dependency_kandev"), true)
+	msg := makeWSMessage(t, ws.ActionMCPAuditTaskDependencyAttempt, map[string]interface{}{
+		"operation": "add", "dependent_id_present": true, "predecessor_id_present": false,
+	})
+	response, err := f.h.handleAuditTaskDependencyAttempt(ctx, msg)
+	require.NoError(t, err)
+	assertWSError(t, response, ws.ErrorCodeUnknownAction)
+	response, err = f.h.handleAuditTaskDependencyAttempt(origin.WithTrustedInternalCall(ctx), msg)
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	var denied int
+	require.NoError(t, f.rawDB.Get(&denied,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE outcome = 'denied' AND reason_code = 'invalid_payload' AND dependent_id_present = 1 AND predecessor_id_present = 0`))
+	require.Equal(t, 1, denied)
+}
 
 func TestCoordinatorDependencyMutationChecksBothWatchedEndpoints(t *testing.T) {
 	f := newPhase2GuardFixture(t)

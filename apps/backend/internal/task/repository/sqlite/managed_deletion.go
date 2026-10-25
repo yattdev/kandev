@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/kandev/kandev/internal/db/dialect"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/recoveryclaim"
 	managed "github.com/kandev/kandev/internal/task/repository/managedconversation"
@@ -266,6 +267,13 @@ func (r *Repository) updateDeletionSnapshotTx(ctx context.Context, tx *sqlx.Tx, 
 
 func (r *Repository) FinalizeManagedDeletion(ctx context.Context, claim managed.DeleteClaim) (string, error) {
 	return r.deleteTaskWithVacatedStep(ctx, claim.TaskID, &claim, nil)
+}
+
+func (r *Repository) FinalizeManagedDeletionWithDependencySnapshots(ctx context.Context,
+	claim managed.DeleteClaim) (string, []dependencywrite.DependencySnapshot, error) {
+	var snapshots []dependencywrite.DependencySnapshot
+	stepID, err := r.deleteTaskWithVacatedStep(ctx, claim.TaskID, &claim, &snapshots)
+	return stepID, snapshots, err
 }
 
 func (r *Repository) ReleaseManagedDeletion(ctx context.Context, expected managed.DeleteClaim) (bool, error) {

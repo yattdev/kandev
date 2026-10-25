@@ -747,6 +747,15 @@ name that task; use `depends_on_task_id` for the other end. The link is
 authorized against both tasks, and a link that would close a cycle is rejected
 with the offending path.
 
+A workspace Coordinator conversation can name two different tasks when both
+tasks are in its workspace and within its current Watches and Projects scope.
+It must supply both `task_id` and `depends_on_task_id` explicitly.
+This authority applies only to that bound Coordinator conversation; ordinary
+task agents remain limited to their own task. Refused Coordinator requests do
+not reveal whether an out-of-scope task exists. Successful add and remove
+responses include each endpoint's dependency revision and current dependency
+state.
+
 **Use a dependency for ordering, a subtask for decomposition.** Reaching for
 `parent_id` to express "do this one first" gets neither the start gate nor the
 chain: children run whenever they are started, and a parent's completion signal

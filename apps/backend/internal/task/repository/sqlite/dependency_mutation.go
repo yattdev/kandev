@@ -392,6 +392,12 @@ func (r *Repository) recordDependencyMutationDenial(
 	if request.PredecessorTaskID != "" {
 		predecessorPresent = 1
 	}
+	if request.DependentIDPresent {
+		dependentPresent = 1
+	}
+	if request.PredecessorIDPresent {
+		predecessorPresent = 1
+	}
 	_, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_dependency_mutation_audit
 		(event_id, correlation_id, created_at, operation, origin_class, outcome, reason_code, changed,
 		caller_task_id, caller_session_id, caller_execution_id, caller_workspace_id, caller_user_id,

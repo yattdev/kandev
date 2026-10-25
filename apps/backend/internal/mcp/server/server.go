@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -704,6 +705,12 @@ func (s *Server) wrapHandlerWithArgumentLogging(toolName string, handler server.
 			if toolName == "transfer_task_kandev" {
 				s.auditRejectedTransferTool(ctx, req.GetRawArguments())
 			}
+			if s.mode == ModeCoordinator && (toolName == "add_task_dependency_kandev" ||
+				toolName == "remove_task_dependency_kandev") {
+				if auditErr := s.auditRejectedDependencyTool(ctx, toolName, req.GetRawArguments()); auditErr != nil {
+					return mcp.NewToolResultError("dependency authorization could not be recorded"), nil
+				}
+			}
 			result = mcp.NewToolResultError(validationErr.Error())
 		} else {
 			result, err = handler(ctx, validatedReq)
@@ -751,6 +758,33 @@ func (s *Server) wrapHandlerWithArgumentLogging(toolName string, handler server.
 
 		return result, err
 	}
+}
+
+func (s *Server) auditRejectedDependencyTool(ctx context.Context, toolName string, arguments any) error {
+	operation := "add"
+	if toolName == "remove_task_dependency_kandev" {
+		operation = "remove"
+	}
+	payload := map[string]any{"operation": operation}
+	if provided, ok := arguments.(map[string]any); ok {
+		_, payload["dependent_id_present"] = provided["task_id"]
+		_, payload["predecessor_id_present"] = provided["depends_on_task_id"]
+	} else {
+		payload["dependent_id_present"] = false
+		payload["predecessor_id_present"] = false
+	}
+	auditCtx, cancel := context.WithTimeout(mcporigin.WithTrustedInternalCall(context.WithoutCancel(ctx)), rejectedTransferToolAuditTimeout)
+	defer cancel()
+	var response struct {
+		Audited bool `json:"audited"`
+	}
+	if err := s.backend.RequestPayload(auditCtx, ws.ActionMCPAuditTaskDependencyAttempt, payload, &response); err != nil {
+		return err
+	}
+	if !response.Audited {
+		return errors.New("dependency audit acknowledgement missing")
+	}
+	return nil
 }
 
 func (s *Server) auditRejectedTransferTool(ctx context.Context, arguments any) {

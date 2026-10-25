@@ -40,6 +40,13 @@ type auditedDependencyReplacer interface {
 		dependencywrite.DependencyMutationAuthorizer) (dependencywrite.DependencyBatchResult, error)
 }
 
+func (s *Service) hasAtomicDependencyDelete() bool {
+	_, ok := s.tasks.(interface {
+		DeleteTaskWithDependencySnapshots(context.Context, string) ([]dependencywrite.DependencySnapshot, error)
+	})
+	return ok
+}
+
 func (s *Service) canUseTransactionalDependencyWriter() bool {
 	_, ok := s.blockers.(transactionalDependencyStore)
 	return ok

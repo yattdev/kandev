@@ -13,16 +13,18 @@ var ErrCycle = errors.New("dependency cycle")
 // operation. Endpoint IDs are caller input and must be authorized inside the
 // writer's transaction before they can enter a success audit row.
 type DependencyMutationRequest struct {
-	Operation         string
-	WorkspaceID       string
-	DependentTaskID   string
-	PredecessorTaskID string
-	CallerTaskID      string
-	CallerSessionID   string
-	CallerExecutionID string
-	CallerUserID      string
-	OriginClass       string
-	CorrelationID     string
+	Operation            string
+	WorkspaceID          string
+	DependentTaskID      string
+	PredecessorTaskID    string
+	CallerTaskID         string
+	CallerSessionID      string
+	CallerExecutionID    string
+	CallerUserID         string
+	OriginClass          string
+	CorrelationID        string
+	DependentIDPresent   bool
+	PredecessorIDPresent bool
 }
 
 type DependencyMutationResult struct {

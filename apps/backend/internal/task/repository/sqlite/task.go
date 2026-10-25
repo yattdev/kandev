@@ -5584,19 +5584,28 @@ func (r *Repository) ListExpiredQuickChatTasks(ctx context.Context, cutoff time.
 // DeleteExpiredQuickChatTask deletes id only when it still matches the expired
 // quick-chat predicate at delete time.
 func (r *Repository) DeleteExpiredQuickChatTask(ctx context.Context, id string, cutoff time.Time) (bool, error) {
-	tx, err := r.db.BeginTxx(ctx, nil)
+	deleted, _, err := r.DeleteExpiredQuickChatTaskWithDependencySnapshots(ctx, id, cutoff)
+	return deleted, err
+}
+
+func (r *Repository) DeleteExpiredQuickChatTaskWithDependencySnapshots(ctx context.Context, id string,
+	cutoff time.Time) (bool, []dependencywrite.DependencySnapshot, error) {
+	tx, workspaceID, err := r.beginTaskDeleteTx(ctx, id)
 	if err != nil {
-		return false, err
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil, nil
+		}
+		return false, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := r.managedDeletionBarrierTx(ctx, tx, id); err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if err := r.lockTaskRowInTx(ctx, tx, id); err != nil {
 		if errors.Is(err, ErrTaskNotFound) {
-			return false, nil
+			return false, nil, nil
 		}
-		return false, err
+		return false, nil, err
 	}
 
 	drv := r.db.DriverName()
@@ -5636,51 +5645,75 @@ func (r *Repository) DeleteExpiredQuickChatTask(ctx context.Context, id string, 
 	if err := tx.GetContext(ctx, &eligible, r.db.Rebind(
 		"WITH candidate AS ("+candidate+") SELECT EXISTS (SELECT 1 FROM candidate)",
 	), candidateArgs...); err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if !eligible {
 		if err := tx.Commit(); err != nil {
-			return false, err
+			return false, nil, err
 		}
-		return false, nil
+		return false, nil, nil
 	}
+	deleted, snapshots, err := r.deleteEligibleQuickChatInTx(ctx, tx, workspaceID, id, candidate, candidateArgs)
+	if err != nil {
+		return false, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, nil, err
+	}
+	return deleted, snapshots, nil
+}
 
+func (r *Repository) deleteEligibleQuickChatInTx(ctx context.Context, tx *sqlx.Tx, workspaceID, id, candidate string,
+	candidateArgs []any) (bool, []dependencywrite.DependencySnapshot, error) {
 	sessions, err := r.taskQueueSessionsInTx(ctx, tx, id)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	identities, err := r.agentDeliverySessionIdentitiesInTx(ctx, tx, id)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), sessions...); err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if err := r.lockAgentDeliverySessionIdentitiesTx(ctx, tx, identities); err != nil {
-		return false, err
+		return false, nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `SAVEPOINT quick_chat_dependency_cleanup`); err != nil {
+		return false, nil, err
+	}
+	snapshots, err := r.deleteTaskDependenciesInTx(ctx, tx, workspaceID, id)
+	if err != nil {
+		return false, nil, err
 	}
 	query := "WITH candidate AS (" + candidate + ") DELETE FROM tasks WHERE id = ? AND EXISTS (SELECT 1 FROM candidate)"
 	candidateArgs = append(candidateArgs, id)
 	result, err := tx.ExecContext(ctx, r.db.Rebind(query), candidateArgs...)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return false, err
+		return false, nil, err
+	}
+	if rows == 0 {
+		if _, err := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT quick_chat_dependency_cleanup`); err != nil {
+			return false, nil, err
+		}
+		snapshots = nil
+	}
+	if _, err := tx.ExecContext(ctx, `RELEASE SAVEPOINT quick_chat_dependency_cleanup`); err != nil {
+		return false, nil, err
 	}
 	if rows > 0 {
 		if err := r.insertAgentDeliveryRetirementJobsTx(ctx, tx, identities); err != nil {
-			return false, err
+			return false, nil, err
 		}
 		if err := r.purgePromptSequencesForSessionsTx(ctx, tx, sessions); err != nil {
-			return false, err
+			return false, nil, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return rows > 0, nil
+	return rows > 0, snapshots, nil
 }
 
 // ListCoordinatorOriginTasks returns every task with origin "coordinator"

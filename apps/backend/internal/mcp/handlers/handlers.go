@@ -713,6 +713,7 @@ func (h *Handlers) registerTaskConfigMutationHandlers(d *guardedMCPDispatcher) {
 	d.RegisterFunc(ws.ActionMCPMoveTask, h.handleMoveTask)
 	d.RegisterFunc(ws.ActionMCPTransferTask, h.handleTransferTask)
 	d.RegisterFunc(ws.ActionMCPAuditTaskTransferAttempt, h.handleAuditTaskTransferAttempt)
+	d.RegisterFunc(ws.ActionMCPAuditTaskDependencyAttempt, h.handleAuditTaskDependencyAttempt)
 	d.RegisterFunc(ws.ActionMCPDeleteTask, h.handleDeleteTask)
 	d.RegisterFunc(ws.ActionMCPArchiveTask, h.handleArchiveTask)
 	d.RegisterFunc(ws.ActionMCPUpdateTaskState, h.handleUpdateTaskState)

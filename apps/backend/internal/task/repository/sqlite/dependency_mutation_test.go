@@ -5,12 +5,96 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 
 	"github.com/kandev/kandev/internal/task/dependencywrite"
 	"github.com/kandev/kandev/internal/task/models"
 )
+
+func TestQuickChatExpiryAuditsDependencyCleanup(t *testing.T) {
+	repo, _, database := newManagedDeletionSQLitePair(t)
+	ctx := t.Context()
+	if err := repo.CreateWorkspace(ctx, &models.Workspace{ID: "quick-dependency-ws", Name: "Quick dependencies"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range []*models.Task{
+		{ID: "quick", WorkspaceID: "quick-dependency-ws", Title: "quick", IsEphemeral: true},
+		{ID: "dependent", WorkspaceID: "quick-dependency-ws", Title: "dependent"},
+	} {
+		if err := repo.CreateTask(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.ExecContext(ctx,
+		`UPDATE tasks SET updated_at = ? WHERE id = 'quick'`, time.Now().Add(-48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	request := dependencywrite.DependencyMutationRequest{
+		Operation: "add", WorkspaceID: "quick-dependency-ws", DependentTaskID: "dependent",
+		PredecessorTaskID: "quick", OriginClass: "task_service", CorrelationID: "seed",
+	}
+	if _, err := repo.MutateDependency(ctx, request, func(context.Context, *sqlx.Tx) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	deleted, snapshots, err := repo.DeleteExpiredQuickChatTaskWithDependencySnapshots(ctx, "quick", time.Now().Add(-24*time.Hour))
+	if err != nil || !deleted {
+		t.Fatalf("quick expiry: deleted=%v err=%v", deleted, err)
+	}
+	if len(snapshots) != 1 || snapshots[0].TaskID != "dependent" || snapshots[0].Revision != 2 || snapshots[0].Blocked {
+		t.Fatalf("survivor snapshot = %+v", snapshots)
+	}
+	var auditCount, edgeCount int
+	if err := database.GetContext(ctx, &auditCount,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE origin_class = 'task_delete' AND dependent_task_id = 'dependent'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.GetContext(ctx, &edgeCount, `SELECT COUNT(*) FROM task_blockers WHERE task_id = 'dependent'`); err != nil {
+		t.Fatal(err)
+	}
+	if auditCount != 1 || edgeCount != 0 {
+		t.Fatalf("cleanup audits=%d edges=%d; want 1,0", auditCount, edgeCount)
+	}
+}
+
+func TestIneligibleQuickChatExpiryPreservesDependency(t *testing.T) {
+	repo, _, database := newManagedDeletionSQLitePair(t)
+	ctx := t.Context()
+	if err := repo.CreateWorkspace(ctx, &models.Workspace{ID: "quick-recent-ws", Name: "Recent quick chat"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range []*models.Task{
+		{ID: "quick", WorkspaceID: "quick-recent-ws", Title: "quick", IsEphemeral: true},
+		{ID: "dependent", WorkspaceID: "quick-recent-ws", Title: "dependent"},
+	} {
+		if err := repo.CreateTask(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := dependencywrite.DependencyMutationRequest{
+		Operation: "add", WorkspaceID: "quick-recent-ws", DependentTaskID: "dependent",
+		PredecessorTaskID: "quick", OriginClass: "task_service", CorrelationID: "seed",
+	}
+	if _, err := repo.MutateDependency(ctx, request, func(context.Context, *sqlx.Tx) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	deleted, snapshots, err := repo.DeleteExpiredQuickChatTaskWithDependencySnapshots(ctx, "quick", time.Now().Add(-24*time.Hour))
+	if err != nil || deleted || len(snapshots) != 0 {
+		t.Fatalf("ineligible expiry: deleted=%v snapshots=%+v err=%v", deleted, snapshots, err)
+	}
+	var edgeCount, auditCount int
+	if err := database.GetContext(ctx, &edgeCount, `SELECT COUNT(*) FROM task_blockers WHERE task_id = 'dependent'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.GetContext(ctx, &auditCount,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE origin_class = 'task_delete'`); err != nil {
+		t.Fatal(err)
+	}
+	if edgeCount != 1 || auditCount != 0 {
+		t.Fatalf("ineligible cleanup: edges=%d audits=%d; want 1,0", edgeCount, auditCount)
+	}
+}
 
 // @covers AC-COORDINATOR-DEPENDENCY-002.1 AC-COORDINATOR-DEPENDENCY-002.2
 func TestDependencyMutationCommitsEdgeRevisionsAndAudit(t *testing.T) {

@@ -106,10 +106,8 @@ func (s *Service) validateBlockerReferences(ctx context.Context, req *CreateTask
 // Cleanup is detached from caller cancellation but remains bounded, because a
 // canceled request can be the reason finalization failed in the first place.
 //
-// Rollback removes dependency edges for every path. The legacy direct-delete
-// fallback removes them before the task row; lifecycle deletion performs the
-// task mutation first, then the same edge cleanup runs against the committed
-// result. task_blockers predates the tasks foreign key, so nothing cascades.
+// The production task repository removes touching dependency edges in the
+// task-delete transaction. Legacy adapters retain explicit edge cleanup.
 func (s *Service) rollbackPartialTask(ctx context.Context, taskID string, cause error) error {
 	rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -117,14 +115,18 @@ func (s *Service) rollbackPartialTask(ctx context.Context, taskID string, cause 
 	if s.taskLifecycleCoordinator != nil {
 		deleteErr = s.DeleteTaskWithLifecycle(rollbackCtx, taskID)
 	} else {
-		s.deleteDependencyEdgesForTask(rollbackCtx, taskID)
+		if !s.hasAtomicDependencyDelete() {
+			s.deleteDependencyEdgesForTask(rollbackCtx, taskID)
+		}
 		deleteErr = s.tasks.DeleteTask(rollbackCtx, taskID)
 	}
 	if deleteErr != nil {
 		s.logger.Error("rollback delete failed; task left in inconsistent state",
 			zap.String("task_id", taskID), zap.Error(deleteErr))
 	}
-	s.deleteDependencyEdgesForTask(rollbackCtx, taskID)
+	if !s.hasAtomicDependencyDelete() {
+		s.deleteDependencyEdgesForTask(rollbackCtx, taskID)
+	}
 	if deleteErr != nil {
 		if releaser, ok := s.workspacePolicyAttacher.(WorkspacePolicyMembershipReleaser); ok {
 			if err := releaser.ReleaseWorkspacePolicy(rollbackCtx, taskID, "create_rollback"); err != nil {

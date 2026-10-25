@@ -3083,9 +3083,23 @@ func (s *Service) validateTaskDeleteWorktreeInventoryWithOptions(ctx context.Con
 }
 
 func (s *Service) deleteExpiredQuickChatTask(ctx context.Context, id string, cutoff time.Time) (bool, error) {
+	var snapshots []dependencywrite.DependencySnapshot
 	deleted, err := s.deleteTaskWithReasonAndDBDelete(ctx, id, "", models.TaskResourceCleanupTriggerQuickChatExpire, DeleteTaskOptions{}, func(ctx context.Context, id string) (bool, error) {
+		if deleter, ok := s.tasks.(interface {
+			DeleteExpiredQuickChatTaskWithDependencySnapshots(context.Context, string, time.Time) (bool, []dependencywrite.DependencySnapshot, error)
+		}); ok {
+			var deleteErr error
+			var didDelete bool
+			didDelete, snapshots, deleteErr = deleter.DeleteExpiredQuickChatTaskWithDependencySnapshots(ctx, id, cutoff)
+			return didDelete, deleteErr
+		}
 		return s.tasks.DeleteExpiredQuickChatTask(ctx, id, cutoff)
 	})
+	if err == nil && deleted {
+		for _, snapshot := range snapshots {
+			s.publishCommittedDependencySnapshot(ctx, snapshot)
+		}
+	}
 	if errors.Is(err, taskrepo.ErrTaskNotFound) {
 		return false, nil
 	}
@@ -3285,11 +3299,9 @@ func (s *Service) commitTaskDeletion(ctx context.Context, id string, deleteFromD
 }
 
 func (s *Service) completeTaskDeletion(ctx context.Context, id string, task *models.Task, reason string, start time.Time, cleanupJob *models.TaskResourceCleanupJob, sessions []*models.TaskSession, worktrees []*worktree.Worktree, stopTargets []taskStopTarget, envCleanup taskEnvironmentCleanup) {
-	// Remove dependency edges in both directions. task_blockers predates the
-	// tasks foreign key so nothing cascades, and a left-over edge would keep a
-	// dependent blocked forever on a task that no longer exists. Dependents are
-	// refreshed but deliberately not started: deletion is not success.
-	s.deleteDependencyEdgesForTask(ctx, id)
+	if !s.hasAtomicDependencyDelete() {
+		s.deleteDependencyEdgesForTask(ctx, id)
+	}
 
 	// 5. Publish event (sync, fast) - frontend removes task immediately
 	extra := map[string]interface{}{}

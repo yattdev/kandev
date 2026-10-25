@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kandev/kandev/internal/authz"
 	"github.com/kandev/kandev/internal/task/archivecascade"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	"github.com/kandev/kandev/internal/task/models"
 	managed "github.com/kandev/kandev/internal/task/repository/managedconversation"
 	"google.golang.org/grpc/codes"
@@ -75,13 +76,24 @@ func (s *Service) deleteManagedConversationTaskWithOptions(ctx context.Context, 
 		}
 		return managedHistoryError(previous, managedAdmissionError(err))
 	}
+	var dependencySnapshots []dependencywrite.DependencySnapshot
 	_, err = s.deleteTaskWithManagedClaim(operationCtx, request.TaskID, reason, models.TaskResourceCleanupTriggerDelete, options,
 		func(ctx context.Context, _ string) (bool, error) {
+			if deleter, ok := s.tasks.(interface {
+				FinalizeManagedDeletionWithDependencySnapshots(context.Context, managed.DeleteClaim) (string, []dependencywrite.DependencySnapshot, error)
+			}); ok {
+				var deleteErr error
+				_, dependencySnapshots, deleteErr = deleter.FinalizeManagedDeletionWithDependencySnapshots(ctx, *claim)
+				return deleteErr == nil, deleteErr
+			}
 			_, err := native.FinalizeManagedDeletion(ctx, *claim)
 			return err == nil, err
 		}, claim)
 	if err != nil {
 		return s.reconcileManagedDeletionFailure(operationCtx, native, *claim, err, true)
+	}
+	for _, snapshot := range dependencySnapshots {
+		s.publishCommittedDependencySnapshot(operationCtx, snapshot)
 	}
 	return nil
 }
