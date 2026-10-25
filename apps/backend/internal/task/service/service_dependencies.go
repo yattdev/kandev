@@ -194,8 +194,12 @@ func (s *Service) AddDependency(ctx context.Context, taskID, dependsOnTaskID str
 	// spec, which rules out multiple active processes), so a process-wide lock
 	// is sufficient and keeps the check and the write atomic with respect to
 	// each other.
-	if err := s.insertDependencyEdge(ctx, taskID, dependsOnTaskID); err != nil {
+	changed, err := s.insertDependencyEdge(ctx, taskID, dependsOnTaskID)
+	if err != nil {
 		return err
+	}
+	if !changed {
+		return nil
 	}
 	// Publish OUTSIDE the lock: event delivery is synchronous, so holding the
 	// lock across it would serialize every dependency mutation behind fan-out,
@@ -382,18 +386,25 @@ func (s *Service) validateReplacementSet(ctx context.Context, taskID string, dep
 
 // insertDependencyEdge holds the shared mutation lock across exactly the
 // validate, cycle-walk and insert, and nothing else.
-func (s *Service) insertDependencyEdge(ctx context.Context, taskID, dependsOnTaskID string) error {
+func (s *Service) insertDependencyEdge(ctx context.Context, taskID, dependsOnTaskID string) (bool, error) {
 	unlock := taskdependencies.AcquireMutationLock()
 	defer unlock()
 	if err := s.validateDependencyPair(ctx, taskID, dependsOnTaskID); err != nil {
-		return err
+		return false, err
+	}
+	exists, err := s.dependencyEdgeExists(ctx, taskID, dependsOnTaskID)
+	if err != nil || exists {
+		return false, err
 	}
 	if cycle, err := s.checkDependencyCycle(ctx, taskID, dependsOnTaskID); err != nil {
-		return fmt.Errorf("check dependency cycle: %w", err)
+		return false, fmt.Errorf("check dependency cycle: %w", err)
 	} else if cycle != nil {
-		return cycle
+		return false, cycle
 	}
-	return s.createBlockerEdge(ctx, taskID, dependsOnTaskID)
+	if err := s.createBlockerEdge(ctx, taskID, dependsOnTaskID); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // RemoveDependency deletes a dependency edge. Removing an absent edge is a
@@ -410,8 +421,12 @@ func (s *Service) RemoveDependency(ctx context.Context, taskID, dependsOnTaskID 
 	if err := s.authorizeDependencyPair(ctx, taskID, dependsOnTaskID); err != nil {
 		return err
 	}
-	if err := s.deleteDependencyEdge(ctx, taskID, dependsOnTaskID); err != nil {
+	changed, err := s.deleteDependencyEdge(ctx, taskID, dependsOnTaskID)
+	if err != nil {
 		return err
+	}
+	if !changed {
+		return nil
 	}
 	// Published outside the lock, for the same reason as AddDependency.
 	s.publishDependencyChange(ctx, taskID, dependsOnTaskID)
@@ -494,10 +509,30 @@ func validateExactTaskRelationVersions(request ExactTaskRelationRequest, task, r
 }
 
 // deleteDependencyEdge holds the shared mutation lock across the delete only.
-func (s *Service) deleteDependencyEdge(ctx context.Context, taskID, dependsOnTaskID string) error {
+func (s *Service) deleteDependencyEdge(ctx context.Context, taskID, dependsOnTaskID string) (bool, error) {
 	unlock := taskdependencies.AcquireMutationLock()
 	defer unlock()
-	return s.blockers.DeleteTaskBlocker(ctx, taskID, dependsOnTaskID)
+	exists, err := s.dependencyEdgeExists(ctx, taskID, dependsOnTaskID)
+	if err != nil || !exists {
+		return false, err
+	}
+	if err := s.blockers.DeleteTaskBlocker(ctx, taskID, dependsOnTaskID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Service) dependencyEdgeExists(ctx context.Context, taskID, dependsOnTaskID string) (bool, error) {
+	edges, err := s.blockers.ListTaskBlockers(ctx, taskID)
+	if err != nil {
+		return false, err
+	}
+	for _, edge := range edges {
+		if edge != nil && edge.BlockerTaskID == dependsOnTaskID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // publishDependencyChange emits task.updated for both ends of a mutated edge so
