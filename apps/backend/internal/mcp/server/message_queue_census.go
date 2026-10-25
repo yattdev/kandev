@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	ws "github.com/kandev/kandev/pkg/websocket"
@@ -18,7 +21,34 @@ func (s *Server) registerMessageQueueCensusTool() {
 		json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`))
 	tool.Annotations.ReadOnlyHint = mcp.ToBoolPtr(true)
 	tool.Annotations.DestructiveHint = mcp.ToBoolPtr(false)
-	s.mcpServer.AddTool(tool, s.wrapHandler(messageQueueCensusToolName, s.messageQueueCensusHandler()))
+	s.mcpServer.AddTool(tool, s.wrapSensitiveHandler(messageQueueCensusToolName, s.messageQueueCensusHandler()))
+}
+
+func emptyCensusArguments(arguments any) bool {
+	switch value := arguments.(type) {
+	case map[string]any:
+		return value != nil && len(value) == 0
+	case json.RawMessage:
+		return emptyCensusJSON(value)
+	case []byte:
+		return emptyCensusJSON(value)
+	default:
+		return false
+	}
+}
+
+func emptyCensusJSON(raw []byte) bool {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	first, err := decoder.Token()
+	if err != nil || first != json.Delim('{') {
+		return false
+	}
+	last, err := decoder.Token()
+	if err != nil || last != json.Delim('}') {
+		return false
+	}
+	_, err = decoder.Token()
+	return errors.Is(err, io.EOF)
 }
 
 func (s *Server) messageQueueCensusHandler() server.ToolHandlerFunc {

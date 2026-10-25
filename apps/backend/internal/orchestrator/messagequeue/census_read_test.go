@@ -13,12 +13,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func newCensusMemoryRepository(t *testing.T) (*memoryRepository, QueueSessionIdentity) {
+	t.Helper()
+	repo := NewMemoryRepository().(*memoryRepository)
+	identity, err := repo.ResolveSessionIdentity(context.Background(), "task", "session")
+	require.NoError(t, err)
+	repo.authority = func(_ context.Context, taskID, sessionID string) (QueueSessionIdentity, error) {
+		if taskID != identity.TaskID || sessionID != identity.SessionID {
+			return QueueSessionIdentity{}, ErrSessionIdentityMismatch
+		}
+		return identity, nil
+	}
+	return repo, identity
+}
+
 // @covers AC-TASKS-ACTIVE-QUEUE-CENSUS-001.1
 func TestActiveQueueCensusProjection(t *testing.T) {
 	ctx := context.Background()
-	repo := NewMemoryRepository()
-	identity, err := repo.ResolveSessionIdentity(ctx, "task", "session")
-	require.NoError(t, err)
+	repo, identity := newCensusMemoryRepository(t)
 	require.NoError(t, repo.InsertForSession(ctx, identity, &QueuedMessage{
 		ID: "one", TaskID: identity.TaskID, SessionID: identity.SessionID, Content: "first",
 	}, DefaultMaxPerSession))
@@ -37,15 +49,40 @@ func TestActiveQueueCensusProjection(t *testing.T) {
 	encoded, err := json.Marshal(result)
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded), "first")
-	require.Empty(t, repo.(*memoryRepository).statusGeneration)
+	require.Empty(t, repo.statusGeneration)
+}
+
+// @covers AC-TASKS-ACTIVE-QUEUE-CENSUS-001.2 AC-TASKS-ACTIVE-QUEUE-CENSUS-001.7
+func TestActiveQueueCensusMemoryRequiresAuthorityCallback(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMemoryRepository()
+	identity, err := repo.ResolveSessionIdentity(ctx, "task", "session")
+	require.NoError(t, err)
+	result, err := NewService(repo, 0, logger.Default()).GetActiveQueueCensus(ctx, ActiveQueueCensusProof{
+		Identity: identity, ExecutionID: "execution", WorkspaceID: "workspace",
+	})
+	require.ErrorIs(t, err, ErrSessionIdentityMismatch)
+	require.Nil(t, result)
+}
+
+// @covers AC-TASKS-ACTIVE-QUEUE-CENSUS-001.5 AC-TASKS-ACTIVE-QUEUE-CENSUS-001.7
+func TestActiveQueueCensusMemoryUsesStoredEmptyMetadataSize(t *testing.T) {
+	ctx := context.Background()
+	repo, identity := newCensusMemoryRepository(t)
+	require.NoError(t, repo.InsertForSession(ctx, identity, &QueuedMessage{
+		ID: "entry", TaskID: "task", SessionID: "session", Content: strings.Repeat("x", maxCensusBytes-2),
+	}, 0))
+	result, err := NewService(repo, 0, logger.Default()).GetActiveQueueCensus(ctx, ActiveQueueCensusProof{
+		Identity: identity, ExecutionID: "execution", WorkspaceID: "workspace",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Count)
 }
 
 // @covers AC-TASKS-ACTIVE-QUEUE-CENSUS-001.4 AC-TASKS-ACTIVE-QUEUE-CENSUS-001.5
 func TestActiveQueueCensusRevisionAndLimits(t *testing.T) {
 	ctx := context.Background()
-	repo := NewMemoryRepository()
-	identity, err := repo.ResolveSessionIdentity(ctx, "task", "session")
-	require.NoError(t, err)
+	repo, identity := newCensusMemoryRepository(t)
 	for i := range 128 {
 		require.NoError(t, repo.InsertForSession(ctx, identity, &QueuedMessage{
 			ID: fmt.Sprintf("entry-%03d", i), TaskID: "task", SessionID: "session", Content: "é", QueuedBy: QueuedByUser,
@@ -91,9 +128,7 @@ func TestActiveQueueCensusRejectsOversizedContentAndMetadata(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			repo := NewMemoryRepository()
-			identity, err := repo.ResolveSessionIdentity(ctx, "task", "session")
-			require.NoError(t, err)
+			repo, identity := newCensusMemoryRepository(t)
 			require.NoError(t, repo.InsertForSession(ctx, identity, &QueuedMessage{
 				ID: "entry", TaskID: "task", SessionID: "session", Content: tc.content, Metadata: tc.metadata,
 			}, 0))
@@ -110,9 +145,7 @@ func TestActiveQueueCensusRejectsOversizedContentAndMetadata(t *testing.T) {
 // @covers AC-TASKS-ACTIVE-QUEUE-CENSUS-001.5
 func TestActiveQueueCensusAcceptsExactMetadataLimit(t *testing.T) {
 	ctx := context.Background()
-	repo := NewMemoryRepository()
-	identity, err := repo.ResolveSessionIdentity(ctx, "task", "session")
-	require.NoError(t, err)
+	repo, identity := newCensusMemoryRepository(t)
 	metadata := map[string]interface{}{"a": strings.Repeat("x", maxCensusMetadataBytes-8)}
 	encoded, err := json.Marshal(metadata)
 	require.NoError(t, err)
@@ -131,9 +164,7 @@ func TestActiveQueueCensusAcceptsExactMetadataLimit(t *testing.T) {
 // @covers AC-TASKS-ACTIVE-QUEUE-CENSUS-001.4
 func TestActiveQueueCensusMemoryOrdersByPositionAndID(t *testing.T) {
 	ctx := context.Background()
-	repo := NewMemoryRepository().(*memoryRepository)
-	identity, err := repo.ResolveSessionIdentity(ctx, "task", "session")
-	require.NoError(t, err)
+	repo, identity := newCensusMemoryRepository(t)
 	repo.entries["session"] = []*QueuedMessage{
 		{ID: "later", TaskID: "task", SessionID: "session", Position: 2, Content: "later"},
 		{ID: "tie-z", TaskID: "task", SessionID: "session", Position: 1, Content: "z"},
@@ -152,9 +183,7 @@ func TestActiveQueueCensusMemoryOrdersByPositionAndID(t *testing.T) {
 // @covers AC-TASKS-ACTIVE-QUEUE-CENSUS-001.5 AC-TASKS-ACTIVE-QUEUE-CENSUS-001.7
 func TestActiveQueueCensusRejectsInvalidHiddenRowAndExaminationOverflow(t *testing.T) {
 	ctx := context.Background()
-	repo := NewMemoryRepository().(*memoryRepository)
-	identity, err := repo.ResolveSessionIdentity(ctx, "task", "session")
-	require.NoError(t, err)
+	repo, identity := newCensusMemoryRepository(t)
 	proof := ActiveQueueCensusProof{Identity: identity, ExecutionID: "execution", WorkspaceID: "workspace"}
 	service := NewService(repo, 0, logger.Default())
 	row := &QueuedMessage{ID: strings.Repeat("x", maxCensusIDBytes+1), TaskID: "task", SessionID: "session", Position: 1,
@@ -201,9 +230,7 @@ func TestActiveQueueCensusRejectsConcurrentCapacityChange(t *testing.T) {
 // @covers AC-TASKS-ACTIVE-QUEUE-CENSUS-001.4
 func TestActiveQueueCensusRejectsAuthorityChangeAcrossSnapshot(t *testing.T) {
 	ctx := context.Background()
-	repo := NewMemoryRepository().(*memoryRepository)
-	identity, err := repo.ResolveSessionIdentity(ctx, "task", "session")
-	require.NoError(t, err)
+	repo, identity := newCensusMemoryRepository(t)
 	require.NoError(t, repo.InsertForSession(ctx, identity, &QueuedMessage{
 		ID: "entry", TaskID: "task", SessionID: "session", Content: "private",
 	}, 0))

@@ -2,13 +2,18 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"testing"
 
+	"github.com/kandev/kandev/internal/common/logger"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	ws "github.com/kandev/kandev/pkg/websocket"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type censusBackend struct {
@@ -72,5 +77,29 @@ func TestActiveQueueCensusToolForwardsEmptyRequest(t *testing.T) {
 	result, err = tool.Handler(context.Background(), request)
 	require.NoError(t, err)
 	require.True(t, result.IsError)
+	require.Equal(t, 1, backend.called)
+}
+
+// @covers AC-TASKS-ACTIVE-QUEUE-CENSUS-001.1 AC-TASKS-ACTIVE-QUEUE-CENSUS-001.6
+func TestActiveQueueCensusRejectsNonObjectArgumentsWithoutLoggingValues(t *testing.T) {
+	core, observed := observer.New(zap.DebugLevel)
+	log, err := logger.NewFromZap(zap.New(core))
+	require.NoError(t, err)
+	backend := &censusBackend{}
+	s := NewWithProfile(backend, "session", "task", 10005, log, "", false,
+		mcpprofile.New(mcpprofile.SurfaceKanbanTask, nil, nil))
+	tool := s.mcpServer.ListTools()[messageQueueCensusToolName]
+	for _, arguments := range []any{nil, json.RawMessage(`null`), json.RawMessage(`[]`), json.RawMessage(`{"x":1,"x":2}`), map[string]any{"content": "private body"}} {
+		request := mcp.CallToolRequest{Params: mcp.CallToolParams{Name: messageQueueCensusToolName, Arguments: arguments}}
+		result, err := tool.Handler(context.Background(), request)
+		require.NoError(t, err)
+		require.True(t, result.IsError, "%v", arguments)
+	}
+	require.Equal(t, 0, backend.called)
+	require.NotContains(t, fmt.Sprint(observed.All()), "private body")
+	valid := mcp.CallToolRequest{Params: mcp.CallToolParams{Name: messageQueueCensusToolName, Arguments: json.RawMessage(`{}`)}}
+	result, err := tool.Handler(context.Background(), valid)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
 	require.Equal(t, 1, backend.called)
 }

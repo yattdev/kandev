@@ -74,6 +74,9 @@ func compileToolArgumentSchema(toolName string, tool mcp.Tool) (*jsonschema.Sche
 
 func (s *Server) validateToolArguments(toolName string, req mcp.CallToolRequest) (mcp.CallToolRequest, error) {
 	arguments := req.GetRawArguments()
+	if toolName == messageQueueCensusToolName && !emptyCensusArguments(arguments) {
+		return req, fmt.Errorf("invalid arguments for %s: requires an empty object", toolName)
+	}
 	if raw, ok := arguments.(json.RawMessage); ok {
 		var decoded any
 		if err := json.Unmarshal(raw, &decoded); err != nil {

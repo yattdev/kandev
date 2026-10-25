@@ -43,7 +43,7 @@ func (r *memoryRepository) ActiveQueueCensus(ctx context.Context, proof ActiveQu
 
 func (r *memoryRepository) validateMemoryCensusAuthority(ctx context.Context, identity QueueSessionIdentity) error {
 	if r.authority == nil {
-		return nil
+		return ErrSessionIdentityMismatch
 	}
 	current, err := r.authority(ctx, identity.TaskID, identity.SessionID)
 	if err != nil {
@@ -93,7 +93,7 @@ func (r *memoryRepository) readCensusMemory(identity QueueSessionIdentity) ([]Ac
 }
 
 func censusMemoryRow(row *QueuedMessage, identity QueueSessionIdentity, seen map[string]struct{}, budget *int, ordinal int) (ActiveQueueCensusEntry, bool, error) {
-	if row.TaskID != identity.TaskID || row.SessionID != identity.SessionID {
+	if row.TaskID != identity.TaskID || row.SessionID != identity.SessionID || row.Position <= 0 {
 		return ActiveQueueCensusEntry{}, false, ErrSessionIdentityMismatch
 	}
 	if row.ID == "" || !utf8.ValidString(row.ID) || len(row.ID) > maxCensusIDBytes {
@@ -103,12 +103,16 @@ func censusMemoryRow(row *QueuedMessage, identity QueueSessionIdentity, seen map
 		return ActiveQueueCensusEntry{}, false, ErrSessionIdentityMismatch
 	}
 	seen[row.ID] = struct{}{}
-	// json.Encoder adds one newline that is not part of the stored metadata.
-	writer := &censusLimitWriter{remaining: maxCensusMetadataBytes + 1}
-	if err := json.NewEncoder(writer).Encode(row.Metadata); err != nil {
-		return ActiveQueueCensusEntry{}, false, ErrCensusTooLarge
+	metadataBytes := 2 // Empty metadata is stored as {} by the SQL provider.
+	if len(row.Metadata) > 0 {
+		// json.Encoder adds one newline that is not part of the stored metadata.
+		writer := &censusLimitWriter{remaining: maxCensusMetadataBytes + 1}
+		if err := json.NewEncoder(writer).Encode(row.Metadata); err != nil {
+			return ActiveQueueCensusEntry{}, false, ErrCensusTooLarge
+		}
+		metadataBytes = maxCensusMetadataBytes - writer.remaining
 	}
-	*budget -= len(row.Content) + maxCensusMetadataBytes - writer.remaining
+	*budget -= len(row.Content) + metadataBytes
 	if *budget < 0 {
 		return ActiveQueueCensusEntry{}, false, ErrCensusTooLarge
 	}
