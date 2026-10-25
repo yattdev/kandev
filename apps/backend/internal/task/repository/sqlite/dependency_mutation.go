@@ -21,8 +21,6 @@ const (
 	dependencyRemove = "remove"
 )
 
-var errDependencyMutationCycle = errors.New("dependency cycle")
-
 // MutateDependency keeps an edge, both endpoint revisions, and its success
 // audit in one database transaction. The caller supplies an authorization
 // callback that checks the attested principal within the transaction.
@@ -47,7 +45,7 @@ func (r *Repository) MutateDependency(
 		return r.commitDependencyDenial(ctx, tx, request, "scope_denied", err)
 	}
 	result, err := r.mutateDependencyInTx(ctx, tx, request)
-	if errors.Is(err, errDependencyMutationCycle) {
+	if errors.Is(err, dependencywrite.ErrCycle) {
 		return r.commitDependencyDenial(ctx, tx, request, "cycle", err)
 	}
 	if err != nil {
@@ -57,6 +55,25 @@ func (r *Repository) MutateDependency(
 		return dependencywrite.DependencyMutationResult{}, err
 	}
 	return result, nil
+}
+
+// RecordDependencyDenial stores a rejected request without exposing its target
+// identifiers. It is used when a guard rejects before graph authorization.
+func (r *Repository) RecordDependencyDenial(ctx context.Context,
+	request dependencywrite.DependencyMutationRequest, reason string) error {
+	if request.WorkspaceID == "" || request.CorrelationID == "" || request.OriginClass == "" ||
+		(request.Operation != dependencyAdd && request.Operation != dependencyRemove) || reason == "" {
+		return errors.New("invalid dependency denial")
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.recordDependencyMutationDenial(ctx, tx, request, reason); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) commitDependencyDenial(
@@ -196,7 +213,7 @@ func checkDependencyCycleInTx(
 		current := queue[0]
 		queue = queue[1:]
 		if current == dependentID {
-			return errDependencyMutationCycle
+			return dependencywrite.ErrCycle
 		}
 		if seen[current] {
 			continue

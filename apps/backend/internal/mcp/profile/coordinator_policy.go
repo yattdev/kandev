@@ -23,6 +23,7 @@ var coordinatorToolUniverse = []string{
 	"propose_move_kandev", "propose_resume_kandev",
 	"propose_improvement_kandev",
 	"list_coordinator_turns_kandev",
+	"add_task_dependency_kandev", "remove_task_dependency_kandev",
 }
 
 // CoordinatorToolPolicy is the tool list bound to one coordinator conversation

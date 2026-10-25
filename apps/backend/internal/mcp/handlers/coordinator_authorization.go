@@ -13,6 +13,7 @@ import (
 	"github.com/kandev/kandev/internal/coordinator"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	mcpscope "github.com/kandev/kandev/internal/mcp/scope"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	taskmodels "github.com/kandev/kandev/internal/task/models"
 	ws "github.com/kandev/kandev/pkg/websocket"
 )
@@ -28,6 +29,8 @@ var coordinatorSurfaceActions = map[string]struct{}{
 	ws.ActionMCPListWorkflows:        {},
 	ws.ActionMCPListWorkflowSteps:    {},
 	ws.ActionMCPListRepositories:     {},
+	ws.ActionMCPAddTaskDependency:    {},
+	ws.ActionMCPRemoveTaskDependency: {},
 	coordinator.ActionProposeTask:    {},
 	coordinator.ActionProposeResume:  {},
 	coordinator.ActionProposeMessage: {},
@@ -106,11 +109,19 @@ func (h *Handlers) authorizeCoordinatorSurface(
 	ctx context.Context, principal mcpscope.Principal, msg *ws.Message,
 ) (*ws.Message, *ws.Message, error) {
 	phase2 := h.coordinatorSvc != nil && h.coordinatorSvc.Phase2()
+	if (msg.Action == ws.ActionMCPAddTaskDependency || msg.Action == ws.ActionMCPRemoveTaskDependency) && !phase2 {
+		return coordinatorUnknownAction(msg)
+	}
 	if phase2 && !h.coordinatorWorkspaceMatches(ctx, principal) {
 		return coordinatorNotFound(msg)
 	}
 	if phase2 && principal.WorkspaceID != "" {
 		if refused, response, err := h.authorizeCoordinatorPolicy(ctx, principal, msg); refused {
+			if h.isDependencyMutationAction(msg.Action) {
+				if auditErr := h.recordCoordinatorDependencyDenial(ctx, principal, msg, "policy_denied", "", ""); auditErr != nil {
+					return dependencyAuditError(msg)
+				}
+			}
 			return response, nil, err
 		}
 	}
@@ -123,9 +134,38 @@ func (h *Handlers) authorizeCoordinatorSurface(
 
 	fields, err := automationPayloadFields(msg.Payload)
 	if err != nil {
+		if msg.Action == ws.ActionMCPAddTaskDependency || msg.Action == ws.ActionMCPRemoveTaskDependency {
+			if auditErr := h.recordCoordinatorDependencyDenial(ctx, principal, msg, "invalid_payload", "", ""); auditErr != nil {
+				return dependencyAuditError(msg)
+			}
+			if recordErr := h.coordinatorSvc.RecordDependencyDecision(ctx, principal.CoordinatorID,
+				principal.WorkspaceID, dependencyOperation(msg.Action), "", "", false); recordErr != nil {
+				response, responseErr := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError,
+					"dependency authorization could not be recorded", nil)
+				return response, nil, responseErr
+			}
+		}
 		response, responseErr := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest,
 			"Invalid JSON payload", nil)
 		return response, nil, responseErr
+	}
+	if msg.Action == ws.ActionMCPAddTaskDependency || msg.Action == ws.ActionMCPRemoveTaskDependency {
+		taskID := jsonStringField(fields, "task_id")
+		predecessorID := jsonStringField(fields, "depends_on_task_id")
+		allowed := h.coordinatorDependencyAllowed(ctx, principal, taskID, predecessorID)
+		if err := h.coordinatorSvc.RecordDependencyDecision(ctx, principal.CoordinatorID,
+			principal.WorkspaceID, dependencyOperation(msg.Action), taskID, predecessorID, allowed); err != nil {
+			response, responseErr := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError,
+				"dependency authorization could not be recorded", nil)
+			return response, nil, responseErr
+		}
+		if !allowed {
+			if auditErr := h.recordCoordinatorDependencyDenial(ctx, principal, msg, "scope_denied", taskID, predecessorID); auditErr != nil {
+				return dependencyAuditError(msg)
+			}
+			return coordinatorNotFound(msg)
+		}
+		return nil, msg, nil
 	}
 	if !h.authorizeCoordinatorReferenceFields(ctx, principal, msg.Action, fields) {
 		return coordinatorNotFound(msg)
@@ -134,6 +174,37 @@ func (h *Handlers) authorizeCoordinatorSurface(
 		return coordinatorNotFound(msg)
 	}
 	return nil, msg, nil
+}
+
+func (h *Handlers) isDependencyMutationAction(action string) bool {
+	return action == ws.ActionMCPAddTaskDependency || action == ws.ActionMCPRemoveTaskDependency
+}
+
+func (h *Handlers) recordCoordinatorDependencyDenial(ctx context.Context, principal mcpscope.Principal,
+	msg *ws.Message, reason, taskID, predecessorID string) error {
+	if h.taskSvc == nil {
+		return errors.New("dependency repository unavailable")
+	}
+	execution, _ := streams.MCPExecutionContextFromContext(ctx)
+	return h.taskSvc.RecordCoordinatorDependencyDenial(ctx, dependencywrite.DependencyMutationRequest{
+		Operation: dependencyOperation(msg.Action), WorkspaceID: principal.WorkspaceID,
+		DependentTaskID: taskID, PredecessorTaskID: predecessorID,
+		CallerTaskID: principal.CallerTaskID, CallerSessionID: principal.CallerSessionID,
+		CallerExecutionID: execution.ExecutionID, OriginClass: "coordinator", CorrelationID: msg.ID,
+	}, reason)
+}
+
+func dependencyAuditError(msg *ws.Message) (*ws.Message, *ws.Message, error) {
+	response, err := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError,
+		"dependency authorization could not be recorded", nil)
+	return response, nil, err
+}
+
+func dependencyOperation(action string) string {
+	if action == ws.ActionMCPRemoveTaskDependency {
+		return "remove"
+	}
+	return "add"
 }
 
 func (h *Handlers) coordinatorWorkspaceMatches(ctx context.Context, principal mcpscope.Principal) bool {

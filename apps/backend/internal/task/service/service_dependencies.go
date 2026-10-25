@@ -7,15 +7,57 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"go.uber.org/zap"
 
 	"github.com/kandev/kandev/internal/common/taskdependencies"
 	"github.com/kandev/kandev/internal/events"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	"github.com/kandev/kandev/internal/task/models"
 	taskrepo "github.com/kandev/kandev/internal/task/repository"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 )
+
+type auditedDependencyMutationRepository interface {
+	MutateDependency(context.Context, dependencywrite.DependencyMutationRequest,
+		dependencywrite.DependencyMutationAuthorizer) (dependencywrite.DependencyMutationResult, error)
+}
+
+type dependencyDenialRecorder interface {
+	RecordDependencyDenial(context.Context, dependencywrite.DependencyMutationRequest, string) error
+}
+
+// RecordCoordinatorDependencyDenial durably accounts for a request rejected
+// before the graph transaction can run.
+func (s *Service) RecordCoordinatorDependencyDenial(ctx context.Context,
+	request dependencywrite.DependencyMutationRequest, reason string) error {
+	recorder, ok := s.tasks.(dependencyDenialRecorder)
+	if !ok {
+		return ErrDependencyRepositoryUnavailable
+	}
+	return recorder.RecordDependencyDenial(ctx, request, reason)
+}
+
+// MutateCoordinatorDependency uses the task repository's transactional writer
+// and publishes only after a changed edge commits.
+func (s *Service) MutateCoordinatorDependency(
+	ctx context.Context, request dependencywrite.DependencyMutationRequest,
+	authorize func(context.Context, *sqlx.Tx) error,
+) (dependencywrite.DependencyMutationResult, error) {
+	writer, ok := s.tasks.(auditedDependencyMutationRepository)
+	if !ok {
+		return dependencywrite.DependencyMutationResult{}, ErrDependencyRepositoryUnavailable
+	}
+	result, err := writer.MutateDependency(ctx, request, authorize)
+	if err != nil {
+		return dependencywrite.DependencyMutationResult{}, err
+	}
+	if result.Changed {
+		s.publishDependencyChange(ctx, request.DependentTaskID, request.PredecessorTaskID)
+	}
+	return result, nil
+}
 
 // Task dependencies ("task B is blocked by task A") are peer-to-peer edges,
 // distinct from the parent/child subtask hierarchy: a subtask means "part of",
@@ -71,6 +113,7 @@ type DependencyRef struct {
 	State       v1.TaskState `json:"state"`
 	Status      string       `json:"status,omitempty"`
 	WorkspaceID string       `json:"-"`
+	WorkflowID  string       `json:"-"`
 }
 
 // DependencyView is the derived dependency state for one task.
@@ -827,6 +870,7 @@ func (s *Service) resolveDependencyRefs(
 			State:       task.State,
 			Status:      DependencyStatusForTask(task),
 			WorkspaceID: task.WorkspaceID,
+			WorkflowID:  task.WorkflowID,
 		}
 	}
 	return refs, nil

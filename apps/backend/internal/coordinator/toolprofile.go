@@ -47,6 +47,7 @@ func ToolNamesPhase31(p Policy, phase2, phase3, phase31 bool) []string {
 		return append(names, proposeTool[ActionCreateTask])
 	}
 	names = append(names, activityTool)
+	names = append(names, "add_task_dependency_kandev", "remove_task_dependency_kandev")
 	for _, a := range proposeOrder {
 		if p.Allows(a) {
 			names = append(names, proposeTool[a])
@@ -89,6 +90,8 @@ var actionTools = map[string]string{
 
 	mcpcontract.ActionProposeImprovement: improvementTool,
 	mcpcontract.ActionListTurns:          turnsTool,
+	ws.ActionMCPAddTaskDependency:        "add_task_dependency_kandev",
+	ws.ActionMCPRemoveTaskDependency:     "remove_task_dependency_kandev",
 }
 
 // ToolForAction returns the MCP tool name that exposes a WebSocket action.

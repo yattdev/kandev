@@ -1655,14 +1655,22 @@ const (
 // (self-edge, cross-workspace, cycle-with-path) in the task service. The read
 // side already exists as list_related_tasks_kandev.
 func (s *Server) registerTaskDependencyTools() {
+	s.registerAddTaskDependencyTool()
+	s.registerRemoveTaskDependencyTool()
+}
+
+func (s *Server) registerAddTaskDependencyTool() {
 	s.mcpServer.AddTool(
 		mcp.NewTool("add_task_dependency_kandev",
 			mcp.WithDescription(`Block a task until another task completes successfully. Use dependencies for execution order and parent_id for hierarchy. task_id defaults to the current task. Self-dependencies, cross-workspace dependencies, and cycles are rejected. A failed or cancelled predecessor leaves the task blocked for human action. Returns the resulting depends_on list.`),
 			mcp.WithString(mcpKeyTaskID, mcp.Description("The blocked task. Defaults to your current task when omitted.")),
 			mcp.WithString("depends_on_task_id", mcp.Required(), mcp.Description("The task that must complete first (the predecessor).")),
 		),
-		s.wrapHandler("add_task_dependency_kandev", s.addTaskDependencyHandler()),
+		s.wrapSensitiveHandler("add_task_dependency_kandev", s.addTaskDependencyHandler()),
 	)
+}
+
+func (s *Server) registerRemoveTaskDependencyTool() {
 	s.mcpServer.AddTool(
 		mcp.NewTool("remove_task_dependency_kandev",
 			mcp.WithDescription(`Remove a task dependency edge. Removing an edge that does not exist succeeds.
@@ -1671,7 +1679,7 @@ Removing the last edge unblocks the task but does NOT start it: an automatic sta
 			mcp.WithString(mcpKeyTaskID, mcp.Description("The blocked task. Defaults to your current task when omitted.")),
 			mcp.WithString("depends_on_task_id", mcp.Required(), mcp.Description("The predecessor task to unlink.")),
 		),
-		s.wrapHandler("remove_task_dependency_kandev", s.removeTaskDependencyHandler()),
+		s.wrapSensitiveHandler("remove_task_dependency_kandev", s.removeTaskDependencyHandler()),
 	)
 }
 

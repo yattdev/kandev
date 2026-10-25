@@ -31,6 +31,15 @@ func TestChannelBackendClientCarriesTrustedInternalAuditAttestation(t *testing.T
 	require.NoError(t, <-errCh)
 }
 
+func TestDependencyMutationArgumentsAreRedactedFromBackendLog(t *testing.T) {
+	for _, action := range []string{ws.ActionMCPAddTaskDependency, ws.ActionMCPRemoveTaskDependency} {
+		logged := backendPayloadForLog(action, map[string]any{
+			"task_id": "sensitive-dependent", "depends_on_task_id": "sensitive-predecessor",
+		})
+		require.Equal(t, "<redacted>", logged)
+	}
+}
+
 func TestChannelBackendClientCloseBeforeRequestDoesNotPublish(t *testing.T) {
 	client := NewChannelBackendClient(nil)
 	t.Cleanup(client.Close)

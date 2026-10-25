@@ -88,6 +88,10 @@ func TestAuthorizeCoordinatorRequest_TableOverEveryRegisteredAction(t *testing.T
 				assertWSError(t, guarded, ws.ErrorCodeUnknownAction)
 				return
 			}
+			if action == ws.ActionMCPAddTaskDependency || action == ws.ActionMCPRemoveTaskDependency {
+				assertWSError(t, guarded, ws.ErrorCodeUnknownAction)
+				return
+			}
 			if allowed {
 				require.Nil(t, guarded, "allowlisted action %q must not be guarded", action)
 				require.NotNil(t, replacement)

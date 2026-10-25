@@ -91,3 +91,23 @@ func TestServerSurfaceCoordinatorRegistersBoundTurnsToolOnly(t *testing.T) {
 	assert.ElementsMatch(t, []string{"list_tasks_kandev", "list_coordinator_turns_kandev"}, bound("list_tasks_kandev", "list_coordinator_turns_kandev"))
 	assert.NotContains(t, bound("list_tasks_kandev", "list_coordinator_activity_kandev"), "list_coordinator_turns_kandev")
 }
+
+func TestServerSurfaceCoordinatorRegistersBoundDependencyTools(t *testing.T) {
+	backend := &testBackend{response: map[string]interface{}{"task_id": "peer-task"}}
+	profile := mcpprofile.NewCoordinator()
+	profile.CoordinatorToolPolicy = &mcpprofile.CoordinatorToolPolicy{
+		Version: 1, CoordinatorID: "c", WorkspaceID: "w", ConversationTaskID: "coordinator-task",
+		ToolNames: []string{"add_task_dependency_kandev", "remove_task_dependency_kandev"},
+	}
+	s := NewWithProfile(backend, "coordinator-session", "coordinator-task", 10005, newTestLogger(t), "", false, profile)
+	assert.ElementsMatch(t, profile.CoordinatorToolPolicy.ToolNames, getRegisteredToolNames(s))
+	for _, name := range profile.CoordinatorToolPolicy.ToolNames {
+		result := callTool(t, s, name, map[string]interface{}{
+			"task_id": "peer-task", "depends_on_task_id": "predecessor-task",
+		})
+		assert.False(t, result.IsError)
+		payload, ok := backend.lastPayload.(map[string]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, "peer-task", payload["task_id"])
+	}
+}

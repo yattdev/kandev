@@ -2,9 +2,12 @@ package dependencywrite
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jmoiron/sqlx"
 )
+
+var ErrCycle = errors.New("dependency cycle")
 
 // DependencyMutationRequest carries server-attested identities for one edge
 // operation. Endpoint IDs are caller input and must be authorized inside the

@@ -15,12 +15,33 @@ func ResolveWatchProjectsSQL(ctx context.Context, db *sqlx.DB, workspaceID strin
 
 type watchSQLReader struct{ db *sqlx.DB }
 
+type watchTxReader struct {
+	tx *sqlx.Tx
+	db *sqlx.DB
+}
+
+func (r watchTxReader) Sets(ctx context.Context, workspaceID string) ([]watch.SetMembers, error) {
+	return queryWatchSets(ctx, r.tx, r.db.Rebind, workspaceID)
+}
+
+func (r watchTxReader) RepositoryIDs(ctx context.Context, workspaceID string) ([]string, error) {
+	return queryWatchRepositoryIDs(ctx, r.tx, r.db.Rebind, workspaceID)
+}
+
 func (r watchSQLReader) Sets(ctx context.Context, workspaceID string) ([]watch.SetMembers, error) {
+	return queryWatchSets(ctx, r.db, r.db.Rebind, workspaceID)
+}
+
+type watchSQLSelect interface {
+	SelectContext(context.Context, interface{}, string, ...interface{}) error
+}
+
+func queryWatchSets(ctx context.Context, exec watchSQLSelect, rebind func(string) string, workspaceID string) ([]watch.SetMembers, error) {
 	var rows []struct {
 		ID           string `db:"id"`
 		RepositoryID string `db:"repository_id"`
 	}
-	err := r.db.SelectContext(ctx, &rows, r.db.Rebind(`SELECT rs.id, COALESCE(repo.id, '') AS repository_id
+	err := exec.SelectContext(ctx, &rows, rebind(`SELECT rs.id, COALESCE(repo.id, '') AS repository_id
 		FROM repository_sets rs LEFT JOIN repository_set_items ri ON ri.repository_set_id = rs.id
 		LEFT JOIN repositories repo ON repo.id = ri.repository_id AND repo.workspace_id = rs.workspace_id AND repo.deleted_at IS NULL
 		WHERE rs.workspace_id = ? ORDER BY rs.id, repo.id`), workspaceID)
@@ -41,7 +62,11 @@ func (r watchSQLReader) Sets(ctx context.Context, workspaceID string) ([]watch.S
 }
 
 func (r watchSQLReader) RepositoryIDs(ctx context.Context, workspaceID string) ([]string, error) {
+	return queryWatchRepositoryIDs(ctx, r.db, r.db.Rebind, workspaceID)
+}
+
+func queryWatchRepositoryIDs(ctx context.Context, exec watchSQLSelect, rebind func(string) string, workspaceID string) ([]string, error) {
 	var ids []string
-	err := r.db.SelectContext(ctx, &ids, r.db.Rebind(`SELECT id FROM repositories WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY id`), workspaceID)
+	err := exec.SelectContext(ctx, &ids, rebind(`SELECT id FROM repositories WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY id`), workspaceID)
 	return ids, err
 }

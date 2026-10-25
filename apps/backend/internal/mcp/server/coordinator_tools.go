@@ -85,6 +85,8 @@ func (s *Server) coordinatorToolCatalog() map[string]func() {
 		"get_coordinator_item_kandev":      s.registerGetCoordinatorItemTool,
 		"list_coordinator_activity_kandev": s.registerListCoordinatorActivityTool,
 		"list_coordinator_turns_kandev":    s.registerListCoordinatorTurnsTool,
+		"add_task_dependency_kandev":       s.registerAddTaskDependencyTool,
+		"remove_task_dependency_kandev":    s.registerRemoveTaskDependencyTool,
 	}
 }
 

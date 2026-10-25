@@ -75,7 +75,7 @@ func (s *Server) dispatchDependencyMutation(
 	// the same rule add_branch_to_task_kandev applies. The predecessor
 	// (depends_on_task_id) is necessarily another task and stays free; the
 	// backend authorizes both ends against the session's identity.
-	if s.taskID != "" && taskID != s.taskID {
+	if s.taskID != "" && taskID != s.taskID && s.mode != ModeCoordinator {
 		return mcp.NewToolResultError(
 			"task_id must be your current task; use depends_on_task_id to name the other task",
 		), nil

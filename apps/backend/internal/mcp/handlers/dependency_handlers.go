@@ -5,8 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/jmoiron/sqlx"
+
+	"github.com/kandev/kandev/internal/agentctl/types/streams"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
+
 	ws "github.com/kandev/kandev/pkg/websocket"
 
+	"github.com/kandev/kandev/internal/coordinator"
+	mcpscope "github.com/kandev/kandev/internal/mcp/scope"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/service"
 )
@@ -23,12 +30,28 @@ func (h *Handlers) handleAddTaskDependency(ctx context.Context, msg *ws.Message)
 	if errMsg != nil {
 		return errMsg, nil
 	}
+	if denied := h.authorizeDependencyCaller(ctx, msg, req); denied != nil {
+		return denied, nil
+	}
+	if principal, ok := mcpscope.PrincipalFromContext(ctx); ok && principal.IsCoordinator() {
+		return h.mutateCoordinatorDependency(ctx, msg, req, "add", principal)
+	}
 	err := h.taskSvc.AddDependency(ctx, req.TaskID, req.DependsOnTaskID)
 	if err != nil {
 		var cycle *service.CycleError
 		if errors.As(err, &cycle) {
+			if principal, ok := mcpscope.PrincipalFromContext(ctx); ok && principal.IsCoordinator() {
+				if !h.coordinatorDependencyPathAllowed(ctx, principal, cycle.Path) {
+					return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target not found", nil)
+				}
+				return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation,
+					"would create a dependency cycle", nil)
+			}
 			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, cycle.Error(),
 				map[string]interface{}{"cycle": cycle.Path})
+		}
+		if principal, ok := mcpscope.PrincipalFromContext(ctx); ok && principal.IsCoordinator() {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "dependency mutation failed", nil)
 		}
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, err.Error(), nil)
 	}
@@ -42,10 +65,63 @@ func (h *Handlers) handleRemoveTaskDependency(ctx context.Context, msg *ws.Messa
 	if errMsg != nil {
 		return errMsg, nil
 	}
+	if denied := h.authorizeDependencyCaller(ctx, msg, req); denied != nil {
+		return denied, nil
+	}
+	if principal, ok := mcpscope.PrincipalFromContext(ctx); ok && principal.IsCoordinator() {
+		return h.mutateCoordinatorDependency(ctx, msg, req, "remove", principal)
+	}
 	if err := h.taskSvc.RemoveDependency(ctx, req.TaskID, req.DependsOnTaskID); err != nil {
+		if principal, ok := mcpscope.PrincipalFromContext(ctx); ok && principal.IsCoordinator() {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "dependency mutation failed", nil)
+		}
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, err.Error(), nil)
 	}
 	return h.dependencyResult(ctx, msg, req.TaskID)
+}
+
+func (h *Handlers) mutateCoordinatorDependency(ctx context.Context, msg *ws.Message,
+	req *dependencyMutationPayload, operation string, principal mcpscope.Principal) (*ws.Message, error) {
+	execution, ok := streams.MCPExecutionContextFromContext(ctx)
+	if !ok || execution.TaskID != principal.CallerTaskID || execution.SessionID != principal.CallerSessionID ||
+		execution.ExecutionID == "" || h.coordinatorSvc == nil || req.TaskID == req.DependsOnTaskID {
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target not found", nil)
+	}
+	result, err := h.taskSvc.MutateCoordinatorDependency(ctx, dependencywrite.DependencyMutationRequest{
+		Operation: operation, WorkspaceID: principal.WorkspaceID,
+		DependentTaskID: req.TaskID, PredecessorTaskID: req.DependsOnTaskID,
+		CallerTaskID: principal.CallerTaskID, CallerSessionID: principal.CallerSessionID,
+		CallerExecutionID: execution.ExecutionID, OriginClass: "coordinator", CorrelationID: msg.ID,
+	}, func(ctx context.Context, tx *sqlx.Tx) error {
+		return h.coordinatorSvc.DependencyMutationAllowedTx(ctx, tx, principal.CoordinatorID,
+			principal.WorkspaceID, principal.CallerTaskID, principal.CallerSessionID, execution.ExecutionID,
+			req.TaskID, req.DependsOnTaskID)
+	})
+	if err != nil {
+		if coordinator.DependencyScopeDenied(err) || errors.Is(err, dependencywrite.ErrCycle) {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target not found", nil)
+		}
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "dependency mutation failed", nil)
+	}
+	return ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
+		keyTaskID: req.TaskID, "depends_on_task_id": req.DependsOnTaskID,
+		"changed": result.Changed, "dependent_revision": result.DependentRevision,
+		"predecessor_revision": result.PredecessorRevision,
+	})
+}
+
+func (h *Handlers) authorizeDependencyCaller(ctx context.Context, msg *ws.Message, req *dependencyMutationPayload) *ws.Message {
+	principal, ok := mcpscope.PrincipalFromContext(ctx)
+	if !ok || principal.IsAutomation() {
+		return nil
+	}
+	if principal.IsCoordinator() {
+		return nil // The transactional writer rechecks the current effective scope.
+	} else if req.TaskID == principal.CallerTaskID {
+		return nil
+	}
+	response, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target not found", nil)
+	return response
 }
 
 func decodeDependencyMutation(msg *ws.Message) (*dependencyMutationPayload, *ws.Message) {
@@ -71,8 +147,34 @@ func (h *Handlers) dependencyResult(ctx context.Context, msg *ws.Message, taskID
 	}
 	views := h.taskSvc.BuildDependencyViews(ctx, []*models.Task{task})
 	view := views[taskID]
+	var watched map[string]bool
+	principal, hasPrincipal := mcpscope.PrincipalFromContext(ctx)
+	coordinatorReadback := hasPrincipal && principal.IsCoordinator()
+	if coordinatorReadback {
+		if task.WorkspaceID != principal.WorkspaceID {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target not found", nil)
+		}
+		refs := make([]coordinator.TaskRef, 0, len(view.DependsOn)+1)
+		refs = append(refs, coordinator.TaskRef{ID: task.ID, WorkflowID: task.WorkflowID})
+		for _, ref := range view.DependsOn {
+			if ref.WorkspaceID == principal.WorkspaceID {
+				refs = append(refs, coordinator.TaskRef{ID: ref.ID, WorkflowID: ref.WorkflowID})
+			}
+		}
+		watched, err = h.coordinatorSvc.WatchedTaskIDs(ctx, principal.CoordinatorID, refs)
+		if err != nil {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError,
+				"dependency readback could not be authorized", nil)
+		}
+		if !watched[task.ID] {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target not found", nil)
+		}
+	}
 	dependsOn := make([]string, 0, len(view.DependsOn))
 	for _, ref := range view.DependsOn {
+		if coordinatorReadback && !watched[ref.ID] {
+			continue
+		}
 		dependsOn = append(dependsOn, ref.ID)
 	}
 	return ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{

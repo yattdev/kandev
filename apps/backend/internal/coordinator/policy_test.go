@@ -179,7 +179,8 @@ func TestToolNames(t *testing.T) {
 	p[ActionCreateTask] = SettingRequiresApproval
 	p[ActionStartAgent] = SettingRequiresApproval
 	got := ToolNames(Policy{Version: 1, Actions: p}, true, false)
-	want := append(append([]string{}, readTools...), "list_coordinator_activity_kandev", "propose_task_kandev", "propose_move_kandev")
+	want := append(append([]string{}, readTools...), "list_coordinator_activity_kandev",
+		"add_task_dependency_kandev", "remove_task_dependency_kandev", "propose_task_kandev", "propose_move_kandev")
 	if len(got) != len(want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -190,7 +191,7 @@ func TestToolNames(t *testing.T) {
 	}
 	// start_agent and stop map to no tool.
 	none := ToolNames(Policy{Version: 1, Actions: allDenied()}, true, false)
-	if len(none) != len(readTools)+1 {
+	if len(none) != len(readTools)+3 {
 		t.Fatalf("all denied tools = %v", none)
 	}
 }
