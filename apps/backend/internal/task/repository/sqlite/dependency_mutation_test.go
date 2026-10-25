@@ -98,6 +98,55 @@ func TestDependencyMutationCommitsEdgeRevisionsAndAudit(t *testing.T) {
 	}
 }
 
+func TestDependencyReplacementRollsBackWholeSetOnCycle(t *testing.T) {
+	repo, _, database := newManagedDeletionSQLitePair(t)
+	ctx := t.Context()
+	if err := repo.CreateWorkspace(ctx, &models.Workspace{ID: "replace-ws", Name: "Replace"}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	for _, id := range []string{"dependent", "first", "second"} {
+		if err := repo.CreateTask(ctx, &models.Task{ID: id, WorkspaceID: "replace-ws", Title: id}); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	authorize := func(context.Context, *sqlx.Tx) error { return nil }
+	base := dependencywrite.DependencyMutationRequest{
+		WorkspaceID: "replace-ws", DependentTaskID: "dependent",
+		OriginClass: "task_service", CorrelationID: "replace-base",
+	}
+	if _, err := repo.ReplaceDependencySet(ctx, base, []string{"first"}, authorize); err != nil {
+		t.Fatalf("seed replacement: %v", err)
+	}
+	reverse := dependencywrite.DependencyMutationRequest{
+		Operation: "add", WorkspaceID: "replace-ws", DependentTaskID: "second",
+		PredecessorTaskID: "dependent", OriginClass: "task_service", CorrelationID: "reverse",
+	}
+	if _, err := repo.MutateDependency(ctx, reverse, authorize); err != nil {
+		t.Fatalf("seed reverse edge: %v", err)
+	}
+	base.CorrelationID = "replace-cycle"
+	if _, err := repo.ReplaceDependencySet(ctx, base, []string{"second"}, authorize); !errors.Is(err, dependencywrite.ErrCycle) {
+		t.Fatalf("cyclic replacement = %v, want cycle", err)
+	}
+	var oldEdge, newEdge, cycleAudit int
+	for _, check := range []struct {
+		dest  *int
+		query string
+		args  []any
+	}{
+		{&oldEdge, `SELECT COUNT(*) FROM task_blockers WHERE task_id = ? AND blocker_task_id = ?`, []any{"dependent", "first"}},
+		{&newEdge, `SELECT COUNT(*) FROM task_blockers WHERE task_id = ? AND blocker_task_id = ?`, []any{"dependent", "second"}},
+		{&cycleAudit, `SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE correlation_id = ?`, []any{"replace-cycle"}},
+	} {
+		if err := database.GetContext(ctx, check.dest, check.query, check.args...); err != nil {
+			t.Fatalf("read replacement state: %v", err)
+		}
+	}
+	if oldEdge != 1 || newEdge != 0 || cycleAudit != 0 {
+		t.Fatalf("after cycle: old edge %d, new edge %d, audit %d; want 1, 0, 0", oldEdge, newEdge, cycleAudit)
+	}
+}
+
 // @covers AC-COORDINATOR-DEPENDENCY-002.1
 func TestDependencyMutationAuditFailureRollsBackEdge(t *testing.T) {
 	repo, _, database := newManagedDeletionSQLitePair(t)

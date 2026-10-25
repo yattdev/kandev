@@ -33,6 +33,12 @@ type DependencyMutationResult struct {
 	Predecessor         DependencySnapshot
 }
 
+// DependencyBatchResult contains final, transaction-captured projections for
+// every endpoint whose dependency revision changed in a set replacement.
+type DependencyBatchResult struct {
+	Changed []DependencySnapshot
+}
+
 // DependencySnapshot is the edge projection captured with its revision before
 // the mutation transaction commits.
 type DependencySnapshot struct {

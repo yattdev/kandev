@@ -57,6 +57,86 @@ func TestOrdinaryDependencyMutationRevisesAndAuditsBothEndpoints(t *testing.T) {
 	}
 }
 
+func TestDependencyReplacementCommitsSetAndEndpointRevisions(t *testing.T) {
+	svc, repo := setupOfficeTest(t)
+	database := sqlx.NewDb(repo.DB(), "sqlite3")
+	office, err := officesqlite.NewWithDB(database, database, nil)
+	if err != nil {
+		t.Fatalf("office repository: %v", err)
+	}
+	svc.SetBlockerRepository(office)
+	ctx := context.Background()
+	dependent := mustSeedTask(t, svc, "Dependent").ID
+	first := mustSeedTask(t, svc, "First").ID
+	second := mustSeedTask(t, svc, "Second").ID
+	if err := svc.ReplaceDependencies(ctx, dependent, []string{first, second}); err != nil {
+		t.Fatalf("replace with two edges: %v", err)
+	}
+	if err := svc.ReplaceDependencies(ctx, dependent, []string{second}); err != nil {
+		t.Fatalf("remove first edge: %v", err)
+	}
+	if err := svc.ReplaceDependencies(ctx, dependent, []string{second}); err != nil {
+		t.Fatalf("replay replacement: %v", err)
+	}
+	for id, want := range map[string]int64{dependent: 3, first: 2, second: 1} {
+		var got int64
+		if err := database.GetContext(ctx, &got, `SELECT dependency_revision FROM tasks WHERE id = ?`, id); err != nil {
+			t.Fatalf("revision for %s: %v", id, err)
+		}
+		if got != want {
+			t.Fatalf("revision for %s = %d, want %d", id, got, want)
+		}
+	}
+	var edges, audits int
+	if err := database.GetContext(ctx, &edges, `SELECT COUNT(*) FROM task_blockers WHERE task_id = ? AND blocker_task_id = ?`, dependent, second); err != nil {
+		t.Fatalf("read final edge: %v", err)
+	}
+	if err := database.GetContext(ctx, &audits,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE dependent_task_id = ? AND origin_class = 'task_service'`, dependent); err != nil {
+		t.Fatalf("read replacement audit: %v", err)
+	}
+	if edges != 1 || audits != 3 {
+		t.Fatalf("final edges = %d, audit rows = %d; want 1 and 3", edges, audits)
+	}
+}
+
+func TestExactTaskRelationUsesAuditedWriter(t *testing.T) {
+	svc, repo := setupOfficeTest(t)
+	database := sqlx.NewDb(repo.DB(), "sqlite3")
+	office, err := officesqlite.NewWithDB(database, database, nil)
+	if err != nil {
+		t.Fatalf("office repository: %v", err)
+	}
+	svc.SetBlockerRepository(office)
+	ctx := context.Background()
+	dependent := mustSeedTask(t, svc, "Dependent")
+	predecessor := mustSeedTask(t, svc, "Predecessor")
+	request := ExactTaskRelationRequest{
+		WorkspaceID: dependent.WorkspaceID, TaskID: dependent.ID, RelatedTaskID: predecessor.ID,
+		ExpectedTaskResourceVersion:    dependent.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ExpectedRelatedResourceVersion: predecessor.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if already, err := svc.AddTaskRelationExact(ctx, request); err != nil || already {
+		t.Fatalf("exact add: already %t, error %v", already, err)
+	}
+	if already, err := svc.RemoveTaskRelationExact(ctx, request); err != nil || already {
+		t.Fatalf("exact remove: already %t, error %v", already, err)
+	}
+	var revised, audited int
+	if err := database.GetContext(ctx, &revised,
+		`SELECT COUNT(*) FROM tasks WHERE id IN (?, ?) AND dependency_revision = 2`, dependent.ID, predecessor.ID); err != nil {
+		t.Fatalf("read revisions: %v", err)
+	}
+	if err := database.GetContext(ctx, &audited,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE dependent_task_id = ? AND predecessor_task_id = ? AND origin_class = 'plugin_relation'`,
+		dependent.ID, predecessor.ID); err != nil {
+		t.Fatalf("read audit: %v", err)
+	}
+	if revised != 2 || audited != 2 {
+		t.Fatalf("revised endpoints = %d, audit rows = %d; want 2 each", revised, audited)
+	}
+}
+
 func TestExactTaskRelationCommandsAreIdempotentAndPreserveCycleRules(t *testing.T) {
 	ctx := context.Background()
 	svc, _, repo := createTestService(t)

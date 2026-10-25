@@ -8,9 +8,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kandev/kandev/internal/db/dialect"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
+	tasksqlite "github.com/kandev/kandev/internal/task/repository/sqlite"
 )
 
 func (r *Repository) AddTaskBlockerExact(
@@ -54,6 +57,10 @@ func (r *Repository) changeTaskBlockerExact(
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	writer := tasksqlite.NewWithInitializedDB(r.db, r.ro, r.log)
+	if err := writer.LockDependencyWorkspaceWithinTx(ctx, tx, workspaceID); err != nil {
+		return false, err
+	}
 
 	for _, id := range ids {
 		query := `SELECT workspace_id, updated_at FROM tasks WHERE id = ?`
@@ -105,27 +112,20 @@ func (r *Repository) changeTaskBlockerExact(
 		return false, repoerrors.ErrTaskManagementClaimConflict
 	}
 
-	var result sql.Result
+	operation := "remove"
 	if add {
-		result, err = tx.ExecContext(ctx, tx.Rebind(`
-			INSERT INTO task_blockers (task_id, blocker_task_id, created_at)
-			VALUES (?, ?, ?)
-			ON CONFLICT(task_id, blocker_task_id) DO NOTHING
-		`), taskID, blockerTaskID, time.Now().UTC())
-	} else {
-		result, err = tx.ExecContext(ctx, tx.Rebind(`
-			DELETE FROM task_blockers WHERE task_id = ? AND blocker_task_id = ?
-		`), taskID, blockerTaskID)
+		operation = "add"
 	}
-	if err != nil {
-		return false, err
-	}
-	affected, err := result.RowsAffected()
+	mutation, err := writer.MutateDependencyWithinTx(ctx, tx, dependencywrite.DependencyMutationRequest{
+		Operation: operation, WorkspaceID: workspaceID,
+		DependentTaskID: taskID, PredecessorTaskID: blockerTaskID,
+		OriginClass: "plugin_relation", CorrelationID: uuid.NewString(), CallerTaskID: taskID,
+	})
 	if err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	return affected == 0, nil
+	return !mutation.Changed, nil
 }

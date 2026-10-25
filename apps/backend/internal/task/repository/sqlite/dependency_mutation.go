@@ -57,6 +57,120 @@ func (r *Repository) MutateDependency(
 	return result, nil
 }
 
+// ReplaceDependencySet applies the full predecessor set in one graph and audit
+// transaction. Removing obsolete edges first avoids transient false cycles.
+func (r *Repository) ReplaceDependencySet(ctx context.Context,
+	request dependencywrite.DependencyMutationRequest, desired []string,
+	authorize dependencywrite.DependencyMutationAuthorizer) (dependencywrite.DependencyBatchResult, error) {
+	if request.WorkspaceID == "" || request.DependentTaskID == "" || request.CorrelationID == "" ||
+		request.OriginClass == "" || authorize == nil {
+		return dependencywrite.DependencyBatchResult{}, errors.New("invalid dependency replacement")
+	}
+	unlock := taskdependencies.AcquireMutationLock()
+	defer unlock()
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return dependencywrite.DependencyBatchResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockDependencyWorkspace(ctx, tx, request.WorkspaceID); err != nil {
+		return dependencywrite.DependencyBatchResult{}, err
+	}
+	if err := authorize(ctx, tx); err != nil {
+		return dependencywrite.DependencyBatchResult{}, err
+	}
+	result, err := r.replaceDependencySetInTx(ctx, tx, request, desired)
+	if err != nil {
+		return dependencywrite.DependencyBatchResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return dependencywrite.DependencyBatchResult{}, err
+	}
+	return result, nil
+}
+
+func (r *Repository) replaceDependencySetInTx(ctx context.Context, tx *sqlx.Tx,
+	request dependencywrite.DependencyMutationRequest, desired []string) (dependencywrite.DependencyBatchResult, error) {
+	ids := append([]string{request.DependentTaskID}, desired...)
+	sort.Strings(ids)
+	for i, id := range ids {
+		if id == "" || (i > 0 && id == ids[i-1]) {
+			return dependencywrite.DependencyBatchResult{}, errors.New("invalid dependency replacement set")
+		}
+	}
+	if _, err := r.dependencyRevisionsInTx(ctx, tx, request.WorkspaceID, ids); err != nil {
+		return dependencywrite.DependencyBatchResult{}, err
+	}
+	var existing []string
+	if err := tx.SelectContext(ctx, &existing, r.db.Rebind(
+		`SELECT blocker_task_id FROM task_blockers WHERE task_id = ? ORDER BY blocker_task_id`),
+		request.DependentTaskID); err != nil {
+		return dependencywrite.DependencyBatchResult{}, err
+	}
+	changed, err := r.applyDependencySetDiffInTx(ctx, tx, request, existing, desired)
+	if err != nil {
+		return dependencywrite.DependencyBatchResult{}, err
+	}
+	return r.dependencyBatchSnapshotsInTx(ctx, tx, request.DependentTaskID, changed)
+}
+
+func (r *Repository) applyDependencySetDiffInTx(ctx context.Context, tx *sqlx.Tx,
+	request dependencywrite.DependencyMutationRequest, existing, desired []string) (map[string]bool, error) {
+	desiredSet := make(map[string]bool, len(desired))
+	for _, id := range desired {
+		desiredSet[id] = true
+	}
+	existingSet := make(map[string]bool, len(existing))
+	changed := map[string]bool{}
+	for _, id := range existing {
+		existingSet[id] = true
+		if !desiredSet[id] {
+			request.Operation, request.PredecessorTaskID = dependencyRemove, id
+			if _, err := r.mutateDependencyInTx(ctx, tx, request); err != nil {
+				return nil, err
+			}
+			changed[id] = true
+		}
+	}
+	for _, id := range desired {
+		if existingSet[id] {
+			continue
+		}
+		request.Operation, request.PredecessorTaskID = dependencyAdd, id
+		if _, err := r.mutateDependencyInTx(ctx, tx, request); err != nil {
+			return nil, err
+		}
+		changed[id] = true
+	}
+	return changed, nil
+}
+
+func (r *Repository) dependencyBatchSnapshotsInTx(ctx context.Context, tx *sqlx.Tx,
+	dependentID string, changed map[string]bool) (dependencywrite.DependencyBatchResult, error) {
+	result := dependencywrite.DependencyBatchResult{Changed: []dependencywrite.DependencySnapshot{}}
+	if len(changed) > 0 {
+		changed[dependentID] = true
+		changedIDs := make([]string, 0, len(changed))
+		for id := range changed {
+			changedIDs = append(changedIDs, id)
+		}
+		sort.Strings(changedIDs)
+		for _, id := range changedIDs {
+			var revision int64
+			if err := tx.QueryRowContext(ctx, r.db.Rebind(
+				`SELECT dependency_revision FROM tasks WHERE id = ?`), id).Scan(&revision); err != nil {
+				return dependencywrite.DependencyBatchResult{}, err
+			}
+			snapshot, err := r.dependencySnapshotInTx(ctx, tx, id, revision)
+			if err != nil {
+				return dependencywrite.DependencyBatchResult{}, err
+			}
+			result.Changed = append(result.Changed, snapshot)
+		}
+	}
+	return result, nil
+}
+
 // RecordDependencyDenial stores a rejected request without exposing its target
 // identifiers. It is used when a guard rejects before graph authorization.
 func (r *Repository) RecordDependencyDenial(ctx context.Context,
@@ -134,6 +248,22 @@ func (r *Repository) lockDependencyWorkspace(ctx context.Context, tx *sqlx.Tx, w
 		return err
 	}
 	return nil
+}
+
+// LockDependencyWorkspaceWithinTx lets a caller with additional compare-and-
+// swap checks enter the same workspace-first graph serialization order.
+func (r *Repository) LockDependencyWorkspaceWithinTx(ctx context.Context, tx *sqlx.Tx, workspaceID string) error {
+	return r.lockDependencyWorkspace(ctx, tx, workspaceID)
+}
+
+// MutateDependencyWithinTx joins an already-locked caller transaction while
+// retaining the shared edge, revision, snapshot, and audit write semantics.
+func (r *Repository) MutateDependencyWithinTx(ctx context.Context, tx *sqlx.Tx,
+	request dependencywrite.DependencyMutationRequest) (dependencywrite.DependencyMutationResult, error) {
+	if !validDependencyMutationRequest(request, func(context.Context, *sqlx.Tx) error { return nil }) {
+		return dependencywrite.DependencyMutationResult{}, errors.New("invalid dependency mutation")
+	}
+	return r.mutateDependencyInTx(ctx, tx, request)
 }
 
 func (r *Repository) mutateDependencyInTx(

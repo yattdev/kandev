@@ -35,6 +35,11 @@ type transactionalDependencyStore interface {
 		dependencywrite.DependencyMutationAuthorizer) (dependencywrite.DependencyMutationResult, error)
 }
 
+type auditedDependencyReplacer interface {
+	ReplaceTaskBlockersAudited(context.Context, dependencywrite.DependencyMutationRequest, []string,
+		dependencywrite.DependencyMutationAuthorizer) (dependencywrite.DependencyBatchResult, error)
+}
+
 func (s *Service) canUseTransactionalDependencyWriter() bool {
 	_, ok := s.blockers.(transactionalDependencyStore)
 	return ok
@@ -404,6 +409,9 @@ func (s *Service) ReplaceDependencies(ctx context.Context, taskID string, depend
 			return err
 		}
 	}
+	if writer, ok := s.blockers.(auditedDependencyReplacer); ok {
+		return s.replaceAuditedDependencySet(ctx, writer, taskID, dependsOnTaskIDs)
+	}
 	replacer, ok := s.blockers.(taskDependencyReplacer)
 	if !ok {
 		return ErrDependencyRepositoryUnavailable
@@ -416,6 +424,36 @@ func (s *Service) ReplaceDependencies(ctx context.Context, taskID string, depend
 		return nil
 	}
 	s.publishDependencyChange(ctx, append([]string{taskID}, changed...)...)
+	return nil
+}
+
+func (s *Service) replaceAuditedDependencySet(ctx context.Context, writer auditedDependencyReplacer,
+	taskID string, dependsOnTaskIDs []string) error {
+	task, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return taskrepo.ErrTaskNotFound
+	}
+	request := dependencywrite.DependencyMutationRequest{
+		WorkspaceID: task.WorkspaceID, DependentTaskID: taskID,
+		OriginClass: "task_service", CorrelationID: uuid.NewString(),
+	}
+	if identity, ok := authn.IdentityFromContext(ctx); ok {
+		request.CallerUserID = identity.UserID
+	}
+	result, err := writer.ReplaceTaskBlockersAudited(ctx, request, dependsOnTaskIDs,
+		func(context.Context, *sqlx.Tx) error { return nil })
+	if errors.Is(err, dependencywrite.ErrCycle) {
+		return &CycleError{}
+	}
+	if err != nil {
+		return err
+	}
+	for _, snapshot := range result.Changed {
+		s.publishCommittedDependencySnapshot(ctx, snapshot)
+	}
 	return nil
 }
 

@@ -16,6 +16,12 @@ func (r *Repository) MutateTaskBlocker(ctx context.Context, request dependencywr
 	return tasksqlite.NewWithInitializedDB(r.db, r.ro, r.log).MutateDependency(ctx, request, authorize)
 }
 
+func (r *Repository) ReplaceTaskBlockersAudited(ctx context.Context,
+	request dependencywrite.DependencyMutationRequest, desired []string,
+	authorize dependencywrite.DependencyMutationAuthorizer) (dependencywrite.DependencyBatchResult, error) {
+	return tasksqlite.NewWithInitializedDB(r.db, r.ro, r.log).ReplaceDependencySet(ctx, request, desired, authorize)
+}
+
 // CreateTaskBlocker creates a blocker relationship between two tasks.
 func (r *Repository) CreateTaskBlocker(ctx context.Context, blocker *models.TaskBlocker) error {
 	blocker.CreatedAt = time.Now().UTC()
