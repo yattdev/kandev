@@ -166,24 +166,32 @@ func (h *Handlers) mutateCoordinatorDependency(ctx context.Context, msg *ws.Mess
 
 func (h *Handlers) coordinatorDependencySnapshots(ctx context.Context, principal mcpscope.Principal,
 	result dependencywrite.DependencyMutationResult) (map[string]interface{}, map[string]interface{}, error) {
-	refs := []coordinator.TaskRef{{ID: result.Dependent.TaskID}, {ID: result.Predecessor.TaskID}}
-	seen := map[string]bool{}
+	ids := []string{result.Dependent.TaskID, result.Predecessor.TaskID}
+	seen := map[string]bool{result.Dependent.TaskID: true, result.Predecessor.TaskID: true}
 	for _, snapshot := range []dependencywrite.DependencySnapshot{result.Dependent, result.Predecessor} {
 		for _, group := range [][]dependencywrite.DependencyRef{snapshot.DependsOn, snapshot.Blocks} {
 			for _, ref := range group {
-				if ref.WorkspaceID == principal.WorkspaceID && !seen[ref.ID] {
-					refs = append(refs, coordinator.TaskRef{ID: ref.ID, WorkflowID: ref.WorkflowID})
+				if !seen[ref.ID] {
+					ids = append(ids, ref.ID)
 					seen[ref.ID] = true
 				}
 			}
 		}
 	}
-	for i := range refs[:2] {
-		task, err := h.taskSvc.GetTask(ctx, refs[i].ID)
-		if err != nil || task == nil || task.WorkspaceID != principal.WorkspaceID {
-			return nil, nil, coordinator.ErrNotFound
+	tasks, err := h.taskSvc.GetTasksByIDs(ctx, ids)
+	if err != nil {
+		return nil, nil, coordinator.ErrNotFound
+	}
+	refs := make([]coordinator.TaskRef, 0, len(tasks))
+	current := make(map[string]bool, len(tasks))
+	for _, task := range tasks {
+		if task.WorkspaceID == principal.WorkspaceID {
+			refs = append(refs, coordinator.TaskRef{ID: task.ID, WorkflowID: task.WorkflowID})
+			current[task.ID] = true
 		}
-		refs[i].WorkflowID = task.WorkflowID
+	}
+	if !current[result.Dependent.TaskID] || !current[result.Predecessor.TaskID] {
+		return nil, nil, coordinator.ErrNotFound
 	}
 	allowed, err := h.coordinatorSvc.WatchedTaskIDs(ctx, principal.CoordinatorID, refs)
 	if err != nil || !allowed[result.Dependent.TaskID] || !allowed[result.Predecessor.TaskID] {

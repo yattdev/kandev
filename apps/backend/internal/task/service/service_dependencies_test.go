@@ -120,8 +120,14 @@ func TestExactTaskRelationUsesAuditedWriter(t *testing.T) {
 	if already, err := svc.AddTaskRelationExact(ctx, request); err != nil || already {
 		t.Fatalf("exact add: already %t, error %v", already, err)
 	}
+	if already, err := svc.AddTaskRelationExact(ctx, request); err != nil || !already {
+		t.Fatalf("exact add replay: already %t, error %v", already, err)
+	}
 	if already, err := svc.RemoveTaskRelationExact(ctx, request); err != nil || already {
 		t.Fatalf("exact remove: already %t, error %v", already, err)
+	}
+	if already, err := svc.RemoveTaskRelationExact(ctx, request); err != nil || !already {
+		t.Fatalf("exact remove replay: already %t, error %v", already, err)
 	}
 	var revised, audited int
 	if err := database.GetContext(ctx, &revised,
@@ -133,8 +139,8 @@ func TestExactTaskRelationUsesAuditedWriter(t *testing.T) {
 		dependent.ID, predecessor.ID); err != nil {
 		t.Fatalf("read audit: %v", err)
 	}
-	if revised != 2 || audited != 2 {
-		t.Fatalf("revised endpoints = %d, audit rows = %d; want 2 each", revised, audited)
+	if revised != 2 || audited != 4 {
+		t.Fatalf("revised endpoints = %d, audit rows = %d; want 2 revisions and 4 audits", revised, audited)
 	}
 }
 

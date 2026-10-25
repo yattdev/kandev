@@ -17,10 +17,56 @@ import (
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/mcp/scope"
 	officesqlite "github.com/kandev/kandev/internal/office/repository/sqlite"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	taskmodels "github.com/kandev/kandev/internal/task/models"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	ws "github.com/kandev/kandev/pkg/websocket"
 )
+
+func TestCoordinatorDependencyReadbackRechecksEndpointWorkflowAfterMove(t *testing.T) {
+	f := newSharedDependencyFixture(t)
+	ctx := f.ctxFor(f.binding("add_task_dependency_kandev"), true)
+	result, err := f.repo.MutateDependency(ctx, dependencywrite.DependencyMutationRequest{
+		Operation: "add", WorkspaceID: f.c.WorkspaceID,
+		DependentTaskID: "dependent", PredecessorTaskID: "predecessor",
+		OriginClass: "task_service", CorrelationID: "readback-race",
+	}, func(context.Context, *sqlx.Tx) error { return nil })
+	require.NoError(t, err)
+	_, err = f.rawDB.ExecContext(ctx, `UPDATE tasks SET workflow_id = 'wf-b' WHERE id = 'predecessor'`)
+	require.NoError(t, err)
+	principal, ok := scope.PrincipalFromContext(ctx)
+	require.True(t, ok)
+	_, _, err = f.h.coordinatorDependencySnapshots(ctx, principal, result)
+	require.ErrorIs(t, err, coordinator.ErrNotFound)
+}
+
+func TestCoordinatorDependencyReadbackFiltersMovedRelation(t *testing.T) {
+	f := newSharedDependencyFixture(t)
+	ctx := f.ctxFor(f.binding("add_task_dependency_kandev"), true)
+	now := time.Now().UTC()
+	require.NoError(t, f.repo.CreateTask(ctx, &taskmodels.Task{
+		ID: "related", WorkspaceID: f.c.WorkspaceID, WorkflowID: "wf-a",
+		Title: "related", State: v1.TaskStateInProgress, CreatedAt: now, UpdatedAt: now,
+	}))
+	_, err := f.rawDB.ExecContext(ctx, `INSERT INTO task_blockers(task_id, blocker_task_id, created_at)
+		VALUES('dependent', 'related', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+	result, err := f.repo.MutateDependency(ctx, dependencywrite.DependencyMutationRequest{
+		Operation: "add", WorkspaceID: f.c.WorkspaceID,
+		DependentTaskID: "dependent", PredecessorTaskID: "predecessor",
+		OriginClass: "task_service", CorrelationID: "relation-readback-race",
+	}, func(context.Context, *sqlx.Tx) error { return nil })
+	require.NoError(t, err)
+	_, err = f.rawDB.ExecContext(ctx, `UPDATE tasks SET workflow_id = 'wf-b' WHERE id = 'related'`)
+	require.NoError(t, err)
+	principal, ok := scope.PrincipalFromContext(ctx)
+	require.True(t, ok)
+	dependent, _, err := f.h.coordinatorDependencySnapshots(ctx, principal, result)
+	require.NoError(t, err)
+	encoded, err := json.Marshal(dependent)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "related")
+}
 
 func newSharedDependencyFixture(t *testing.T) *guardFixture {
 	t.Helper()

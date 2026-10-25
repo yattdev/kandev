@@ -370,23 +370,31 @@ func (s *Service) AddTaskRelationExact(ctx context.Context, request ExactTaskRel
 		unlock()
 		return false, err
 	}
+	_, audited := s.blockers.(exactTaskBlockerRepository)
+	already := false
 	for _, edge := range existing {
 		if edge != nil && edge.BlockerTaskID == request.RelatedTaskID {
-			unlock()
-			return true, nil
+			already = true
+			break
 		}
 	}
-	cycle, err := s.checkDependencyCycle(ctx, request.TaskID, request.RelatedTaskID)
-	if err != nil {
+	if already && !audited {
 		unlock()
-		return false, err
+		return true, nil
 	}
-	if cycle != nil {
-		unlock()
-		return false, cycle
+	if !already {
+		cycle, err := s.checkDependencyCycle(ctx, request.TaskID, request.RelatedTaskID)
+		if err != nil {
+			unlock()
+			return false, err
+		}
+		if cycle != nil {
+			unlock()
+			return false, cycle
+		}
 	}
 	if exactRepository, ok := s.blockers.(exactTaskBlockerRepository); ok {
-		_, err = exactRepository.AddTaskBlockerExact(
+		already, err = exactRepository.AddTaskBlockerExact(
 			ctx, request.TaskID, request.RelatedTaskID, request.WorkspaceID,
 			request.ExpectedTaskResourceVersion, request.ExpectedRelatedResourceVersion, request.ClaimFence,
 		)
@@ -397,8 +405,10 @@ func (s *Service) AddTaskRelationExact(ctx context.Context, request ExactTaskRel
 	if err != nil {
 		return false, err
 	}
-	s.publishDependencyChange(ctx, request.TaskID, request.RelatedTaskID)
-	return false, nil
+	if !already {
+		s.publishDependencyChange(ctx, request.TaskID, request.RelatedTaskID)
+	}
+	return already, nil
 }
 
 // ReplaceDependencies replaces every direct predecessor of taskID in one
@@ -637,12 +647,13 @@ func (s *Service) RemoveTaskRelationExact(ctx context.Context, request ExactTask
 			break
 		}
 	}
-	if !found {
+	if _, audited := s.blockers.(exactTaskBlockerRepository); !found && !audited {
 		unlock()
 		return true, nil
 	}
+	already := !found
 	if exactRepository, ok := s.blockers.(exactTaskBlockerRepository); ok {
-		_, err = exactRepository.RemoveTaskBlockerExact(
+		already, err = exactRepository.RemoveTaskBlockerExact(
 			ctx, request.TaskID, request.RelatedTaskID, request.WorkspaceID,
 			request.ExpectedTaskResourceVersion, request.ExpectedRelatedResourceVersion, request.ClaimFence,
 		)
@@ -653,8 +664,10 @@ func (s *Service) RemoveTaskRelationExact(ctx context.Context, request ExactTask
 	if err != nil {
 		return false, err
 	}
-	s.publishDependencyChange(ctx, request.TaskID, request.RelatedTaskID)
-	return false, nil
+	if !already {
+		s.publishDependencyChange(ctx, request.TaskID, request.RelatedTaskID)
+	}
+	return already, nil
 }
 
 func validateExactTaskRelationVersions(request ExactTaskRelationRequest, task, related *models.Task) error {
