@@ -82,7 +82,8 @@ func (h *pluginHost) recordExactPageRead(info *pluginsdk.ExactPageInfo, receipt 
 }
 
 func (h *pluginHost) GetTaskExact(ctx context.Context, query pluginsdk.ExactTaskGetQuery) (*pluginsdk.ExactTask, error) {
-	if err := h.authorizeExactRead(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("task", query.WorkspaceID, query.TaskID, query.SnapshotVersion)); err != nil {
+	requestDigest := CanonicalApprovalDigest("task", query.WorkspaceID, query.TaskID, query.SnapshotVersion)
+	if _, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", requestDigest); err != nil {
 		return nil, err
 	}
 	if h.taskData == nil || query.TaskID == "" || query.SnapshotVersion == "" {
@@ -98,6 +99,9 @@ func (h *pluginHost) GetTaskExact(ctx context.Context, query pluginsdk.ExactTask
 	}
 	if row == nil || row.WorkspaceID != query.WorkspaceID {
 		return nil, status.Error(codes.FailedPrecondition, "exact task projection is incomplete")
+	}
+	if _, err := h.authorizeExactReadReceipt(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", requestDigest); err != nil {
+		return nil, err
 	}
 	result := exactTaskToDTO(*row)
 	return &result, nil

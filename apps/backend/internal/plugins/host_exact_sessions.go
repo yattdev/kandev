@@ -69,7 +69,8 @@ func (h *pluginHost) ListSessionsExact(ctx context.Context, query pluginsdk.Exac
 // session snapshot. The snapshot binds the session incarnation and route
 // generation, so callers cannot infer current progress from a stale session.
 func (h *pluginHost) GetSessionExact(ctx context.Context, query pluginsdk.ExactSessionGetQuery) (*pluginsdk.ExactSession, error) {
-	if err := h.authorizeExactRead(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", CanonicalApprovalDigest("session", query.WorkspaceID, query.SessionID, query.SnapshotVersion)); err != nil {
+	requestDigest := CanonicalApprovalDigest("session", query.WorkspaceID, query.SessionID, query.SnapshotVersion)
+	if _, err := h.authorizeExactReadDecision(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", requestDigest); err != nil {
 		return nil, err
 	}
 	if h.taskData == nil || query.SessionID == "" || query.SnapshotVersion == "" {
@@ -85,6 +86,9 @@ func (h *pluginHost) GetSessionExact(ctx context.Context, query pluginsdk.ExactS
 	}
 	if row == nil || row.WorkspaceID != query.WorkspaceID || row.QueueIncarnationID == "" || row.ResourceVersion <= 0 {
 		return nil, status.Error(codes.FailedPrecondition, "exact session projection is incomplete")
+	}
+	if _, err := h.authorizeExactReadReceipt(query.WorkspaceID, query.CapabilityRevision, "host.v2.read:tasks", requestDigest); err != nil {
+		return nil, err
 	}
 	result := exactSessionToDTO(*row)
 	return &result, nil
