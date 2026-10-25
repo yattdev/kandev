@@ -21,6 +21,7 @@ import (
 	"github.com/kandev/kandev/internal/db/dialect"
 	"github.com/kandev/kandev/internal/orchestrator/messagequeue"
 	"github.com/kandev/kandev/internal/steptelemetry"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/recoveryclaim"
 	"github.com/kandev/kandev/internal/task/repository/hierarchy"
@@ -3730,15 +3731,76 @@ func (r *Repository) DeleteTask(ctx context.Context, id string) error {
 // DeleteTaskWithVacatedStep deletes a task and returns the workflow step read
 // under the same task-row lock as the deletion.
 func (r *Repository) DeleteTaskWithVacatedStep(ctx context.Context, id string) (string, error) {
-	return r.deleteTaskWithVacatedStep(ctx, id, nil)
+	return r.deleteTaskWithVacatedStep(ctx, id, nil, nil)
 }
 
-func (r *Repository) deleteTaskWithVacatedStep(ctx context.Context, id string, claim *managed.DeleteClaim) (string, error) {
-	tx, err := r.db.BeginTxx(ctx, r.hierarchyTxOptions())
+// DeleteTaskWithDependencySnapshots returns final surviving endpoint projections
+// captured in the same transaction that removes the task and touching edges.
+func (r *Repository) DeleteTaskWithDependencySnapshots(ctx context.Context, id string) ([]dependencywrite.DependencySnapshot, error) {
+	var snapshots []dependencywrite.DependencySnapshot
+	_, err := r.deleteTaskWithVacatedStep(ctx, id, nil, &snapshots)
+	return snapshots, err
+}
+
+func (r *Repository) DeleteTaskWithVacatedStepAndDependencySnapshots(ctx context.Context,
+	id string) (string, []dependencywrite.DependencySnapshot, error) {
+	var snapshots []dependencywrite.DependencySnapshot
+	stepID, err := r.deleteTaskWithVacatedStep(ctx, id, nil, &snapshots)
+	return stepID, snapshots, err
+}
+
+func (r *Repository) deleteTaskWithVacatedStep(ctx context.Context, id string,
+	claim *managed.DeleteClaim, snapshots *[]dependencywrite.DependencySnapshot) (string, error) {
+	tx, workspaceID, err := r.beginTaskDeleteTx(ctx, id)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = tx.Rollback() }()
+	vacatedStepID, err := r.lockTaskDeleteTargetInTx(ctx, tx, id, claim)
+	if err != nil {
+		return "", err
+	}
+	sessions, err := r.taskQueueSessionsInTx(ctx, tx, id)
+	if err != nil {
+		return "", err
+	}
+	if err := r.purgeTaskPromptSequenceTx(ctx, tx, id, sessions); err != nil {
+		return "", err
+	}
+	if err := r.retireAgentDeliveryTaskSessionsTx(ctx, tx, id); err != nil {
+		return "", err
+	}
+	dependencySnapshots, err := r.deleteTaskDependenciesInTx(ctx, tx, workspaceID, id)
+	if err != nil {
+		return "", err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM tasks WHERE id = ?`), id)
+	if err != nil {
+		return "", err
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return "", fmt.Errorf("%w: %s", ErrTaskNotFound, id)
+	}
+	if err := r.purgeTaskQueueInTx(ctx, tx, id, sessions, true); err != nil {
+		return "", err
+	}
+	if err := r.purgeQueueSessionPoliciesInTx(ctx, tx, sessions); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	if snapshots != nil {
+		*snapshots = dependencySnapshots
+	}
+	r.notifyTaskQueuePurged(ctx, id)
+	return vacatedStepID, nil
+}
+
+func (r *Repository) lockTaskDeleteTargetInTx(ctx context.Context, tx *sqlx.Tx,
+	id string, claim *managed.DeleteClaim) (string, error) {
 	if err := r.lockTaskHierarchy(ctx, tx, nil, []string{id}); err != nil {
 		return "", err
 	}
@@ -3767,36 +3829,24 @@ func (r *Repository) deleteTaskWithVacatedStep(ctx context.Context, id string, c
 	if err := r.validateTaskDeletionTx(ctx, tx, id, claim); err != nil {
 		return "", err
 	}
-	sessions, err := r.taskQueueSessionsInTx(ctx, tx, id)
-	if err != nil {
-		return "", err
-	}
-	if err := r.purgeTaskPromptSequenceTx(ctx, tx, id, sessions); err != nil {
-		return "", err
-	}
-	if err := r.retireAgentDeliveryTaskSessionsTx(ctx, tx, id); err != nil {
-		return "", err
-	}
-	result, err := tx.ExecContext(ctx, r.db.Rebind(`DELETE FROM tasks WHERE id = ?`), id)
-	if err != nil {
-		return "", err
-	}
-
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		return "", fmt.Errorf("%w: %s", ErrTaskNotFound, id)
-	}
-	if err := r.purgeTaskQueueInTx(ctx, tx, id, sessions, true); err != nil {
-		return "", err
-	}
-	if err := r.purgeQueueSessionPoliciesInTx(ctx, tx, sessions); err != nil {
-		return "", err
-	}
-	if err := tx.Commit(); err != nil {
-		return "", err
-	}
-	r.notifyTaskQueuePurged(ctx, id)
 	return vacatedStepID, nil
+}
+
+func (r *Repository) beginTaskDeleteTx(ctx context.Context, id string) (*sqlx.Tx, string, error) {
+	tx, err := r.db.BeginTxx(ctx, r.hierarchyTxOptions())
+	if err != nil {
+		return nil, "", err
+	}
+	var workspaceID string
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT workspace_id FROM tasks WHERE id = ?`), id).Scan(&workspaceID); err != nil {
+		_ = tx.Rollback()
+		return nil, "", err
+	}
+	if err := r.lockDependencyWorkspace(ctx, tx, workspaceID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		_ = tx.Rollback()
+		return nil, "", err
+	}
+	return tx, workspaceID, nil
 }
 
 // ListTasks returns all non-archived, non-ephemeral tasks for a workflow

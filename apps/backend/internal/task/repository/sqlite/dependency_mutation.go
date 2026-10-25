@@ -149,7 +149,9 @@ func (r *Repository) dependencyBatchSnapshotsInTx(ctx context.Context, tx *sqlx.
 	dependentID string, changed map[string]bool) (dependencywrite.DependencyBatchResult, error) {
 	result := dependencywrite.DependencyBatchResult{Changed: []dependencywrite.DependencySnapshot{}}
 	if len(changed) > 0 {
-		changed[dependentID] = true
+		if dependentID != "" {
+			changed[dependentID] = true
+		}
 		changedIDs := make([]string, 0, len(changed))
 		for id := range changed {
 			changedIDs = append(changedIDs, id)
@@ -169,6 +171,98 @@ func (r *Repository) dependencyBatchSnapshotsInTx(ctx context.Context, tx *sqlx.
 		}
 	}
 	return result, nil
+}
+
+func (r *Repository) deleteTaskDependenciesInTx(ctx context.Context, tx *sqlx.Tx,
+	workspaceID, taskID string) ([]dependencywrite.DependencySnapshot, error) {
+	var tableExists bool
+	query := `SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'task_blockers')`
+	if dialect.IsPostgres(r.db.DriverName()) {
+		query = `SELECT to_regclass('task_blockers') IS NOT NULL`
+	}
+	if err := tx.QueryRowContext(ctx, query).Scan(&tableExists); err != nil {
+		return nil, err
+	}
+	if !tableExists {
+		return []dependencywrite.DependencySnapshot{}, nil
+	}
+	type edge struct {
+		Dependent   string `db:"task_id"`
+		Predecessor string `db:"blocker_task_id"`
+	}
+	var edges []edge
+	if err := tx.SelectContext(ctx, &edges, r.db.Rebind(
+		`SELECT task_id, blocker_task_id FROM task_blockers WHERE task_id = ? OR blocker_task_id = ? ORDER BY task_id, blocker_task_id`),
+		taskID, taskID); err != nil {
+		return nil, err
+	}
+	changed := map[string]bool{}
+	for _, item := range edges {
+		request := dependencywrite.DependencyMutationRequest{
+			Operation: dependencyRemove, WorkspaceID: workspaceID,
+			DependentTaskID: item.Dependent, PredecessorTaskID: item.Predecessor,
+			OriginClass: "task_delete", CorrelationID: taskID,
+		}
+		if _, err := r.mutateDependencyInTx(ctx, tx, request); err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+			if err := r.removeLegacyDependencyEdgeInTx(ctx, tx, request); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if item.Dependent != taskID {
+			changed[item.Dependent] = true
+		}
+		if item.Predecessor != taskID {
+			changed[item.Predecessor] = true
+		}
+	}
+	result, err := r.dependencyBatchSnapshotsInTx(ctx, tx, "", changed)
+	if err != nil {
+		return nil, err
+	}
+	return result.Changed, nil
+}
+
+func (r *Repository) removeLegacyDependencyEdgeInTx(ctx context.Context, tx *sqlx.Tx,
+	request dependencywrite.DependencyMutationRequest) error {
+	if _, err := tx.ExecContext(ctx, r.db.Rebind(
+		`DELETE FROM task_blockers WHERE task_id = ? AND blocker_task_id = ?`),
+		request.DependentTaskID, request.PredecessorTaskID); err != nil {
+		return err
+	}
+	canonical := func(id string) (int, error) {
+		var workspaceID string
+		err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT workspace_id FROM tasks WHERE id = ?`), id).Scan(&workspaceID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		if workspaceID == request.WorkspaceID {
+			return 1, nil
+		}
+		return 0, nil
+	}
+	dependentCanonical, err := canonical(request.DependentTaskID)
+	if err != nil {
+		return err
+	}
+	predecessorCanonical, err := canonical(request.PredecessorTaskID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_dependency_mutation_audit
+		(event_id, correlation_id, created_at, operation, origin_class, outcome, reason_code, changed,
+		caller_workspace_id, dependent_task_id, predecessor_task_id, dependent_id_present, predecessor_id_present,
+		dependent_id_canonical, predecessor_id_canonical)
+		VALUES (?, ?, ?, 'remove', 'task_delete', 'succeeded', 'legacy_cleanup', 1, ?, ?, ?, 1, 1, ?, ?)`),
+		uuid.NewString(), request.CorrelationID, time.Now().UTC(), request.WorkspaceID,
+		request.DependentTaskID, request.PredecessorTaskID, dependentCanonical, predecessorCanonical)
+	return err
 }
 
 // RecordDependencyDenial stores a rejected request without exposing its target

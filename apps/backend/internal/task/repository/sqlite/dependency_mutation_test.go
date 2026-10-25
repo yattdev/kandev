@@ -147,6 +147,112 @@ func TestDependencyReplacementRollsBackWholeSetOnCycle(t *testing.T) {
 	}
 }
 
+func TestTaskDeleteCommitsEdgeCleanupAndSurvivorSnapshot(t *testing.T) {
+	repo, _, database := newManagedDeletionSQLitePair(t)
+	ctx := t.Context()
+	if err := repo.CreateWorkspace(ctx, &models.Workspace{ID: "delete-ws", Name: "Delete"}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	for _, id := range []string{"dependent", "predecessor"} {
+		if err := repo.CreateTask(ctx, &models.Task{ID: id, WorkspaceID: "delete-ws", Title: id}); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	request := dependencywrite.DependencyMutationRequest{
+		Operation: "add", WorkspaceID: "delete-ws", DependentTaskID: "dependent",
+		PredecessorTaskID: "predecessor", OriginClass: "task_service", CorrelationID: "seed",
+	}
+	if _, err := repo.MutateDependency(ctx, request, func(context.Context, *sqlx.Tx) error { return nil }); err != nil {
+		t.Fatalf("seed dependency: %v", err)
+	}
+	snapshots, err := repo.DeleteTaskWithDependencySnapshots(ctx, "predecessor")
+	if err != nil {
+		t.Fatalf("delete predecessor: %v", err)
+	}
+	if len(snapshots) != 1 || snapshots[0].TaskID != "dependent" || snapshots[0].Revision != 2 || snapshots[0].Blocked {
+		t.Fatalf("survivor snapshots = %+v, want dependent revision 2 unblocked", snapshots)
+	}
+	var edgeCount, auditCount int
+	if err := database.GetContext(ctx, &edgeCount, `SELECT COUNT(*) FROM task_blockers WHERE blocker_task_id = 'predecessor'`); err != nil {
+		t.Fatalf("count dangling edges: %v", err)
+	}
+	if err := database.GetContext(ctx, &auditCount,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE origin_class = 'task_delete' AND dependent_task_id = 'dependent'`); err != nil {
+		t.Fatalf("count cleanup audit: %v", err)
+	}
+	if edgeCount != 0 || auditCount != 1 {
+		t.Fatalf("dangling edges = %d, cleanup audits = %d; want 0 and 1", edgeCount, auditCount)
+	}
+}
+
+func TestTaskDeleteRollsBackWhenDependencyAuditFails(t *testing.T) {
+	repo, _, database := newManagedDeletionSQLitePair(t)
+	ctx := t.Context()
+	if err := repo.CreateWorkspace(ctx, &models.Workspace{ID: "delete-audit-ws", Name: "Delete audit"}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	for _, id := range []string{"dependent", "predecessor"} {
+		if err := repo.CreateTask(ctx, &models.Task{ID: id, WorkspaceID: "delete-audit-ws", Title: id}); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	request := dependencywrite.DependencyMutationRequest{
+		Operation: "add", WorkspaceID: "delete-audit-ws", DependentTaskID: "dependent",
+		PredecessorTaskID: "predecessor", OriginClass: "task_service", CorrelationID: "seed",
+	}
+	if _, err := repo.MutateDependency(ctx, request, func(context.Context, *sqlx.Tx) error { return nil }); err != nil {
+		t.Fatalf("seed dependency: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `DROP TABLE task_dependency_mutation_audit`); err != nil {
+		t.Fatalf("drop audit: %v", err)
+	}
+	if err := repo.DeleteTask(ctx, "predecessor"); err == nil {
+		t.Fatal("delete succeeded without durable dependency audit")
+	}
+	var taskCount, edgeCount, revision int
+	if err := database.GetContext(ctx, &taskCount, `SELECT COUNT(*) FROM tasks WHERE id = 'predecessor'`); err != nil {
+		t.Fatalf("read task: %v", err)
+	}
+	if err := database.GetContext(ctx, &edgeCount, `SELECT COUNT(*) FROM task_blockers WHERE task_id = 'dependent' AND blocker_task_id = 'predecessor'`); err != nil {
+		t.Fatalf("read edge: %v", err)
+	}
+	if err := database.GetContext(ctx, &revision, `SELECT dependency_revision FROM tasks WHERE id = 'dependent'`); err != nil {
+		t.Fatalf("read revision: %v", err)
+	}
+	if taskCount != 1 || edgeCount != 1 || revision != 1 {
+		t.Fatalf("after audit failure: task %d, edge %d, revision %d; want 1 each", taskCount, edgeCount, revision)
+	}
+}
+
+func TestTaskDeleteCleansLegacyDanglingEdge(t *testing.T) {
+	repo, _, database := newManagedDeletionSQLitePair(t)
+	ctx := t.Context()
+	if err := repo.CreateWorkspace(ctx, &models.Workspace{ID: "dangling-ws", Name: "Dangling"}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	if err := repo.CreateTask(ctx, &models.Task{ID: "dependent", WorkspaceID: "dangling-ws", Title: "Dependent"}); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO task_blockers(task_id, blocker_task_id, created_at) VALUES ('dependent', 'missing', CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatalf("seed dangling edge: %v", err)
+	}
+	if err := repo.DeleteTask(ctx, "dependent"); err != nil {
+		t.Fatalf("delete with dangling edge: %v", err)
+	}
+	var edges, audit int
+	if err := database.GetContext(ctx, &edges, `SELECT COUNT(*) FROM task_blockers WHERE task_id = 'dependent'`); err != nil {
+		t.Fatalf("read edge: %v", err)
+	}
+	if err := database.GetContext(ctx, &audit,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE origin_class = 'task_delete' AND reason_code = 'legacy_cleanup' AND predecessor_id_canonical = 0`); err != nil {
+		t.Fatalf("read cleanup audit: %v", err)
+	}
+	if edges != 0 || audit != 1 {
+		t.Fatalf("after delete: edges %d, legacy audits %d; want 0 and 1", edges, audit)
+	}
+}
+
 // @covers AC-COORDINATOR-DEPENDENCY-002.1
 func TestDependencyMutationAuditFailureRollsBackEdge(t *testing.T) {
 	repo, _, database := newManagedDeletionSQLitePair(t)

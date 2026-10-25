@@ -12,6 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/kandev/kandev/internal/common/logger"
+	"github.com/kandev/kandev/internal/events"
 	orchmodels "github.com/kandev/kandev/internal/office/models"
 	officesqlite "github.com/kandev/kandev/internal/office/repository/sqlite"
 	"github.com/kandev/kandev/internal/task/models"
@@ -134,6 +135,47 @@ func TestExactTaskRelationUsesAuditedWriter(t *testing.T) {
 	}
 	if revised != 2 || audited != 2 {
 		t.Fatalf("revised endpoints = %d, audit rows = %d; want 2 each", revised, audited)
+	}
+}
+
+func TestTaskServiceDeletePublishesSurvivingDependencyRevision(t *testing.T) {
+	svc, eventBus, repo := setupOfficeTestWithBus(t)
+	database := sqlx.NewDb(repo.DB(), "sqlite3")
+	office, err := officesqlite.NewWithDB(database, database, nil)
+	if err != nil {
+		t.Fatalf("office repository: %v", err)
+	}
+	svc.SetBlockerRepository(office)
+	ctx := context.Background()
+	dependent := mustSeedTask(t, svc, "Dependent").ID
+	predecessor := mustSeedTask(t, svc, "Predecessor").ID
+	if err := svc.AddDependency(ctx, dependent, predecessor); err != nil {
+		t.Fatalf("seed edge: %v", err)
+	}
+	eventBus.ClearEvents()
+	if err := svc.DeleteTask(ctx, predecessor); err != nil {
+		t.Fatalf("delete predecessor: %v", err)
+	}
+	var revision, edges int
+	if err := database.GetContext(ctx, &revision, `SELECT dependency_revision FROM tasks WHERE id = ?`, dependent); err != nil {
+		t.Fatalf("read dependent revision: %v", err)
+	}
+	if err := database.GetContext(ctx, &edges,
+		`SELECT COUNT(*) FROM task_blockers WHERE task_id = ? OR blocker_task_id = ?`, predecessor, predecessor); err != nil {
+		t.Fatalf("read touching edges: %v", err)
+	}
+	if revision != 2 || edges != 0 {
+		t.Fatalf("after delete: dependent revision %d, touching edges %d; want 2 and 0", revision, edges)
+	}
+	var published bool
+	for _, event := range eventBus.GetPublishedEvents() {
+		data, ok := event.Data.(map[string]interface{})
+		if ok && event.Type == events.TaskUpdated && data["task_id"] == dependent && data["dependency_revision"] == int64(2) {
+			published = true
+		}
+	}
+	if !published {
+		t.Fatal("delete did not publish surviving dependent at revision 2")
 	}
 }
 

@@ -122,6 +122,12 @@ func (s *Service) publishCommittedDependencySnapshot(ctx context.Context, snapsh
 	})
 }
 
+func (s *Service) PublishDependencySnapshots(ctx context.Context, snapshots []dependencywrite.DependencySnapshot) {
+	for _, snapshot := range snapshots {
+		s.publishCommittedDependencySnapshot(ctx, snapshot)
+	}
+}
+
 // Task dependencies ("task B is blocked by task A") are peer-to-peer edges,
 // distinct from the parent/child subtask hierarchy: a subtask means "part of",
 // a dependency means "not until". Edges live in task_blockers and are read

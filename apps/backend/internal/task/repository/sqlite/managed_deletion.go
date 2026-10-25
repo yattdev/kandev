@@ -265,7 +265,7 @@ func (r *Repository) updateDeletionSnapshotTx(ctx context.Context, tx *sqlx.Tx, 
 }
 
 func (r *Repository) FinalizeManagedDeletion(ctx context.Context, claim managed.DeleteClaim) (string, error) {
-	return r.deleteTaskWithVacatedStep(ctx, claim.TaskID, &claim)
+	return r.deleteTaskWithVacatedStep(ctx, claim.TaskID, &claim, nil)
 }
 
 func (r *Repository) ReleaseManagedDeletion(ctx context.Context, expected managed.DeleteClaim) (bool, error) {

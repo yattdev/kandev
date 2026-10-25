@@ -20,6 +20,7 @@ import (
 	runtimeapi "github.com/kandev/kandev/internal/agent/runtime"
 	"github.com/kandev/kandev/internal/agentruntime"
 	"github.com/kandev/kandev/internal/task/archivecascade"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
 	"go.uber.org/zap"
 
@@ -2995,12 +2996,25 @@ func (s *Service) deleteTaskWithReasonAndOptions(
 		request := managed.DeleteRequest{Identity: managedTaskIdentity(task), TaskCreatedAt: task.CreatedAt, ExpectedRevision: managed.Revision(task), OperationID: uuid.NewString(), PayloadDigest: uuid.NewString(), Ordinary: true}
 		return s.deleteManagedConversationTaskWithOptions(operationCtx, request, reason, options)
 	}
+	var dependencySnapshots []dependencywrite.DependencySnapshot
 	_, err = s.deleteTaskWithReasonAndDBDelete(operationCtx, id, reason, models.TaskResourceCleanupTriggerDelete, options, func(ctx context.Context, id string) (bool, error) {
+		if deleter, ok := s.tasks.(interface {
+			DeleteTaskWithDependencySnapshots(context.Context, string) ([]dependencywrite.DependencySnapshot, error)
+		}); ok {
+			var deleteErr error
+			dependencySnapshots, deleteErr = deleter.DeleteTaskWithDependencySnapshots(ctx, id)
+			return deleteErr == nil, deleteErr
+		}
 		if err := s.tasks.DeleteTask(ctx, id); err != nil {
 			return false, err
 		}
 		return true, nil
 	})
+	if err == nil {
+		for _, snapshot := range dependencySnapshots {
+			s.publishCommittedDependencySnapshot(operationCtx, snapshot)
+		}
+	}
 	return err
 }
 

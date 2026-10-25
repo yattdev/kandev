@@ -8,9 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/kandev/kandev/internal/common/logger"
 	"github.com/kandev/kandev/internal/common/taskdependencies"
 	orchmodels "github.com/kandev/kandev/internal/office/models"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	"github.com/kandev/kandev/internal/task/models"
 	"github.com/kandev/kandev/internal/task/repository"
 	v1 "github.com/kandev/kandev/pkg/api/v1"
@@ -318,6 +321,10 @@ type cascadeArchiveTaskRepository interface {
 
 type cascadeDeleteTaskRepository interface {
 	DeleteTaskWithVacatedStep(ctx context.Context, id string) (string, error)
+}
+
+type cascadeDeleteTaskDependencyRepository interface {
+	DeleteTaskWithVacatedStepAndDependencySnapshots(context.Context, string) (string, []dependencywrite.DependencySnapshot, error)
 }
 
 // taskSessionCancellationPublisher is the optional event side effect paired
@@ -631,8 +638,11 @@ func (s *HandoffService) attachSequentialBlocker(ctx context.Context, taskID, pa
 	mu := s.parentLock.lockFor(parentID)
 	mu.Lock()
 	defer mu.Unlock()
-	edgesUnlock := taskdependencies.AcquireMutationLock()
-	defer edgesUnlock()
+	writer, audited := s.blockers.(transactionalDependencyStore)
+	if !audited {
+		edgesUnlock := taskdependencies.AcquireMutationLock()
+		defer edgesUnlock()
+	}
 
 	siblings, err := s.tasks.ListChildren(ctx, parentID)
 	if err != nil {
@@ -649,6 +659,27 @@ func (s *HandoffService) attachSequentialBlocker(ctx context.Context, taskID, pa
 		break
 	}
 	if prev == "" {
+		return nil
+	}
+	if audited {
+		task, err := s.tasks.GetTask(ctx, taskID)
+		if err != nil {
+			return err
+		}
+		if task == nil {
+			return repository.ErrTaskNotFound
+		}
+		result, err := writer.MutateTaskBlocker(ctx, dependencywrite.DependencyMutationRequest{
+			Operation: "add", WorkspaceID: task.WorkspaceID,
+			DependentTaskID: taskID, PredecessorTaskID: prev,
+			OriginClass: "handoff", CorrelationID: uuid.NewString(), CallerTaskID: parentID,
+		}, func(context.Context, *sqlx.Tx) error { return nil })
+		if err != nil {
+			return err
+		}
+		if result.Changed {
+			s.publishDependencySnapshots(ctx, []dependencywrite.DependencySnapshot{result.Dependent, result.Predecessor})
+		}
 		return nil
 	}
 	return s.blockers.CreateTaskBlocker(ctx, &orchmodels.TaskBlocker{

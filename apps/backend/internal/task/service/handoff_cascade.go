@@ -14,6 +14,7 @@ import (
 	"github.com/kandev/kandev/internal/common/taskdependencies"
 	orchmodels "github.com/kandev/kandev/internal/office/models"
 	"github.com/kandev/kandev/internal/task/archivecascade"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	"github.com/kandev/kandev/internal/task/models"
 	taskrepo "github.com/kandev/kandev/internal/task/repository"
 )
@@ -737,37 +738,15 @@ func (s *HandoffService) deleteTaskTreeRows(
 				return nil, errors.Join(snapshotErr, cancelErr)
 			}
 		}
-		// Remove dependency edges before the task row so a transient cleanup
-		// failure cannot leave edges pointing at a deleted task. Keep the
-		// process-wide mutation boundary through deletion and compensation.
-		dependencyUnlock := taskdependencies.AcquireMutationLock()
-		dependencySnapshot, err := s.deleteTaskDependencyEdgesLocked(postDeleteCtx, all[i])
+		vacatedStepID, err := s.deleteTaskWithDependencyCleanup(postDeleteCtx, deleteCompensationCtx, all[i])
 		if err != nil {
-			restoreErr := s.restoreTaskDependencyEdgesLocked(deleteCompensationCtx, dependencySnapshot)
-			dependencyUnlock()
-			cancelErr := s.cancelCascadeResourceCleanupRange(deleteCompensationCtx, all[:i+1], cleanupOps)
-			deleteErr := fmt.Errorf("clean up task dependencies %s: %w", all[i], err)
-			if len(out.ArchivedTaskIDs) == 0 {
-				deleteErr = s.rollbackWorkspaceEnvironmentOwnershipAfterFailure(deleteCompensationCtx, ownershipTransfers, deleteErr)
-			}
-			return nil, errors.Join(deleteErr, restoreErr, cancelErr)
-		}
-		// Tear down runtime resources BEFORE the DB delete so the env / worktree
-		// rows are still queryable for the gather step. The actual destroy work
-		// runs async after this returns. Delete cascade removes the env row.
-		vacatedStepID, err := s.deleteTaskWithVacatedStep(postDeleteCtx, all[i])
-		if err != nil {
-			restoreErr := s.restoreTaskDependencyEdgesLocked(deleteCompensationCtx, dependencySnapshot)
-			dependencyUnlock()
 			cancelErr := s.cancelCascadeResourceCleanupRange(deleteCompensationCtx, all[:i+1], cleanupOps)
 			deleteErr := fmt.Errorf("delete %s: %w", all[i], err)
 			if len(out.ArchivedTaskIDs) == 0 {
 				deleteErr = s.rollbackWorkspaceEnvironmentOwnershipAfterFailure(deleteCompensationCtx, ownershipTransfers, deleteErr)
 			}
-			return nil, errors.Join(deleteErr, restoreErr, cancelErr)
+			return nil, errors.Join(deleteErr, cancelErr)
 		}
-		dependencyUnlock()
-		s.publishDeletedTaskDependencies(postDeleteCtx, dependencySnapshot)
 		recordVacatedStep(vacatedStepIDs, vacatedStepID)
 		out.ArchivedTaskIDs = append(out.ArchivedTaskIDs, all[i])
 		cleanupErrors = appendTaskCleanupError(
@@ -786,6 +765,47 @@ func (s *HandoffService) deleteTaskTreeRows(
 		}
 	}
 	return cleanupErrors, nil
+}
+
+func (s *HandoffService) deleteTaskWithDependencyCleanup(ctx, compensationCtx context.Context,
+	taskID string) (string, error) {
+	if repo, ok := s.tasks.(cascadeDeleteTaskDependencyRepository); ok {
+		stepID, snapshots, err := repo.DeleteTaskWithVacatedStepAndDependencySnapshots(ctx, taskID)
+		if err != nil {
+			return "", err
+		}
+		s.publishDependencySnapshots(ctx, snapshots)
+		return stepID, nil
+	}
+	unlock := taskdependencies.AcquireMutationLock()
+	defer unlock()
+	snapshot, err := s.deleteTaskDependencyEdgesLocked(ctx, taskID)
+	if err != nil {
+		return "", errors.Join(err, s.restoreTaskDependencyEdgesLocked(compensationCtx, snapshot))
+	}
+	stepID, err := s.deleteTaskWithVacatedStep(ctx, taskID)
+	if err != nil {
+		return "", errors.Join(err, s.restoreTaskDependencyEdgesLocked(compensationCtx, snapshot))
+	}
+	s.publishDeletedTaskDependencies(ctx, snapshot)
+	return stepID, nil
+}
+
+func (s *HandoffService) publishDependencySnapshots(ctx context.Context,
+	snapshots []dependencywrite.DependencySnapshot) {
+	if publisher, ok := s.eventPublisher.(interface {
+		PublishDependencySnapshots(context.Context, []dependencywrite.DependencySnapshot)
+	}); ok {
+		publisher.PublishDependencySnapshots(ctx, snapshots)
+		return
+	}
+	if publisher, ok := s.eventPublisher.(dependencyChangePublisher); ok {
+		ids := make([]string, 0, len(snapshots))
+		for _, snapshot := range snapshots {
+			ids = append(ids, snapshot.TaskID)
+		}
+		publisher.PublishDependencyChange(ctx, ids...)
+	}
 }
 
 func (s *HandoffService) publishDeletedTaskEvent(
