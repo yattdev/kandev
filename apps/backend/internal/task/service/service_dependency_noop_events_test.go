@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/kandev/kandev/internal/task/models"
@@ -49,5 +50,41 @@ func TestDependencyNoOpDoesNotPublishTaskUpdates(t *testing.T) {
 	}
 	if got := len(eventBus.GetPublishedEvents()); got != 0 {
 		t.Fatalf("absent remove published %d events, want 0", got)
+	}
+}
+
+func TestConcurrentDuplicateDependencyAddsPublishOneChange(t *testing.T) {
+	ctx := context.Background()
+	svc, eventBus, repo := createTestService(t)
+	setupTestTask(t, repo)
+	if err := repo.CreateTask(ctx, &models.Task{
+		ID: "task-peer", WorkspaceID: "ws-1", WorkflowID: "wf-123",
+		WorkflowStepID: "step-123", Title: "Peer", Priority: "medium",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	blockers := &mockBlockerRepo{}
+	svc.SetBlockerRepository(blockers)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			errs[index] = svc.AddDependency(ctx, "task-123", "task-peer")
+		}(i)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := len(blockers.blockers); got != 1 {
+		t.Fatalf("concurrent adds left %d edges, want 1", got)
+	}
+	if got := len(eventBus.GetPublishedEvents()); got != 2 {
+		t.Fatalf("concurrent adds published %d task updates, want 2", got)
 	}
 }
