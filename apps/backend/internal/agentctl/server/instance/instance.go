@@ -38,9 +38,23 @@ type executionFenceProcessManager interface {
 	Status() process.Status
 }
 
+type sequencedExecutionFenceProcessManager interface {
+	CloseAdmissionGracefullyWithSequence() process.AdmissionCutoff
+}
+
+type executionAdmissionBoundary struct {
+	ExecutionID        string
+	AgentctlGeneration uint64
+	Cutoff             process.AdmissionCutoff
+}
+
 // ErrExecutionIdentityMismatch means a control request named a different
 // execution incarnation than the instance currently owns.
 var ErrExecutionIdentityMismatch = errors.New("execution identity mismatch")
+
+// ErrAdmissionSequenceUnknown prevents a legacy or exhausted process manager
+// from supplying a complete exact-execution fence proof.
+var ErrAdmissionSequenceUnknown = errors.New("admission sequence unknown")
 
 // ErrInstanceNotFound identifies an absent agentctl instance.
 var ErrInstanceNotFound = errors.New("instance not found")
@@ -107,6 +121,7 @@ type Instance struct {
 	// arrives. Maintained by the activity middleware.
 	inflightRequests atomic.Int32
 	stopMu           sync.Mutex
+	fenceBoundary    *executionAdmissionBoundary
 	identityMu       sync.RWMutex
 	statusMu         sync.RWMutex
 	portReleased     bool

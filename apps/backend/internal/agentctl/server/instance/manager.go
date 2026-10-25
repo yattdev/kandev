@@ -434,7 +434,7 @@ func (m *Manager) UpdateExecutionGeneration(ctx context.Context, instanceID stri
 	inst.stopMu.Lock()
 	defer inst.stopMu.Unlock()
 	inst.identityMu.Lock()
-	if update.ExecutionID == "" || update.ExpectedAgentctlGeneration == 0 ||
+	if inst.fenceBoundary != nil || update.ExecutionID == "" || update.ExpectedAgentctlGeneration == 0 ||
 		update.AgentctlGeneration != update.ExpectedAgentctlGeneration+1 ||
 		inst.ExecutionID != update.ExecutionID || inst.AgentctlGeneration != update.ExpectedAgentctlGeneration {
 		inst.identityMu.Unlock()
@@ -486,7 +486,10 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, instanceID string
 		return nil, fmt.Errorf("instance %s has no process manager", instanceID)
 	}
 
-	cutoff := procMgr.CloseAdmissionGracefully()
+	cutoff, err := captureExactAdmissionBoundary(inst, procMgr)
+	if err != nil {
+		return nil, err
+	}
 	if err := procMgr.WaitForAdmission(ctx); err != nil {
 		return nil, fmt.Errorf("wait for command admission to drain: %w", err)
 	}
@@ -496,11 +499,32 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, instanceID string
 	return &ExecutionFenceReceipt{
 		ExecutionID:             inst.ExecutionID,
 		AgentctlGeneration:      inst.AgentctlGeneration,
-		AdmissionClosedAt:       cutoff,
+		AdmissionClosedAt:       cutoff.At,
 		ManagedProcessCount:     managedProcessCount,
 		AgentProcessTerminal:    agentProcessTerminal,
 		ManagedProcessesDrained: managedProcessCount == 0 && agentProcessTerminal,
 	}, nil
+}
+
+func captureExactAdmissionBoundary(inst *Instance, procMgr executionFenceProcessManager) (process.AdmissionCutoff, error) {
+	sequenced, ok := inst.manager.(sequencedExecutionFenceProcessManager)
+	if !ok {
+		procMgr.CloseAdmissionGracefully()
+		return process.AdmissionCutoff{}, ErrAdmissionSequenceUnknown
+	}
+	cutoff := sequenced.CloseAdmissionGracefullyWithSequence()
+	if !cutoff.Known || cutoff.Sequence == 0 {
+		return process.AdmissionCutoff{}, ErrAdmissionSequenceUnknown
+	}
+	if inst.fenceBoundary == nil {
+		inst.fenceBoundary = &executionAdmissionBoundary{
+			ExecutionID: inst.ExecutionID, AgentctlGeneration: inst.AgentctlGeneration, Cutoff: cutoff,
+		}
+	} else if inst.fenceBoundary.ExecutionID != inst.ExecutionID ||
+		inst.fenceBoundary.AgentctlGeneration != inst.AgentctlGeneration || inst.fenceBoundary.Cutoff != cutoff {
+		return process.AdmissionCutoff{}, ErrExecutionIdentityMismatch
+	}
+	return cutoff, nil
 }
 
 // abandonPartialInstanceTimeout bounds the admission wait inside

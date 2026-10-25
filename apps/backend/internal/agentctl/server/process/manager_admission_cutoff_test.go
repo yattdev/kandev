@@ -3,6 +3,9 @@ package process
 import (
 	"context"
 	"errors"
+	"math"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,6 +44,62 @@ func TestCloseAdmissionGracefullyCapturesCutoffAtGateClosure(t *testing.T) {
 	}
 	if err := mgr.WaitForAdmission(context.Background()); err != nil {
 		t.Fatalf("wait for admissions: %v", err)
+	}
+}
+
+func TestAdmissionSequenceOrdersConcurrentCloseAndReplay(t *testing.T) {
+	mgr := NewManager(&config.InstanceConfig{}, logger.Default())
+	const admissions = 32
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var admitted atomic.Uint64
+	for range admissions {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if release, err := mgr.admitStart(); err == nil {
+				admitted.Add(1)
+				release()
+			} else if !errors.Is(err, ErrManagerStopping) {
+				t.Errorf("concurrent admission: %v", err)
+			}
+		}()
+	}
+	close(start)
+	cutoff := mgr.CloseAdmissionGracefullyWithSequence()
+	wg.Wait()
+	if !cutoff.Known || cutoff.Sequence != admitted.Load()+1 || cutoff.At.IsZero() {
+		t.Fatalf("cutoff = %+v, admitted = %d", cutoff, admitted.Load())
+	}
+	if replay := mgr.CloseAdmissionGracefullyWithSequence(); replay != cutoff {
+		t.Fatalf("replayed cutoff = %+v, want %+v", replay, cutoff)
+	}
+	if _, err := mgr.admitStart(); !errors.Is(err, ErrManagerStopping) {
+		t.Fatalf("post-cutoff admission = %v", err)
+	}
+}
+
+func TestAdmissionSequenceOverflowFailsClosed(t *testing.T) {
+	mgr := NewManager(&config.InstanceConfig{}, logger.Default())
+	mgr.admissionSequence = math.MaxInt64 - 1
+	if _, err := mgr.admitStart(); !errors.Is(err, ErrAdmissionSequenceExhausted) {
+		t.Fatalf("overflow admission = %v, want ErrAdmissionSequenceExhausted", err)
+	}
+	if cutoff := mgr.CloseAdmissionGracefullyWithSequence(); !cutoff.Known || cutoff.Sequence != math.MaxInt64 {
+		t.Fatalf("overflow close = %+v, want final known boundary", cutoff)
+	}
+	if _, err := mgr.admitStart(); !errors.Is(err, ErrManagerStopping) {
+		t.Fatalf("admission after overflow = %v", err)
+	}
+
+	unknown := NewManager(&config.InstanceConfig{}, logger.Default())
+	unknown.admissionSequence = math.MaxInt64
+	if cutoff := unknown.CloseAdmissionGracefullyWithSequence(); cutoff.Known {
+		t.Fatalf("exhausted cutoff = %+v, want unknown sequence", cutoff)
+	}
+	if _, err := unknown.admitStart(); !errors.Is(err, ErrManagerStopping) {
+		t.Fatalf("admission after unknown cutoff = %v", err)
 	}
 }
 

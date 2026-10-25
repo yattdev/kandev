@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -309,22 +310,25 @@ type Manager struct {
 	// (see attachment.go). Zero value correctly starts an instance detached.
 	attachedCount atomic.Int32
 	// turnOutcomeMu guards recorder wiring independently of lifecycle transitions.
-	turnOutcomeMu         sync.RWMutex
-	turnOutcomeRecorder   TurnOutcomeRecorder
-	turnOutcomeInstanceID string
-	startMu               sync.Mutex
-	admissionMu           sync.Mutex
-	admissionCount        int
-	admissionDrained      chan struct{}
-	stopping              bool
-	admissionCutoff       time.Time
-	lifetimeCtx           context.Context
-	lifetimeCancel        context.CancelFunc
-	mainReapPending       atomic.Bool
-	startupEvidenceMu     sync.Mutex
-	startupGeneration     uint64
-	startupEvidence       *types.ManagedStartupEvidence
-	startupEvidenceDone   chan struct{}
+	turnOutcomeMu           sync.RWMutex
+	turnOutcomeRecorder     TurnOutcomeRecorder
+	turnOutcomeInstanceID   string
+	startMu                 sync.Mutex
+	admissionMu             sync.Mutex
+	admissionCount          int
+	admissionDrained        chan struct{}
+	stopping                bool
+	admissionSequence       uint64
+	admissionCutoffSequence uint64
+	admissionCutoffKnown    bool
+	admissionCutoff         time.Time
+	lifetimeCtx             context.Context
+	lifetimeCancel          context.CancelFunc
+	mainReapPending         atomic.Bool
+	startupEvidenceMu       sync.Mutex
+	startupGeneration       uint64
+	startupEvidence         *types.ManagedStartupEvidence
+	startupEvidenceDone     chan struct{}
 	// stopChClosed guards close(stopCh), which is the only part of teardown
 	// that is not naturally idempotent. It is reset wherever stopCh itself is
 	// created so the flag always describes the current channel — a Start that
@@ -342,16 +346,34 @@ type Manager struct {
 // ErrManagerStopping indicates that process admission is closed for teardown.
 var ErrManagerStopping = errors.New("process manager is stopping")
 
+// ErrAdmissionSequenceExhausted closes admission before a sequence can wrap.
+var ErrAdmissionSequenceExhausted = errors.New("admission sequence exhausted")
+
+// AdmissionCutoff is the process-local ordering proof for admitted commands.
+// Known is false for legacy or exhausted sequence state.
+type AdmissionCutoff struct {
+	At       time.Time
+	Sequence uint64
+	Known    bool
+}
+
 func (m *Manager) admitStart() (func(), error) {
 	m.admissionMu.Lock()
 	if m.stopping {
 		m.admissionMu.Unlock()
 		return nil, ErrManagerStopping
 	}
+	// Keep one sequence value for the close event and stay within SQL BIGINT.
+	if m.admissionSequence >= math.MaxInt64-1 {
+		m.stopping = true
+		m.admissionMu.Unlock()
+		return nil, ErrAdmissionSequenceExhausted
+	}
 	if m.admissionCount == 0 {
 		m.admissionDrained = make(chan struct{})
 	}
 	m.admissionCount++
+	m.admissionSequence++
 	m.admissionMu.Unlock()
 	var once sync.Once
 	return func() {
@@ -382,10 +404,16 @@ func (m *Manager) CloseAdmission() {
 // CloseAdmissionGracefully rejects later work while allowing already admitted
 // owners to reach their own terminal boundary without cancellation side effects.
 func (m *Manager) CloseAdmissionGracefully() time.Time {
+	return m.closeAdmission(false).At
+}
+
+// CloseAdmissionGracefullyWithSequence captures the fence's process-local
+// sequence in the same critical section that rejects later admissions.
+func (m *Manager) CloseAdmissionGracefullyWithSequence() AdmissionCutoff {
 	return m.closeAdmission(false)
 }
 
-func (m *Manager) closeAdmission(cancelOwned bool) time.Time {
+func (m *Manager) closeAdmission(cancelOwned bool) AdmissionCutoff {
 	m.comparisonTargetOpsMu.Lock()
 	m.comparisonTargetOpsStopping = true
 	m.comparisonTargetOpsPermanent = true
@@ -403,8 +431,13 @@ func (m *Manager) closeAdmission(cancelOwned bool) time.Time {
 	m.stopping = true
 	if m.admissionCutoff.IsZero() {
 		m.admissionCutoff = time.Now().UTC()
+		if m.admissionSequence < math.MaxInt64 {
+			m.admissionSequence++
+			m.admissionCutoffSequence = m.admissionSequence
+			m.admissionCutoffKnown = true
+		}
 	}
-	cutoff := m.admissionCutoff
+	cutoff := AdmissionCutoff{At: m.admissionCutoff, Sequence: m.admissionCutoffSequence, Known: m.admissionCutoffKnown}
 	var lifetimeCancel context.CancelFunc
 	if cancelOwned {
 		lifetimeCancel = m.lifetimeCancel
