@@ -117,7 +117,9 @@ func isPriorityOnlyTaskUpdate(req *UpdateTaskRequest) bool {
 		req.Position == nil &&
 		req.Metadata == nil &&
 		req.ParentID == nil &&
-		req.AssigneeUserID == nil
+		req.AssigneeUserID == nil &&
+		req.TerminalRetention == nil &&
+		req.terminalRetentionScope == nil
 }
 
 type taskStopTarget struct {

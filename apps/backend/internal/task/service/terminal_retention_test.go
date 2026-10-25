@@ -132,6 +132,48 @@ func TestTerminalRetentionCannotBeSeededByTaskMetadata(t *testing.T) {
 	}
 }
 
+func TestPriorityAndScopedTerminalRetentionApplyTogether(t *testing.T) {
+	svc, repo := setupOfficeTest(t)
+	ctx := context.Background()
+	workspace, err := repo.GetWorkspace(ctx, "ws-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range []*models.Task{
+		{ID: "priority-parent", WorkspaceID: workspace.ID, WorkflowID: workspace.OfficeWorkflowID, Title: "Parent"},
+		{ID: "priority-other", WorkspaceID: workspace.ID, WorkflowID: workspace.OfficeWorkflowID, Title: "Other"},
+		{ID: "priority-child", WorkspaceID: workspace.ID, WorkflowID: workspace.OfficeWorkflowID,
+			ParentID: "priority-parent", Title: "Child", Priority: "medium"},
+	} {
+		if err := repo.CreateTask(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	priority, held := "high", true
+	updated, changed, err := svc.UpdateTaskWithTerminalRetention(ctx, "priority-child", "priority-parent", workspace.ID,
+		&UpdateTaskRequest{Priority: &priority}, held)
+	if err != nil || !changed || updated.Priority != priority || !models.IsTerminalRetentionHeld(updated.Metadata) {
+		t.Fatalf("combined update = task=%+v changed=%v err=%v", updated, changed, err)
+	}
+	other := "priority-other"
+	if _, err := svc.UpdateTask(ctx, "priority-child", &UpdateTaskRequest{ParentID: &other}); err != nil {
+		t.Fatal(err)
+	}
+	priority, held = "low", false
+	_, changed, err = svc.UpdateTaskWithTerminalRetention(ctx, "priority-child", "priority-parent", workspace.ID,
+		&UpdateTaskRequest{Priority: &priority}, held)
+	if err != nil || changed {
+		t.Fatalf("stale parent update = changed=%v err=%v, want unchanged", changed, err)
+	}
+	stored, err := repo.GetTask(ctx, "priority-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Priority != "high" || !models.IsTerminalRetentionHeld(stored.Metadata) {
+		t.Fatalf("stale parent changed task: %+v", stored)
+	}
+}
+
 func TestHeldChildPreventsParentCascadeArchive(t *testing.T) {
 	svc, repo := setupOfficeTest(t)
 	ctx := context.Background()

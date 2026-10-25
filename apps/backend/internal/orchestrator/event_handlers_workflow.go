@@ -3054,12 +3054,12 @@ func (s *Service) processStepExitAndEnterWithSteps(
 			return err
 		}
 	}
+	s.processOnExit(ctx, taskID, session, fromStep)
 	// A completed silent terminal entry has no destination agent work. Preserve
 	// the existing session and avoid projecting an idle one onto the Done card.
 	if s.silentTerminalEntry(ctx, taskID, targetStep) {
 		return nil
 	}
-	s.processOnExit(ctx, taskID, session, fromStep)
 
 	clearReview := targetStep.HasOnEnterAction(wfmodels.OnEnterAutoStartAgent)
 	if err := s.finalizeStepEnter(ctx, taskID, session.ID, targetStep, taskDescription, clearReview, fromStep, entryIDs...); err != nil {
@@ -5462,16 +5462,16 @@ func (s *Service) processStepExitAndEnterForDeferredMove(
 	if err != nil {
 		return
 	}
-	// Apply the one-shot options before deciding whether this is a card-only entry.
-	entryStep := workflowmove.OverlayStep(targetStep, entryOptions)
-	if s.silentTerminalEntry(ctx, identity.TaskID, entryStep) {
-		return
-	}
 	fromStep, err := s.loadWorkflowStepForLifecycle(ctx, fromStepID, "deferred move source")
 	if err != nil {
 		return
 	}
 	s.processOnExit(ctx, identity.TaskID, session, fromStep)
+	// Apply the one-shot options before deciding whether this is a card-only entry.
+	entryStep := workflowmove.OverlayStep(targetStep, entryOptions)
+	if s.silentTerminalEntry(ctx, identity.TaskID, entryStep) {
+		return
+	}
 
 	current, err = s.messageQueue.ResolveSessionIdentity(ctx, identity.TaskID, identity.SessionID)
 	if err != nil || current != identity {

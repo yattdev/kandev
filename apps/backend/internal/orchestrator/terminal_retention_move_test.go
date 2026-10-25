@@ -105,6 +105,7 @@ func TestFinalizeStepEnter_SilentRetainedTerminalEntryLeavesSessionUntouched(t *
 
 func TestDeferredSilentRetainedTerminalMovePreservesRunningSession(t *testing.T) {
 	sc := buildPendingMoveScenarioWithQueue(t, true)
+	sc.stepGetter.steps[stepInReviewID].Events.OnExit = []wfmodels.OnExitAction{{Type: wfmodels.OnExitDisablePlanMode}}
 	done := sc.stepGetter.steps[stepReviewedID]
 	done.Name = "Done"
 	done.Prompt = "terminal prompt"
@@ -120,6 +121,7 @@ func TestDeferredSilentRetainedTerminalMovePreservesRunningSession(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, models.TaskSessionStateRunning, session.State)
 	require.True(t, session.IsPrimary)
+	require.NoError(t, sc.repo.SetSessionMetadataKey(sc.ctx, session.ID, "plan_mode", true))
 	before, err := sc.repo.ListTaskSessions(sc.ctx, task.ID)
 	require.NoError(t, err)
 	move := &messagequeue.PendingMove{
@@ -149,6 +151,9 @@ func TestDeferredSilentRetainedTerminalMovePreservesRunningSession(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, v1.TaskStateCompleted, stored.State)
 	require.True(t, models.IsTerminalRetentionHeld(stored.Metadata))
+	retained, err := sc.repo.GetTaskSession(sc.ctx, session.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, true, retained.Metadata["plan_mode"], "deferred source exit must clear plan mode")
 }
 
 func setTerminalRetentionForOrchestratorTest(
