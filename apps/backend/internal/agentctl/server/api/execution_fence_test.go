@@ -60,12 +60,18 @@ func TestExecutionFenceClosesOnlyMatchingIncarnation(t *testing.T) {
 	if receipt.AdmissionClosedAt.IsZero() || !receipt.ManagedProcessesDrained {
 		t.Fatalf("receipt = %+v, want closed and drained", receipt)
 	}
+	if receipt.AdmissionCutoffSequence == nil || *receipt.AdmissionCutoffSequence == 0 {
+		t.Fatalf("receipt = %+v, want known sequence through control JSON", receipt)
+	}
 
-	_, err = client.CloseExecutionAdmission(t.Context(), created.ID, agentctl.ExecutionFenceRequest{
+	replayed, err := client.CloseExecutionAdmission(t.Context(), created.ID, agentctl.ExecutionFenceRequest{
 		ExecutionID: "execution-fence", AgentctlGeneration: 7,
 	})
 	if err != nil {
 		t.Fatalf("idempotent CloseExecutionAdmission: %v", err)
+	}
+	if replayed.AdmissionCutoffSequence == nil || *replayed.AdmissionCutoffSequence != *receipt.AdmissionCutoffSequence {
+		t.Fatalf("replayed sequence = %+v, want immutable %+v", replayed.AdmissionCutoffSequence, receipt.AdmissionCutoffSequence)
 	}
 }
 

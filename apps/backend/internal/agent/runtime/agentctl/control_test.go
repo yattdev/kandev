@@ -606,6 +606,46 @@ func TestDeleteInstance_LostResponseThenNotFoundIsSuccessfulRetry(t *testing.T) 
 	}
 }
 
+func TestExecutionFenceSequenceDistinguishesZeroFromLegacyAndOverflow(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		body    string
+		known   bool
+		wantErr string
+	}{
+		{name: "valid zero", body: `{"execution_id":"execution","agentctl_generation":1,"admission_cutoff_sequence":"0"}`, known: true},
+		{name: "legacy unknown", body: `{"execution_id":"execution","agentctl_generation":1}`, known: false},
+		{name: "signed overflow", body: `{"execution_id":"execution","agentctl_generation":1,"admission_cutoff_sequence":"9223372036854775808"}`, wantErr: "signed range"},
+		{name: "malformed", body: `{"execution_id":"execution","agentctl_generation":1,"admission_cutoff_sequence":"not-a-number"}`, wantErr: "decode execution fence receipt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer srv.Close()
+			receipt, err := newTestControlClient(t, srv).CloseExecutionAdmission(t.Context(), "instance", ExecutionFenceRequest{
+				ExecutionID: "execution", AgentctlGeneration: 1,
+			})
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if known := receipt.AdmissionCutoffSequence != nil; known != tc.known {
+				t.Fatalf("sequence known = %t, want %t", known, tc.known)
+			}
+			if tc.known && *receipt.AdmissionCutoffSequence != 0 {
+				t.Fatalf("sequence = %d, want valid zero", *receipt.AdmissionCutoffSequence)
+			}
+		})
+	}
+}
+
 type lostDeleteResponseTransport struct {
 	requests int
 }

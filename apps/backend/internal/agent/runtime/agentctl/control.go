@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -459,6 +460,7 @@ type ExecutionFenceReceipt struct {
 	ExecutionID             string    `json:"execution_id"`
 	AgentctlGeneration      uint64    `json:"agentctl_generation"`
 	AdmissionClosedAt       time.Time `json:"admission_closed_at"`
+	AdmissionCutoffSequence *uint64   `json:"admission_cutoff_sequence,string,omitempty"`
 	ManagedProcessCount     int       `json:"managed_process_count"`
 	AgentProcessTerminal    bool      `json:"agent_process_terminal"`
 	ManagedProcessesDrained bool      `json:"managed_processes_drained"`
@@ -497,6 +499,9 @@ func (c *ControlClient) CloseExecutionAdmission(
 	var receipt ExecutionFenceReceipt
 	if err := json.NewDecoder(resp.Body).Decode(&receipt); err != nil {
 		return nil, fmt.Errorf("decode execution fence receipt: %w", err)
+	}
+	if receipt.AdmissionCutoffSequence != nil && *receipt.AdmissionCutoffSequence > math.MaxInt64 {
+		return nil, fmt.Errorf("decode execution fence receipt: cutoff sequence exceeds signed range")
 	}
 	return &receipt, nil
 }

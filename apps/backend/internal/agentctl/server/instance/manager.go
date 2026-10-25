@@ -451,6 +451,7 @@ type ExecutionFenceReceipt struct {
 	ExecutionID             string    `json:"execution_id"`
 	AgentctlGeneration      uint64    `json:"agentctl_generation"`
 	AdmissionClosedAt       time.Time `json:"admission_closed_at"`
+	AdmissionCutoffSequence *uint64   `json:"admission_cutoff_sequence,string,omitempty"`
 	ManagedProcessCount     int       `json:"managed_process_count"`
 	AgentProcessTerminal    bool      `json:"agent_process_terminal"`
 	ManagedProcessesDrained bool      `json:"managed_processes_drained"`
@@ -500,6 +501,7 @@ func (m *Manager) CloseExecutionAdmission(ctx context.Context, instanceID string
 		ExecutionID:             inst.ExecutionID,
 		AgentctlGeneration:      inst.AgentctlGeneration,
 		AdmissionClosedAt:       cutoff.At,
+		AdmissionCutoffSequence: &cutoff.Sequence,
 		ManagedProcessCount:     managedProcessCount,
 		AgentProcessTerminal:    agentProcessTerminal,
 		ManagedProcessesDrained: managedProcessCount == 0 && agentProcessTerminal,
@@ -513,7 +515,7 @@ func captureExactAdmissionBoundary(inst *Instance, procMgr executionFenceProcess
 		return process.AdmissionCutoff{}, ErrAdmissionSequenceUnknown
 	}
 	cutoff := sequenced.CloseAdmissionGracefullyWithSequence()
-	if !cutoff.Known || cutoff.Sequence == 0 {
+	if !cutoff.Known {
 		return process.AdmissionCutoff{}, ErrAdmissionSequenceUnknown
 	}
 	if inst.fenceBoundary == nil {
