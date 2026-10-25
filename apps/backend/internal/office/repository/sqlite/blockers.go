@@ -6,7 +6,15 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kandev/kandev/internal/office/models"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
+	tasksqlite "github.com/kandev/kandev/internal/task/repository/sqlite"
 )
+
+// MutateTaskBlocker uses the shared task repository's audited edge transaction.
+func (r *Repository) MutateTaskBlocker(ctx context.Context, request dependencywrite.DependencyMutationRequest,
+	authorize dependencywrite.DependencyMutationAuthorizer) (dependencywrite.DependencyMutationResult, error) {
+	return tasksqlite.NewWithInitializedDB(r.db, r.ro, r.log).MutateDependency(ctx, request, authorize)
+}
 
 // CreateTaskBlocker creates a blocker relationship between two tasks.
 func (r *Repository) CreateTaskBlocker(ctx context.Context, blocker *models.TaskBlocker) error {

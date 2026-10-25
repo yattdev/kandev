@@ -169,6 +169,24 @@ func newTestDepsWithLogger(t *testing.T, log *logger.Logger) *testDeps {
 	if err != nil {
 		t.Fatalf("create tasks table: %v", err)
 	}
+	_, err = db.Exec(`ALTER TABLE tasks ADD COLUMN dependency_revision BIGINT NOT NULL DEFAULT 0`)
+	if err != nil {
+		t.Fatalf("add dependency revision: %v", err)
+	}
+	_, err = db.Exec(`CREATE TABLE task_dependency_mutation_audit (
+		event_id TEXT PRIMARY KEY, correlation_id TEXT NOT NULL, created_at TIMESTAMP NOT NULL,
+		operation TEXT NOT NULL, origin_class TEXT NOT NULL, outcome TEXT NOT NULL,
+		reason_code TEXT NOT NULL, changed INTEGER NOT NULL,
+		caller_task_id TEXT NOT NULL DEFAULT '', caller_session_id TEXT NOT NULL DEFAULT '',
+		caller_execution_id TEXT NOT NULL DEFAULT '', caller_workspace_id TEXT NOT NULL DEFAULT '',
+		caller_user_id TEXT NOT NULL DEFAULT '', dependent_task_id TEXT NOT NULL DEFAULT '',
+		predecessor_task_id TEXT NOT NULL DEFAULT '', dependent_id_present INTEGER NOT NULL DEFAULT 0,
+		predecessor_id_present INTEGER NOT NULL DEFAULT 0, dependent_id_canonical INTEGER NOT NULL DEFAULT 0,
+		predecessor_id_canonical INTEGER NOT NULL DEFAULT 0, dependent_revision BIGINT, predecessor_revision BIGINT
+	)`)
+	if err != nil {
+		t.Fatalf("create dependency audit: %v", err)
+	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS workspaces (
 		id TEXT PRIMARY KEY,
 		office_workflow_id TEXT DEFAULT ''
@@ -303,6 +321,9 @@ func (s *stubCostChecker) GetCostSummary(_ context.Context, _ string) (int64, er
 // the priority column is now TEXT after the office migration.
 func insertTestTask(t *testing.T, db *sqlx.DB, id, wsID, title, state string, priority int) {
 	t.Helper()
+	if _, err := db.Exec(`INSERT OR IGNORE INTO workspaces (id) VALUES (?)`, wsID); err != nil {
+		t.Fatalf("seed task workspace %s: %v", wsID, err)
+	}
 	// Give every test task a deterministic workflow_step_id so the office
 	// participant lookup (which now resolves through the task's step) has
 	// a stable target, and back it with a last-position "Done" workflow

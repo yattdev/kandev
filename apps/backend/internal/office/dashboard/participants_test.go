@@ -62,6 +62,17 @@ func TestAddTaskBlocker_HappyPath(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
 	}
+	var revised, audited int
+	if err := deps.db.Get(&revised, `SELECT COUNT(*) FROM tasks WHERE id IN ('tA', 'tB') AND dependency_revision = 1`); err != nil {
+		t.Fatalf("read dependency revisions: %v", err)
+	}
+	if err := deps.db.Get(&audited, `SELECT COUNT(*) FROM task_dependency_mutation_audit
+		WHERE dependent_task_id = 'tA' AND predecessor_task_id = 'tB' AND origin_class = 'office_dashboard' AND changed = 1`); err != nil {
+		t.Fatalf("read dependency audit: %v", err)
+	}
+	if revised != 2 || audited != 1 {
+		t.Fatalf("revised endpoints = %d, audit rows = %d; want 2 and 1", revised, audited)
+	}
 }
 
 func TestAddTaskBlocker_RejectsSelf(t *testing.T) {

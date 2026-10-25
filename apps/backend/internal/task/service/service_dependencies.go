@@ -7,9 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"go.uber.org/zap"
 
+	"github.com/kandev/kandev/internal/auth/authn"
 	"github.com/kandev/kandev/internal/common/taskdependencies"
 	"github.com/kandev/kandev/internal/events"
 	"github.com/kandev/kandev/internal/task/dependencywrite"
@@ -26,6 +28,49 @@ type auditedDependencyMutationRepository interface {
 
 type dependencyDenialRecorder interface {
 	RecordDependencyDenial(context.Context, dependencywrite.DependencyMutationRequest, string) error
+}
+
+type transactionalDependencyStore interface {
+	MutateTaskBlocker(context.Context, dependencywrite.DependencyMutationRequest,
+		dependencywrite.DependencyMutationAuthorizer) (dependencywrite.DependencyMutationResult, error)
+}
+
+func (s *Service) canUseTransactionalDependencyWriter() bool {
+	_, ok := s.blockers.(transactionalDependencyStore)
+	return ok
+}
+
+func (s *Service) mutateOrdinaryDependency(ctx context.Context, operation, taskID, predecessorID string) error {
+	task, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return taskrepo.ErrTaskNotFound
+	}
+	request := dependencywrite.DependencyMutationRequest{
+		Operation: operation, WorkspaceID: task.WorkspaceID,
+		DependentTaskID: taskID, PredecessorTaskID: predecessorID,
+		OriginClass: "task_service", CorrelationID: uuid.NewString(),
+	}
+	if identity, ok := authn.IdentityFromContext(ctx); ok {
+		request.CallerUserID = identity.UserID
+	}
+	// The user boundary is checked by authorizeDependencyPair before this call.
+	// The transaction verifies that both endpoints still exist in this workspace.
+	store := s.blockers.(transactionalDependencyStore)
+	result, err := store.MutateTaskBlocker(ctx, request, func(context.Context, *sqlx.Tx) error { return nil })
+	if err == nil && result.Changed {
+		s.publishCommittedDependencySnapshot(ctx, result.Dependent)
+		s.publishCommittedDependencySnapshot(ctx, result.Predecessor)
+	}
+	if errors.Is(err, dependencywrite.ErrCycle) {
+		if cycle, cycleErr := s.checkDependencyCycle(ctx, taskID, predecessorID); cycleErr == nil && cycle != nil {
+			return cycle
+		}
+		return &CycleError{}
+	}
+	return err
 }
 
 // RecordCoordinatorDependencyDenial durably accounts for a request rejected
@@ -242,6 +287,9 @@ func (s *Service) AddDependency(ctx context.Context, taskID, dependsOnTaskID str
 	}
 	if err := s.authorizeDependencyPair(ctx, taskID, dependsOnTaskID); err != nil {
 		return err
+	}
+	if s.canUseTransactionalDependencyWriter() {
+		return s.mutateOrdinaryDependency(ctx, "add", taskID, dependsOnTaskID)
 	}
 	// Serialize validate-then-insert. The cycle walk and the insert are two
 	// statements, so two concurrent adds can each pass a walk that cannot yet
@@ -476,6 +524,9 @@ func (s *Service) RemoveDependency(ctx context.Context, taskID, dependsOnTaskID 
 	}
 	if err := s.authorizeDependencyPair(ctx, taskID, dependsOnTaskID); err != nil {
 		return err
+	}
+	if s.canUseTransactionalDependencyWriter() {
+		return s.mutateOrdinaryDependency(ctx, "remove", taskID, dependsOnTaskID)
 	}
 	changed, err := s.deleteDependencyEdge(ctx, taskID, dependsOnTaskID)
 	if err != nil {

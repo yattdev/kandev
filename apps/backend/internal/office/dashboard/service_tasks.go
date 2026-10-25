@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"github.com/kandev/kandev/internal/auth/authn"
 	"github.com/kandev/kandev/internal/common/taskdependencies"
 	"github.com/kandev/kandev/internal/events"
 	"github.com/kandev/kandev/internal/events/bus"
@@ -16,6 +19,7 @@ import (
 	officeruntime "github.com/kandev/kandev/internal/office/runtime"
 	"github.com/kandev/kandev/internal/office/shared"
 	"github.com/kandev/kandev/internal/runs/commentkeys"
+	"github.com/kandev/kandev/internal/task/dependencywrite"
 	"github.com/kandev/kandev/internal/workflow/engine"
 
 	"go.uber.org/zap"
@@ -200,6 +204,22 @@ func joinPath(path []string) string {
 // of any length. On cycle detection returns a *BlockerCycleError whose
 // Path lists the cycle for the caller to surface.
 func (s *DashboardService) AddTaskBlocker(ctx context.Context, taskID, blockerTaskID string) error {
+	if writer, ok := s.repo.(dashboardDependencyWriter); ok {
+		if err := s.validateBlockerPair(ctx, taskID, blockerTaskID); err != nil {
+			return err
+		}
+		changed, err := s.mutateDashboardBlocker(ctx, writer, "add", taskID, blockerTaskID)
+		if errors.Is(err, dependencywrite.ErrCycle) {
+			return &BlockerCycleError{}
+		}
+		if err != nil || !changed {
+			return err
+		}
+		s.publishTaskUpdated(ctx, taskID, []string{fieldBlockers})
+		s.publishTaskUpdated(ctx, blockerTaskID, []string{fieldBlockers})
+		s.logBlockerActivity(ctx, taskID, blockerTaskID, "task_blocker_added")
+		return nil
+	}
 	var err error
 	func() {
 		unlock := taskdependencies.AcquireMutationLock()
@@ -222,6 +242,16 @@ func (s *DashboardService) AddTaskBlocker(ctx context.Context, taskID, blockerTa
 // row is a no-op at the DB level; the event/activity entry are still
 // emitted so the UI re-fetches.
 func (s *DashboardService) RemoveTaskBlocker(ctx context.Context, taskID, blockerTaskID string) error {
+	if writer, ok := s.repo.(dashboardDependencyWriter); ok {
+		changed, err := s.mutateDashboardBlocker(ctx, writer, "remove", taskID, blockerTaskID)
+		if err != nil || !changed {
+			return err
+		}
+		s.publishTaskUpdated(ctx, taskID, []string{fieldBlockers})
+		s.publishTaskUpdated(ctx, blockerTaskID, []string{fieldBlockers})
+		s.logBlockerActivity(ctx, taskID, blockerTaskID, "task_blocker_removed")
+		return nil
+	}
 	var err error
 	func() {
 		unlock := taskdependencies.AcquireMutationLock()
@@ -234,6 +264,28 @@ func (s *DashboardService) RemoveTaskBlocker(ctx context.Context, taskID, blocke
 	s.publishTaskUpdated(ctx, taskID, []string{fieldBlockers})
 	s.logBlockerActivity(ctx, taskID, blockerTaskID, "task_blocker_removed")
 	return nil
+}
+
+type dashboardDependencyWriter interface {
+	MutateTaskBlocker(context.Context, dependencywrite.DependencyMutationRequest,
+		dependencywrite.DependencyMutationAuthorizer) (dependencywrite.DependencyMutationResult, error)
+}
+
+func (s *DashboardService) mutateDashboardBlocker(ctx context.Context, writer dashboardDependencyWriter,
+	operation, taskID, blockerTaskID string) (bool, error) {
+	workspaceID, err := s.repo.GetTaskWorkspaceID(ctx, taskID)
+	if err != nil {
+		return false, err
+	}
+	request := dependencywrite.DependencyMutationRequest{
+		Operation: operation, WorkspaceID: workspaceID, DependentTaskID: taskID,
+		PredecessorTaskID: blockerTaskID, OriginClass: "office_dashboard", CorrelationID: uuid.NewString(),
+	}
+	if identity, ok := authn.IdentityFromContext(ctx); ok {
+		request.CallerUserID = identity.UserID
+	}
+	result, err := writer.MutateTaskBlocker(ctx, request, func(context.Context, *sqlx.Tx) error { return nil })
+	return result.Changed, err
 }
 
 // validateBlockerPair runs the validation rules for AddTaskBlocker:

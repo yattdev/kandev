@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/kandev/kandev/internal/common/logger"
 	orchmodels "github.com/kandev/kandev/internal/office/models"
+	officesqlite "github.com/kandev/kandev/internal/office/repository/sqlite"
 	"github.com/kandev/kandev/internal/task/models"
 	taskrepo "github.com/kandev/kandev/internal/task/repository"
 	"github.com/kandev/kandev/internal/task/repository/repoerrors"
@@ -19,6 +22,40 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
+
+func TestOrdinaryDependencyMutationRevisesAndAuditsBothEndpoints(t *testing.T) {
+	svc, repo := setupOfficeTest(t)
+	database := sqlx.NewDb(repo.DB(), "sqlite3")
+	office, err := officesqlite.NewWithDB(database, database, nil)
+	if err != nil {
+		t.Fatalf("office repository: %v", err)
+	}
+	svc.SetBlockerRepository(office)
+	ctx := context.Background()
+	dependent := mustSeedTask(t, svc, "Dependent").ID
+	predecessor := mustSeedTask(t, svc, "Predecessor").ID
+	for _, action := range []func(context.Context, string, string) error{
+		svc.AddDependency, svc.AddDependency, svc.RemoveDependency, svc.RemoveDependency,
+	} {
+		if err := action(ctx, dependent, predecessor); err != nil {
+			t.Fatalf("dependency mutation: %v", err)
+		}
+	}
+	var revisionCount int
+	if err := database.GetContext(ctx, &revisionCount,
+		`SELECT COUNT(*) FROM tasks WHERE id IN (?, ?) AND dependency_revision = 2`, dependent, predecessor); err != nil {
+		t.Fatalf("read revisions: %v", err)
+	}
+	var auditCount int
+	if err := database.GetContext(ctx, &auditCount,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE dependent_task_id = ? AND predecessor_task_id = ? AND origin_class = 'task_service'`,
+		dependent, predecessor); err != nil {
+		t.Fatalf("read audit: %v", err)
+	}
+	if revisionCount != 2 || auditCount != 4 {
+		t.Fatalf("revised endpoints = %d, audits = %d; want 2 and 4", revisionCount, auditCount)
+	}
+}
 
 func TestExactTaskRelationCommandsAreIdempotentAndPreserveCycleRules(t *testing.T) {
 	ctx := context.Background()
