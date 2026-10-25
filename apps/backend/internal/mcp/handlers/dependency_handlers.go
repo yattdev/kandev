@@ -84,8 +84,17 @@ func (h *Handlers) mutateCoordinatorDependency(ctx context.Context, msg *ws.Mess
 	req *dependencyMutationPayload, operation string, principal mcpscope.Principal) (*ws.Message, error) {
 	execution, ok := streams.MCPExecutionContextFromContext(ctx)
 	if !ok || execution.TaskID != principal.CallerTaskID || execution.SessionID != principal.CallerSessionID ||
-		execution.ExecutionID == "" || h.coordinatorSvc == nil || req.TaskID == req.DependsOnTaskID {
+		execution.ExecutionID == "" || h.coordinatorSvc == nil {
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target not found", nil)
+	}
+	if req.TaskID == req.DependsOnTaskID {
+		if err := h.recordCoordinatorDependencyDenial(ctx, principal, msg,
+			"invalid_edge", req.TaskID, req.DependsOnTaskID); err != nil {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError,
+				"dependency authorization could not be recorded", nil)
+		}
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation,
+			"a task cannot depend on itself", nil)
 	}
 	result, err := h.taskSvc.MutateCoordinatorDependency(ctx, dependencywrite.DependencyMutationRequest{
 		Operation: operation, WorkspaceID: principal.WorkspaceID,

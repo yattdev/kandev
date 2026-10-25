@@ -105,6 +105,24 @@ func TestCoordinatorDependencyCycleErrorOmitsTaskPath(t *testing.T) {
 	require.Equal(t, 1, edges)
 }
 
+func TestCoordinatorDependencySelfEdgeIsAudited(t *testing.T) {
+	f := newSharedDependencyFixture(t)
+	ctx := f.ctxFor(f.binding("add_task_dependency_kandev"), true)
+	msg := makeWSMessage(t, ws.ActionMCPAddTaskDependency, map[string]interface{}{
+		"task_id": "dependent", "depends_on_task_id": "dependent",
+	})
+	guarded, forwarded, err := f.h.authorizeCoordinatorRequest(ctx, msg)
+	require.NoError(t, err)
+	require.Nil(t, guarded)
+	response, err := f.h.handleAddTaskDependency(ctx, forwarded)
+	require.NoError(t, err)
+	assertWSError(t, response, ws.ErrorCodeValidation)
+	var denied int
+	require.NoError(t, f.rawDB.Get(&denied,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE outcome = 'denied' AND reason_code = 'invalid_edge' AND dependent_id_present = 1 AND predecessor_id_present = 1`))
+	require.Equal(t, 1, denied)
+}
+
 func TestCoordinatorDependencyCycleThroughUnwatchedTaskIsNotFound(t *testing.T) {
 	f := newSharedDependencyFixture(t)
 	_, err := f.rawDB.Exec(`INSERT INTO task_blockers(task_id, blocker_task_id, created_at) VALUES
