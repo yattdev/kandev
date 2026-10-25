@@ -476,6 +476,8 @@ func (r *SpritesExecutor) createAgentInstance(
 func agentctlInstanceRequest(req *ExecutorCreateRequest, workspacePath string) agentctl.CreateInstanceRequest {
 	return agentctl.CreateInstanceRequest{
 		ID:                    req.InstanceID,
+		ExecutionID:           req.InstanceID,
+		AgentctlGeneration:    req.AgentctlGeneration,
 		WorkspacePath:         workspacePath,
 		SessionID:             req.SessionID,
 		TaskID:                req.TaskID,

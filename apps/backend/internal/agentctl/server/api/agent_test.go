@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -554,6 +555,61 @@ func TestHandleWSPrompt_SuppressesPromptAbandonedAfterCancel(t *testing.T) {
 	}
 }
 
+type blockingPromptAdapter struct {
+	promptErrorAdapter
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (a *blockingPromptAdapter) Prompt(_ context.Context, _ string, _ []v1.MessageAttachment, _ uint64) error {
+	a.once.Do(func() { close(a.entered) })
+	<-a.release
+	return nil
+}
+
+func TestHandleWSPrompt_FenceWaitsForAdmittedDispatchAndRejectsLaterPrompt(t *testing.T) {
+	s := newTestServer(t)
+	adpt := &blockingPromptAdapter{
+		promptErrorAdapter: promptErrorAdapter{sessionID: "session-123"},
+		entered:            make(chan struct{}),
+		release:            make(chan struct{}),
+	}
+	s.procMgr.SetAdapterForTest(adpt)
+	msg, _ := ws.NewRequest("prompt-before-fence", "agent.prompt", PromptRequest{Text: "before", PromptGeneration: 1})
+	if response := s.handleWSPrompt(context.Background(), msg); response.Type != ws.MessageTypeResponse {
+		t.Fatalf("prompt response type = %q, want response", response.Type)
+	}
+	select {
+	case <-adpt.entered:
+	case <-time.After(time.Second):
+		t.Fatal("prompt did not enter adapter dispatch")
+	}
+
+	s.procMgr.CloseAdmissionGracefully()
+	drained := make(chan error, 1)
+	go func() { drained <- s.procMgr.WaitForAdmission(context.Background()) }()
+	select {
+	case err := <-drained:
+		t.Fatalf("fence drained before admitted prompt completed: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(adpt.release)
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatalf("wait for admitted prompt: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fence did not drain after prompt completed")
+	}
+
+	postCutoff, _ := ws.NewRequest("prompt-after-fence", "agent.prompt", PromptRequest{Text: "after", PromptGeneration: 2})
+	if response := s.handleWSPrompt(context.Background(), postCutoff); response.Type != ws.MessageTypeError {
+		t.Fatalf("post-cutoff prompt response type = %q, want error", response.Type)
+	}
+}
+
 func TestHandleWSCancel_NoAdapter(t *testing.T) {
 	s := newTestServer(t)
 	ctx := context.Background()
@@ -1010,6 +1066,25 @@ func TestHandleWSPermissionResolveReturnsStableNotFoundCode(t *testing.T) {
 	}
 	if payload.Details["permission_code"] != streams.PermissionErrorNotFound {
 		t.Fatalf("permission_code = %v, want %q", payload.Details["permission_code"], streams.PermissionErrorNotFound)
+	}
+}
+
+func TestHandleWSPermissionResolveRejectsAfterAdmissionFence(t *testing.T) {
+	s := newTestServer(t)
+	s.procMgr.CloseAdmissionGracefully()
+	msg, _ := ws.NewRequest("req-resolve-fenced", "agent.permissions.resolve", map[string]string{
+		"request_id": "request", "pending_id": "pending", "option_id": "allow-once",
+	})
+	resp := s.handleAgentStreamRequest(context.Background(), msg)
+	if resp.Type != ws.MessageTypeError {
+		t.Fatalf("post-cutoff resolve response = %+v, want error", resp)
+	}
+	var payload ws.ErrorPayload
+	if err := resp.ParsePayload(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != ws.ErrorCodeConflict {
+		t.Fatalf("post-cutoff resolve code = %q, want %q", payload.Code, ws.ErrorCodeConflict)
 	}
 }
 

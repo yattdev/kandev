@@ -265,16 +265,19 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 			return err
 		}
 	}
-	if err := r.retainQuickChatHistoryTx(ctx, tx, running.SessionID); err != nil {
+	if err := r.ensureExecutorRegistrationNotFencedTx(ctx, tx, running); err != nil {
+		return err
+	}
+	if err := r.ensureExecutorGenerationDoesNotRegressTx(ctx, tx, running); err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO executors_running (
 			id, session_id, task_id, execution_profile_id, executor_id, runtime, status, idle_suspension_state, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			id = excluded.id,
 			task_id = excluded.task_id,
@@ -292,6 +295,7 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 			resume_token = excluded.resume_token,
 			last_message_uuid = excluded.last_message_uuid,
 			agent_execution_id = excluded.agent_execution_id,
+			agentctl_generation = excluded.agentctl_generation,
 			container_id = excluded.container_id,
 			agentctl_url = excluded.agentctl_url,
 			agentctl_port = excluded.agentctl_port,
@@ -327,6 +331,7 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 		running.ResumeToken,
 		running.LastMessageUUID,
 		running.AgentExecutionID,
+		running.AgentctlGeneration,
 		running.ContainerID,
 		running.AgentctlURL,
 		running.AgentctlPort,
@@ -350,10 +355,84 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 	return tx.Commit()
 }
 
+func (r *Repository) ensureExecutorGenerationDoesNotRegressTx(ctx context.Context, tx *sqlx.Tx, running *models.ExecutorRunning) error {
+	if running.AgentExecutionID == "" || running.AgentctlGeneration == 0 {
+		return nil
+	}
+	var currentGeneration uint64
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT agentctl_generation FROM executors_running WHERE session_id = ? AND agent_execution_id = ?`), running.SessionID, running.AgentExecutionID).Scan(&currentGeneration)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if currentGeneration > running.AgentctlGeneration {
+		return models.ErrExecutionRotated
+	}
+	return nil
+}
+
+// ensureExecutorRegistrationNotFencedTx rejects the captured incarnation and
+// any session still held behind a coordinator launch fence. An explicit
+// session restart clears the latter before its new execution is registered.
+func (r *Repository) ensureExecutorRegistrationNotFencedTx(ctx context.Context, tx *sqlx.Tx, running *models.ExecutorRunning) error {
+	if err := r.ensurePendingCoordinatorLaunchNotFencedTx(ctx, tx, running.SessionID); err != nil {
+		return err
+	}
+	var sessionFence int
+	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT 1 FROM task_stop_session_fences WHERE session_id = ?`), running.SessionID).Scan(&sessionFence); err == nil {
+		return models.ErrExecutionStopFenced
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("check session launch fence: %w", err)
+	}
+	if running.AgentExecutionID == "" || running.AgentctlGeneration == 0 {
+		return nil
+	}
+	var found int
+	err := tx.QueryRowContext(ctx, r.db.Rebind(`
+		SELECT 1 FROM task_stop_operations
+		WHERE task_id = ? AND session_id = ? AND execution_id = ? AND agentctl_generation = ?
+		LIMIT 1
+	`), running.TaskID, running.SessionID, running.AgentExecutionID, running.AgentctlGeneration).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check executor registration fence: %w", err)
+	}
+	return models.ErrExecutionStopFenced
+}
+
+func (r *Repository) ensurePendingCoordinatorLaunchNotFencedTx(ctx context.Context, tx *sqlx.Tx, sessionID string) error {
+	predicate, orderBy := currentTurnAuthority(r.db.DriverName(), "turn_row")
+	query := fmt.Sprintf(`
+		SELECT 1 FROM task_stop_request_candidates c
+		JOIN task_stop_requests q ON q.task_id = c.task_id AND q.operation_id = c.operation_id
+		JOIN task_sessions s ON s.id = c.session_id AND s.task_id = c.task_id
+		WHERE c.session_id = ? AND q.complete = ? AND c.queue_incarnation_id <> ''
+			AND c.queue_incarnation_id = s.queue_incarnation_id
+			AND c.execution_id = '' AND c.agentctl_generation = 0
+			AND (c.turn_id = '' OR c.turn_id = COALESCE((SELECT turn_row.id FROM task_session_turns turn_row
+				WHERE turn_row.task_session_id = c.session_id AND turn_row.completed_at IS NULL AND %s
+				ORDER BY %s LIMIT 1), ''))
+		LIMIT 1
+	`, predicate, orderBy)
+	var found int
+	err := tx.QueryRowContext(ctx, r.db.Rebind(query), sessionID, false).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check pending coordinator launch fence: %w", err)
+	}
+	return models.ErrExecutionStopFenced
+}
+
 func (r *Repository) ListExecutorsRunning(ctx context.Context) ([]*models.ExecutorRunning, error) {
 	rows, err := r.ro.QueryContext(ctx, `
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, idle_suspension_state, idle_suspension_policy_updated_at, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -373,7 +452,7 @@ func (r *Repository) ListExecutorsRunning(ctx context.Context) ([]*models.Execut
 func (r *Repository) ListExecutorsRunningIdle(ctx context.Context, cutoff time.Time) ([]*models.ExecutorRunning, error) {
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, idle_suspension_state, idle_suspension_policy_updated_at, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -395,7 +474,7 @@ func (r *Repository) ListExecutorsRunningIdle(ctx context.Context, cutoff time.T
 func (r *Repository) ListExecutorsRunningLiveStandalone(ctx context.Context) ([]*models.ExecutorRunning, error) {
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, idle_suspension_state, idle_suspension_policy_updated_at, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -417,7 +496,7 @@ func (r *Repository) ListExecutorsRunningLiveStandalone(ctx context.Context) ([]
 func (r *Repository) ListExecutorsRunningPluginRemote(ctx context.Context) ([]*models.ExecutorRunning, error) {
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, idle_suspension_state, idle_suspension_policy_updated_at, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -437,7 +516,7 @@ func (r *Repository) ListExecutorsRunningByTaskID(ctx context.Context, taskID st
 	}
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, idle_suspension_state, idle_suspension_policy_updated_at, resumable, resume_token,
-			last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+			last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 			worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 			created_at, updated_at
 		FROM executors_running
@@ -471,7 +550,7 @@ func (r *Repository) GetExecutorRunningBySessionID(ctx context.Context, sessionI
 
 	err := r.ro.QueryRowContext(ctx, r.ro.Rebind(`
 		SELECT id, session_id, task_id, execution_profile_id, executor_id, runtime, status, idle_suspension_state, idle_suspension_policy_updated_at, resumable, resume_token,
-		       last_message_uuid, agent_execution_id, container_id, agentctl_url, agentctl_port, pid, local_pid,
+		       last_message_uuid, agent_execution_id, agentctl_generation, container_id, agentctl_url, agentctl_port, pid, local_pid,
 		       worktree_id, worktree_path, worktree_branch, last_seen_at, error_message, metadata,
 		       created_at, updated_at
 		FROM executors_running
@@ -490,6 +569,7 @@ func (r *Repository) GetExecutorRunningBySessionID(ctx context.Context, sessionI
 		&running.ResumeToken,
 		&running.LastMessageUUID,
 		&running.AgentExecutionID,
+		&running.AgentctlGeneration,
 		&running.ContainerID,
 		&running.AgentctlURL,
 		&running.AgentctlPort,
@@ -549,6 +629,7 @@ func scanExecutorRunningRows(rows *sql.Rows) ([]*models.ExecutorRunning, error) 
 			&running.ResumeToken,
 			&running.LastMessageUUID,
 			&running.AgentExecutionID,
+			&running.AgentctlGeneration,
 			&running.ContainerID,
 			&running.AgentctlURL,
 			&running.AgentctlPort,

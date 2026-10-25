@@ -133,6 +133,7 @@ func buildDockerContainerConfig(req *ExecutorCreateRequest, executorType string)
 		SessionID:                      req.SessionID,
 		ExecutorProfileID:              getMetadataString(req.Metadata, "executor_profile_id"),
 		InstanceID:                     req.InstanceID,
+		AgentctlGeneration:             req.AgentctlGeneration,
 		Credentials:                    req.Env,
 		AutoApprovePermissions:         req.AutoApprovePermissions,
 		AutoApprovePermissionsOverride: req.AutoApprovePermissionsOverride,

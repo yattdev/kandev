@@ -1172,6 +1172,7 @@ func (m *Manager) prepareExecutionCreateRequest(
 	preparation := &executionCreatePreparation{
 		request: &ExecutorCreateRequest{
 			InstanceID:                     executionID,
+			AgentctlGeneration:             initialAgentctlGeneration,
 			ExecutorType:                   info.ExecutorType,
 			TaskID:                         taskID,
 			SessionID:                      info.SessionID,

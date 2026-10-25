@@ -614,6 +614,47 @@ type TurnRepository interface {
 	ListTurnsBySession(ctx context.Context, sessionID string) ([]*models.Turn, error)
 }
 
+// CoordinatorStopOperationRepository persists exact parent-stop receipts.
+// Runtime termination proof is intentionally not implied by the fencing phase.
+type CoordinatorStopOperationRepository interface {
+	CaptureCoordinatorStopOperation(ctx context.Context, operation models.CoordinatorStopOperation) (*models.CoordinatorStopOperation, bool, error)
+	GetCoordinatorStopOperation(ctx context.Context, operationID string) (*models.CoordinatorStopOperation, error)
+	MarkCoordinatorStopOperationIncomplete(ctx context.Context, operationID, executionID string, agentctlGeneration uint64, reasonCode string) (*models.CoordinatorStopOperation, bool, error)
+	ConsumeCoordinatorStopFenceReceipt(ctx context.Context, operationID string, receipt models.CoordinatorStopFenceReceipt) (*models.CoordinatorStopOperation, error)
+	RecordCoordinatorStopLifecycleProof(ctx context.Context, operationID, executionID string, agentctlGeneration uint64) error
+	FinalizeCoordinatorStopOperation(ctx context.Context, operationID, executionID string, agentctlGeneration uint64) (*models.CoordinatorStopOperation, error)
+}
+
+// CoordinatorStopOperationLister finds durable stop receipts that still need
+// lifecycle work for a task whose session may already be CANCELLED.
+type CoordinatorStopOperationLister interface {
+	ListPendingCoordinatorStopOperations(ctx context.Context, taskID string) ([]*models.CoordinatorStopOperation, error)
+	ListCoordinatorStopOperations(ctx context.Context, taskID string) ([]*models.CoordinatorStopOperation, error)
+}
+
+// CoordinatorStopRequestRepository persists a caller operation independently
+// from the exact per-session receipts it captures.
+type CoordinatorStopRequestRepository interface {
+	CaptureCoordinatorStopRequest(ctx context.Context, request models.CoordinatorStopRequest) (*models.CoordinatorStopRequest, bool, error)
+	CaptureCoordinatorStopRequestWithCandidates(ctx context.Context, request models.CoordinatorStopRequest) (*models.CoordinatorStopRequest, []models.CoordinatorStopRequestCandidate, bool, error)
+	CompleteCoordinatorStopRequest(ctx context.Context, taskID, operationID, parentTaskID, status string) error
+	GetCoordinatorStopRequest(ctx context.Context, taskID, operationID, parentTaskID string) (*models.CoordinatorStopRequest, error)
+	BindCoordinatorStopRequestReceipt(ctx context.Context, taskID, operationID, receiptID string) error
+	BindCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID string, receiptIDs []string) error
+	ListCoordinatorStopRequestReceipts(ctx context.Context, taskID, operationID, parentTaskID string) ([]models.CoordinatorStopOperation, error)
+	ListPendingCoordinatorStopRequests(ctx context.Context) ([]models.CoordinatorStopRequest, error)
+}
+
+type CoordinatorStopSessionFencer interface {
+	FenceCoordinatorStopSession(ctx context.Context, taskID, sessionID string) (bool, error)
+	ListCoordinatorStopSessionFences(ctx context.Context, taskID string) ([]models.CoordinatorStopSessionFenceReceipt, error)
+}
+
+type CoordinatorStopRequestSessionFencer interface {
+	FenceCoordinatorStopSessionForRequest(ctx context.Context, taskID, sessionID, operationID string) (bool, error)
+	ListCoordinatorStopRequestSessionFences(ctx context.Context, taskID, operationID string) ([]models.CoordinatorStopSessionFenceReceipt, error)
+}
+
 // SessionRepository handles task session lifecycle and workflow-session relationships.
 // TaskSessionSummaryObservationReader reads compact session projections for
 // navigation. It remains optional so unrelated repositories and test doubles

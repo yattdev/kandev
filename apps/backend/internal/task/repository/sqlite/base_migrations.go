@@ -110,6 +110,10 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 	if err := r.migrateWorkspaceProtection(ctx); err != nil {
 		return err
 	}
+	_ = r.migrate.Apply("task_stop_request_candidates.queue_incarnation_id", `ALTER TABLE task_stop_request_candidates ADD COLUMN queue_incarnation_id TEXT NOT NULL DEFAULT ''`)
+	_ = r.migrate.Apply("task_stop_request_candidates.turn_id", `ALTER TABLE task_stop_request_candidates ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''`)
+	_ = r.migrate.Apply("task_stop_request_candidates.execution_id", `ALTER TABLE task_stop_request_candidates ADD COLUMN execution_id TEXT NOT NULL DEFAULT ''`)
+	_ = r.migrate.Apply("task_stop_request_candidates.agentctl_generation", `ALTER TABLE task_stop_request_candidates ADD COLUMN agentctl_generation BIGINT NOT NULL DEFAULT 0`)
 	if err := r.migrateTaskPriorityToTextPostgres(); err != nil {
 		return err
 	}
@@ -144,6 +148,7 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 	}
 	r.migrate.Apply("executors_running.execution_profile_id", `ALTER TABLE executors_running ADD COLUMN execution_profile_id TEXT NOT NULL DEFAULT ''`)
 	r.migrate.Apply("executors_running.last_message_uuid", `ALTER TABLE executors_running ADD COLUMN last_message_uuid TEXT DEFAULT ''`)
+	_ = r.migrate.Apply("executors_running.agentctl_generation", `ALTER TABLE executors_running ADD COLUMN agentctl_generation BIGINT NOT NULL DEFAULT 0`)
 	r.migrate.Apply("executors_running.metadata", `ALTER TABLE executors_running ADD COLUMN metadata TEXT DEFAULT '{}'`)
 	// local_pid holds a host-local liveness handle (the standalone agentctl
 	// control-server PID Kandev spawns) for local/standalone rows. It is kept

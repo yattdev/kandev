@@ -275,6 +275,8 @@ func buildStandaloneCreateInstanceRequest(
 ) *agentctl.CreateInstanceRequest {
 	return &agentctl.CreateInstanceRequest{
 		ID:                    req.InstanceID,
+		ExecutionID:           req.InstanceID,
+		AgentctlGeneration:    req.AgentctlGeneration,
 		WorkspacePath:         req.WorkspacePath,
 		AgentCommand:          "", // Agent command set via Configure endpoint
 		Protocol:              req.Protocol,
@@ -414,6 +416,8 @@ func (r *StandaloneExecutor) CreateInstance(ctx context.Context, req *ExecutorCr
 		SessionID:            req.SessionID,
 		RuntimeName:          r.Name(),
 		Client:               client,
+		ControlClient:        r.ctl,
+		AgentctlInstanceID:   resp.ID,
 		StandaloneInstanceID: resp.ID,
 		StandalonePort:       resp.Port,
 		WorkspacePath:        req.WorkspacePath,
@@ -852,6 +856,7 @@ func (r *StandaloneExecutor) buildRecoveredInstancesWithLease(
 		var taskID, workspacePath string
 		var metadata map[string]interface{}
 		var agentProfileID string
+		var generation uint64
 		if record != nil {
 			taskID = record.TaskID
 			workspacePath = record.WorktreePath
@@ -860,6 +865,10 @@ func (r *StandaloneExecutor) buildRecoveredInstancesWithLease(
 			// source is the recovery-inventory record's execution-profile
 			// column -- never the adopted instance.
 			agentProfileID = record.ExecutionProfileID
+			if record.AgentctlGeneration > 0 && inst.ID == record.AgentExecutionID &&
+				inst.ExecutionID == record.AgentExecutionID && inst.AgentctlGeneration == record.AgentctlGeneration {
+				generation = record.AgentctlGeneration
+			}
 		}
 
 		recovered = append(recovered, &ExecutorInstance{
@@ -869,6 +878,9 @@ func (r *StandaloneExecutor) buildRecoveredInstancesWithLease(
 			AgentProfileID:         agentProfileID,
 			RuntimeName:            r.Name(),
 			Client:                 client,
+			ControlClient:          r.ctl,
+			AgentctlInstanceID:     inst.ID,
+			AgentctlGeneration:     generation,
 			StandaloneInstanceID:   inst.ID,
 			StandalonePort:         inst.Port,
 			WorkspacePath:          workspacePath,

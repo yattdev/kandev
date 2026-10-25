@@ -192,6 +192,10 @@ func (m *Manager) startAgentProcess(ctx context.Context, executionID string) (re
 	if isPassthrough {
 		return m.startPassthroughExecution(operationCtx, execution, profileInfo)
 	}
+	startupGeneration := execution.beginStartupAttemptWithID(ResumeAttemptIDFromContext(operationCtx))
+	if err := execution.advanceAgentctlGeneration(operationCtx, startupGeneration); err != nil {
+		return err
+	}
 	client, releaseClient := execution.AcquireAgentCtlClient()
 	releaseClient()
 	if client == nil {

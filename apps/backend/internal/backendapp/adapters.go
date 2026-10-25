@@ -709,6 +709,13 @@ func (a *lifecycleAdapter) StopAgentWithReason(ctx context.Context, agentInstanc
 	return normalizeRuntimeStopError(a.mgr.StopAgentWithReason(ctx, agentInstanceID, reason, force))
 }
 
+func (a *lifecycleAdapter) StopExecutionWithFence(
+	ctx context.Context, executionID string, generation uint64, reason string,
+	consumeReceipt func(*runtimeapi.ExecutionFenceReceipt) error, consumeTerminalProof func() error,
+) error {
+	return a.mgr.StopExecutionWithFence(ctx, executionID, generation, reason, consumeReceipt, consumeTerminalProof)
+}
+
 // normalizeRuntimeStopError maps the backend lifecycle not-found sentinel onto
 // the public runtime not-found sentinel while preserving the original error for
 // diagnostics. Unrelated errors (and nil) pass through unchanged so a transient

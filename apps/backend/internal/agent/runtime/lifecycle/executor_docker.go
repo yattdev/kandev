@@ -334,17 +334,19 @@ func (r *DockerExecutor) buildCreatedInstance(req *ExecutorCreateRequest, result
 		metadata["worktree_branch"] = getMetadataString(req.Metadata, MetadataKeyWorktreeBranch)
 	}
 	return &ExecutorInstance{
-		InstanceID:     req.InstanceID,
-		TaskID:         req.TaskID,
-		SessionID:      req.SessionID,
-		RuntimeName:    r.Name(),
-		Client:         result.Client,
-		ContainerID:    result.ContainerID,
-		ContainerIP:    containerIP,
-		WorkspacePath:  dockerWorkspacePath,
-		Metadata:       metadata,
-		AuthToken:      result.AuthToken,
-		BootstrapNonce: result.BootstrapNonce,
+		InstanceID:         req.InstanceID,
+		TaskID:             req.TaskID,
+		SessionID:          req.SessionID,
+		RuntimeName:        r.Name(),
+		Client:             result.Client,
+		ControlClient:      result.ControlClient,
+		AgentctlInstanceID: req.InstanceID,
+		ContainerID:        result.ContainerID,
+		ContainerIP:        containerIP,
+		WorkspacePath:      dockerWorkspacePath,
+		Metadata:           metadata,
+		AuthToken:          result.AuthToken,
+		BootstrapNonce:     result.BootstrapNonce,
 	}
 }
 
@@ -383,14 +385,16 @@ func (r *DockerExecutor) reconnectToContainer(ctx context.Context, dockerClient 
 		refreshedAuthToken = conn.authToken
 	}
 	return &ExecutorInstance{
-		InstanceID:    req.InstanceID,
-		TaskID:        req.TaskID,
-		SessionID:     req.SessionID,
-		RuntimeName:   r.Name(),
-		Client:        client,
-		ContainerID:   info.ID,
-		ContainerIP:   containerIP,
-		WorkspacePath: dockerWorkspacePath,
+		InstanceID:         req.InstanceID,
+		TaskID:             req.TaskID,
+		SessionID:          req.SessionID,
+		RuntimeName:        r.Name(),
+		Client:             client,
+		ControlClient:      conn.controlClient,
+		AgentctlInstanceID: conn.instanceID,
+		ContainerID:        info.ID,
+		ContainerIP:        containerIP,
+		WorkspacePath:      dockerWorkspacePath,
 		Metadata: map[string]interface{}{
 			MetadataKeyIsRemote:             true,
 			MetadataKeyContainerID:          info.ID,
@@ -441,10 +445,12 @@ func (r *DockerExecutor) ensureContainerRunning(ctx context.Context, dockerClien
 // the user-facing client, the auth token in effect (which may have been
 // refreshed via re-handshake), and whether the agent subprocess is reusable.
 type reconnectAgentctlConn struct {
+	instanceID     string
 	instanceHost   string
 	instancePort   int
 	authToken      string
 	reusingProcess bool
+	controlClient  *agentctl.ControlClient
 }
 
 type reconnectControlClient interface {
@@ -486,10 +492,12 @@ func (r *DockerExecutor) bringupAgentctl(ctx context.Context, dockerClient *dock
 		return reconnectAgentctlConn{}, err
 	}
 	return reconnectAgentctlConn{
+		instanceID:     instanceID,
 		instanceHost:   instanceHost,
 		instancePort:   resolvedInstancePort,
 		authToken:      authToken,
 		reusingProcess: reusingProcess,
+		controlClient:  ctl,
 	}, nil
 }
 
@@ -642,6 +650,8 @@ func buildReconnectCreateInstanceRequest(req *ExecutorCreateRequest, instanceID 
 	}
 	createReq := &agentctl.CreateInstanceRequest{
 		ID:                    instanceID,
+		ExecutionID:           req.InstanceID,
+		AgentctlGeneration:    req.AgentctlGeneration,
 		WorkspacePath:         dockerWorkspacePath,
 		Protocol:              req.Protocol,
 		CodexAppServerEnabled: req.CodexAppServerEnabled,

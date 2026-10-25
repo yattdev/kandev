@@ -49,7 +49,7 @@ func (r *Repository) CreateTurn(ctx context.Context, turn *models.Turn) error {
 func (r *Repository) CreateTurnWithStepStamp(ctx context.Context, turn *models.Turn) (bool, error) {
 	stampTurnDefaults(turn)
 
-	tx, err := r.db.BeginTx(ctx, nil)
+	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return false, r.insertTurnWithSessionLock(ctx, turn)
 	}
@@ -60,6 +60,9 @@ func (r *Repository) CreateTurnWithStepStamp(ctx context.Context, turn *models.T
 		}
 	}()
 
+	if err := r.lockCoordinatorTurnAdmissionTx(ctx, tx, turn); err != nil {
+		return false, err
+	}
 	if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), turn.TaskSessionID); err != nil {
 		return false, err
 	}
@@ -168,6 +171,9 @@ func (r *Repository) insertTurnWithSessionLock(ctx context.Context, turn *models
 		return fmt.Errorf("begin turn creation: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := r.lockCoordinatorTurnAdmissionTx(ctx, tx, turn); err != nil {
+		return err
+	}
 	if err := lockSessionTurnWrites(ctx, tx, r.db.DriverName(), turn.TaskSessionID); err != nil {
 		return err
 	}
@@ -1897,6 +1903,9 @@ func (r *Repository) UpdateTaskSessionIfCurrentState(
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
+	if err := r.clearCoordinatorStopSessionFence(ctx, session.ID, session.State); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
@@ -2093,6 +2102,9 @@ func (r *Repository) UpdateTaskSessionIfCurrentStateWithStartAttempt(
 		return false, fmt.Errorf("agent session not found: %s", session.ID)
 	}
 	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	if err := r.clearCoordinatorStopSessionFence(ctx, session.ID, models.TaskSessionStateStarting); err != nil {
 		return false, err
 	}
 	if session.Metadata == nil {
@@ -2469,6 +2481,9 @@ func (r *Repository) UpdateTaskSessionState(ctx context.Context, id string, stat
 	if rows == 0 {
 		return fmt.Errorf("%w: agent session not found: %s", models.ErrTaskSessionNotFound, id)
 	}
+	if err := r.clearCoordinatorStopSessionFenceUsing(ctx, writer, id, status); err != nil {
+		return err
+	}
 	if runtimeTx != nil {
 		return runtimeTx.Commit()
 	}
@@ -2504,6 +2519,11 @@ func (r *Repository) UpdateTaskSessionStateIfCurrent(
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return false, time.Time{}, err
+	}
+	if rows > 0 {
+		if err := r.clearCoordinatorStopSessionFenceUsing(ctx, writer, id, status); err != nil {
+			return false, time.Time{}, err
+		}
 	}
 	if runtimeTx != nil {
 		if err := runtimeTx.Commit(); err != nil {
@@ -2541,12 +2561,31 @@ func (r *Repository) UpdateTaskSessionStateIfCurrentIdentity(
 	if err != nil {
 		return false, time.Time{}, err
 	}
+	if rows > 0 {
+		if err := r.clearCoordinatorStopSessionFenceUsing(ctx, writer, id, status); err != nil {
+			return false, time.Time{}, err
+		}
+	}
 	if runtimeTx != nil {
 		if err := runtimeTx.Commit(); err != nil {
 			return false, time.Time{}, err
 		}
 	}
 	return rows > 0, now, nil
+}
+
+func (r *Repository) clearCoordinatorStopSessionFence(ctx context.Context, sessionID string, status models.TaskSessionState) error {
+	return r.clearCoordinatorStopSessionFenceUsing(ctx, r.db, sessionID, status)
+}
+
+func (r *Repository) clearCoordinatorStopSessionFenceUsing(ctx context.Context, writer taskSessionExecutor, sessionID string, status models.TaskSessionState) error {
+	switch status {
+	case models.TaskSessionStateCreated, models.TaskSessionStateStarting, models.TaskSessionStateRunning, models.TaskSessionStateWaitingForInput:
+		_, err := writer.ExecContext(ctx, r.db.Rebind(`DELETE FROM task_stop_session_fences WHERE session_id = ?`), sessionID)
+		return err
+	default:
+		return nil
+	}
 }
 
 // UpdateTaskSessionDynamicRouteIfCurrent changes only the route projection

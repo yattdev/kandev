@@ -908,14 +908,21 @@ func (m *Manager) recordActivity(execution *AgentExecution, event agentctl.Agent
 	// AgentRunning. In practice the adapter always emits agent_capabilities
 	// during Initialize (before MarkBootReady), so firstActivityOnce fires
 	// while Status is still Running — this is defensive hardening.
-	if execution.Status != v1.AgentStatusReady {
+	payload, ok := m.activityEventSnapshot(execution)
+	if !ok {
+		unlockPromptLifecycle()
+		return
+	}
+	if payload.Status != string(v1.AgentStatusReady) {
 		publishRunning := false
 		execution.firstActivityOnce.Do(func() {
 			publishRunning = true
 		})
 		unlockPromptLifecycle()
 		if publishRunning {
-			m.eventPublisher.PublishAgentEvent(context.Background(), events.AgentRunning, execution)
+			if err := m.eventPublisher.publishAgentEventPayload(context.Background(), events.AgentRunning, payload); err != nil {
+				m.logger.Warn("failed to publish agent running event", zap.Error(err))
+			}
 		}
 		return
 	}
@@ -943,7 +950,22 @@ func (m *Manager) recordActivity(execution *AgentExecution, event agentctl.Agent
 		zap.String("session_id", execution.SessionID),
 		zap.String("trigger_event_type", event.Type))
 	unlockPromptLifecycle()
-	m.eventPublisher.PublishAgentEvent(context.Background(), events.AgentRunning, execution)
+	if payload, ok := m.activityEventSnapshot(execution); ok {
+		if err := m.eventPublisher.publishAgentEventPayload(context.Background(), events.AgentRunning, payload); err != nil {
+			m.logger.Warn("failed to publish agent running event", zap.Error(err))
+		}
+	}
+}
+
+func (m *Manager) activityEventSnapshot(execution *AgentExecution) (AgentEventPayload, bool) {
+	if m.executionStore == nil {
+		return newAgentEventPayload(execution), true
+	}
+	var payload AgentEventPayload
+	err := m.executionStore.WithRLock(execution.ID, func(current *AgentExecution) {
+		payload = newAgentEventPayload(current)
+	})
+	return payload, err == nil
 }
 
 // handleStreamDisconnect handles unexpected updates stream disconnections.

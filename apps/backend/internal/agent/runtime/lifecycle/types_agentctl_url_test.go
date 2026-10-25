@@ -1,12 +1,36 @@
 package lifecycle
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	agentctl "github.com/kandev/kandev/internal/agent/runtime/agentctl"
 	"github.com/kandev/kandev/internal/common/logger"
 )
+
+type generationControllerFunc func(context.Context, string, agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error)
+
+func (f generationControllerFunc) UpdateExecutionGeneration(ctx context.Context, instanceID string, update agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error) {
+	return f(ctx, instanceID, update)
+}
+
+type fenceControllerFunc struct {
+	update generationControllerFunc
+	fence  func(context.Context, string, agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error)
+}
+
+func (f fenceControllerFunc) UpdateExecutionGeneration(ctx context.Context, instanceID string, update agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error) {
+	return f.update(ctx, instanceID, update)
+}
+
+func (f fenceControllerFunc) CloseExecutionAdmission(ctx context.Context, instanceID string, request agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error) {
+	return f.fence(ctx, instanceID, request)
+}
 
 func newNopLogger(t *testing.T) *logger.Logger {
 	t.Helper()
@@ -59,4 +83,93 @@ func TestAgentExecution_AcquireAgentCtlClientPinsReplacement(t *testing.T) {
 		t.Fatal("replacement lock remained blocked after client lease release")
 	}
 	exec.agentctlLifecycleMu.Unlock()
+}
+
+func TestAgentExecutionAdvanceAgentctlGenerationUsesExactPreviousGeneration(t *testing.T) {
+	var gotID string
+	var gotUpdate agentctl.ExecutionGenerationUpdate
+	exec := &AgentExecution{ID: "execution-generation", agentctlControl: generationControllerFunc(
+		func(_ context.Context, instanceID string, update agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error) {
+			gotID, gotUpdate = instanceID, update
+			return &agentctl.InstanceInfo{ExecutionID: instanceID, AgentctlGeneration: update.AgentctlGeneration}, nil
+		},
+	)}
+	if err := exec.advanceAgentctlGeneration(t.Context(), 2); err != nil {
+		t.Fatalf("advanceAgentctlGeneration: %v", err)
+	}
+	if gotID != "execution-generation" || gotUpdate.ExecutionID != gotID ||
+		gotUpdate.ExpectedAgentctlGeneration != 1 || gotUpdate.AgentctlGeneration != 2 {
+		t.Fatalf("generation update = (%q, %+v), want exact 1 -> 2", gotID, gotUpdate)
+	}
+}
+
+func TestAgentExecutionAdvanceAgentctlGenerationRejectsControlFailure(t *testing.T) {
+	exec := &AgentExecution{ID: "execution-generation", agentctlControl: generationControllerFunc(
+		func(context.Context, string, agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error) {
+			return nil, errors.New("identity mismatch")
+		},
+	)}
+	if err := exec.advanceAgentctlGeneration(t.Context(), 2); err == nil {
+		t.Fatal("advanceAgentctlGeneration succeeded after control CAS failure")
+	}
+}
+
+func TestAgentExecutionCloseExecutionAdmissionUsesCurrentExactIdentity(t *testing.T) {
+	var gotInstance string
+	var gotRequest agentctl.ExecutionFenceRequest
+	exec := &AgentExecution{
+		ID: "execution-fence", agentctlInstanceID: "agentctl-instance", startupAttemptGeneration: 2,
+		agentctlControl: fenceControllerFunc{
+			update: func(context.Context, string, agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error) {
+				return nil, nil
+			},
+			fence: func(_ context.Context, instanceID string, request agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error) {
+				gotInstance, gotRequest = instanceID, request
+				return &agentctl.ExecutionFenceReceipt{ExecutionID: request.ExecutionID, AgentctlGeneration: request.AgentctlGeneration}, nil
+			},
+		},
+	}
+	if _, err := exec.CloseExecutionAdmission(t.Context(), 2); err != nil {
+		t.Fatalf("CloseExecutionAdmission: %v", err)
+	}
+	if gotInstance != "agentctl-instance" || gotRequest.ExecutionID != "execution-fence" || gotRequest.AgentctlGeneration != 2 {
+		t.Fatalf("fence request = (%q, %+v), want exact current identity", gotInstance, gotRequest)
+	}
+}
+
+func TestAgentExecutionCloseExecutionAdmissionRejectsStaleGeneration(t *testing.T) {
+	exec := &AgentExecution{ID: "execution-fence", startupAttemptGeneration: 2}
+	if _, err := exec.CloseExecutionAdmission(t.Context(), 1); err == nil {
+		t.Fatal("CloseExecutionAdmission accepted stale generation")
+	}
+}
+
+func TestAgentExecutionStopAgentctlGracefullyRejectsStaleGeneration(t *testing.T) {
+	exec := &AgentExecution{ID: "execution-fence", startupAttemptGeneration: 2}
+	if err := exec.StopAgentctlGracefully(t.Context(), 1); err == nil {
+		t.Fatal("StopAgentctlGracefully accepted stale generation")
+	}
+}
+
+func TestAgentExecutionStopAgentctlGracefullyUsesRetainedClient(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/stop/graceful" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	port := server.Listener.Addr().(*net.TCPAddr).Port
+	client := agentctl.NewClient("127.0.0.1", port, newNopLogger(t))
+	exec := &AgentExecution{ID: "execution-fence", startupAttemptGeneration: 2, agentctl: client}
+	if err := exec.StopAgentctlGracefully(t.Context(), 2); err != nil {
+		t.Fatalf("StopAgentctlGracefully: %v", err)
+	}
+	if !called {
+		t.Fatal("graceful stop did not use retained agentctl client")
+	}
 }

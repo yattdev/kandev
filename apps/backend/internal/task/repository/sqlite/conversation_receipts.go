@@ -401,7 +401,7 @@ func (r *Repository) DeleteMessageWithConversationReceipt(ctx context.Context, m
 
 func (r *Repository) CreateTurnWithConversationReceipt(ctx context.Context, turn *models.Turn) (*models.ConversationMutationReceipt, error) {
 	stampTurnDefaults(turn)
-	tx, base, err := r.beginConversationMutation(ctx, turn.TaskSessionID)
+	tx, base, err := r.beginConversationTurnMutation(ctx, turn)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +421,7 @@ func (r *Repository) CreateTurnWithConversationReceipt(ctx context.Context, turn
 
 func (r *Repository) CreateTurnWithStepStampConversationReceipt(ctx context.Context, turn *models.Turn) (bool, *models.ConversationMutationReceipt, error) {
 	stampTurnDefaults(turn)
-	tx, base, err := r.beginConversationMutation(ctx, turn.TaskSessionID)
+	tx, base, err := r.beginConversationTurnMutation(ctx, turn)
 	if err != nil {
 		return false, nil, err
 	}

@@ -1441,6 +1441,7 @@ func (m *Manager) launchBuildExecutorRequest(ctx context.Context, executionID st
 		InstanceID:                     executionID,
 		IsPassthrough:                  reqWithWorktree.IsPassthrough,
 		CausingRunID:                   reqWithWorktree.CausingRunID,
+		AgentctlGeneration:             initialAgentctlGeneration,
 		ExecutorType:                   reqWithWorktree.ExecutorType,
 		TaskID:                         reqWithWorktree.TaskID,
 		TaskTitle:                      reqWithWorktree.TaskTitle,

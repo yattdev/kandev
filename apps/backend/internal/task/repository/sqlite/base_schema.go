@@ -43,6 +43,7 @@ func (r *Repository) initSchemaContext(ctx context.Context) error {
 		r.initPreviewFeedbackSchema,
 		r.initTaskResourceCleanupSchema,
 		r.initTaskTransferSchema,
+		r.initCoordinatorStopOperationSchema,
 		r.initControlServerRecordSchema,
 		r.initGitSchema,
 		r.initReviewSchema,
@@ -176,6 +177,109 @@ func (r *Repository) ensureTaskEnvironmentRecoveryOperationsSchema() error {
 		return fmt.Errorf("required task recovery operation migration: %w", err)
 	}
 	return nil
+}
+
+func (r *Repository) initCoordinatorStopOperationSchema() error {
+	if err := r.migrate.Apply("task_stop_session_fences.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_session_fences (
+			task_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			PRIMARY KEY(task_id, session_id),
+			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+			FOREIGN KEY (session_id) REFERENCES task_sessions(id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop session fences table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_operations.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_operations (
+			id TEXT PRIMARY KEY,
+			task_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			turn_id TEXT NOT NULL,
+			execution_id TEXT NOT NULL,
+			agentctl_generation BIGINT NOT NULL,
+			executor_status TEXT NOT NULL,
+			executor_updated_at TIMESTAMP NOT NULL,
+			admission_cutoff TIMESTAMP NOT NULL,
+			status TEXT NOT NULL,
+			reason_code TEXT NOT NULL DEFAULT '',
+			proof_scope TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL,
+			UNIQUE(task_id, session_id, execution_id, agentctl_generation),
+			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+			FOREIGN KEY (session_id) REFERENCES task_sessions(id) ON DELETE CASCADE,
+			FOREIGN KEY (turn_id) REFERENCES task_session_turns(id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop operations table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_operations.task_index", `
+		CREATE INDEX IF NOT EXISTS idx_task_stop_operations_task ON task_stop_operations(task_id, created_at)`); err != nil {
+		return fmt.Errorf("create task stop operations task index: %w", err)
+	}
+	return r.initCoordinatorStopRequestSchema()
+}
+
+func (r *Repository) initCoordinatorStopRequestSchema() error {
+	if err := r.migrate.Apply("task_stop_requests.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_requests (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, parent_task_id TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
+			PRIMARY KEY(task_id, operation_id),
+			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+			FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop requests table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_request_receipts.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_request_receipts (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, receipt_id TEXT NOT NULL,
+			PRIMARY KEY(task_id, operation_id, receipt_id),
+			FOREIGN KEY (task_id, operation_id) REFERENCES task_stop_requests(task_id, operation_id) ON DELETE CASCADE,
+			FOREIGN KEY (receipt_id) REFERENCES task_stop_operations(id) ON DELETE RESTRICT
+		)`); err != nil {
+		return fmt.Errorf("create task stop request receipts table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_request_fences.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_request_fences (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, session_id TEXT NOT NULL,
+			queue_incarnation_id TEXT NOT NULL DEFAULT '', turn_id TEXT NOT NULL DEFAULT '',
+			execution_id TEXT NOT NULL DEFAULT '', agentctl_generation INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY(task_id, operation_id, session_id),
+			FOREIGN KEY (task_id, operation_id) REFERENCES task_stop_requests(task_id, operation_id) ON DELETE CASCADE,
+			FOREIGN KEY (task_id, session_id) REFERENCES task_stop_session_fences(task_id, session_id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop request fences table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_request_candidates.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_request_candidates (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, session_id TEXT NOT NULL,
+			PRIMARY KEY(task_id, operation_id, session_id),
+			FOREIGN KEY (task_id, operation_id) REFERENCES task_stop_requests(task_id, operation_id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop request candidates table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_request_fence_receipts.table", `
+		CREATE TABLE IF NOT EXISTS task_stop_request_fence_receipts (
+			task_id TEXT NOT NULL, operation_id TEXT NOT NULL, session_id TEXT NOT NULL, created_at TIMESTAMP NOT NULL,
+			PRIMARY KEY(task_id, operation_id, session_id),
+			FOREIGN KEY (task_id, operation_id) REFERENCES task_stop_requests(task_id, operation_id) ON DELETE CASCADE
+		)`); err != nil {
+		return fmt.Errorf("create task stop request fence receipts table: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_requests.outcome", `
+		ALTER TABLE task_stop_requests ADD COLUMN complete BOOLEAN NOT NULL DEFAULT FALSE;
+		ALTER TABLE task_stop_requests ADD COLUMN result_status TEXT NOT NULL DEFAULT '';
+	`); err != nil {
+		return fmt.Errorf("add task stop request outcome: %w", err)
+	}
+	if err := r.migrate.Apply("task_stop_requests.candidates_captured", `
+		ALTER TABLE task_stop_requests ADD COLUMN candidates_captured BOOLEAN NOT NULL DEFAULT FALSE;
+	`); err != nil {
+		return fmt.Errorf("add task stop request candidate capture: %w", err)
+	}
+	return r.migrate.Err()
 }
 
 // ensureTaskEnvironmentRecoveryClaimsSchema creates the durable authority used
@@ -658,6 +762,7 @@ const infraSchemaDDL = `
 		resumable INTEGER NOT NULL DEFAULT 0,
 		resume_token TEXT DEFAULT '',
 		agent_execution_id TEXT DEFAULT '',
+		agentctl_generation BIGINT NOT NULL DEFAULT 0,
 		container_id TEXT DEFAULT '',
 		agentctl_url TEXT DEFAULT '',
 		agentctl_port INTEGER DEFAULT 0,

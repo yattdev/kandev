@@ -70,6 +70,8 @@ type CreateInstanceRequest struct {
 	AutoApprovePermissions *bool               `json:"auto_approve_permissions,omitempty"`
 	McpServers             []McpServerConfig   `json:"mcp_servers,omitempty"`
 	SessionID              string              `json:"session_id,omitempty"`           // Task session ID for MCP tool calls
+	ExecutionID            string              `json:"execution_id,omitempty"`         // Lifecycle execution identity
+	AgentctlGeneration     uint64              `json:"agentctl_generation,omitempty"`  // Lifecycle startup incarnation
 	TaskID                 string              `json:"task_id,omitempty"`              // Task ID for MCP plan tool calls (server-side injection)
 	DisableAskQuestion     bool                `json:"disable_ask_question,omitempty"` // Disable ask_user_question MCP tool (TUI agents)
 	AssumeMcpSse           bool                `json:"assume_mcp_sse,omitempty"`       // Assume agent supports SSE MCP servers
@@ -145,7 +147,9 @@ type InstanceInfo struct {
 	// SessionID is the task session ID this instance was created for, if any.
 	SessionID string `json:"session_id,omitempty"`
 	// TaskID is the task ID this instance was created for, if any.
-	TaskID string `json:"task_id,omitempty"`
+	TaskID             string `json:"task_id,omitempty"`
+	ExecutionID        string `json:"execution_id,omitempty"`
+	AgentctlGeneration uint64 `json:"agentctl_generation,omitempty"`
 	// WorkspaceSourceRoots is the instance's live, current source-root
 	// allowlist, read back rather than pushed (AC-EXECUTORS-SURVIVAL-002.14's
 	// "workspace source roots" reconstruction row).
@@ -393,6 +397,108 @@ func (c *ControlClient) DeleteInstance(ctx context.Context, instanceID string) e
 
 	c.logger.Info("deleted agent instance", zap.String("instance_id", instanceID))
 	return nil
+}
+
+// ExecutionFenceRequest names the execution incarnation whose command
+// admission agentctl must close.
+type ExecutionFenceRequest struct {
+	ExecutionID        string `json:"execution_id"`
+	AgentctlGeneration uint64 `json:"agentctl_generation"`
+}
+
+// ExecutionGenerationUpdate names one compare-and-swap transition of an
+// agentctl instance's lifecycle startup generation.
+type ExecutionGenerationUpdate struct {
+	ExecutionID                string `json:"execution_id"`
+	ExpectedAgentctlGeneration uint64 `json:"expected_agentctl_generation"`
+	AgentctlGeneration         uint64 `json:"agentctl_generation"`
+}
+
+// UpdateExecutionGeneration records the next lifecycle startup generation for
+// an exact execution. Agentctl rejects a stale execution or generation rather
+// than letting a replacement inherit command authority.
+func (c *ControlClient) UpdateExecutionGeneration(
+	ctx context.Context, instanceID string, update ExecutionGenerationUpdate,
+) (*InstanceInfo, error) {
+	body, err := json.Marshal(update)
+	if err != nil {
+		return nil, fmt.Errorf("marshal execution generation update: %w", err)
+	}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.baseURL+"/api/v1/instances/"+instanceID+"/execution-generation", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("update execution generation: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil && errResp.Error != "" {
+			return nil, fmt.Errorf("update execution generation: %s (status %d)", errResp.Error, resp.StatusCode)
+		}
+		return nil, fmt.Errorf("update execution generation: status %d", resp.StatusCode)
+	}
+	var info InstanceInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, fmt.Errorf("decode execution generation update: %w", err)
+	}
+	return &info, nil
+}
+
+// ExecutionFenceReceipt is agentctl's bounded observation after command
+// admission closes. A false ManagedProcessesDrained value is incomplete proof,
+// never a stopped result.
+type ExecutionFenceReceipt struct {
+	ExecutionID             string    `json:"execution_id"`
+	AgentctlGeneration      uint64    `json:"agentctl_generation"`
+	AdmissionClosedAt       time.Time `json:"admission_closed_at"`
+	ManagedProcessCount     int       `json:"managed_process_count"`
+	AgentProcessTerminal    bool      `json:"agent_process_terminal"`
+	ManagedProcessesDrained bool      `json:"managed_processes_drained"`
+}
+
+// CloseExecutionAdmission closes command admission for one exact agentctl
+// incarnation without terminating its remaining work.
+func (c *ControlClient) CloseExecutionAdmission(
+	ctx context.Context, instanceID string, fence ExecutionFenceRequest,
+) (*ExecutionFenceReceipt, error) {
+	body, err := json.Marshal(fence)
+	if err != nil {
+		return nil, fmt.Errorf("marshal execution fence: %w", err)
+	}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.baseURL+"/api/v1/instances/"+instanceID+"/execution-fence", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("close execution admission: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+			return nil, fmt.Errorf("close execution admission: status %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("close execution admission: %s (status %d)", errResp.Error, resp.StatusCode)
+	}
+	var receipt ExecutionFenceReceipt
+	if err := json.NewDecoder(resp.Body).Decode(&receipt); err != nil {
+		return nil, fmt.Errorf("decode execution fence receipt: %w", err)
+	}
+	return &receipt, nil
 }
 
 // ErrInstanceNotFound identifies an absent agentctl instance.

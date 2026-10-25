@@ -273,6 +273,7 @@ type Manager struct {
 	pendingPermissions       map[string]*PendingPermission
 	permissionTombstones     map[string]string
 	permissionTombstoneOrder []string
+	permissionDispatchHook   func()
 	permissionMu             sync.RWMutex
 
 	// VS Code server manager (lazy-initialized on demand)
@@ -316,6 +317,7 @@ type Manager struct {
 	admissionCount        int
 	admissionDrained      chan struct{}
 	stopping              bool
+	admissionCutoff       time.Time
 	lifetimeCtx           context.Context
 	lifetimeCancel        context.CancelFunc
 	mainReapPending       atomic.Bool
@@ -328,12 +330,13 @@ type Manager struct {
 	// created so the flag always describes the current channel — a Start that
 	// fails before reaching that point must not leave the flag describing a
 	// channel that no longer exists.
-	stopChClosed     atomic.Bool
-	groupAliveFn     func(int) bool
-	terminateGroupFn func(int) error
-	killGroupFn      func(int) error
-	waitGroupExitFn  func(context.Context, int) bool
-	managerWaitFn    func(context.Context, <-chan struct{}, time.Duration) bool
+	stopChClosed         atomic.Bool
+	groupAliveFn         func(int) bool
+	terminateGroupFn     func(int) error
+	killGroupFn          func(int) error
+	waitGroupExitFn      func(context.Context, int) bool
+	managerWaitFn        func(context.Context, <-chan struct{}, time.Duration) bool
+	beforeAdmissionClose func()
 }
 
 // ErrManagerStopping indicates that process admission is closed for teardown.
@@ -363,20 +366,49 @@ func (m *Manager) admitStart() (func(), error) {
 	}, nil
 }
 
+// BeginAdapterOperation admits a dispatch to the live protocol adapter. The
+// release function must cover the adapter call itself so an execution fence
+// cannot observe a drained manager while a captured adapter starts work.
+func (m *Manager) BeginAdapterOperation() (func(), error) {
+	return m.admitStart()
+}
+
 // CloseAdmission rejects new process owners without waiting for in-flight
 // handlers. Instance teardown calls it before shutting down HTTP.
 func (m *Manager) CloseAdmission() {
+	m.closeAdmission(true)
+}
+
+// CloseAdmissionGracefully rejects later work while allowing already admitted
+// owners to reach their own terminal boundary without cancellation side effects.
+func (m *Manager) CloseAdmissionGracefully() time.Time {
+	return m.closeAdmission(false)
+}
+
+func (m *Manager) closeAdmission(cancelOwned bool) time.Time {
 	m.comparisonTargetOpsMu.Lock()
 	m.comparisonTargetOpsStopping = true
 	m.comparisonTargetOpsPermanent = true
-	for _, operation := range m.comparisonTargetOps {
-		operation.cancel()
+	if cancelOwned {
+		for _, operation := range m.comparisonTargetOps {
+			operation.cancel()
+		}
 	}
 	m.comparisonTargetOpsMu.Unlock()
+	if m.beforeAdmissionClose != nil {
+		m.beforeAdmissionClose()
+	}
 
 	m.admissionMu.Lock()
 	m.stopping = true
-	lifetimeCancel := m.lifetimeCancel
+	if m.admissionCutoff.IsZero() {
+		m.admissionCutoff = time.Now().UTC()
+	}
+	cutoff := m.admissionCutoff
+	var lifetimeCancel context.CancelFunc
+	if cancelOwned {
+		lifetimeCancel = m.lifetimeCancel
+	}
 	m.admissionMu.Unlock()
 	if lifetimeCancel != nil {
 		lifetimeCancel()
@@ -387,6 +419,7 @@ func (m *Manager) CloseAdmission() {
 	if m.shellMgr != nil {
 		m.shellMgr.BeginStop()
 	}
+	return cutoff
 }
 
 // BeginOwnedOperation admits instance-scoped work and returns a context that
@@ -408,6 +441,28 @@ func (m *Manager) BeginOwnedOperation(parent context.Context) (context.Context, 
 		})
 	}
 	return operationCtx, release, nil
+}
+
+// BeginStreamSubscription keeps a WebSocket tied to instance teardown without
+// counting the connection itself as an admitted command. Individual adapter
+// requests on the stream acquire their own admission while they execute.
+func (m *Manager) BeginStreamSubscription(parent context.Context) (context.Context, func(), error) {
+	m.admissionMu.Lock()
+	stopping := m.stopping
+	m.admissionMu.Unlock()
+	if stopping {
+		return nil, nil, ErrManagerStopping
+	}
+	streamCtx, cancel := context.WithCancel(parent)
+	stopLifetimeCancel := context.AfterFunc(m.lifetimeCtx, cancel)
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			stopLifetimeCancel()
+			cancel()
+		})
+	}
+	return streamCtx, release, nil
 }
 
 // WaitForAdmission waits for starts admitted before CloseAdmission to finish.
@@ -1953,6 +2008,7 @@ func (m *Manager) buildAdapterConfig() error {
 		NotificationQueueCapacity: m.cfg.NotificationQueueCapacity,
 		PromptCancelJoinTimeout:   m.cfg.PromptCancelJoinTimeout,
 		ProviderGatewayAuth:       m.cfg.ProviderGatewayAuth,
+		AcquireAdmission:          m.BeginAdapterOperation,
 	}
 
 	// Configure one-shot mode when a continue command is provided.
@@ -2756,7 +2812,21 @@ func (m *Manager) GetSessionID() string {
 
 // Stop stops the agent process
 func (m *Manager) Stop(ctx context.Context) error {
-	return m.stop(ctx)
+	if err := m.passthrough.StopAll(ctx); err != nil {
+		return err
+	}
+	return m.stop(ctx, false)
+}
+
+// StopGracefully requests the adapter's normal shutdown path and waits for the
+// exact process group to exit. A timeout leaves the process owned and reports
+// an error; it never escalates to SIGTERM or SIGKILL.
+func (m *Manager) StopGracefully(ctx context.Context) error {
+	m.CloseAdmissionGracefully()
+	if err := m.WaitForAdmission(ctx); err != nil {
+		return fmt.Errorf("wait for process admission to drain: %w", err)
+	}
+	return m.stop(ctx, true)
 }
 
 // StopForTeardown permanently closes process admission and drains prior owners
@@ -2772,7 +2842,7 @@ func (m *Manager) StopForTeardown(ctx context.Context) error {
 		// mistake shutdown for an empty successful replay.
 		return errors.Join(previewErr, fmt.Errorf("wait for process admission to drain: %w", err), m.closeDeliveryJournal())
 	}
-	stopErr := m.stop(ctx)
+	stopErr := m.stop(ctx, false)
 	return errors.Join(passthroughErr, previewErr, stopErr, m.closeDeliveryJournal())
 }
 
@@ -2803,10 +2873,7 @@ func (m *Manager) closeDeliveryJournal() error {
 	return m.deliveryJournalCloseErr
 }
 
-func (m *Manager) stop(ctx context.Context) error {
-	if err := m.passthrough.StopAll(ctx); err != nil {
-		return err
-	}
+func (m *Manager) stop(ctx context.Context, gracefulOnly bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -2817,7 +2884,12 @@ func (m *Manager) stop(ctx context.Context) error {
 
 	// Stop trackers before the status guard: passthrough never calls Start() so the early return below would otherwise leak them.
 	m.stopWorkspaceTrackers()
-	comparisonStopErr, comparisonTargetsDrained := m.stopComparisonTargetOperations(ctx)
+	if gracefulOnly {
+		return m.stopGracefullyLocked(ctx)
+	}
+	var comparisonStopErr error
+	var comparisonTargetsDrained bool
+	comparisonStopErr, comparisonTargetsDrained = m.stopComparisonTargetOperations(ctx)
 	if comparisonTargetsDrained {
 		defer m.reopenComparisonTargetOperations()
 	}
@@ -2851,7 +2923,6 @@ func (m *Manager) stop(ctx context.Context) error {
 		}
 		return nil
 	}
-
 	m.logger.Info("stopping agent process - START",
 		zap.Int("pid", m.agentPID()),
 		zap.String("protocol", m.agentProtocol()))
@@ -2868,14 +2939,75 @@ func (m *Manager) stop(ctx context.Context) error {
 	m.killProcessGroupIfRequired()
 	mainStopErr := m.waitForProcessExit(ctx)
 
-	m.status.Store(StatusStopped)
-	m.logger.Info("stopping agent process - COMPLETE")
 	if stopErr := errors.Join(auxiliaryStopErr, mainStopErr); stopErr != nil {
+		m.status.Store(StatusStopped)
+		m.logger.Info("stopping agent process - COMPLETE")
 		m.mainReapPending.Store(mainStopErr != nil)
 		return stopErr
 	}
+	m.status.Store(StatusStopped)
+	m.logger.Info("stopping agent process - COMPLETE")
 	m.mainReapPending.Store(false)
 	return nil
+}
+
+func (m *Manager) stopGracefullyLocked(ctx context.Context) error {
+	comparisonStopErr, comparisonTargetsDrained := m.waitComparisonTargetOperations(ctx)
+	if comparisonTargetsDrained {
+		defer m.reopenComparisonTargetOperations()
+	}
+
+	status := m.Status()
+	if status == StatusStopped || status == StatusStopping {
+		return m.verifyGracefulStop(status)
+	}
+	if blocker := m.gracefulStopBlocker(); blocker != "" {
+		return fmt.Errorf("graceful stop cannot prove owned command drain: %s", blocker)
+	}
+
+	m.logger.Info("stopping agent process - START", zap.Int("pid", m.agentPID()), zap.String("protocol", m.agentProtocol()))
+	m.logger.Debug("agent process stop requested", zap.Int("pid", m.agentPID()), zap.String("protocol", m.agentProtocol()))
+	m.status.Store(StatusStopping)
+	m.closeAdapterAndStdin()
+	if stopErr := errors.Join(comparisonStopErr, m.waitForProcessExitGracefully(ctx)); stopErr != nil {
+		return stopErr
+	}
+	m.status.Store(StatusStopped)
+	m.logger.Info("stopping agent process - COMPLETE")
+	m.mainReapPending.Store(false)
+	return nil
+}
+
+func (m *Manager) verifyGracefulStop(status Status) error {
+	if status == StatusStopping {
+		return fmt.Errorf("graceful agent process stop is still incomplete")
+	}
+	if pid := m.agentPID(); pid != 0 && m.processGroupAlive(pid) {
+		return fmt.Errorf("graceful stop cannot prove agent process group %d is terminal", pid)
+	}
+	if blocker := m.gracefulStopBlocker(); blocker != "" {
+		return fmt.Errorf("graceful stop cannot prove owned command drain: %s", blocker)
+	}
+	if m.mainReapPending.Load() {
+		return fmt.Errorf("graceful stop still has an unreaped agent process")
+	}
+	return nil
+}
+
+func (m *Manager) gracefulStopBlocker() string {
+	if processes := m.ListProcesses(""); len(processes) > 0 {
+		return "managed workspace processes are still active"
+	}
+	if m.shell != nil {
+		return "embedded shell process ownership is active"
+	}
+	if m.shellMgr != nil && m.shellMgr.HasActiveSessions() {
+		return "terminal shell processes are still active"
+	}
+	if info := m.VscodeInfo(); info.Status != VscodeStatusStopped {
+		return "code-server process ownership is active"
+	}
+	return ""
 }
 
 func (m *Manager) agentPID() int {
@@ -3102,6 +3234,29 @@ func (m *Manager) waitForProcessExit(ctx context.Context) error {
 	m.logger.Warn("agent process did not stop after termination; force killing process group",
 		zap.Int("pgid", pid))
 	return m.forceKillProcessGroupAndWait(done, pid)
+}
+
+func (m *Manager) waitForProcessExitGracefully(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+
+	pid := 0
+	if m.cmd != nil && m.cmd.Process != nil {
+		pid = m.cmd.Process.Pid
+	}
+	if !m.waitForManagerDone(ctx, done, m.processExitGrace(ctx)) {
+		if ctx.Err() != nil {
+			return fmt.Errorf("graceful agent process stop timed out: %w", ctx.Err())
+		}
+		return fmt.Errorf("agent process did not exit during graceful stop")
+	}
+	if pid != 0 && m.processGroupAlive(pid) {
+		return fmt.Errorf("agent process group %d remains alive after graceful stop", pid)
+	}
+	return nil
 }
 
 // processExitGrace returns the initial graceful wait before process-group
@@ -4026,13 +4181,21 @@ func (m *Manager) addPermissionTombstoneLocked(requestID, code string) {
 
 // RespondToPermission responds to a pending permission request
 func (m *Manager) RespondToPermission(pendingID string, optionID string, cancelled bool) error {
+	release, err := m.BeginAdapterOperation()
+	if err != nil {
+		return err
+	}
+	defer release()
+	if m.permissionDispatchHook != nil {
+		m.permissionDispatchHook()
+	}
 	validate := func(pending *PendingPermission) error {
 		if !cancelled && !permissionOffersOption(pending, optionID) {
 			return fmt.Errorf("permission option not offered: %s", optionID)
 		}
 		return nil
 	}
-	_, err := m.consumePermission(pendingID, "", validate, &adapter.PermissionResponse{
+	_, err = m.consumePermission(pendingID, "", validate, &adapter.PermissionResponse{
 		OptionID:  optionID,
 		Cancelled: cancelled,
 	}, streams.PermissionErrorAlreadyResolved)

@@ -1375,6 +1375,105 @@ func (m *Manager) StopAgentWithReason(ctx context.Context, executionID string, r
 	execution.cancelStartupRecovery()
 	execution.remoteInstanceLifecycleMu.Lock()
 	defer execution.remoteInstanceLifecycleMu.Unlock()
+	return m.stopAgentWithReasonLocked(ctx, executionID, execution, reason, force, pendingRecovery)
+}
+
+// StopExecutionWithFence closes command admission and gracefully stops the
+// same retained lifecycle execution while its replacement lock is held. The
+// receipt callback runs after the exact fence and before teardown can remove
+// the executor row.
+func (m *Manager) StopExecutionWithFence(
+	ctx context.Context,
+	executionID string,
+	generation uint64,
+	reason string,
+	consumeReceipt func(*ExecutionFenceReceipt) error,
+	consumeTerminalProof func() error,
+) error {
+	execution, exists := m.executionStore.Get(executionID)
+	if !exists || execution.ID != executionID {
+		return fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !execution.remoteInstanceLifecycleMu.TryLock() {
+		return errors.New("exact execution lifecycle is busy; retry stop")
+	}
+	defer execution.remoteInstanceLifecycleMu.Unlock()
+	if current, currentExists := m.executionStore.Get(executionID); !currentExists || current != execution {
+		return fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
+	}
+	return m.stopExecutionWithFenceLocked(ctx, executionID, generation, execution, reason, consumeReceipt, consumeTerminalProof)
+}
+
+func (m *Manager) stopExecutionWithFenceLocked(
+	ctx context.Context,
+	executionID string,
+	generation uint64,
+	execution *AgentExecution,
+	reason string,
+	consumeReceipt func(*ExecutionFenceReceipt) error,
+	consumeTerminalProof func() error,
+) error {
+	agentctlReceipt, err := execution.CloseExecutionAdmission(ctx, generation)
+	if err != nil {
+		return err
+	}
+	receipt := &ExecutionFenceReceipt{
+		ExecutionID: agentctlReceipt.ExecutionID, AgentctlGeneration: agentctlReceipt.AgentctlGeneration,
+		AdmissionClosedAt: agentctlReceipt.AdmissionClosedAt, ManagedProcessesDrained: agentctlReceipt.ManagedProcessesDrained,
+	}
+	if receipt.ExecutionID != executionID || receipt.AgentctlGeneration != generation || receipt.AdmissionClosedAt.IsZero() {
+		return errors.New("agentctl returned a mismatched execution fence receipt")
+	}
+	if err := execution.StopAgentctlGracefully(ctx, generation); err != nil {
+		return fmt.Errorf("graceful stop exact agentctl execution: %w", err)
+	}
+	terminalReceipt, err := execution.verifiedTerminalFenceReceipt(ctx, executionID, generation)
+	if err != nil {
+		return err
+	}
+	receipt.ManagedProcessCount = terminalReceipt.ManagedProcessCount
+	receipt.AgentProcessTerminal = terminalReceipt.AgentProcessTerminal
+	receipt.ManagedProcessesDrained = terminalReceipt.ManagedProcessesDrained
+	if consumeReceipt != nil {
+		if err := consumeReceipt(receipt); err != nil {
+			return fmt.Errorf("persist execution fence receipt: %w", err)
+		}
+	}
+	if err := m.stopAgentWithReasonLocked(ctx, executionID, execution, reason, false, nil); err != nil {
+		return err
+	}
+	if consumeTerminalProof != nil {
+		if err := consumeTerminalProof(); err != nil {
+			return fmt.Errorf("persist lifecycle terminal proof: %w", err)
+		}
+	}
+	return nil
+}
+
+func (e *AgentExecution) verifiedTerminalFenceReceipt(ctx context.Context, executionID string, generation uint64) (*ExecutionFenceReceipt, error) {
+	receipt, err := e.CloseExecutionAdmission(ctx, generation)
+	if err != nil {
+		return nil, fmt.Errorf("verify exact agentctl execution after graceful stop: %w", err)
+	}
+	if receipt.ExecutionID != executionID || receipt.AgentctlGeneration != generation ||
+		!receipt.ManagedProcessesDrained || !receipt.AgentProcessTerminal {
+		return nil, errors.New("agentctl did not prove the exact execution terminal after graceful stop")
+	}
+	return &ExecutionFenceReceipt{
+		ExecutionID:             receipt.ExecutionID,
+		AgentctlGeneration:      receipt.AgentctlGeneration,
+		AdmissionClosedAt:       receipt.AdmissionClosedAt,
+		ManagedProcessCount:     receipt.ManagedProcessCount,
+		AgentProcessTerminal:    receipt.AgentProcessTerminal,
+		ManagedProcessesDrained: receipt.ManagedProcessesDrained,
+	}, nil
+}
+
+//nolint:cyclop // The existing stop sequence must keep lifecycle ownership serialized.
+func (m *Manager) stopAgentWithReasonLocked(ctx context.Context, executionID string, execution *AgentExecution, reason string, force bool, pendingRecovery *remoteRecoveryRetry) error {
 	if current, currentExists := m.executionStore.Get(executionID); !currentExists || current != execution {
 		return fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
 	}
@@ -1465,34 +1564,9 @@ func (m *Manager) StopAgentWithReason(ctx context.Context, executionID string, r
 	execution.detachAgentctlClient()
 	execution.agentctlLifecycleMu.Unlock()
 
-	// Update execution status and remove from tracking
-	_ = m.executionStore.WithLock(executionID, func(exec *AgentExecution) {
-		exec.Status = v1.AgentStatusStopped
-		now := time.Now()
-		exec.FinishedAt = &now
-	})
-	preservePassthroughConversation := reason == StopReasonBackendShutdown && execution.IsPassthrough
-
-	// Persist terminal runtime state before publishing the stop event so
-	// environment recovery cannot mistake a stopped resumable session for a
-	// live consumer. A passthrough TUI also needs its stopped execution ID to
-	// resume the same conversation after a graceful backend restart.
-	if execution.Owner.Kind == ExecutionOwnerRun || preservePassthroughConversation {
-		if err := m.persistExecutorRunningResult(ctx, execution); err != nil {
-			return err
-		}
+	if err := m.finishStoppedExecution(ctx, executionID, execution, reason, pendingRecovery); err != nil {
+		return err
 	}
-	// End session trace span
-	execution.EndSessionSpan()
-
-	m.RemoveExecution(executionID)
-	if execution.Owner.Kind != ExecutionOwnerRun && !preservePassthroughConversation {
-		m.deleteExecutorRunning(ctx, executionInventorySessionID(execution), execution.ID)
-	}
-	if pendingRecovery != nil {
-		m.completeRemoteRecovery(pendingRecovery)
-	}
-	m.clearRemoteStatus(execution.SessionID)
 
 	m.logger.Info("agent stopped and removed from tracking",
 		zap.String("execution_id", executionID),
@@ -1501,6 +1575,32 @@ func (m *Manager) StopAgentWithReason(ctx context.Context, executionID string, r
 	// Publish stopped event
 	m.eventPublisher.PublishAgentEvent(ctx, events.AgentStopped, execution)
 
+	return nil
+}
+
+func (m *Manager) finishStoppedExecution(ctx context.Context, executionID string, execution *AgentExecution, reason string, pendingRecovery *remoteRecoveryRetry) error {
+	_ = m.executionStore.WithLock(executionID, func(exec *AgentExecution) {
+		exec.Status = v1.AgentStatusStopped
+		now := time.Now()
+		exec.FinishedAt = &now
+	})
+	preservePassthroughConversation := reason == StopReasonBackendShutdown && execution.IsPassthrough
+	// Persist terminal runtime state before publishing the stop event so
+	// recovery cannot mistake a stopped resumable session for a live consumer.
+	if execution.Owner.Kind == ExecutionOwnerRun || preservePassthroughConversation {
+		if err := m.persistExecutorRunningResult(ctx, execution); err != nil {
+			return err
+		}
+	}
+	execution.EndSessionSpan()
+	m.RemoveExecution(executionID)
+	if execution.Owner.Kind != ExecutionOwnerRun && !preservePassthroughConversation {
+		m.deleteExecutorRunning(ctx, executionInventorySessionID(execution), execution.ID)
+	}
+	if pendingRecovery != nil {
+		m.completeRemoteRecovery(pendingRecovery)
+	}
+	m.clearRemoteStatus(execution.SessionID)
 	return nil
 }
 
@@ -1957,6 +2057,42 @@ func (m *Manager) DurableDeliveryCapabilityForExecution(
 // Thread-safe: Can be called concurrently from multiple goroutines.
 func (m *Manager) GetExecutionBySessionID(sessionID string) (*AgentExecution, bool) {
 	return m.executionStore.GetBySessionID(sessionID)
+}
+
+// CloseExecutionAdmission closes agentctl command admission for one exact
+// in-memory execution incarnation and returns its drain observation. It never
+// calls StopAgent or settles repository state; stop promotion remains owned by
+// the durable task/session boundary.
+// ExecutionFenceReceipt is lifecycle's transport-neutral observation of an
+// exact agentctl admission fence.
+type ExecutionFenceReceipt struct {
+	ExecutionID             string
+	AgentctlGeneration      uint64
+	AdmissionClosedAt       time.Time
+	ManagedProcessCount     int
+	AgentProcessTerminal    bool
+	ManagedProcessesDrained bool
+}
+
+func (m *Manager) CloseExecutionAdmission(ctx context.Context, executionID string, generation uint64) (*ExecutionFenceReceipt, error) {
+	execution, exists := m.executionStore.Get(executionID)
+	if !exists || execution.ID != executionID {
+		return nil, fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
+	}
+	execution.remoteInstanceLifecycleMu.Lock()
+	defer execution.remoteInstanceLifecycleMu.Unlock()
+	if current, ok := m.executionStore.Get(executionID); !ok || current != execution {
+		return nil, fmt.Errorf("execution %q not found: %w", executionID, ErrExecutionNotFound)
+	}
+	receipt, err := execution.CloseExecutionAdmission(ctx, generation)
+	if err != nil {
+		return nil, err
+	}
+	return &ExecutionFenceReceipt{
+		ExecutionID: receipt.ExecutionID, AgentctlGeneration: receipt.AgentctlGeneration,
+		AdmissionClosedAt: receipt.AdmissionClosedAt, ManagedProcessCount: receipt.ManagedProcessCount,
+		AgentProcessTerminal: receipt.AgentProcessTerminal, ManagedProcessesDrained: receipt.ManagedProcessesDrained,
+	}, nil
 }
 
 // ResolveTaskEnvironmentID returns the task environment ID for a session.

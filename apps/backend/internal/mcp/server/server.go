@@ -1462,14 +1462,27 @@ func (s *Server) registerKanbanTools() {
 	)
 	s.mcpServer.AddTool(
 		mcp.NewTool("stop_task_kandev",
-			mcp.WithDescription(`Stop all live sessions on a direct child task. Only its direct parent may call this halt-only tool; self, sibling, parent, grandparent, unrelated, and cross-workspace requests fail. It does not send a prompt or start a replacement turn; use message_task_kandev with delivery_mode="interrupt" to stop and steer. Accepted sessions become CANCELLED and teardown runs asynchronously; an eligible active task moves to REVIEW. If nothing is running, returns status="not_running" without changing state. Worktrees, commits, records, descendants, and queued messages are preserved. CANCELLED sessions cannot be resumed; use spawn_session_kandev with a new prompt to restart in the same workspace.`),
+			mcp.WithDescription(`Stop active sessions on a same-workspace direct child. The tool uses the trusted caller task as authority, including automation calls. Supply a stable operation_id and reuse it to retry the same exact stop request after a lost response; use get_stop_receipt_kandev with that ID to read the exact bound receipt. The response includes status plus exact execution receipts or session launch fences. status="incomplete" means the session was cancelled or fenced but exact runtime termination is not yet proven; retry to resume pending exact receipts. status="stopped" is reserved for verified terminal proof. Worktrees, commits, records, descendants, and queued messages are preserved.`),
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithString(mcpKeyTaskID, mcp.Required(), mcp.Description("The direct child task's full UUID (not a truncated prefix)")),
+			mcp.WithString("operation_id", mcp.Required(), mcp.Description("Caller-generated stable ID used to retry this exact stop request and retrieve its receipt")),
 		),
 		s.wrapHandler("stop_task_kandev", s.stopTaskHandler()),
+	)
+	s.mcpServer.AddTool(
+		mcp.NewTool("get_stop_receipt_kandev",
+			mcp.WithDescription("Read the exact receipt for a stop request made by this direct parent. Use the same operation_id supplied to stop_task_kandev after a lost response."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(false),
+			mcp.WithString(mcpKeyTaskID, mcp.Required(), mcp.Description("The direct child task's full UUID")),
+			mcp.WithString("operation_id", mcp.Required(), mcp.Description("The exact caller-generated stop request ID")),
+		),
+		s.wrapHandler("get_stop_receipt_kandev", s.getStopReceiptHandler()),
 	)
 	s.registerSpawnSessionTool()
 	s.mcpServer.AddTool(

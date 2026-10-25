@@ -132,6 +132,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/agent/background-work/action", s.handleBackgroundWorkAction)
 		api.POST("/start", s.handleStart)
 		api.POST("/stop", s.handleStop)
+		api.POST("/stop/graceful", s.handleStopGracefully)
 
 		// Agent stream: bidirectional WebSocket for agent events, MCP, and agent operations
 		// (initialize, session/new, session/load, prompt, cancel, stderr, permissions/respond)
@@ -590,6 +591,15 @@ func (s *Server) handleStop(c *gin.Context) {
 		Success: true,
 		Message: "agent stopped",
 	})
+}
+
+func (s *Server) handleStopGracefully(c *gin.Context) {
+	if err := s.procMgr.StopGracefully(c.Request.Context()); err != nil {
+		s.logger.Warn("graceful agent stop incomplete", zap.Error(err))
+		c.JSON(http.StatusGatewayTimeout, StopResponse{Success: false, Error: "graceful stop incomplete"})
+		return
+	}
+	c.JSON(http.StatusOK, StopResponse{Success: true, Message: "agent stopped gracefully"})
 }
 
 // ShellStatusResponse represents shell status

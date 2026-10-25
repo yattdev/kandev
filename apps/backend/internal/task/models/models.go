@@ -44,6 +44,10 @@ var ErrExecutorNotFound = errors.New("executor not found")
 // will produce its own events.
 var ErrExecutionRotated = errors.New("execution rotated; CAS write rejected")
 
+// ErrExecutionStopFenced is returned when a durable parent stop already owns
+// the exact agentctl execution incarnation a registration would revive.
+var ErrExecutionStopFenced = errors.New("execution stop fenced; admission rejected")
+
 // Status values for executors_running.status. The lifecycle manager mirrors
 // active execution state into this column; the orchestrator flips a row to
 // "prepared" when a prepare-only launch finishes with the agent process
@@ -2311,6 +2315,83 @@ type Turn struct {
 	UpdatedAt          time.Time              `json:"updated_at"`
 }
 
+// CoordinatorStopOperation is the durable, exact-incarnation receipt for a
+// parent-initiated halt. Fencing and runtime proof are separate phases: a
+// fencing receipt is intentionally not evidence that the process has stopped.
+type CoordinatorStopOperation struct {
+	ID                 string `db:"id" json:"operation_id"`
+	RequestOperationID string `db:"-" json:"-"`
+	TaskID             string `db:"task_id" json:"task_id"`
+	SessionID          string `db:"session_id" json:"session_id"`
+	TurnID             string `db:"turn_id" json:"turn_id"`
+	ExecutionID        string `db:"execution_id" json:"execution_id"`
+	// AgentctlGeneration identifies the agentctl process incarnation. It is
+	// distinct from queue_incarnation_id, which only identifies queue ownership.
+	AgentctlGeneration uint64    `db:"agentctl_generation" json:"agentctl_generation"`
+	ExecutorStatus     string    `db:"executor_status" json:"executor_status"`
+	ExecutorUpdatedAt  time.Time `db:"executor_updated_at" json:"executor_updated_at"`
+	AdmissionCutoff    time.Time `db:"admission_cutoff" json:"admission_cutoff"`
+	Status             string    `db:"status" json:"status"`
+	ReasonCode         string    `db:"reason_code" json:"reason_code,omitempty"`
+	ProofScope         string    `db:"proof_scope" json:"proof_scope"`
+	CreatedAt          time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// CoordinatorStopRequest binds one caller-supplied idempotency key to its
+// direct parent and the immutable exact receipts captured for this task.
+type CoordinatorStopRequest struct {
+	TaskID       string    `db:"task_id" json:"task_id"`
+	OperationID  string    `db:"operation_id" json:"operation_id"`
+	ParentTaskID string    `db:"parent_task_id" json:"parent_task_id"`
+	Complete     bool      `db:"complete" json:"complete"`
+	ResultStatus string    `db:"result_status" json:"result_status,omitempty"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// CoordinatorStopRequestCandidate is the immutable session incarnation
+// captured with a parent stop request. Retries must not reload these values
+// from a session that may have advanced to a newer execution.
+type CoordinatorStopRequestCandidate struct {
+	TaskID             string `db:"task_id"`
+	OperationID        string `db:"operation_id"`
+	SessionID          string `db:"session_id"`
+	QueueIncarnationID string `db:"queue_incarnation_id"`
+	TurnID             string `db:"turn_id"`
+	ExecutionID        string `db:"execution_id"`
+	AgentctlGeneration uint64 `db:"agentctl_generation"`
+}
+
+const (
+	CoordinatorStopOperationStatusFencing      = "fencing"
+	CoordinatorStopOperationStatusIncomplete   = "incomplete"
+	CoordinatorStopOperationStatusStopped      = "stopped"
+	CoordinatorStopProofScopePending           = "pending_exact_runtime_proof"
+	CoordinatorStopProofScopeAgentctlFence     = "agentctl_admission_closed"
+	CoordinatorStopProofScopeProcessesDrained  = "agentctl_processes_drained"
+	CoordinatorStopProofScopeLifecycleTerminal = "lifecycle_process_tree_terminal"
+)
+
+// CoordinatorStopFenceReceipt is the bounded proof reported by agentctl after
+// it closes command admission for one execution incarnation. It is deliberately
+// insufficient to certify stopped by itself: lifecycle must still establish the
+// terminal executor/process boundary.
+type CoordinatorStopFenceReceipt struct {
+	ExecutionID             string
+	AgentctlGeneration      uint64
+	AdmissionClosedAt       time.Time
+	ManagedProcessesDrained bool
+}
+
+type CoordinatorStopSessionFenceReceipt struct {
+	TaskID     string    `json:"task_id"`
+	SessionID  string    `json:"session_id"`
+	Status     string    `json:"status"`
+	ProofScope string    `json:"proof_scope"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 // ReviewStatus represents the review state of a TaskSession. The zero value
 // (ReviewStatusNone, the empty string) means "no review needed" and serializes
 // out via omitempty, preserving the JSON shape of the legacy *string field.
@@ -2937,6 +3018,7 @@ type ExecutorRunning struct {
 	ResumeToken                   string               `json:"resume_token,omitempty"`
 	LastMessageUUID               string               `json:"last_message_uuid,omitempty"`
 	AgentExecutionID              string               `json:"agent_execution_id,omitempty"`
+	AgentctlGeneration            uint64               `json:"agentctl_generation,omitempty"`
 	// TransientAuthToken carries a decrypted agentctl token only between the
 	// lifecycle recovery inventory read and the matching remote runtime. It is
 	// excluded from JSON and database persistence.

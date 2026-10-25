@@ -466,6 +466,7 @@ type sessionExecutorStore interface {
 	ListActiveTaskSessions(ctx context.Context) ([]*models.TaskSession, error)
 	// Session
 	GetTaskSession(ctx context.Context, id string) (*models.TaskSession, error)
+	GetActiveTurnBySessionID(ctx context.Context, sessionID string) (*models.Turn, error)
 	// HasUserPromptHistory reads the durable prompt sequence without scanning
 	// the session transcript. Empty workflow steps use it to decide whether the
 	// task description is still eligible as the initial prompt.
@@ -1236,7 +1237,8 @@ type Service struct {
 	// callers that don't need the reaper (most tests, ephemeral
 	// orchestrator instances) leave it nil and startIdleSessionReaper
 	// / stopIdleSessionReaper no-op. See idle_session_reaper.go.
-	idleReaper *idleSessionReaper
+	idleReaper                *idleSessionReaper
+	coordinatorStopReconciler *coordinatorStopWorker
 
 	idleParkingMu         sync.Mutex
 	idleParkingCandidates map[idleParkingCandidateKey]time.Time
@@ -1868,6 +1870,7 @@ func NewService(
 		dynamicSuccessorCancel:       dynamicSuccessorCancel,
 		idleReaper:                   newIdleSessionReaper(),
 		ceilingSweeper:               newCeilingSweeper(),
+		coordinatorStopReconciler:    &coordinatorStopWorker{},
 		sessionCeiling:               newSessionCeilingForRepo(repo, cfg.SessionCapacity, svcLogger.Zap()),
 		backgroundProbeConfig:        LoadBackgroundProbeConfig(svcLogger),
 		parkedStates:                 make(map[string]*parkedSessionState),
@@ -3397,6 +3400,13 @@ func (s *Service) reconcileStartupState(ctx context.Context) error {
 		s.logger.Error("failed to reconcile durable queue state on startup", zap.Error(err))
 		return err
 	}
+	if err := s.reconcilePendingCoordinatorStopRequestsOnStartup(ctx); err != nil {
+		s.logger.Error("failed to reconcile pending coordinator stops on startup", zap.Error(err))
+		s.mu.Lock()
+		s.running = false
+		s.mu.Unlock()
+		return err
+	}
 	s.resetParkedSamplingWorkers()
 	// Reconcile coarse session state from persisted runtime state before the
 	// background startup recovery workers begin. This phase does not launch
@@ -3536,6 +3546,7 @@ func (s *Service) startBackgroundRecovery(ctx context.Context) {
 	if lifecycleCtx := s.recoveryLifecycleContext(); lifecycleCtx != nil {
 		s.startSilentRestoreRecovery(lifecycleCtx)
 	}
+	s.coordinatorStopReconciler.start(ctx, s.reconcileCoordinatorStopsOnce)
 }
 
 func (s *Service) setNotRunning() {
@@ -3607,6 +3618,7 @@ func (s *Service) Stop() error {
 	// Stop components in reverse order
 	var errs []error
 	s.stopIdleSessionReaper()
+	s.coordinatorStopReconciler.stop()
 	s.stopCeilingSweeper()
 	s.stopReservedPromptCallbacks()
 
@@ -4094,6 +4106,10 @@ func (s *Service) handleTerminalSessionOnStartup(ctx context.Context, session *m
 	sessionID := session.ID
 	switch previousState {
 	case models.TaskSessionStateCompleted, models.TaskSessionStateCancelled:
+		// An unresolved exact stop owns teardown; ordinary startup cleanup cannot replace its proof.
+		if s.hasUnresolvedCoordinatorStop(ctx, session.TaskID, sessionID) {
+			return true
+		}
 		s.logger.Info("session in terminal state; stopping runtime before cleaning up executor record",
 			zap.String("session_id", sessionID),
 			zap.String("task_id", session.TaskID),

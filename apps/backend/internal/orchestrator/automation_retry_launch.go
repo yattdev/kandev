@@ -313,7 +313,7 @@ func (s *Service) StopAutomationRunDefinitively(ctx context.Context, taskID, ses
 		release()
 		return false, err
 	}
-	result, _, err := s.stopTaskSessionForCoordinatorLocked(ctx, taskID, sessionID)
+	result, _, _, err := s.stopTaskSessionForCoordinatorLocked(ctx, taskID, sessionID, "", nil)
 	claim, claimed := s.executionTeardownClaimFor(sessionID, executionID)
 	lock.Unlock()
 	release()

@@ -113,6 +113,7 @@ func buildRunningFromExecution(execution *AgentExecution, prior *models.Executor
 		Status:             executorRunningStatusFromExecution(execution),
 		Resumable:          true,
 		AgentExecutionID:   execution.ID,
+		AgentctlGeneration: execution.startupAttemptSnapshot(),
 		ContainerID:        execution.ContainerID,
 		AgentctlURL:        agentctlURL,
 		AgentctlPort:       agentctlPort,
@@ -355,6 +356,9 @@ func (m *Manager) persistExecutorRunningResult(ctx context.Context, execution *A
 				zap.Error(err))
 			return err
 		}
+	}
+	if prior != nil && prior.AgentctlGeneration > 0 && execution.recoveredGenerationUnknown {
+		return models.ErrExecutionRotated
 	}
 	if execution.AgentProfileID == "" && prior != nil {
 		execution.AgentProfileID = prior.ExecutionProfileID

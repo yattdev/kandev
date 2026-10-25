@@ -59,6 +59,7 @@ const (
 
 type CursorMCPAuthenticationSpec = lifecycle.CursorMCPAuthenticationSpec
 type CursorMCPRetryResult = lifecycle.CursorMCPRetryResult
+type ExecutionFenceReceipt = lifecycle.ExecutionFenceReceipt
 
 // ErrNoExecutionForSession reports that a session has no live execution.
 var (

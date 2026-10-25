@@ -46,6 +46,12 @@ func remoteContributionsFromMetadata(metadata map[string]interface{}) (map[strin
 	return validateRemoteContributions(decoded)
 }
 
+// AgentctlGenerationController advances the exact lifecycle incarnation held
+// by an agentctl control server.
+type AgentctlGenerationController interface {
+	UpdateExecutionGeneration(context.Context, string, agentctl.ExecutionGenerationUpdate) (*agentctl.InstanceInfo, error)
+}
+
 func validateRemoteContributions(values map[string]models.RemoteContribution) (map[string]models.RemoteContribution, error) {
 	if len(values) == 0 {
 		return nil, nil
@@ -646,9 +652,10 @@ type RemoteInstanceRefresher interface {
 
 // ExecutorCreateRequest contains parameters for creating an agentctl instance.
 type ExecutorCreateRequest struct {
-	InstanceID    string
-	CausingRunID  string
-	IsPassthrough bool
+	InstanceID         string
+	AgentctlGeneration uint64
+	CausingRunID       string
+	IsPassthrough      bool
 	// ExecutorType is retained in execution metadata so recovered sessions can
 	// safely re-check host-local filesystem eligibility.
 	ExecutorType      string
@@ -765,6 +772,9 @@ type ExecutorInstance struct {
 
 	// Agentctl client for communicating with this instance
 	Client                    *agentctl.Client
+	ControlClient             AgentctlGenerationController
+	AgentctlInstanceID        string
+	AgentctlGeneration        uint64
 	remotePassthroughSnapshot *agentctltypes.PassthroughSnapshot
 
 	// DiscardRecovery closes only host-side resources allocated for this
@@ -920,6 +930,9 @@ func (ri *ExecutorInstance) ToAgentExecution(req *ExecutorCreateRequest) *AgentE
 		StartedAt:                  time.Now(),
 		metadata:                   metadata,
 		agentctl:                   ri.Client,
+		agentctlControl:            ri.ControlClient,
+		agentctlInstanceID:         ri.AgentctlInstanceID,
+		startupAttemptGeneration:   ri.AgentctlGeneration,
 		standaloneInstanceID:       ri.StandaloneInstanceID,
 		standalonePort:             ri.StandalonePort,
 		runtimeEpoch:               runtimeEpochFromClient(ri.Client),

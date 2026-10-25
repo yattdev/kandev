@@ -240,6 +240,8 @@ type peerMessageStartAdmissionProvider interface {
 // in the orchestrator.
 type TaskStopper interface {
 	StopTaskForCoordinator(ctx context.Context, taskID string) (orchestrator.CoordinatorTaskStopResult, error)
+	StopTaskForCoordinatorOperation(ctx context.Context, taskID, parentTaskID, operationID string) (orchestrator.CoordinatorTaskStopResult, error)
+	GetCoordinatorStopReceipt(ctx context.Context, taskID, parentTaskID, operationID string) (orchestrator.CoordinatorTaskStopResult, error)
 }
 
 // AgentPermissionService is the authorized domain boundary for external
@@ -615,6 +617,7 @@ func (h *Handlers) registerTaskMutationHandlers(d *guardedMCPDispatcher) {
 	d.RegisterFunc(ws.ActionMCPStepComplete, h.handleStepComplete)
 	d.RegisterFunc(ws.ActionMCPMessageTask, h.handleMessageTask)
 	d.RegisterFunc(ws.ActionMCPStopTask, h.handleStopTask)
+	d.RegisterFunc(ws.ActionMCPGetStopReceipt, h.handleGetStopReceipt)
 	d.RegisterFunc(ws.ActionMCPSpawnSession, h.handleSpawnSession)
 }
 

@@ -219,7 +219,7 @@ func (s *Server) handleAgentStreamWS(c *gin.Context) {
 		_ = conn.Close()
 		return
 	}
-	ownedCtx, release, err := s.procMgr.BeginOwnedOperation(c.Request.Context())
+	ownedCtx, release, err := s.procMgr.BeginStreamSubscription(c.Request.Context())
 	if err != nil {
 		s.logger.Debug("agent stream rejected during instance teardown", zap.Error(err))
 		_ = conn.Close()
@@ -796,6 +796,12 @@ func (s *Server) handleWSPermissionResolve(msg *ws.Message) *ws.Message {
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeBadRequest, "request_id, pending_id, and option_id are required", nil)
 		return resp
 	}
+	release, err := s.procMgr.BeginAdapterOperation()
+	if err != nil {
+		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeConflict, "agent execution is stopping", nil)
+		return resp
+	}
+	defer release()
 
 	result, err := s.procMgr.ResolvePermission(req.RequestID, req.PendingID, req.OptionID)
 	if err == nil {
@@ -832,6 +838,12 @@ func (s *Server) handleWSInitialize(ctx context.Context, msg *ws.Message) *ws.Me
 
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
+	release, err := s.procMgr.BeginAdapterOperation()
+	if err != nil {
+		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent execution is stopping", nil)
+		return resp
+	}
+	defer release()
 	adapter, generationCurrent := s.procMgr.GetAdapterForGeneration(req.ProcessGeneration)
 	if !generationCurrent {
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent process generation changed before initialization", nil)
@@ -1225,6 +1237,17 @@ func (s *Server) handleWSPrompt(ctx context.Context, msg *ws.Message) *ws.Messag
 		return resp
 	}
 
+	release, err := s.procMgr.BeginAdapterOperation()
+	if err != nil {
+		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent execution is stopping", nil)
+		return resp
+	}
+	releaseWithHandler := true
+	defer func() {
+		if releaseWithHandler {
+			release()
+		}
+	}()
 	adapter := s.procMgr.GetAdapter()
 	if adapter == nil {
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError, "agent not running", nil)
@@ -1284,7 +1307,9 @@ func (s *Server) handleWSPrompt(ctx context.Context, msg *ws.Message) *ws.Messag
 	// the in-flight prompt even though the agent subprocess keeps running fine.
 	// The prompt completes naturally when the agent process exits (stdin/stdout close),
 	// the user cancels, or agentctl shuts down.
+	releaseWithHandler = false
 	go func() {
+		defer release()
 		prompt := func(promptCtx context.Context) error {
 			return promptOrSteer(promptCtx, adapter, req)
 		}
@@ -1461,6 +1486,12 @@ func (s *Server) handleWSPermissionRespond(_ context.Context, msg *ws.Message) *
 		zap.String("option_id", req.OptionID),
 		zap.Bool("cancelled", req.Cancelled))
 
+	release, err := s.procMgr.BeginAdapterOperation()
+	if err != nil {
+		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "agent execution is stopping", nil)
+		return resp
+	}
+	defer release()
 	if err := s.procMgr.RespondToPermission(req.PendingID, req.OptionID, req.Cancelled); err != nil {
 		s.logger.Error("failed to respond to permission", zap.Error(err))
 		resp, _ := ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, err.Error(), nil)

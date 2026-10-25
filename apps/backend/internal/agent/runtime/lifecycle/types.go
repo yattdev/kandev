@@ -4,6 +4,8 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -28,6 +30,11 @@ import (
 
 // AgentCtlPort is the default agentctl control port.
 const AgentCtlPort = ports.AgentCtl
+
+// initialAgentctlGeneration is reserved for a newly created agentctl instance.
+// startAgentProcess advances the matching AgentExecution to this generation
+// before it admits the first agent process.
+const initialAgentctlGeneration uint64 = 1
 
 // AgentExecution represents a running agent execution
 type AgentExecution struct {
@@ -219,8 +226,10 @@ type AgentExecution struct {
 	prepareProgressRecorder *prepareProgressRecorder
 
 	// agentctl client for this execution
-	agentctl         *agentctl.Client
-	agentctlOverride atomic.Pointer[agentctl.Client]
+	agentctl           *agentctl.Client
+	agentctlControl    AgentctlGenerationController
+	agentctlInstanceID string
+	agentctlOverride   atomic.Pointer[agentctl.Client]
 	// agentctlURLFallback is the URL a replacement or detach publishes before it
 	// takes agentctlSourceMu's write side, so a concurrent persistence read never
 	// reports an empty endpoint for an execution that still has one.
@@ -436,10 +445,11 @@ type AgentExecution struct {
 	// process cannot fail a replacement process after npm recovery starts.
 	// This state has its own mutex because stream setup can run while
 	// promptLifecycleMu is held by workspace rebind waiting for readiness.
-	startupAttemptGeneration uint64
-	startupRecoveryStarted   bool
-	startupRecoveryCancelled bool // A stopped execution cannot start another replacement.
-	startupRecoveryCancel    context.CancelCauseFunc
+	startupAttemptGeneration   uint64
+	startupRecoveryStarted     bool
+	startupRecoveryCancelled   bool // A stopped execution cannot start another replacement.
+	startupRecoveryCancel      context.CancelCauseFunc
+	recoveredGenerationUnknown bool
 	// startupAttemptIDs preserves the recovery identity for each startup
 	// generation. The execution ID can be reused by managed-runtime repair, so
 	// callbacks must use their captured generation identity instead of the
@@ -1227,6 +1237,98 @@ func (ae *AgentExecution) publishAgentctlURL(url string) {
 		return
 	}
 	ae.agentctlURLFallback.Store(&url)
+}
+
+// advanceAgentctlGeneration updates the control-plane incarnation before a
+// replacement startup can admit commands. Runtimes without a retained control
+// client remain unverified and consequently cannot supply exact stop proof.
+func (ae *AgentExecution) advanceAgentctlGeneration(ctx context.Context, generation uint64) error {
+	if ae == nil || generation <= initialAgentctlGeneration {
+		return nil
+	}
+	ae.agentctlLifecycleMu.RLock()
+	control := ae.agentctlControl
+	ae.agentctlLifecycleMu.RUnlock()
+	if control == nil {
+		return nil
+	}
+	_, err := control.UpdateExecutionGeneration(ctx, ae.ID, agentctl.ExecutionGenerationUpdate{
+		ExecutionID: ae.ID, ExpectedAgentctlGeneration: generation - 1, AgentctlGeneration: generation,
+	})
+	if err != nil {
+		return fmt.Errorf("advance agentctl generation %d: %w", generation, err)
+	}
+	return nil
+}
+
+type agentctlFenceController interface {
+	CloseExecutionAdmission(context.Context, string, agentctl.ExecutionFenceRequest) (*agentctl.ExecutionFenceReceipt, error)
+}
+
+// CloseExecutionAdmission returns agentctl's bounded drain observation for
+// exactly the current lifecycle startup generation. It does not terminate
+// work or alter task/session state, so callers must keep the result incomplete
+// until their own turn and executor-row settlement checks succeed.
+func (ae *AgentExecution) CloseExecutionAdmission(ctx context.Context, generation uint64) (*agentctl.ExecutionFenceReceipt, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := ae.validateExactStopGeneration(generation); err != nil {
+		return nil, err
+	}
+	if !ae.agentctlLifecycleMu.TryRLock() {
+		return nil, errors.New("exact agentctl lifecycle is busy; retry fence")
+	}
+	control, ok := ae.agentctlControl.(agentctlFenceController)
+	instanceID := ae.agentctlInstanceID
+	ae.agentctlLifecycleMu.RUnlock()
+	if !ok || control == nil || instanceID == "" {
+		return nil, fmt.Errorf("execution %q has no exact agentctl control path", ae.ID)
+	}
+	receipt, err := control.CloseExecutionAdmission(ctx, instanceID, agentctl.ExecutionFenceRequest{
+		ExecutionID: ae.ID, AgentctlGeneration: generation,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("close execution admission: %w", err)
+	}
+	if receipt == nil || receipt.ExecutionID != ae.ID || receipt.AgentctlGeneration != generation {
+		return nil, fmt.Errorf("agentctl returned mismatched execution fence receipt")
+	}
+	return receipt, nil
+}
+
+// StopAgentctlGracefully stops only the exact currently retained agentctl
+// client. A timeout leaves lifecycle ownership intact for a retry.
+func (ae *AgentExecution) StopAgentctlGracefully(ctx context.Context, generation uint64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !ae.agentctlLifecycleMu.TryLock() {
+		return errors.New("exact agentctl lifecycle is busy; retry stop")
+	}
+	defer ae.agentctlLifecycleMu.Unlock()
+	if err := ae.validateExactStopGeneration(generation); err != nil {
+		return err
+	}
+	client := ae.currentAgentCtlClient()
+	if client == nil {
+		return errors.New("agentctl client is unavailable")
+	}
+	return client.StopGracefully(ctx)
+}
+
+func (ae *AgentExecution) validateExactStopGeneration(generation uint64) error {
+	if ae == nil || generation == 0 {
+		return errors.New("execution generation mismatch")
+	}
+	if !ae.startupLifecycleMu.TryLock() {
+		return errors.New("exact execution generation is busy; retry stop")
+	}
+	defer ae.startupLifecycleMu.Unlock()
+	if ae.startupAttemptGeneration != generation {
+		return errors.New("execution generation mismatch")
+	}
+	return nil
 }
 
 // replaceAgentctlClient atomically publishes a replacement connection while

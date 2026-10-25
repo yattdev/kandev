@@ -58,6 +58,7 @@ type ContainerConfig struct {
 	AutoApprovePermissionsOverride *bool
 	ProfileInfo                    *AgentProfileInfo
 	InstanceID                     string
+	AgentctlGeneration             uint64
 	MainRepoGitDir                 string // Path to main repo's .git directory (for worktrees)
 	McpServers                     []McpServerConfig
 	McpMode                        string
@@ -126,6 +127,8 @@ func buildContainerCreateInstanceRequest(
 ) *agentctl.CreateInstanceRequest {
 	return &agentctl.CreateInstanceRequest{
 		ID:                    config.InstanceID,
+		ExecutionID:           config.InstanceID,
+		AgentctlGeneration:    config.AgentctlGeneration,
 		WorkspacePath:         "/workspace",
 		AgentCommand:          "",
 		AgentType:             agentType,
@@ -237,6 +240,7 @@ func homeDir() string {
 type LaunchResult struct {
 	ContainerID    string
 	Client         *agentctl.Client
+	ControlClient  *agentctl.ControlClient
 	AuthToken      string // auth token retrieved via handshake (for encrypted storage)
 	BootstrapNonce string // nonce injected into container env for future restart handshakes
 }
@@ -294,6 +298,7 @@ func (cm *ContainerManager) LaunchContainer(ctx context.Context, config Containe
 	return &LaunchResult{
 		ContainerID:    containerID,
 		Client:         client,
+		ControlClient:  ctl,
 		AuthToken:      authToken,
 		BootstrapNonce: nonce,
 	}, nil

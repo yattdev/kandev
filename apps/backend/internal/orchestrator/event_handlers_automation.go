@@ -161,7 +161,8 @@ func (s *Service) StopAutomationRun(ctx context.Context, taskID, sessionID, turn
 	if !valid {
 		return false, nil
 	}
-	return s.stopTaskSessionForCoordinator(ctx, taskID, sessionID)
+	result, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID, "")
+	return result.Changed, err
 }
 
 // AutomationRunLive is the conservative liveness check used during startup
@@ -1503,15 +1504,6 @@ func (s *Service) handleAutomationContinuationDispatchError(
 	}
 }
 
-func (s *Service) cancelAutomationDispatch(ctx context.Context, taskID, sessionID string) {
-	if s.turnService == nil || s.executor == nil {
-		return
-	}
-	if _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID); err != nil {
-		s.logger.Warn("failed to cancel automation dispatch without a turn identity",
-			zap.String("task_id", taskID), zap.String("session_id", sessionID), zap.Error(err))
-	}
-}
 func (s *Service) promptAutomationContinuation(
 	ctx context.Context,
 	task *models.Task,
@@ -1600,6 +1592,16 @@ func (s *Service) promptAutomationContinuation(
 	}
 	s.recordAutomationContinuationMessage(ctx, task.ID, session.ID, turnID, prompt)
 	return automation.RunDispatch{TaskID: task.ID, SessionID: session.ID, TurnID: turnID}, nil
+}
+
+func (s *Service) cancelAutomationDispatch(ctx context.Context, taskID, sessionID string) {
+	if s.turnService == nil || s.executor == nil {
+		return
+	}
+	if _, _, err := s.stopTaskSessionForCoordinator(ctx, taskID, sessionID, ""); err != nil {
+		s.logger.Warn("failed to cancel automation dispatch without a turn identity",
+			zap.String("task_id", taskID), zap.String("session_id", sessionID), zap.Error(err))
+	}
 }
 
 func (s *Service) recordAutomationContinuationMessage(ctx context.Context, taskID, sessionID, turnID, prompt string) {

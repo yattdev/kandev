@@ -39,6 +39,58 @@ func TestRespondToPermissionRejectsOptionNotOffered(t *testing.T) {
 	}
 }
 
+func TestRespondToPermission_FenceWaitsForAdmittedDispatchAndRejectsLaterResponse(t *testing.T) {
+	responseCh := make(chan *adapter.PermissionResponse, 1)
+	entered := make(chan struct{})
+	releaseDispatch := make(chan struct{})
+	m := permissionTestManager(t, responseCh)
+	m.permissionDispatchHook = func() {
+		close(entered)
+		<-releaseDispatch
+	}
+
+	responded := make(chan error, 1)
+	go func() { responded <- m.RespondToPermission("pending-1", "allow-once", false) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("permission response did not reach dispatch gate")
+	}
+	m.CloseAdmissionGracefully()
+	drained := make(chan error, 1)
+	go func() { drained <- m.WaitForAdmission(context.Background()) }()
+	select {
+	case err := <-drained:
+		t.Fatalf("fence drained before admitted permission dispatch completed: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseDispatch)
+	select {
+	case err := <-responded:
+		if err != nil {
+			t.Fatalf("respond to admitted permission: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("permission response did not finish")
+	}
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatalf("wait for admitted permission: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fence did not drain after permission response")
+	}
+
+	m.pendingPermissions["pending-2"] = &PendingPermission{
+		ID: "pending-2", Request: &adapter.PermissionRequest{Options: []adapter.PermissionOption{{OptionID: "allow-once"}}},
+		ResponseCh: make(chan *adapter.PermissionResponse, 1),
+	}
+	if err := m.RespondToPermission("pending-2", "allow-once", false); !errors.Is(err, ErrManagerStopping) {
+		t.Fatalf("post-cutoff permission response error = %v, want ErrManagerStopping", err)
+	}
+}
+
 func TestResolvePermissionConsumesExactRequestOnce(t *testing.T) {
 	responseCh := make(chan *adapter.PermissionResponse, 1)
 	m := permissionTestManager(t, responseCh)
