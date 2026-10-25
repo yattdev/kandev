@@ -76,8 +76,9 @@ func TestManagerStartRestoresSettingsSourceForAdoptedExecution(t *testing.T) {
 
 	recovered, ok := mgr.GetExecutionBySessionID(sessionID)
 	require.True(t, ok)
-	require.Equal(t, uint64(10), recovered.startupAttemptSnapshot(),
-		"the adopted callbacks must use the durably reserved source epoch")
+	require.Zero(t, recovered.startupAttemptSnapshot(), "unknown agentctl generation must remain unknown")
+	require.Equal(t, uint64(10), recovered.settingsSourceSnapshot(),
+		"the adopted settings projection must use the durably reserved source epoch")
 	require.Equal(t, attemptID, recovered.ResumeAttemptID,
 		"backend reconstruction must preserve the source attempt identity")
 	require.Equal(t, SessionSettingsPolicyStrict, recovered.SessionSettingsPolicy,
@@ -107,7 +108,8 @@ func TestManagerStartRestoresSettingsSourceForAdoptedExecution(t *testing.T) {
 	t.Cleanup(func() { _ = secondManager.Stop() })
 	secondRecovered, ok := secondManager.GetExecutionBySessionID(sessionID)
 	require.True(t, ok)
-	require.Equal(t, uint64(11), secondRecovered.startupAttemptSnapshot())
+	require.Zero(t, secondRecovered.startupAttemptSnapshot())
+	require.Equal(t, uint64(11), secondRecovered.settingsSourceSnapshot())
 	require.Equal(t, attemptID, secondRecovered.ResumeAttemptID)
 	require.Equal(t, SessionSettingsPolicyStrict, secondRecovered.SessionSettingsPolicy)
 	require.Equal(t, SessionSettingsPolicyProviderRestored, secondRecovered.SessionSettingsProjectionPolicy)
@@ -234,7 +236,8 @@ func TestManagerStartReplacesOldExecutionProjectionWithoutChangingSavedSettings(
 
 	recovered, ok := manager.GetExecutionBySessionID(sessionID)
 	require.True(t, ok)
-	require.Equal(t, uint64(1), recovered.startupAttemptSnapshot())
+	require.Zero(t, recovered.startupAttemptSnapshot())
+	require.Equal(t, uint64(1), recovered.settingsSourceSnapshot())
 	require.Empty(t, recovered.ResumeAttemptID)
 	require.Equal(t, SessionSettingsPolicyStrict, recovered.SessionSettingsPolicy)
 	require.Equal(t, SessionSettingsPolicyStrict, recovered.SessionSettingsProjectionPolicy)

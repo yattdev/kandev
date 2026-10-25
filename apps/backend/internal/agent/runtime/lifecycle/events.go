@@ -385,7 +385,7 @@ func newACPSessionCreatedPayload(execution *AgentExecution, sessionID, attemptID
 // This is different from PublishAgentEvent which publishes lifecycle events (started, stopped, etc.).
 func (p *EventPublisher) PublishAgentStreamEvent(execution *AgentExecution, event agentctl.AgentEvent) {
 	if event.SessionSettingsSourceGeneration == 0 {
-		event.SessionSettingsSourceGeneration = execution.startupAttemptSnapshot()
+		event.SessionSettingsSourceGeneration = execution.settingsSourceSnapshot()
 	}
 	p.publishAgentStreamEventWithAttempt(execution, event, event.AttemptID)
 }

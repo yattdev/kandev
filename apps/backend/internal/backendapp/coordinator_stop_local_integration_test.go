@@ -82,15 +82,23 @@ func TestCoordinatorStopLocalMCPProductionTerminalProof(t *testing.T) {
 	require.NoError(t, agentsRegistry.Register(mock))
 	mgr := lifecycle.NewManager(agentsRegistry, events, backends, nil, localStopProfile{}, nil, lifecycle.ExecutorFallbackWarn, t.TempDir(), log)
 	mgr.SetExecutorRunningWriter(harness.taskRepo)
+	mgr.SetAgentDeliveryRepository(harness.taskRepo)
 	t.Cleanup(func() { require.NoError(t, mgr.Stop()) })
 	require.NoError(t, harness.taskRepo.CreateWorkspace(ctx, &models.Workspace{ID: "local-stop-workspace", Name: "owned stop proof"}))
 	require.NoError(t, harness.taskRepo.CreateTask(ctx, &models.Task{ID: "local-stop-parent", Title: "parent", WorkspaceID: "local-stop-workspace"}))
 	require.NoError(t, harness.taskRepo.CreateTask(ctx, &models.Task{ID: "local-stop-child", Title: "child", ParentID: "local-stop-parent", WorkspaceID: "local-stop-workspace"}))
 	require.NoError(t, harness.taskRepo.CreateTaskSession(ctx, &models.TaskSession{ID: "local-parent-session", TaskID: "local-stop-parent", State: models.TaskSessionStateRunning}))
-	require.NoError(t, harness.taskRepo.CreateTaskSession(ctx, &models.TaskSession{ID: "local-stop-session", TaskID: "local-stop-child", State: models.TaskSessionStateRunning, AgentProfileID: "local-stop-profile"}))
+	require.NoError(t, harness.taskRepo.CreateTaskSession(ctx, &models.TaskSession{ID: "local-stop-session", TaskID: "local-stop-child", State: models.TaskSessionStateRunning, AgentProfileID: "local-stop-profile", QueueIncarnationID: "local-stop-incarnation"}))
 	now := time.Now().UTC()
 	require.NoError(t, harness.taskRepo.CreateTurn(ctx, &models.Turn{ID: "local-stop-turn", TaskID: "local-stop-child", TaskSessionID: "local-stop-session", StartedAt: now, CreatedAt: now, UpdatedAt: now}))
-	execution, err := mgr.Launch(ctx, &lifecycle.LaunchRequest{TaskID: "local-stop-child", SessionID: "local-stop-session", AgentProfileID: "local-stop-profile", WorkspacePath: workspace, ExecutorType: "local"})
+	const deliveryIncarnation = "local-stop-incarnation"
+	require.NoError(t, harness.taskRepo.CreateHarnessSessionGeneration(ctx, &models.HarnessSessionGeneration{
+		SessionID: "local-stop-session", IncarnationID: deliveryIncarnation, Generation: 1, CreationReason: "initial",
+	}))
+	execution, err := mgr.Launch(ctx, &lifecycle.LaunchRequest{
+		TaskID: "local-stop-child", SessionID: "local-stop-session", AgentProfileID: "local-stop-profile", WorkspacePath: workspace, ExecutorType: "local",
+		DeliveryStreamID: "local-stop-session", DeliveryIncarnationID: deliveryIncarnation, DeliveryHarnessGeneration: 1,
+	})
 	require.NoError(t, err)
 	proc := <-processes
 	require.NoError(t, mgr.StartAgentProcess(ctx, execution.ID))
@@ -181,7 +189,13 @@ func TestCoordinatorStopLocalMCPProductionTerminalProof(t *testing.T) {
 
 	require.NoError(t, harness.taskRepo.UpdateTaskSessionState(ctx, "local-stop-session", models.TaskSessionStateStarting, ""))
 	require.NoError(t, harness.taskRepo.CreateTurn(ctx, &models.Turn{ID: "local-successor-turn", TaskID: "local-stop-child", TaskSessionID: "local-stop-session", StartedAt: time.Now().UTC()}))
-	successor, err := mgr.Launch(ctx, &lifecycle.LaunchRequest{TaskID: "local-stop-child", SessionID: "local-stop-session", AgentProfileID: "local-stop-profile", WorkspacePath: workspace, ExecutorType: "local"})
+	require.NoError(t, harness.taskRepo.CreateHarnessSessionGeneration(ctx, &models.HarnessSessionGeneration{
+		SessionID: "local-stop-session", IncarnationID: deliveryIncarnation, Generation: 2, PredecessorGeneration: 1, CreationReason: "successor",
+	}))
+	successor, err := mgr.Launch(ctx, &lifecycle.LaunchRequest{
+		TaskID: "local-stop-child", SessionID: "local-stop-session", AgentProfileID: "local-stop-profile", WorkspacePath: workspace, ExecutorType: "local",
+		DeliveryStreamID: "local-stop-incarnation:g2", DeliveryIncarnationID: deliveryIncarnation, DeliveryHarnessGeneration: 2,
+	})
 	require.NoError(t, err)
 	require.NotEqual(t, execution.ID, successor.ID)
 	proc = <-processes

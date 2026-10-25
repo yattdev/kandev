@@ -26,7 +26,7 @@ func (m *Manager) startPassthroughWithMCP(ctx context.Context, execution *AgentE
 		}
 		attempt := buildPassthroughMCPAttempt(execution, info.ID, operation)
 		if m.eventPublisher != nil {
-			m.eventPublisher.publishAgentStreamEventWithAttempt(execution, agentctl.AgentEvent{Type: streams.EventTypeMCPAttachment, MCPAttachmentAttempt: &attempt, SessionSettingsSourceGeneration: generation}, startupID)
+			m.eventPublisher.publishAgentStreamEventWithAttempt(execution, agentctl.AgentEvent{Type: streams.EventTypeMCPAttachment, MCPAttachmentAttempt: &attempt, SessionSettingsSourceGeneration: execution.settingsSourceSnapshot()}, startupID)
 		}
 		if operation.captured {
 			m.recordAcceptedMCPSetupOperation(ctx, execution, operation.setup, operation.revision, attempt.AttemptID)

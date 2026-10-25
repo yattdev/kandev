@@ -52,14 +52,16 @@ func assertCoordinatorRealRestart(t *testing.T, boundary string) {
 	require.NoError(t, err)
 	instancePort := probe.Addr().(*net.TCPAddr).Port
 	require.NoError(t, probe.Close())
-	control := instance.NewManager(&ctlconfig.Config{Ports: ctlconfig.PortConfig{Base: instancePort, Max: instancePort}, Defaults: ctlconfig.InstanceDefaults{Protocol: agent.ProtocolACP}}, log)
+	const fixtureAuthToken = "restart-fixture-token"
+	controlConfig := &ctlconfig.Config{AuthToken: fixtureAuthToken, Ports: ctlconfig.PortConfig{Base: instancePort, Max: instancePort}, Defaults: ctlconfig.InstanceDefaults{Protocol: agent.ProtocolACP}}
+	control := instance.NewManager(controlConfig, log)
 	processes := make(chan *process.Manager, 1)
 	control.SetServerFactory(func(cfg *ctlconfig.InstanceConfig, pm *process.Manager, log *logger.Logger) http.Handler {
 		processes <- pm
 		return ctlapi.NewServer(cfg, pm, nil, nil, log).Router()
 	})
 	t.Cleanup(func() { require.NoError(t, control.Shutdown(context.Background())) })
-	controlHTTP := httptest.NewServer(ctlapi.NewControlServer(&ctlconfig.Config{}, control, log).Router())
+	controlHTTP := httptest.NewServer(ctlapi.NewControlServer(controlConfig, control, log).Router())
 	t.Cleanup(controlHTTP.Close)
 	host, portText, err := net.SplitHostPort(strings.TrimPrefix(controlHTTP.URL, "http://"))
 	require.NoError(t, err)
@@ -71,20 +73,36 @@ func assertCoordinatorRealRestart(t *testing.T, boundary string) {
 	mock.SetBinaryPath(binary)
 	mock.SetSupportsMCP(false)
 	require.NoError(t, reg.Register(mock))
+	runtimeDataDir := t.TempDir()
 	newManager := func(repo *taskrepo.Repository) *lifecycle.Manager {
 		backends := lifecycle.NewExecutorRegistry(log)
-		backends.Register(lifecycle.NewStandaloneExecutor(agentctl.NewControlClient(host, port, log), host, port, log))
-		mgr := lifecycle.NewManager(reg, bus.NewMemoryEventBus(log), backends, nil, localStopProfile{}, nil, lifecycle.ExecutorFallbackWarn, t.TempDir(), log)
+		client := agentctl.NewControlClient(host, port, log)
+		client.SetAuthToken(fixtureAuthToken)
+		standalone := lifecycle.NewStandaloneExecutor(client, host, port, log)
+		standalone.SetAuthToken(fixtureAuthToken)
+		backends.Register(standalone)
+		mgr := lifecycle.NewManager(reg, bus.NewMemoryEventBus(log), backends, nil, localStopProfile{}, nil, lifecycle.ExecutorFallbackWarn, runtimeDataDir, log)
 		mgr.SetExecutorRunningWriter(repo)
+		mgr.SetExecutorProfileReader(repo)
+		mgr.SetSessionSettingsSnapshotWriter(repo)
+		mgr.SetAgentDeliveryRepository(repo)
+		mgr.SetAgentSurvivalEnabled(true)
 		return mgr
 	}
 	require.NoError(t, h.taskRepo.CreateWorkspace(ctx, &models.Workspace{ID: "restart-workspace", Name: "owned restart proof"}))
 	require.NoError(t, h.taskRepo.CreateTask(ctx, &models.Task{ID: "restart-parent", Title: "parent", WorkspaceID: "restart-workspace"}))
 	require.NoError(t, h.taskRepo.CreateTask(ctx, &models.Task{ID: "restart-child", Title: "child", ParentID: "restart-parent", WorkspaceID: "restart-workspace"}))
-	require.NoError(t, h.taskRepo.CreateTaskSession(ctx, &models.TaskSession{ID: "restart-session", TaskID: "restart-child", State: models.TaskSessionStateRunning, AgentProfileID: "local-stop-profile"}))
+	require.NoError(t, h.taskRepo.CreateTaskSession(ctx, &models.TaskSession{ID: "restart-session", TaskID: "restart-child", State: models.TaskSessionStateRunning, AgentProfileID: "local-stop-profile", QueueIncarnationID: "restart-incarnation"}))
 	require.NoError(t, h.taskRepo.CreateTurn(ctx, &models.Turn{ID: "restart-turn", TaskID: "restart-child", TaskSessionID: "restart-session", StartedAt: time.Now().UTC()}))
+	const deliveryIncarnation = "restart-incarnation"
+	require.NoError(t, h.taskRepo.CreateHarnessSessionGeneration(ctx, &models.HarnessSessionGeneration{
+		SessionID: "restart-session", IncarnationID: deliveryIncarnation, Generation: 1, CreationReason: "initial",
+	}))
 	mgr := newManager(h.taskRepo)
-	execution, err := mgr.Launch(ctx, &lifecycle.LaunchRequest{TaskID: "restart-child", SessionID: "restart-session", AgentProfileID: "local-stop-profile", WorkspacePath: workspace, ExecutorType: "local"})
+	execution, err := mgr.Launch(ctx, &lifecycle.LaunchRequest{
+		TaskID: "restart-child", SessionID: "restart-session", AgentProfileID: "local-stop-profile", WorkspacePath: workspace, ExecutorType: "local",
+		DeliveryStreamID: "restart-session", DeliveryIncarnationID: deliveryIncarnation, DeliveryHarnessGeneration: 1,
+	})
 	require.NoError(t, err)
 	pm := <-processes
 	require.NoError(t, mgr.StartAgentProcess(ctx, execution.ID))
@@ -122,8 +140,13 @@ func assertCoordinatorRealRestart(t *testing.T, boundary string) {
 		_, err := h.db.ExecContext(ctx, "UPDATE executors_running SET agentctl_generation = 0 WHERE session_id = ?", "restart-session")
 		require.NoError(t, err)
 	}
-	mgr.SetAgentSurvivalEnabled(true)
-	require.NoError(t, mgr.Stop(), "detach only owned runtime to simulate backend loss")
+	require.NoError(t, mgr.StopAllAgents(ctx), "detach owned execution before backend shutdown")
+	require.NoError(t, mgr.Stop(), "stop backend subscriptions after detaching execution")
+	if boundary == "terminal process missing proof" || boundary == "terminal proof missing final receipt" {
+		require.Equal(t, process.StatusStopped, pm.Status(), "terminal process stays stopped across backend restart")
+	} else {
+		require.Equal(t, process.StatusRunning, pm.Status(), "owned agentctl process survives backend restart")
+	}
 	var dbPath string
 	require.NoError(t, h.db.QueryRowContext(ctx, "SELECT file FROM pragma_database_list WHERE name = 'main'").Scan(&dbPath))
 	require.NoError(t, h.db.Close(), "original persistence connection ends before reconstruction")
@@ -142,6 +165,12 @@ func assertCoordinatorRealRestart(t *testing.T, boundary string) {
 		require.Equal(t, process.StatusRunning, pm.Status(), "runtime before lifecycle reconstruction")
 	}
 	require.NoError(t, recovered.Start(ctx))
+	if boundary == "captured request" || boundary == "settled turn intent" {
+		postRecoveryRow, rowErr := reopened.GetExecutorRunningBySessionID(ctx, "restart-session")
+		require.NoError(t, rowErr)
+		require.Equal(t, running.AgentctlGeneration, postRecoveryRow.AgentctlGeneration,
+			"settings-source recovery must preserve the retained agentctl generation")
+	}
 	if boundary == "changed generation" || boundary == "unknown generation" {
 		require.Equal(t, process.StatusRunning, pm.Status(), "runtime after lifecycle reconstruction")
 	}
@@ -206,7 +235,13 @@ func assertCoordinatorRealRestart(t *testing.T, boundary string) {
 func assertCoordinatorRestartSuccessor(t *testing.T, ctx context.Context, repo *taskrepo.Repository, mgr *lifecycle.Manager, svc *orchestrator.Service, processes <-chan *process.Manager, workspace string) {
 	require.NoError(t, repo.UpdateTaskSessionState(ctx, "restart-session", models.TaskSessionStateStarting, ""))
 	require.NoError(t, repo.CreateTurn(ctx, &models.Turn{ID: "restart-successor", TaskID: "restart-child", TaskSessionID: "restart-session", StartedAt: time.Now().UTC()}))
-	successor, err := mgr.Launch(ctx, &lifecycle.LaunchRequest{TaskID: "restart-child", SessionID: "restart-session", AgentProfileID: "local-stop-profile", WorkspacePath: workspace, ExecutorType: "local"})
+	require.NoError(t, repo.CreateHarnessSessionGeneration(ctx, &models.HarnessSessionGeneration{
+		SessionID: "restart-session", IncarnationID: "restart-incarnation", Generation: 2, PredecessorGeneration: 1, CreationReason: "successor",
+	}))
+	successor, err := mgr.Launch(ctx, &lifecycle.LaunchRequest{
+		TaskID: "restart-child", SessionID: "restart-session", AgentProfileID: "local-stop-profile", WorkspacePath: workspace, ExecutorType: "local",
+		DeliveryStreamID: "restart-incarnation:g2", DeliveryIncarnationID: "restart-incarnation", DeliveryHarnessGeneration: 2,
+	})
 	require.NoError(t, err)
 	pm := <-processes
 	require.NoError(t, mgr.StartAgentProcess(ctx, successor.ID))

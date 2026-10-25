@@ -446,6 +446,7 @@ type AgentExecution struct {
 	// This state has its own mutex because stream setup can run while
 	// promptLifecycleMu is held by workspace rebind waiting for readiness.
 	startupAttemptGeneration   uint64
+	settingsSourceGeneration   uint64
 	startupRecoveryStarted     bool
 	startupRecoveryCancelled   bool // A stopped execution cannot start another replacement.
 	startupRecoveryCancel      context.CancelCauseFunc
@@ -855,6 +856,7 @@ func (e *AgentExecution) beginStartupAttemptWithID(attemptID string) uint64 {
 	defer e.startupLifecycleMu.Unlock()
 	e.SessionSettingsProjectionPolicy = e.SessionSettingsPolicy
 	e.startupAttemptGeneration++
+	e.settingsSourceGeneration = 0
 	e.startupRecoveryStarted = false
 	e.recordStartupAttemptIDLocked(e.startupAttemptGeneration, attemptID)
 	return e.startupAttemptGeneration
@@ -901,6 +903,7 @@ func (e *AgentExecution) beginStartupAttemptPreservingIdentity() uint64 {
 		attemptID = e.ResumeAttemptID
 	}
 	e.startupAttemptGeneration++
+	e.settingsSourceGeneration = 0
 	e.startupRecoveryStarted = false
 	e.recordStartupAttemptIDLocked(e.startupAttemptGeneration, attemptID)
 	return e.startupAttemptGeneration
@@ -946,6 +949,7 @@ func (e *AgentExecution) beginStartupRecoveryWithCancel(cancel context.CancelCau
 	e.startupRecoveryStarted = true
 	e.startupRecoveryCancel = cancel
 	e.startupAttemptGeneration++
+	e.settingsSourceGeneration = 0
 	currentAttemptID := e.startupAttemptIDs[e.startupAttemptGeneration-1]
 	e.recordStartupAttemptIDLocked(e.startupAttemptGeneration, currentAttemptID)
 	return e.startupAttemptGeneration, true
@@ -1018,6 +1022,15 @@ func (e *AgentExecution) startupAttemptSnapshot() uint64 {
 	return e.startupAttemptGeneration
 }
 
+func (e *AgentExecution) settingsSourceSnapshot() uint64 {
+	e.startupLifecycleMu.Lock()
+	defer e.startupLifecycleMu.Unlock()
+	if e.settingsSourceGeneration != 0 {
+		return e.settingsSourceGeneration
+	}
+	return e.startupAttemptGeneration
+}
+
 // StartupAttemptGeneration returns the generation that fences callbacks from
 // the execution's active startup and stream attempt.
 func (e *AgentExecution) StartupAttemptGeneration() uint64 {
@@ -1036,12 +1049,14 @@ func (e *AgentExecution) restoreSessionSettingsSource(
 	defer e.startupCallbackMu.Unlock()
 	e.startupLifecycleMu.Lock()
 	defer e.startupLifecycleMu.Unlock()
-	e.startupAttemptGeneration = sourceGeneration
+	// A retained agentctl instance keeps its original execution generation.
+	// The settings source may need a newer epoch after backend recovery.
+	e.settingsSourceGeneration = sourceGeneration
 	e.startupAttemptIDs = nil
 	e.startupRecoveryStarted = false
 	e.ResumeAttemptID = attemptID
 	e.SessionSettingsProjectionPolicy = projectionPolicy
-	e.recordStartupAttemptIDLocked(sourceGeneration, attemptID)
+	e.recordStartupAttemptIDLocked(e.startupAttemptGeneration, attemptID)
 }
 
 func (e *AgentExecution) startupGenerationForAttemptID(attemptID string) (uint64, bool) {
