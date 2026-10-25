@@ -67,6 +67,8 @@ func (s *Service) GrantCapabilityApproval(installationID, workspaceID string, re
 // RevokeCapabilityApproval revokes only the supplied current revision. A
 // stale caller receives ErrApprovalRevisionConflict and must read back state.
 func (s *Service) RevokeCapabilityApproval(installationID, workspaceID string, expectedRevision uint64, actor, reason, auditID string) (CapabilityApprovalDTO, error) {
+	s.approvalMutationMu.Lock()
+	defer s.approvalMutationMu.Unlock()
 	ledger := s.approvalLedger()
 	if ledger == nil {
 		return CapabilityApprovalDTO{}, ErrApprovalRevisionConflict
