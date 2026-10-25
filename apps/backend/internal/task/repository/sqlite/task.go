@@ -1147,7 +1147,7 @@ func (r *Repository) UpdateTaskExactOperation(
 	var currentWorkspaceID string
 	var currentVersion time.Time
 	if err := tx.QueryRowContext(ctx, r.db.Rebind(query), task.ID).Scan(&currentWorkspaceID, &currentVersion); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, ErrTaskNotFound) {
 			return false, fmt.Errorf("%w: %s", ErrTaskNotFound, task.ID)
 		}
 		return false, err
@@ -3840,6 +3840,9 @@ func (r *Repository) beginTaskDeleteTx(ctx context.Context, id string) (*sqlx.Tx
 	var workspaceID string
 	if err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT workspace_id FROM tasks WHERE id = ?`), id).Scan(&workspaceID); err != nil {
 		_ = tx.Rollback()
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, "", fmt.Errorf("%w: %s", ErrTaskNotFound, id)
+		}
 		return nil, "", err
 	}
 	if err := r.lockDependencyWorkspace(ctx, tx, workspaceID); err != nil && !errors.Is(err, sql.ErrNoRows) {

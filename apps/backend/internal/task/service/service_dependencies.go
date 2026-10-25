@@ -44,7 +44,7 @@ func (s *Service) hasAtomicDependencyDelete() bool {
 	_, ok := s.tasks.(interface {
 		DeleteTaskWithDependencySnapshots(context.Context, string) ([]dependencywrite.DependencySnapshot, error)
 	})
-	return ok
+	return ok && s.canUseTransactionalDependencyWriter()
 }
 
 func (s *Service) canUseTransactionalDependencyWriter() bool {
