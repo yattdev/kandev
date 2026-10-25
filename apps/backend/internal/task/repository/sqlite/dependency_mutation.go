@@ -141,24 +141,12 @@ func (r *Repository) mutateDependencyInTx(
 ) (dependencywrite.DependencyMutationResult, error) {
 	ids := []string{request.DependentTaskID, request.PredecessorTaskID}
 	sort.Strings(ids)
-	revisions := make(map[string]int64, 2)
-	for _, id := range ids {
-		var workspaceID string
-		var revision int64
-		query := `SELECT workspace_id, dependency_revision FROM tasks WHERE id = ?`
-		if dialect.IsPostgres(r.db.DriverName()) {
-			query += forUpdateClause
-		}
-		if err := tx.QueryRowContext(ctx, r.db.Rebind(query), id).Scan(&workspaceID, &revision); err != nil {
-			return dependencywrite.DependencyMutationResult{}, err
-		}
-		if workspaceID != request.WorkspaceID {
-			return dependencywrite.DependencyMutationResult{}, sql.ErrNoRows
-		}
-		revisions[id] = revision
+	revisions, err := r.dependencyRevisionsInTx(ctx, tx, request.WorkspaceID, ids)
+	if err != nil {
+		return dependencywrite.DependencyMutationResult{}, err
 	}
 	var exists int
-	err := tx.QueryRowContext(ctx, r.db.Rebind(`SELECT 1 FROM task_blockers WHERE task_id = ? AND blocker_task_id = ?`),
+	err = tx.QueryRowContext(ctx, r.db.Rebind(`SELECT 1 FROM task_blockers WHERE task_id = ? AND blocker_task_id = ?`),
 		request.DependentTaskID, request.PredecessorTaskID).Scan(&exists)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return dependencywrite.DependencyMutationResult{}, err
@@ -168,21 +156,58 @@ func (r *Repository) mutateDependencyInTx(
 		if err := r.writeDependencyChangeInTx(ctx, tx, request); err != nil {
 			return dependencywrite.DependencyMutationResult{}, err
 		}
-		for _, id := range ids {
-			if _, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET dependency_revision = dependency_revision + 1 WHERE id = ?`), id); err != nil {
-				return dependencywrite.DependencyMutationResult{}, err
-			}
-			revisions[id]++
+		if err := r.incrementDependencyRevisionsInTx(ctx, tx, ids, revisions); err != nil {
+			return dependencywrite.DependencyMutationResult{}, err
 		}
 	}
 	result := dependencywrite.DependencyMutationResult{
 		Changed: changed, DependentRevision: revisions[request.DependentTaskID],
 		PredecessorRevision: revisions[request.PredecessorTaskID],
 	}
+	result.Dependent, err = r.dependencySnapshotInTx(ctx, tx, request.DependentTaskID, result.DependentRevision)
+	if err != nil {
+		return dependencywrite.DependencyMutationResult{}, err
+	}
+	result.Predecessor, err = r.dependencySnapshotInTx(ctx, tx, request.PredecessorTaskID, result.PredecessorRevision)
+	if err != nil {
+		return dependencywrite.DependencyMutationResult{}, err
+	}
 	if err := r.recordDependencyMutationSuccess(ctx, tx, request, result); err != nil {
 		return dependencywrite.DependencyMutationResult{}, err
 	}
 	return result, nil
+}
+
+func (r *Repository) dependencyRevisionsInTx(ctx context.Context, tx *sqlx.Tx,
+	workspaceID string, ids []string) (map[string]int64, error) {
+	revisions := make(map[string]int64, len(ids))
+	for _, id := range ids {
+		var taskWorkspaceID string
+		var revision int64
+		query := `SELECT workspace_id, dependency_revision FROM tasks WHERE id = ?`
+		if dialect.IsPostgres(r.db.DriverName()) {
+			query += forUpdateClause
+		}
+		if err := tx.QueryRowContext(ctx, r.db.Rebind(query), id).Scan(&taskWorkspaceID, &revision); err != nil {
+			return nil, err
+		}
+		if taskWorkspaceID != workspaceID {
+			return nil, sql.ErrNoRows
+		}
+		revisions[id] = revision
+	}
+	return revisions, nil
+}
+
+func (r *Repository) incrementDependencyRevisionsInTx(ctx context.Context, tx *sqlx.Tx,
+	ids []string, revisions map[string]int64) error {
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, r.db.Rebind(`UPDATE tasks SET dependency_revision = dependency_revision + 1 WHERE id = ?`), id); err != nil {
+			return err
+		}
+		revisions[id]++
+	}
+	return nil
 }
 
 func (r *Repository) writeDependencyChangeInTx(

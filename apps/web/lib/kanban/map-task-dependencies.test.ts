@@ -8,12 +8,14 @@ describe("toKanbanTask dependency projection", () => {
       workflow_step_id: "step-1",
       title: "B",
       blocked: true,
+      dependency_revision: 7,
       blocked_reason: "pending",
       depends_on: [{ id: "a", title: "A", state: "TODO", status: "pending" }],
       blocks: [{ id: "c", title: "C", state: "TODO" }],
       start_when_unblocked: true,
     });
     expect(task.blocked).toBe(true);
+    expect(task.dependencyRevision).toBe(7);
     expect(task.blockedReason).toBe("pending");
     expect(task.dependsOn).toEqual([{ id: "a", title: "A", state: "TODO", status: "pending" }]);
     expect(task.blocks).toEqual([{ id: "c", title: "C", state: "TODO" }]);

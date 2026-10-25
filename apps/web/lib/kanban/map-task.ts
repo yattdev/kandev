@@ -99,6 +99,7 @@ export type TaskLike = {
   queued_for_step_id?: string | null;
   queued_at?: string | null;
   blocked?: boolean;
+  dependency_revision?: number;
   blocked_reason?: string | null;
   depends_on?: TaskDependencyRef[] | null;
   blocks?: TaskDependencyRef[] | null;
@@ -227,7 +228,15 @@ function runnerMutabilityProjection(source: TaskLike) {
 function dependencyProjection(
   source: TaskLike,
 ): Partial<
-  Pick<KanbanTask, "blocked" | "blockedReason" | "dependsOn" | "blocks" | "startWhenUnblocked">
+  Pick<
+    KanbanTask,
+    | "blocked"
+    | "blockedReason"
+    | "dependsOn"
+    | "blocks"
+    | "startWhenUnblocked"
+    | "dependencyRevision"
+  >
 > {
   const mentionsDependencies =
     source.blocked !== undefined ||
@@ -236,6 +245,7 @@ function dependencyProjection(
     source.start_when_unblocked !== undefined;
   if (!mentionsDependencies) return {};
   return {
+    dependencyRevision: source.dependency_revision,
     blocked: source.blocked ?? false,
     blockedReason: source.blocked_reason ?? undefined,
     dependsOn: source.depends_on ?? [],

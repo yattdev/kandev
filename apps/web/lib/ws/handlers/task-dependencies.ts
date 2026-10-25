@@ -19,10 +19,26 @@ export function preserveOmittedDependencyFields(
   // "Mentions dependencies" means the key is present at all, even as null —
   // an explicit empty list is a real clear and must win.
   const mentions = "depends_on" in payload || "blocks" in payload || "blocked" in payload;
-  if (mentions) return;
+  if (
+    mentions &&
+    shouldApplyDependencyRevision(existing.dependencyRevision, payload.dependency_revision)
+  ) {
+    if (!("start_when_unblocked" in payload))
+      merged.startWhenUnblocked = existing.startWhenUnblocked;
+    return;
+  }
   merged.blocked = existing.blocked;
   merged.blockedReason = existing.blockedReason;
   merged.dependsOn = existing.dependsOn;
   merged.blocks = existing.blocks;
   merged.startWhenUnblocked = existing.startWhenUnblocked;
+  merged.dependencyRevision = existing.dependencyRevision;
+}
+
+export function shouldApplyDependencyRevision(
+  existing: number | undefined,
+  incoming: unknown,
+): boolean {
+  if (existing === undefined) return true;
+  return typeof incoming === "number" && Number.isSafeInteger(incoming) && incoming > existing;
 }

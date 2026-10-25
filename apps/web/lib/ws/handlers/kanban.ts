@@ -5,6 +5,7 @@ import type { KanbanState } from "@/lib/state/slices/kanban/types";
 import type { ReorderBand, ReorderedTaskPosition } from "@/lib/types/http";
 import { mergeTaskRepositoryFields } from "@/lib/ws/handlers/task-repositories";
 import { partitionWipTasks } from "@/lib/kanban/wip-queue";
+import { shouldApplyDependencyRevision } from "@/lib/ws/handlers/task-dependencies";
 
 type KanbanTask = KanbanState["tasks"][number];
 type KanbanStep = KanbanState["steps"][number];
@@ -42,12 +43,27 @@ function touchesDependencies(task: KanbanUpdateTask): boolean {
   return DEPENDENCY_PAYLOAD_KEYS.some((key) => key in task);
 }
 
+function keepsExistingDependencies(
+  task: KanbanUpdateTask,
+  existing: KanbanTask | undefined,
+): boolean {
+  return (
+    !touchesDependencies(task) ||
+    (existing !== undefined &&
+      !shouldApplyDependencyRevision(existing.dependencyRevision, task.dependency_revision))
+  );
+}
+
 function dependencyFields(
   task: KanbanUpdateTask,
   existing: KanbanTask | undefined,
-): Pick<KanbanTask, "blocked" | "blockedReason" | "dependsOn" | "blocks" | "startWhenUnblocked"> {
-  if (!touchesDependencies(task)) {
+): Pick<
+  KanbanTask,
+  "blocked" | "blockedReason" | "dependsOn" | "blocks" | "startWhenUnblocked" | "dependencyRevision"
+> {
+  if (keepsExistingDependencies(task, existing)) {
     return {
+      dependencyRevision: existing?.dependencyRevision,
       blocked: existing?.blocked,
       blockedReason: existing?.blockedReason,
       dependsOn: existing?.dependsOn,
@@ -55,12 +71,24 @@ function dependencyFields(
       startWhenUnblocked: existing?.startWhenUnblocked,
     };
   }
+  return incomingDependencyFields(task, existing);
+}
+
+function incomingDependencyFields(
+  task: KanbanUpdateTask,
+  existing: KanbanTask | undefined,
+): Pick<
+  KanbanTask,
+  "blocked" | "blockedReason" | "dependsOn" | "blocks" | "startWhenUnblocked" | "dependencyRevision"
+> {
   return {
+    dependencyRevision: task.dependency_revision,
     blocked: task.blocked ?? false,
     blockedReason: task.blocked_reason ?? task.blockedReason,
     dependsOn: task.depends_on ?? task.dependsOn ?? [],
     blocks: task.blocks ?? [],
-    startWhenUnblocked: task.start_when_unblocked ?? task.startWhenUnblocked ?? false,
+    startWhenUnblocked:
+      task.start_when_unblocked ?? task.startWhenUnblocked ?? existing?.startWhenUnblocked ?? false,
   };
 }
 
@@ -83,6 +111,7 @@ type KanbanUpdateTask = {
   queuedForStepId?: string;
   queuedAt?: string;
   blocked?: boolean;
+  dependency_revision?: number;
   blocked_reason?: string;
   blockedReason?: string;
   depends_on?: KanbanTask["dependsOn"];

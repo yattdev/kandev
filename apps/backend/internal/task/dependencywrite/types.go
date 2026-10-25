@@ -29,6 +29,30 @@ type DependencyMutationResult struct {
 	Changed             bool
 	DependentRevision   int64
 	PredecessorRevision int64
+	Dependent           DependencySnapshot
+	Predecessor         DependencySnapshot
+}
+
+// DependencySnapshot is the edge projection captured with its revision before
+// the mutation transaction commits.
+type DependencySnapshot struct {
+	TaskID             string
+	Revision           int64
+	Blocked            bool
+	BlockedReason      string
+	DependsOn          []DependencyRef
+	Blocks             []DependencyRef
+	DependsOnTruncated bool
+	BlocksTruncated    bool
+}
+
+type DependencyRef struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	State       string `json:"state"`
+	Status      string `json:"status,omitempty"`
+	WorkspaceID string `json:"-"`
+	WorkflowID  string `json:"-"`
 }
 
 // DependencyMutationAuthorizer runs after the writer takes its workspace

@@ -1,5 +1,8 @@
 import { mergeTaskRepositoryFields } from "@/lib/ws/handlers/task-repositories";
-import { preserveOmittedDependencyFields } from "@/lib/ws/handlers/task-dependencies";
+import {
+  preserveOmittedDependencyFields,
+  shouldApplyDependencyRevision,
+} from "@/lib/ws/handlers/task-dependencies";
 import type { KanbanTask, TaskEventPayload } from "@/lib/ws/handlers/task-archive-cache";
 
 export function hasPayloadField(payload: TaskEventPayload, field: keyof TaskEventPayload): boolean {
@@ -106,7 +109,24 @@ export function mergeTaskUpdate(
       ? { ...nextTask, interruptedGeneration: 1 }
       : nextTask;
   }
-  if (isStaleTaskUpdate(existing, nextTask)) return existing;
+  if (isStaleTaskUpdate(existing, nextTask)) {
+    if (
+      !shouldApplyDependencyRevision(existing.dependencyRevision, payload.dependency_revision) ||
+      !hasPayloadField(payload, "depends_on")
+    )
+      return existing;
+    return {
+      ...existing,
+      dependencyRevision: nextTask.dependencyRevision,
+      blocked: nextTask.blocked,
+      blockedReason: nextTask.blockedReason,
+      dependsOn: nextTask.dependsOn,
+      blocks: nextTask.blocks,
+      startWhenUnblocked: hasPayloadField(payload, "start_when_unblocked")
+        ? nextTask.startWhenUnblocked
+        : existing.startWhenUnblocked,
+    };
+  }
   const merged = {
     ...nextTask,
     ...mergeTaskRepositoryFields(existing, nextTask),

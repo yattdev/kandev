@@ -54,9 +54,22 @@ func (s *Service) MutateCoordinatorDependency(
 		return dependencywrite.DependencyMutationResult{}, err
 	}
 	if result.Changed {
-		s.publishDependencyChange(ctx, request.DependentTaskID, request.PredecessorTaskID)
+		s.publishCommittedDependencySnapshot(ctx, result.Dependent)
+		s.publishCommittedDependencySnapshot(ctx, result.Predecessor)
 	}
 	return result, nil
+}
+
+func (s *Service) publishCommittedDependencySnapshot(ctx context.Context, snapshot dependencywrite.DependencySnapshot) {
+	task, err := s.tasks.GetTask(ctx, snapshot.TaskID)
+	if err != nil || task == nil {
+		return
+	}
+	task.DependencyRevision = snapshot.Revision
+	s.publishTaskEventWithExtra(ctx, events.TaskUpdated, task, nil, map[string]interface{}{
+		"blocked": snapshot.Blocked, "blocked_reason": snapshot.BlockedReason,
+		"depends_on": snapshot.DependsOn, "blocks": snapshot.Blocks,
+	})
 }
 
 // Task dependencies ("task B is blocked by task A") are peer-to-peer edges,

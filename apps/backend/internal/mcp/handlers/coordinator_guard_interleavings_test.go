@@ -14,6 +14,7 @@ import (
 	"github.com/kandev/kandev/internal/authz"
 	"github.com/kandev/kandev/internal/coordinator"
 	"github.com/kandev/kandev/internal/db"
+	"github.com/kandev/kandev/internal/events/bus"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	mcpscope "github.com/kandev/kandev/internal/mcp/scope"
 	sqliterepo "github.com/kandev/kandev/internal/task/repository/sqlite"
@@ -33,6 +34,7 @@ type guardFixture struct {
 	rawDB  *sqlx.DB
 	repo   *sqliterepo.Repository
 	store  *coordinator.Store
+	events *bus.MemoryEventBus
 	ctxFor func(binding *mcpprofile.CoordinatorToolPolicy, required bool) context.Context
 }
 

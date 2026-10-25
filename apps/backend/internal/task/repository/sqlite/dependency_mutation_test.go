@@ -45,6 +45,10 @@ func TestDependencyMutationCommitsEdgeRevisionsAndAudit(t *testing.T) {
 	if !first.Changed || first.DependentRevision != 1 || first.PredecessorRevision != 1 {
 		t.Fatalf("first result = %+v, want changed and both revisions 1", first)
 	}
+	if len(first.Dependent.DependsOn) != 1 || first.Dependent.DependsOn[0].ID != "predecessor" ||
+		len(first.Predecessor.Blocks) != 1 || first.Predecessor.Blocks[0].ID != "dependent" {
+		t.Fatalf("first snapshots = %+v / %+v", first.Dependent, first.Predecessor)
+	}
 	command.CorrelationID = "request-2"
 	second, err := writer.MutateDependency(ctx, command, authorize)
 	if err != nil {
@@ -71,6 +75,9 @@ func TestDependencyMutationCommitsEdgeRevisionsAndAudit(t *testing.T) {
 	}
 	if !removed.Changed || removed.DependentRevision != 2 || removed.PredecessorRevision != 2 {
 		t.Fatalf("remove result = %+v, want changed and both revisions 2", removed)
+	}
+	if len(removed.Dependent.DependsOn) != 0 || len(removed.Predecessor.Blocks) != 0 {
+		t.Fatalf("removed snapshots retain edge: %+v / %+v", removed.Dependent, removed.Predecessor)
 	}
 	command.CorrelationID = "request-4"
 	absent, err := writer.MutateDependency(ctx, command, authorize)

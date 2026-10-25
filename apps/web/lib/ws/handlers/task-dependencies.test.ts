@@ -61,4 +61,32 @@ describe("preserveOmittedDependencyFields", () => {
     preserveOmittedDependencyFields(existing(), merged, { blocked: false });
     expect(merged.blocked).toBe(false);
   });
+
+  it("ignores older dependency revisions while keeping unrelated updates", () => {
+    const current = { ...existing(), dependencyRevision: 4 };
+    const incoming = { ...mergedFromBareEvent(), dependencyRevision: 3 };
+    preserveOmittedDependencyFields(current, incoming, {
+      blocked: false,
+      depends_on: [],
+      blocks: [],
+      dependency_revision: 3,
+    });
+    expect(incoming.dependencyRevision).toBe(4);
+    expect(incoming.dependsOn).toEqual(current.dependsOn);
+    expect(incoming.blocked).toBe(true);
+  });
+
+  it("accepts a newer dependency revision", () => {
+    const current = { ...existing(), dependencyRevision: 4 };
+    const incoming = { ...mergedFromBareEvent(), dependencyRevision: 5 };
+    preserveOmittedDependencyFields(current, incoming, {
+      blocked: false,
+      depends_on: [],
+      blocks: [],
+      dependency_revision: 5,
+    });
+    expect(incoming.dependencyRevision).toBe(5);
+    expect(incoming.dependsOn).toEqual([]);
+    expect(incoming.startWhenUnblocked).toBe(true);
+  });
 });

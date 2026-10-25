@@ -103,11 +103,75 @@ func (h *Handlers) mutateCoordinatorDependency(ctx context.Context, msg *ws.Mess
 		}
 		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeValidation, "dependency mutation failed", nil)
 	}
+	dependent, predecessor, err := h.coordinatorDependencySnapshots(ctx, principal, result)
+	if err != nil {
+		if coordinator.DependencyScopeDenied(err) {
+			return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeNotFound, "target not found", nil)
+		}
+		return ws.NewError(msg.ID, msg.Action, ws.ErrorCodeInternalError,
+			"dependency readback could not be authorized", nil)
+	}
 	return ws.NewResponse(msg.ID, msg.Action, map[string]interface{}{
 		keyTaskID: req.TaskID, "depends_on_task_id": req.DependsOnTaskID,
 		"changed": result.Changed, "dependent_revision": result.DependentRevision,
 		"predecessor_revision": result.PredecessorRevision,
+		"dependent":            dependent, "predecessor": predecessor,
 	})
+}
+
+func (h *Handlers) coordinatorDependencySnapshots(ctx context.Context, principal mcpscope.Principal,
+	result dependencywrite.DependencyMutationResult) (map[string]interface{}, map[string]interface{}, error) {
+	refs := []coordinator.TaskRef{{ID: result.Dependent.TaskID}, {ID: result.Predecessor.TaskID}}
+	seen := map[string]bool{}
+	for _, snapshot := range []dependencywrite.DependencySnapshot{result.Dependent, result.Predecessor} {
+		for _, group := range [][]dependencywrite.DependencyRef{snapshot.DependsOn, snapshot.Blocks} {
+			for _, ref := range group {
+				if ref.WorkspaceID == principal.WorkspaceID && !seen[ref.ID] {
+					refs = append(refs, coordinator.TaskRef{ID: ref.ID, WorkflowID: ref.WorkflowID})
+					seen[ref.ID] = true
+				}
+			}
+		}
+	}
+	for i := range refs[:2] {
+		task, err := h.taskSvc.GetTask(ctx, refs[i].ID)
+		if err != nil || task == nil || task.WorkspaceID != principal.WorkspaceID {
+			return nil, nil, coordinator.ErrNotFound
+		}
+		refs[i].WorkflowID = task.WorkflowID
+	}
+	allowed, err := h.coordinatorSvc.WatchedTaskIDs(ctx, principal.CoordinatorID, refs)
+	if err != nil || !allowed[result.Dependent.TaskID] || !allowed[result.Predecessor.TaskID] {
+		return nil, nil, coordinator.ErrNotFound
+	}
+	return dependencySnapshotReadback(result.Dependent, allowed),
+		dependencySnapshotReadback(result.Predecessor, allowed), nil
+}
+
+func dependencySnapshotReadback(snapshot dependencywrite.DependencySnapshot, allowed map[string]bool) map[string]interface{} {
+	dependsOn := make([]dependencywrite.DependencyRef, 0, len(snapshot.DependsOn))
+	for _, ref := range snapshot.DependsOn {
+		if allowed[ref.ID] {
+			dependsOn = append(dependsOn, ref)
+		}
+	}
+	blocks := make([]dependencywrite.DependencyRef, 0, len(snapshot.Blocks))
+	for _, ref := range snapshot.Blocks {
+		if allowed[ref.ID] {
+			blocks = append(blocks, ref)
+		}
+	}
+	blocked, reason := snapshot.Blocked, snapshot.BlockedReason
+	if len(dependsOn) != len(snapshot.DependsOn) || snapshot.DependsOnTruncated {
+		blocked, reason = true, "unknown"
+	}
+	return map[string]interface{}{
+		"task_id": snapshot.TaskID, "dependency_revision": snapshot.Revision,
+		"blocked": blocked, "blocked_reason": reason,
+		"depends_on": dependsOn, "blocks": blocks,
+		"depends_on_truncated": snapshot.DependsOnTruncated,
+		"blocks_truncated":     snapshot.BlocksTruncated,
+	}
 }
 
 func (h *Handlers) authorizeDependencyCaller(ctx context.Context, msg *ws.Message, req *dependencyMutationPayload) *ws.Message {

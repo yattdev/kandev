@@ -202,6 +202,7 @@ export type KanbanState = {
      * these arrive fresh on every boot payload and task.updated event.
      */
     blocked?: boolean;
+    dependencyRevision?: number;
     /** "pending" | "failed" | "unknown"; absent when not blocked. */
     blockedReason?: string;
     /** Direct predecessors — the tasks this one is waiting on. Not transitive. */

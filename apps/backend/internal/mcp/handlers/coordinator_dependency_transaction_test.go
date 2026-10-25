@@ -12,6 +12,8 @@ import (
 
 	"github.com/kandev/kandev/internal/agentctl/types/streams"
 	"github.com/kandev/kandev/internal/coordinator"
+	"github.com/kandev/kandev/internal/events"
+	"github.com/kandev/kandev/internal/events/bus"
 	mcpprofile "github.com/kandev/kandev/internal/mcp/profile"
 	"github.com/kandev/kandev/internal/mcp/scope"
 	officesqlite "github.com/kandev/kandev/internal/office/repository/sqlite"
@@ -22,7 +24,7 @@ import (
 
 func newSharedDependencyFixture(t *testing.T) *guardFixture {
 	t.Helper()
-	taskSvc, repo := newTestTaskService(t)
+	taskSvc, repo, eventBus := newTestTaskServiceWithEventBus(t)
 	shared := sqlx.NewDb(repo.DB(), "sqlite3")
 	officeRepo, err := officesqlite.NewWithDB(shared, shared, nil)
 	require.NoError(t, err)
@@ -67,7 +69,7 @@ func newSharedDependencyFixture(t *testing.T) *guardFixture {
 	require.NoError(t, err)
 	_, err = shared.ExecContext(t.Context(), `UPDATE coordinators SET conversation_task_id = ? WHERE id = ?`, principal.CallerTaskID, c.ID)
 	require.NoError(t, err)
-	f := &guardFixture{h: h, svc: svc, c: c, rawDB: shared, repo: repo, store: store}
+	f := &guardFixture{h: h, svc: svc, c: c, rawDB: shared, repo: repo, store: store, events: eventBus}
 	f.ctxFor = func(binding *mcpprofile.CoordinatorToolPolicy, required bool) context.Context {
 		p := principal
 		p.CoordinatorID = c.ID
@@ -82,6 +84,16 @@ func newSharedDependencyFixture(t *testing.T) *guardFixture {
 
 func TestCoordinatorDependencyHandlerCommitsAndAuditsChangedAndNoop(t *testing.T) {
 	f := newSharedDependencyFixture(t)
+	var publications []map[string]interface{}
+	subscription, err := f.events.Subscribe(events.TaskUpdated, func(_ context.Context, event *bus.Event) error {
+		payload, ok := event.Data.(map[string]interface{})
+		if ok {
+			publications = append(publications, payload)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = subscription.Unsubscribe() })
 	ctx := f.ctxFor(f.binding("add_task_dependency_kandev", "remove_task_dependency_kandev"), true)
 	for index, action := range []string{ws.ActionMCPAddTaskDependency, ws.ActionMCPAddTaskDependency,
 		ws.ActionMCPRemoveTaskDependency, ws.ActionMCPRemoveTaskDependency} {
@@ -113,6 +125,11 @@ func TestCoordinatorDependencyHandlerCommitsAndAuditsChangedAndNoop(t *testing.T
 	require.NoError(t, f.rawDB.Get(&audits, `SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE outcome = 'succeeded'`))
 	require.Zero(t, edges)
 	require.Equal(t, 4, audits)
+	require.Len(t, publications, 4)
+	require.EqualValues(t, 1, publications[0]["dependency_revision"])
+	require.Len(t, publications[0]["depends_on"], 1)
+	require.EqualValues(t, 2, publications[2]["dependency_revision"])
+	require.Empty(t, publications[2]["depends_on"])
 }
 
 func TestCoordinatorDependencyHandlerRejectsStaleCallerAtWriteBoundary(t *testing.T) {
@@ -191,4 +208,30 @@ func TestCoordinatorDependencyHandlerUsesCurrentProjectMembership(t *testing.T) 
 	response, err = f.h.handleAddTaskDependency(callCtx, msg)
 	require.NoError(t, err)
 	require.Equal(t, ws.MessageTypeResponse, response.Type, string(response.Payload))
+}
+
+func TestCoordinatorDependencyReadbackHidesUnwatchedNeighbor(t *testing.T) {
+	f := newSharedDependencyFixture(t)
+	_, err := f.rawDB.ExecContext(t.Context(), `INSERT INTO task_blockers(task_id, blocker_task_id, created_at)
+		VALUES('dependent', 'unwatched', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+	ctx := f.ctxFor(f.binding("add_task_dependency_kandev"), true)
+	msg := makeWSMessage(t, ws.ActionMCPAddTaskDependency, map[string]interface{}{
+		"task_id": "dependent", "depends_on_task_id": "predecessor",
+	})
+	response, err := f.h.handleAddTaskDependency(ctx, msg)
+	require.NoError(t, err)
+	require.Equal(t, ws.MessageTypeResponse, response.Type, string(response.Payload))
+	require.NotContains(t, string(response.Payload), "unwatched")
+	var body struct {
+		Dependent struct {
+			BlockedReason string `json:"blocked_reason"`
+			DependsOn     []struct {
+				ID string `json:"id"`
+			} `json:"depends_on"`
+		} `json:"dependent"`
+	}
+	require.NoError(t, json.Unmarshal(response.Payload, &body))
+	require.Equal(t, "unknown", body.Dependent.BlockedReason)
+	require.Equal(t, "predecessor", body.Dependent.DependsOn[0].ID)
 }
