@@ -226,6 +226,82 @@ func (r *Repository) deleteTaskDependenciesInTx(ctx context.Context, tx *sqlx.Tx
 	return result.Changed, nil
 }
 
+// PruneDanglingDependency removes a legacy edge only if its predecessor is
+// still absent at the write boundary. The surviving task advances once.
+func (r *Repository) PruneDanglingDependency(ctx context.Context,
+	request dependencywrite.DependencyMutationRequest) (dependencywrite.DependencySnapshot, bool, error) {
+	if request.WorkspaceID == "" || request.DependentTaskID == "" || request.PredecessorTaskID == "" ||
+		request.DependentTaskID == request.PredecessorTaskID || request.CorrelationID == "" {
+		return dependencywrite.DependencySnapshot{}, false, errors.New("invalid dangling dependency prune")
+	}
+	unlock := taskdependencies.AcquireMutationLock()
+	defer unlock()
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.lockDependencyWorkspace(ctx, tx, request.WorkspaceID); err != nil {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	snapshot, changed, err := r.pruneDanglingDependencyInTx(ctx, tx, request)
+	if err != nil || !changed {
+		return snapshot, changed, err
+	}
+	if err := tx.Commit(); err != nil {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	return snapshot, true, nil
+}
+
+func (r *Repository) pruneDanglingDependencyInTx(ctx context.Context, tx *sqlx.Tx,
+	request dependencywrite.DependencyMutationRequest) (dependencywrite.DependencySnapshot, bool, error) {
+	revisions, err := r.dependencyRevisionsInTx(ctx, tx, request.WorkspaceID, []string{request.DependentTaskID})
+	if err != nil {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	var present int
+	err = tx.QueryRowContext(ctx, r.db.Rebind(`SELECT 1 FROM tasks WHERE id = ?`), request.PredecessorTaskID).Scan(&present)
+	if err == nil {
+		return dependencywrite.DependencySnapshot{}, false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	result, err := tx.ExecContext(ctx, r.db.Rebind(
+		`DELETE FROM task_blockers WHERE task_id = ? AND blocker_task_id = ?`),
+		request.DependentTaskID, request.PredecessorTaskID)
+	if err != nil {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	if affected == 0 {
+		return dependencywrite.DependencySnapshot{}, false, nil
+	}
+	if err := r.incrementDependencyRevisionsInTx(ctx, tx,
+		[]string{request.DependentTaskID}, revisions); err != nil {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	snapshot, err := r.dependencySnapshotInTx(ctx, tx, request.DependentTaskID,
+		revisions[request.DependentTaskID])
+	if err != nil {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, r.db.Rebind(`INSERT INTO task_dependency_mutation_audit
+		(event_id, correlation_id, created_at, operation, origin_class, outcome, reason_code, changed,
+		caller_workspace_id, dependent_task_id, predecessor_task_id, dependent_id_present, predecessor_id_present,
+		dependent_id_canonical, predecessor_id_canonical, dependent_revision)
+		VALUES (?, ?, ?, 'remove', 'task_service', 'succeeded', 'dangling_pruned', 1, ?, ?, ?, 1, 1, 1, 0, ?)`),
+		uuid.NewString(), request.CorrelationID, time.Now().UTC(), request.WorkspaceID,
+		request.DependentTaskID, request.PredecessorTaskID, snapshot.Revision); err != nil {
+		return dependencywrite.DependencySnapshot{}, false, err
+	}
+	return snapshot, true, nil
+}
+
 func (r *Repository) removeLegacyDependencyEdgeInTx(ctx context.Context, tx *sqlx.Tx,
 	request dependencywrite.DependencyMutationRequest) error {
 	if _, err := tx.ExecContext(ctx, r.db.Rebind(

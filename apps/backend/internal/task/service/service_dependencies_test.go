@@ -179,6 +179,48 @@ func TestTaskServiceDeletePublishesSurvivingDependencyRevision(t *testing.T) {
 	}
 }
 
+func TestDanglingPruneRevisesAndAuditsSurvivor(t *testing.T) {
+	svc, eventBus, repo := setupOfficeTestWithBus(t)
+	database := sqlx.NewDb(repo.DB(), "sqlite3")
+	office, err := officesqlite.NewWithDB(database, database, nil)
+	if err != nil {
+		t.Fatalf("office repository: %v", err)
+	}
+	svc.SetBlockerRepository(office)
+	ctx := context.Background()
+	dependent := mustSeedTask(t, svc, "Dependent").ID
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO task_blockers(task_id, blocker_task_id, created_at) VALUES (?, 'missing-predecessor', CURRENT_TIMESTAMP)`, dependent); err != nil {
+		t.Fatalf("seed dangling edge: %v", err)
+	}
+	eventBus.ClearEvents()
+	svc.pruneDanglingEdge(ctx, dependent, "missing-predecessor")
+	var revision, edges, audited int
+	if err := database.GetContext(ctx, &revision, `SELECT dependency_revision FROM tasks WHERE id = ?`, dependent); err != nil {
+		t.Fatalf("read revision: %v", err)
+	}
+	if err := database.GetContext(ctx, &edges, `SELECT COUNT(*) FROM task_blockers WHERE task_id = ?`, dependent); err != nil {
+		t.Fatalf("read edges: %v", err)
+	}
+	if err := database.GetContext(ctx, &audited,
+		`SELECT COUNT(*) FROM task_dependency_mutation_audit WHERE dependent_task_id = ? AND reason_code = 'dangling_pruned'`, dependent); err != nil {
+		t.Fatalf("read audit: %v", err)
+	}
+	if revision != 1 || edges != 0 || audited != 1 {
+		t.Fatalf("after prune: revision %d, edges %d, audit %d; want 1, 0, 1", revision, edges, audited)
+	}
+	var published bool
+	for _, event := range eventBus.GetPublishedEvents() {
+		data, ok := event.Data.(map[string]interface{})
+		if ok && event.Type == events.TaskUpdated && data["task_id"] == dependent && data["dependency_revision"] == int64(1) {
+			published = true
+		}
+	}
+	if !published {
+		t.Fatal("prune did not publish survivor at revision 1")
+	}
+}
+
 func TestExactTaskRelationCommandsAreIdempotentAndPreserveCycleRules(t *testing.T) {
 	ctx := context.Background()
 	svc, _, repo := createTestService(t)

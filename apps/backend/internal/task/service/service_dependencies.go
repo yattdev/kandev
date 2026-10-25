@@ -1194,6 +1194,26 @@ func (s *Service) pruneDanglingEdge(ctx context.Context, taskID, missingTaskID s
 	if s.blockers == nil {
 		return
 	}
+	if pruner, ok := s.blockers.(interface {
+		PruneDanglingDependency(context.Context, dependencywrite.DependencyMutationRequest) (
+			dependencywrite.DependencySnapshot, bool, error)
+	}); ok {
+		task, err := s.tasks.GetTask(ctx, taskID)
+		if err != nil || task == nil {
+			return
+		}
+		snapshot, changed, err := pruner.PruneDanglingDependency(ctx, dependencywrite.DependencyMutationRequest{
+			Operation: "remove", WorkspaceID: task.WorkspaceID, DependentTaskID: taskID,
+			PredecessorTaskID: missingTaskID, OriginClass: "task_service", CorrelationID: uuid.NewString(),
+		})
+		if err != nil {
+			s.logger.Warn("failed to prune dangling dependency edge",
+				zap.String("task_id", taskID), zap.String("missing_task_id", missingTaskID), zap.Error(err))
+		} else if changed {
+			s.publishCommittedDependencySnapshot(ctx, snapshot)
+		}
+		return
+	}
 	unlock := taskdependencies.AcquireMutationLock()
 	defer unlock()
 	if err := s.blockers.DeleteTaskBlocker(ctx, taskID, missingTaskID); err != nil {

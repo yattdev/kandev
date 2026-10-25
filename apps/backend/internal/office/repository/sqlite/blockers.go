@@ -22,6 +22,11 @@ func (r *Repository) ReplaceTaskBlockersAudited(ctx context.Context,
 	return tasksqlite.NewWithInitializedDB(r.db, r.ro, r.log).ReplaceDependencySet(ctx, request, desired, authorize)
 }
 
+func (r *Repository) PruneDanglingDependency(ctx context.Context,
+	request dependencywrite.DependencyMutationRequest) (dependencywrite.DependencySnapshot, bool, error) {
+	return tasksqlite.NewWithInitializedDB(r.db, r.ro, r.log).PruneDanglingDependency(ctx, request)
+}
+
 // CreateTaskBlocker creates a blocker relationship between two tasks.
 func (r *Repository) CreateTaskBlocker(ctx context.Context, blocker *models.TaskBlocker) error {
 	blocker.CreatedAt = time.Now().UTC()
