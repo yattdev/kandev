@@ -61,6 +61,19 @@ describe("toKanbanTask dependency projection", () => {
     expect(task.dependencyRevision).toBe(2);
   });
 
+  it("does not clear known edges from a revision-only fallback response", () => {
+    const task = toKanbanTask({
+      id: "a",
+      workflow_step_id: "step-1",
+      title: "A",
+      dependency_revision: 2,
+    });
+    expect(task.blocked).toBeUndefined();
+    expect(task.dependsOn).toBeUndefined();
+    expect(task.blocks).toBeUndefined();
+    expect(task.dependencyRevision).toBeUndefined();
+  });
+
   it("clears blocked state when the payload reports it resolved", () => {
     const task = toKanbanTask({
       id: "b",

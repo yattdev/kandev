@@ -38,7 +38,7 @@ func EnrichTaskDependencies(dto *TaskDTO, projection TaskDependencyProjection, t
 	if dto == nil {
 		return
 	}
-	dto.Blocked = projection.Blocked
+	dto.Blocked = &projection.Blocked
 	dto.BlockedReason = projection.BlockedReason
 	dto.DependsOn = projection.DependsOn
 	dto.Blocks = projection.Blocks

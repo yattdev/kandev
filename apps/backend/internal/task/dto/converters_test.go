@@ -65,8 +65,8 @@ func TestFromTaskSerializesWorkspaceFolders(t *testing.T) {
 func TestTaskResponsesSerializeDependencyRevision(t *testing.T) {
 	task := &models.Task{ID: "task-with-dependencies", DependencyRevision: 7}
 	for name, response := range map[string]TaskDTO{
-		"detail": FromTask(task),
-		"list": FromTaskWithSessionInfo(task, nil, nil, models.ReviewStatusNone,
+		"detail fallback": FromTask(task),
+		"list fallback": FromTaskWithSessionInfo(task, nil, nil, models.ReviewStatusNone,
 			nil, nil, nil, nil, nil, nil, nil, nil, nil),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -81,10 +81,23 @@ func TestTaskResponsesSerializeDependencyRevision(t *testing.T) {
 			if string(fields["dependency_revision"]) != "7" {
 				t.Fatalf("dependency_revision = %s, want 7", fields["dependency_revision"])
 			}
-			if string(fields["blocked"]) != "false" {
-				t.Fatalf("empty dependency projection blocked = %s, want false", fields["blocked"])
+			if _, ok := fields["blocked"]; ok {
+				t.Fatalf("unenriched dependency projection unexpectedly claims blocked = %s", fields["blocked"])
 			}
 		})
+	}
+	response := FromTask(task)
+	EnrichTaskDependencies(&response, TaskDependencyProjection{}, task)
+	payload, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("marshal enriched task response: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatalf("decode enriched task response: %v", err)
+	}
+	if string(fields["blocked"]) != "false" {
+		t.Fatalf("empty authoritative dependency projection blocked = %s, want false", fields["blocked"])
 	}
 }
 

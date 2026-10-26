@@ -261,7 +261,7 @@ type TaskDTO struct {
 	// related task's own state — never persisted, because a stale copy would be
 	// read by the auto-start gate. Stamped by EnrichTaskDependencies.
 	DependencyRevision int64 `json:"dependency_revision"`
-	Blocked            bool  `json:"blocked"`
+	Blocked            *bool `json:"blocked,omitempty"`
 	// BlockedReason is "pending", "failed", or "unknown"; omitted when the task
 	// is not blocked.
 	BlockedReason string `json:"blocked_reason,omitempty"`
