@@ -260,7 +260,8 @@ type TaskDTO struct {
 	// Dependency projection. Derived on every read from task_blockers plus each
 	// related task's own state — never persisted, because a stale copy would be
 	// read by the auto-start gate. Stamped by EnrichTaskDependencies.
-	Blocked bool `json:"blocked,omitempty"`
+	DependencyRevision int64 `json:"dependency_revision"`
+	Blocked            bool  `json:"blocked,omitempty"`
 	// BlockedReason is "pending", "failed", or "unknown"; omitted when the task
 	// is not blocked.
 	BlockedReason string `json:"blocked_reason,omitempty"`
@@ -1161,6 +1162,7 @@ func FromTaskWithSessionInfo(
 		InitialWorkspaceLayout:      task.InitialWorkspaceLayout,
 		WorkflowID:                  task.WorkflowID,
 		WorkflowStepID:              task.WorkflowStepID,
+		DependencyRevision:          task.DependencyRevision,
 		WorkflowAgentOverrides:      workflowAgentOverrides,
 		Title:                       task.Title,
 		Description:                 task.Description,

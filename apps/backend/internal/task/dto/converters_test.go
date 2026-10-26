@@ -62,6 +62,29 @@ func TestFromTaskSerializesWorkspaceFolders(t *testing.T) {
 	}
 }
 
+func TestTaskResponsesSerializeDependencyRevision(t *testing.T) {
+	task := &models.Task{ID: "task-with-dependencies", DependencyRevision: 7}
+	for name, response := range map[string]TaskDTO{
+		"detail": FromTask(task),
+		"list": FromTaskWithSessionInfo(task, nil, nil, models.ReviewStatusNone,
+			nil, nil, nil, nil, nil, nil, nil, nil, nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload, err := json.Marshal(response)
+			if err != nil {
+				t.Fatalf("marshal task response: %v", err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(payload, &fields); err != nil {
+				t.Fatalf("decode task response: %v", err)
+			}
+			if string(fields["dependency_revision"]) != "7" {
+				t.Fatalf("dependency_revision = %s, want 7", fields["dependency_revision"])
+			}
+		})
+	}
+}
+
 func TestFromTaskProjectsWorkflowAgentOverridesOnlyForStoredWorkflow(t *testing.T) {
 	overrides, err := models.NewWorkflowAgentOverrides("wf-1", []models.WorkflowAgentOverrideBinding{
 		{StepID: "implement", SourceProfileID: "profile-a", ReplacementProfileID: "profile-b"},
