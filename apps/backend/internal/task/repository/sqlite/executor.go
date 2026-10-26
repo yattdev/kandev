@@ -356,7 +356,7 @@ func (r *Repository) UpsertExecutorRunning(ctx context.Context, running *models.
 }
 
 func (r *Repository) ensureExecutorGenerationDoesNotRegressTx(ctx context.Context, tx *sqlx.Tx, running *models.ExecutorRunning) error {
-	if running.AgentExecutionID == "" || running.AgentctlGeneration == 0 {
+	if running.AgentExecutionID == "" {
 		return nil
 	}
 	var currentGeneration uint64
