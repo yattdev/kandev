@@ -81,6 +81,9 @@ func TestTaskResponsesSerializeDependencyRevision(t *testing.T) {
 			if string(fields["dependency_revision"]) != "7" {
 				t.Fatalf("dependency_revision = %s, want 7", fields["dependency_revision"])
 			}
+			if string(fields["blocked"]) != "false" {
+				t.Fatalf("empty dependency projection blocked = %s, want false", fields["blocked"])
+			}
 		})
 	}
 }

@@ -47,6 +47,20 @@ describe("toKanbanTask dependency projection", () => {
     expect(task.blocks).toEqual([]);
   });
 
+  it("retains the revision of a full read with no dependency edges", () => {
+    const task = toKanbanTask({
+      id: "a",
+      workflow_step_id: "step-1",
+      title: "A",
+      blocked: false,
+      dependency_revision: 2,
+    });
+    expect(task.blocked).toBe(false);
+    expect(task.dependsOn).toEqual([]);
+    expect(task.blocks).toEqual([]);
+    expect(task.dependencyRevision).toBe(2);
+  });
+
   it("clears blocked state when the payload reports it resolved", () => {
     const task = toKanbanTask({
       id: "b",
