@@ -1,0 +1,17 @@
+{
+  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
+  "receipt_sha256": "517ab65da7da14ba04a34af76dd3cc109e2362b70e67d71c1489dbefd75d38c0",
+  "proof_sha256": "d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20",
+  "claim_sha256": "40c4f7078f736061e6965e44b13d03146ca49c0e98de0160657962f8bb14b7e6",
+  "saved_model_sha256": "f44205b502c4cb713ccc7cb0405f52b4bcddf51a758824821d5063a15d431462",
+  "image": "kd_8355_connector346_php-test:dev365-b07-c054",
+  "image_id": "sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d",
+  "engine_commands": 0,
+  "owner_commands": 0,
+  "applied": true,
+  "claim_and_model_unchanged": true,
+  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
+  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
+  "unchanged_container": true,
+  "restart": false
+}

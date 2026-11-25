@@ -1,0 +1,1754 @@
+diff --git a/docs/build-history-a63f/README.md b/docs/build-history-a63f/README.md
+index bed7228..4406b35 100644
+--- a/docs/build-history-a63f/README.md
++++ b/docs/build-history-a63f/README.md
+@@ -1 +1 @@
+-# Build-history incident: current Support status
++# Build history a63f: current recovery result
+@@ -3 +3,3 @@
+-Request `a63f09f3-5213-4a87-add9-a983718059eb`.
++The [pass2 native proof and applied recovery](pass2/README.md) is the current
++result for request `a63f09f3-5213-4a87-add9-a983718059eb`: RESOLVED for the
++existing-output metadata recovery; Root owns separate owner acceptance.
+@@ -5,9 +7,4 @@ Request `a63f09f3-5213-4a87-add9-a983718059eb`.
+-See [escalation pass 1](pass1/README.md) for the current metadata-reader split,
+-exact source/installed qualifications and narrowed native-proof handoff.
+-The current owner remains stopped pending authentic legacy proof/restoration;
+-no operational acceptance is performed by Support.
+-
+-The [first-pass report](first-pass-README.md) and original [legacy design](legacy-recovery-design.md)
+-are historical context. Their statement that all metadata exposure needs broker
+-restart is superseded. Native BuildKit evidence may exist independently of the
+-broker's overwritten model; its actual presence has not been inspected.
++The [pass1 decoupled installed reader](pass1/README.md) and
++[first-pass candidate report](first-pass-README.md) preserve prior source,
++qualification and installation history. Their historical blockers do not override
++pass2's independently recovered native proof and applied receipt.
+diff --git a/docs/build-history-a63f/pass2/README.md b/docs/build-history-a63f/pass2/README.md
+new file mode 100644
+index 0000000..4983719
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/README.md
+@@ -0,0 +1,147 @@
++# a63f escalation 2: native historical proof and one-output recovery
++
++Request `a63f09f3-5213-4a87-add9-a983718059eb`.
++
++The earlier historical-proof blocker was not exhausted: reviewed host Support
++can read native build-history metadata without granting engine access to an
++agent. Both deployment and platform source checkouts were inspected. This is a
++deployment ownership-history issue; no platform product source edit is needed.
++
++## Evidence recovered
++
++A bounded read of at most 256 recent Buildx client reference metadata files found
++one matching exact task-root component and service target. The initial root-UID
++filter examined zero files; the corrected check uses the actual metadata owner,
++UID1000. Client state is discovery only, never a successful-build witness. No
++foreign paths/records or source contents are disclosed.
++
++Exact builder/node: `default/default`; native Ref `imhco5xoke5vkderq2l42eltr`.
++A read-only native `ListenBuildHistory` call with that Ref, EarlyExit and Limit1
++returned completion without error. Its declared image exporter names exactly
++`docker.io/library/kd_8355_connector346_php-test:dev365-b07-c054`. Native creation
++`2026-11-25T21:19:55.40564477Z` and completion
++`2026-11-25T21:22:26.552291255Z` match the supplied Build365 interval. This is
++independent engine-retained success evidence, not the mutable runtime model.
++
++The record has no exporter-response digest. Its result points to an OCI index.
++Only that index and its linux/amd64 image manifest were read; their sizes and
++SHA256s were verified. No config/layer/attestation/provenance/log blob was fetched.
++The resulting identities are distinct:
++
++| Role | SHA256 |
++| --- | --- |
++| Completed output index; supplied accepted engine `.Id` | `852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d` |
++| linux/amd64 manifest | `990e94303a9e2f2b7201915568fb7869f0246cc478734ba5bbf234cc1acc0a11` |
++| Image config descriptor | `33fe3a440d44b0ca312f52de6a53401c3e1628a3388b949e40a644b0b819e84b` |
++
++The existing engine reports Docker29.10.1/API1.57, commit54cd494, containerd
++snapshotter. Support did **not** re-inspect the owner's tag or ID. The migration
++pins the supplied accepted engine `.Id`, independently matched to the native
++completed output index, rather than substituting the config digest or inferring
++an ID from a RepoDigest. Containerd image-store API implementations can expose
++the target descriptor digest as `.Id`; the installed reader compares the literal
++engine `.Id` on acceptance. The old source comment describing every `.Id` as a
++config digest is over-specific; the executable predicate accepts the exact
++engine-returned SHA256 and does not conflate the fields.
++
++## Exact preserving recovery
++
++`restore-known-output.py` is a Support-only, fixed-request migration, not an
++installed/public command. `apply-restoration.py` hash-gates its source and native
++proof against `reviewed.json`, requires deployment main, pins the installed
++broker/module pair and checks the Kandev container identity before/after.
++
++The migration validates the pre-existing exact immutable task/clone/project
++claim and saved-model ownership envelope; neither model reference nor a `build`
++key supplies ownership proof. It publishes **one** broker-owned mode0600 successful-output
++receipt, with native proof hash/ref/config-index distinction, by atomic
++no-replace linking. Any existing receipt, foreign/missing claim, foreign clone,
++unsafe custody, changed model or incompatible installed pair stops the action.
++Claim and saved-model bytes must remain unchanged. No new public import endpoint,
++model/claim restoration, task/session change or service restart is introduced.
++
++The installed per-request operations module remains
++`d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee`.
++The broker remains
++`9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91`.
++Automatic Compose completion capture is still **source-only** (deployment
++`cb2ba9121d75190bb140538ac6149787731a848e`, broker candidate SHA
++`b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15`).
++No lifecycle candidate, binary overlay or long-running broker replacement is
++activated by this recovery. The current installed reader can consume the restored
++receipt independently of subsequent runtime-model replacement.
++
++## Qualification and acceptance boundary
++
++Sixteen native reader tests and eleven root synthetic migration tests pass. They cover
++exact Ref/command bounds, missing/foreign/malformed/error records, distinct
++config/index identities, private-field suppression, content hash/size/status
++checks, exact claim/clone, no model-only bootstrap, no overwrite, custody and
++unchanged model/claim. Prior real-wrapper/client/Compose-parser history tests
++remain published in pass1; their fake engine proof is not owner acceptance.
++
++Root's finite next action, after the restoration receipt is confirmed, is ONE
++separately bound metadata acceptance in the unchanged owner session, from the
++same cwd and restricted caller:
++
++```sh
++KANDEV_TASK_DOCKER_ACCESS=restricted docker image inspect kd_8355_connector346_php-test:dev365-b07-c054
++```
++
++Use the existing task-root/caller environment; do not create a new guard/token,
++change models, use ID fallback or build merely to recover metadata. A denial or
++identity mismatch stops that contract. No owner inspect/config/build/run was
++performed by Support. Root separately owns any later derived-image build and
++must account for the still-source-only Compose capture hook.
++
++## Public implementation references
++
++The diagnostic follows Buildx's existing Docker-driver transport and BuildKit's
++read-only native schema, without exposing a new route to tasks:
++
++- [Buildx0.38.1 Docker driver](https://github.com/docker/buildx/blob/v0.38.1/driver/docker/driver.go).
++- [BuildKit0.34.0 history schema](https://github.com/moby/buildkit/blob/v0.34.0/api/services/control/control.proto).
++- [Content Read schema](https://github.com/containerd/containerd/blob/v2.2.4/api/services/content/v1/content.proto).
++- [Containerd image-store inspection implementation](https://github.com/moby/moby/blob/master/daemon/containerd/image_inspect.go) (general semantics reference, not an independently verified source checkout of installed commit54cd494).
++
++The diagnostic uses only the existing host engine connection, exact native Ref
++and linked manifest metadata. It does not select latest, change builder/context,
++export broad bundles, request provenance/logs/source or perform owner commands.
++
++## Custody preflight correction
++
++The first restoration attempt stopped before any receipt/directory write because
++it incorrectly expected root-owned broker metadata. Exact custody-only stat
++readback confirms the installed broker uses UID1000 and mode0700/0600 private
++storage, while its public scripts remain root-owned0555. The corrected migration
++preserves that existing UID/GID on newly created receipt directories and files;
++it does not change the task, caller, token or running broker identity. The
++installed reader requires the receipt owner to equal its existing process UID.
++No existing claim/model permission or owner is modified. The exact receipt was
++confirmed absent before continuing; this is not a repeated owner operation.
++
++The custody branch also exposed an unsupported `Path.chown` call before any
++receipt publication. It was corrected to `os.chown(..., follow_symlinks=False)`
++and qualified under actual root with UID1000 synthetic broker metadata: all
++eleven tests pass, including existing receipt preservation. Only the exact
++migration-created empty `successful-builds` directory requires custody settlement;
++its inode, empty state, root ownership and0700 mode are checked, then its UID/GID
++is restored to the existing parent broker custody. No existing owner resource or
++claim/model is modified. The failed attempt stderr is retained as evidence.
++
++## Applied result
++
++The corrected recovery is applied. Receipt SHA256:
++`517ab65da7da14ba04a34af76dd3cc109e2362b70e67d71c1489dbefd75d38c0`.
++The claim and saved runtime model hashes remain exactly those recorded in
++`restoration.json`; the Kandev container ID/image/start time are unchanged.
++The actual installed receipt reader recognizes the restored exact output and
++rechecks its existing immutable claim, with engine execution replaced by a hard
++failure in the readback diagnostic. Three installed real-wrapper/client/parser
++synthetic cases also pass (retained success, no-receipt denial, changed-output
++denial). No live owner metadata acceptance or workload operation was performed.
++
++The current base image is now supported by an independent historical-success
++receipt instead of model-only registration. Root may bind its one unchanged-owner
++metadata acceptance. This result does not claim that a later build captures
++Compose output automatically; that forward hook remains source-only.
+diff --git a/docs/build-history-a63f/pass2/apply-restoration.py b/docs/build-history-a63f/pass2/apply-restoration.py
+new file mode 100644
+index 0000000..1e6354d
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/apply-restoration.py
+@@ -0,0 +1,27 @@
++#!/usr/bin/env python3
++"""Reviewed host launcher, not a task-facing command or installed capability."""
++import hashlib
++import json
++from pathlib import Path
++import subprocess
++
++HERE = Path(__file__).resolve().parent
++review = json.loads((HERE/'reviewed.json').read_bytes())
++source = (HERE/'restore-known-output.py').read_bytes()
++proof = (HERE/'native-output-proof.json').read_bytes()
++assert hashlib.sha256(source).hexdigest() == review['restore_sha256']
++assert hashlib.sha256(proof).hexdigest() == review['proof_sha256']
++repo = HERE.parents[2]
++assert subprocess.run(['git','branch','--show-current'],cwd=repo,capture_output=True,text=True,check=True).stdout.strip() == 'main'
++def identity():
++    return subprocess.run(['docker','inspect','kandev','--format','{{.Id}} {{.Image}} {{.State.StartedAt}}'],capture_output=True,text=True,check=True).stdout.strip()
++before = identity()
++result = subprocess.run(['docker','exec','-i','--user','0',before.split()[0],'/usr/bin/python3','-I','-B','-c',source.decode(),'--apply'],input=json.dumps(review).encode()+b'\n'+proof,capture_output=True)
++(HERE/'restoration-attempt.json').write_text(json.dumps(dict(returncode=result.returncode,stdout=result.stdout.decode(),stderr=result.stderr.decode()),indent=2)+'\n')
++if result.returncode:
++    raise SystemExit(result.stderr.decode())
++receipt=json.loads(result.stdout)
++after=identity(); receipt.update(container_identity_before=before,container_identity_after=after,unchanged_container=before==after,restart=False)
++(HERE/'restoration.json').write_text(json.dumps(receipt,indent=2)+'\n')
++assert before==after
++print(json.dumps(receipt,indent=2))
+diff --git a/docs/build-history-a63f/pass2/client-reference-discovery-v2.json b/docs/build-history-a63f/pass2/client-reference-discovery-v2.json
+new file mode 100644
+index 0000000..383ca90
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/client-reference-discovery-v2.json
+@@ -0,0 +1,20 @@
++{
++  "kind": "buildx-client-reference-discovery/v2",
++  "read_only": true,
++  "discovery_only_not_build_proof": true,
++  "root_uid": 1000,
++  "file_limit": 256,
++  "metadata_files_examined": 256,
++  "truncated": true,
++  "candidates": [
++    {
++      "builder": "default",
++      "node": "default",
++      "ref": "imhco5xoke5vkderq2l42eltr",
++      "target": "php-test",
++      "context_task_component_matches": true,
++      "metadata_sha256": "685066d049b8a3df3159c78573d2179805f1f87f1e6cbfb7528de4cfc857c371",
++      "mtime_ns": 1795641595403220310
++    }
++  ]
++}
+diff --git a/docs/build-history-a63f/pass2/client-reference-discovery.json b/docs/build-history-a63f/pass2/client-reference-discovery.json
+new file mode 100644
+index 0000000..5ab3ce2
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/client-reference-discovery.json
+@@ -0,0 +1,21 @@
++{
++  "kind": "buildx-client-reference-discovery/v1",
++  "read_only": true,
++  "discovery_only_not_build_proof": true,
++  "candidates": [],
++  "roots": [
++    {
++      "path": "/data/home/.docker/buildx/refs",
++      "present": true,
++      "metadata_files_examined": 0,
++      "bounded": true,
++      "truncated": true
++    },
++    {
++      "path": "/root/.docker/buildx/refs",
++      "present": false,
++      "metadata_files_examined": 0,
++      "bounded": true
++    }
++  ]
++}
+diff --git a/docs/build-history-a63f/pass2/engine-version.json b/docs/build-history-a63f/pass2/engine-version.json
+new file mode 100644
+index 0000000..55c9f20
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/engine-version.json
+@@ -0,0 +1 @@
++{"Version": "29.10.1", "ApiVersion": "1.57", "GitCommit": "54cd494", "BuildTime": "2026-11-24T19:44:40.000000000+00:00", "Os": "linux", "Arch": "amd64"}
+diff --git a/docs/build-history-a63f/pass2/installed-reader-readback.json b/docs/build-history-a63f/pass2/installed-reader-readback.json
+new file mode 100644
+index 0000000..23c588d
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/installed-reader-readback.json
+@@ -0,0 +1 @@
++{"installed_reader_recognizes_restored_output": true, "exact_claim_rechecked": true, "engine_calls": 0, "owner_commands": 0, "broker_metadata_uid": 1000, "image": "kd_8355_connector346_php-test:dev365-b07-c054", "image_id": "sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d"}
+diff --git a/docs/build-history-a63f/pass2/installed-wrapper-tests.txt b/docs/build-history-a63f/pass2/installed-wrapper-tests.txt
+new file mode 100644
+index 0000000..21ee9e3
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/installed-wrapper-tests.txt
+@@ -0,0 +1,9 @@
++{"candidate": true, "baseline": false, "reader_only_candidate": false, "reader_only_installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_old_broker_new_reader_retains_proven_output (__main__.ReaderCompatibility.test_old_broker_new_reader_retains_proven_output) ... ok
++test_old_broker_without_success_receipt_stays_denied (__main__.ReaderCompatibility.test_old_broker_without_success_receipt_stays_denied) ... ok
++test_old_broker_reader_rejects_changed_output (__main__.ReaderCompatibility.test_old_broker_reader_rejects_changed_output) ... ok
++
++----------------------------------------------------------------------
++Ran 3 tests in 0.808s
++
++OK
+diff --git a/docs/build-history-a63f/pass2/manifest.json b/docs/build-history-a63f/pass2/manifest.json
+new file mode 100644
+index 0000000..5409cba
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/manifest.json
+@@ -0,0 +1,33 @@
++{
++  "README.md": "13da1bf35da0f38b462eedf1a6f184d14a5717d98ddf3756ea25c11fac7c2491",
++  "apply-restoration.py": "254c2c290a96c674795ea546c90f4a4d534fb53e3743773ab76449881a77262f",
++  "client-reference-discovery-v2.json": "666b26e3db3cc1f0c1835b2454b504b4e1c3f698703a03cf758810d40a287999",
++  "client-reference-discovery.json": "b010144f0edb948ca086c820070171e47078933a127b43cb935ade45cb90128b",
++  "engine-version.json": "b155e7971f00eea762398ce59adb8498518c23ff4977fa638361a80c859c92d8",
++  "installed-reader-readback.json": "9601f60e88eca36b91fe4498050b62431837f055850c1e81f78da145cd3bc4bf",
++  "installed-wrapper-tests.txt": "279ed1c8ab78eff3f737c744d7bc12c32e430256407c61792e042f248fe06db2",
++  "native-output-proof.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
++  "native-output-proof.json": "d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20",
++  "native-output-proof.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++  "native-reader/go.mod": "f3e174c8925c9ef42a2c13388ad217597bbda1da14ba6d018938bafc9ae36499",
++  "native-reader/go.sum": "d9d7049009a5ab57dcb1cf4a621248746b6fee64927403d0428004af987e606d",
++  "native-reader/main.go": "8b0a3015e2ad142c46f50d81d4e31fc70d9529187cf3b39849af264a8f950060",
++  "native-reader/main_test.go": "41ffb1f833a069e21abbe716088f3aa6213c8a7c099729fbf02af55692b3d058",
++  "native-reader-tests.txt": "15fb4fec28e6692f539c05be6c41f70ecce96e7343db275421626e7c435b0fd7",
++  "native-record-with-descriptors.json": "157cb7d07374d32418d658e5687e1ee3b409a25deaf8074948e8e174cd991347",
++  "native-record.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
++  "native-record.json": "01b7e6cff73d2ad8abf01f908b85c593d3e7764f71b01a32b4184cd1a9695fb3",
++  "native-record.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++  "partial-directory-settlement.json": "2520d6af35c9b963013d96024ebf86f1d2bab4fecaf744a461904a223c694aec",
++  "restoration-attempt.json": "75aa36871c9e4b30bfee3a5b889d21988772e27af7497e85ce19c408bbc7d072",
++  "restoration-custody-api-error.json": "605aeb9b848bbca321404bc7471f3814a8a2a2a20d4ebd716a80343fb85b19d1",
++  "restoration-preflight-stats.json": "adbd18d28b1a5d3fcba3d51317cd79ac0af5a6761026afe27bdbf8b38654d67e",
++  "restoration-tests.txt": "90c0cb61fc0cdf48f6d871b2a177f4eccdcc1c23218647a47a9ae26c6b06ee32",
++  "restoration.json": "8c2f9441b05a648709dcd9225341f4ac35de095dfe9c788978973a64fa30af87",
++  "restore-known-output.py": "9a50dbc2d5b8acc9cadea93f0fcf5022e479450caac74e4ab091b00126d794de",
++  "result.json": "c07f2484c77db626af483a46af9462d6b5ec9267f0ba5f5cd5345dcd97b972e2",
++  "reviewed.json": "139ec4bd133488994d24eb1504f16723cf8c12ce38412cc0367fc667ab6ffabc",
++  "root-custody-tests.txt": "5eb5098d66c8184573e881b57d2c5036720204458501884294ea21ae7e03d54b",
++  "settle-partial-directory.py": "7ea63812a6bc709487f6b5adf4620485e5aa08ee3ff32a3fb5772babbb6145e7",
++  "test_restore.py": "b57165ad2d3a0cba66c84b538fc75b10a820a446734481dd62975b8c7194cde8"
++}
+diff --git a/docs/build-history-a63f/pass2/native-output-proof.exit b/docs/build-history-a63f/pass2/native-output-proof.exit
+new file mode 100644
+index 0000000..573541a
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-output-proof.exit
+@@ -0,0 +1 @@
++0
+diff --git a/docs/build-history-a63f/pass2/native-output-proof.json b/docs/build-history-a63f/pass2/native-output-proof.json
+new file mode 100644
+index 0000000..f105a3e
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-output-proof.json
+@@ -0,0 +1 @@
++{"completed_at":"2026-11-25T21:22:26.552291255Z","created_at":"2026-11-25T21:19:55.40564477Z","error_present":false,"event_type":1,"exporter_response":{},"exporters":[{"name":"docker.io/library/kd_8355_connector346_php-test:dev365-b07-c054","type":"image"}],"external_error_present":false,"output_manifest_chain":[{"mediaType":"application/vnd.oci.image.index.v1+json","digest":"sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d","size":856,"platform":{"os":"","architecture":""}},{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:990e94303a9e2f2b7201915568fb7869f0246cc478734ba5bbf234cc1acc0a11","size":4666,"platform":{"os":"linux","architecture":"amd64"}}],"ref":"imhco5xoke5vkderq2l42eltr","result_descriptors":[{"digest":"sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d","media_type":"application/vnd.oci.image.index.v1+json","size":856},{"digest":"sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d","media_type":"application/vnd.oci.image.index.v1+json","size":856}],"verified_output_config_id":"sha256:33fe3a440d44b0ca312f52de6a53401c3e1628a3388b949e40a644b0b819e84b"}
+diff --git a/docs/build-history-a63f/pass2/native-output-proof.stderr b/docs/build-history-a63f/pass2/native-output-proof.stderr
+new file mode 100644
+index 0000000..e69de29
+diff --git a/docs/build-history-a63f/pass2/native-reader-tests.txt b/docs/build-history-a63f/pass2/native-reader-tests.txt
+new file mode 100644
+index 0000000..566bdff
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-reader-tests.txt
+@@ -0,0 +1,34 @@
++=== RUN   TestExactRequest
++--- PASS: TestExactRequest (0.00s)
++=== RUN   TestRefRequired
++--- PASS: TestRefRequired (0.00s)
++=== RUN   TestDistinctDigests
++--- PASS: TestDistinctDigests (0.00s)
++=== RUN   TestForeignRef
++--- PASS: TestForeignRef (0.00s)
++=== RUN   TestNoRecord
++--- PASS: TestNoRecord (0.00s)
++=== RUN   TestPrivateFieldsNotProjected
++--- PASS: TestPrivateFieldsNotProjected (0.00s)
++=== RUN   TestErrorPresenceOnly
++--- PASS: TestErrorPresenceOnly (0.00s)
++=== RUN   TestMalformed
++--- PASS: TestMalformed (0.00s)
++=== RUN   TestFrameSuccess
++--- PASS: TestFrameSuccess (0.00s)
++=== RUN   TestFrameStatus
++--- PASS: TestFrameStatus (0.00s)
++=== RUN   TestFrameBound
++--- PASS: TestFrameBound (0.00s)
++=== RUN   TestExtraRecord
++--- PASS: TestExtraRecord (0.00s)
++=== RUN   TestResolveConfigNoConfigRead
++--- PASS: TestResolveConfigNoConfigRead (0.00s)
++=== RUN   TestResolveDeniesBeforeContent
++--- PASS: TestResolveDeniesBeforeContent (0.00s)
++=== RUN   TestContentDigestValidation
++--- PASS: TestContentDigestValidation (0.00s)
++=== RUN   TestOnlyDescriptorProjection
++--- PASS: TestOnlyDescriptorProjection (0.00s)
++PASS
++ok  	kandev.support/a63f-native-reader	0.004s
+diff --git a/docs/build-history-a63f/pass2/native-reader/go.mod b/docs/build-history-a63f/pass2/native-reader/go.mod
+new file mode 100644
+index 0000000..bdccae6
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-reader/go.mod
+@@ -0,0 +1,7 @@
++module kandev.support/a63f-native-reader
++
++go 1.26.0
++
++require golang.org/x/net v0.58.0
++
++require golang.org/x/text v0.42.0 // indirect
+diff --git a/docs/build-history-a63f/pass2/native-reader/go.sum b/docs/build-history-a63f/pass2/native-reader/go.sum
+new file mode 100644
+index 0000000..b8d8c29
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-reader/go.sum
+@@ -0,0 +1,4 @@
++golang.org/x/net v0.58.0 h1:ynWG7rqYi4ccpTEuPZ2QGWHktVEM9DMCj9yzDE0Q7To=
++golang.org/x/net v0.58.0/go.mod h1:YwCddHnFlT7eLQqVprV19OnhLGtc5xOKgE0RyqgfWAU=
++golang.org/x/text v0.42.0 h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=
++golang.org/x/text v0.42.0/go.mod h1:ojzP1Z+2QtioaF8DTtO8K5q7JWVVYwZKenzujK0Zd0E=
+diff --git a/docs/build-history-a63f/pass2/native-reader/main.go b/docs/build-history-a63f/pass2/native-reader/main.go
+new file mode 100644
+index 0000000..3c2550d
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-reader/main.go
+@@ -0,0 +1,536 @@
++// Support-only read-only diagnostic. Not installed or exposed to task agents.
++package main
++
++import (
++	"bufio"
++	"bytes"
++	"context"
++	"crypto/sha256"
++	"crypto/tls"
++	"encoding/binary"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"os"
++	"regexp"
++	"time"
++
++	"golang.org/x/net/http2"
++)
++
++const rpc = "/moby.buildkit.v1.Control/ListenBuildHistory"
++const maxMessage = 1 << 20
++
++var validRef = regexp.MustCompile(`^[a-z0-9]{20,40}$`)
++var digest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
++
++type field struct {
++	number  int
++	integer uint64
++	data    []byte
++}
++
++func fields(b []byte) ([]field, error) {
++	var out []field
++	for len(b) > 0 {
++		key, n := binary.Uvarint(b)
++		if n <= 0 || key>>3 == 0 {
++			return nil, errors.New("invalid protobuf")
++		}
++		b = b[n:]
++		f := field{number: int(key >> 3)}
++		switch key & 7 {
++		case 0:
++			v, n := binary.Uvarint(b)
++			if n <= 0 {
++				return nil, errors.New("invalid integer")
++			}
++			f.integer = v
++			b = b[n:]
++		case 1:
++			if len(b) < 8 {
++				return nil, io.ErrUnexpectedEOF
++			}
++			b = b[8:]
++		case 2:
++			l, n := binary.Uvarint(b)
++			if n <= 0 || l > uint64(len(b)-n) {
++				return nil, io.ErrUnexpectedEOF
++			}
++			b = b[n:]
++			f.data = b[:int(l)]
++			b = b[int(l):]
++		case 5:
++			if len(b) < 4 {
++				return nil, io.ErrUnexpectedEOF
++			}
++			b = b[4:]
++		default:
++			return nil, errors.New("unsupported wire type")
++		}
++		out = append(out, f)
++		if len(out) > 32768 {
++			return nil, errors.New("field limit")
++		}
++	}
++	return out, nil
++}
++func stringField(b []byte, n int) (string, error) {
++	fs, e := fields(b)
++	if e != nil {
++		return "", e
++	}
++	var s string
++	for _, f := range fs {
++		if f.number == n {
++			s = string(f.data)
++		}
++	}
++	return s, nil
++}
++func timestamp(b []byte) (string, error) {
++	fs, e := fields(b)
++	if e != nil {
++		return "", e
++	}
++	var s, ns int64
++	for _, f := range fs {
++		if f.number == 1 {
++			s = int64(f.integer)
++		}
++		if f.number == 2 {
++			ns = int64(f.integer)
++		}
++	}
++	if s <= 0 || ns >= 1e9 {
++		return "", errors.New("invalid timestamp")
++	}
++	return time.Unix(s, ns).UTC().Format(time.RFC3339Nano), nil
++}
++func mapEntry(b []byte) (string, string, error) {
++	k, e := stringField(b, 1)
++	if e != nil {
++		return "", "", e
++	}
++	v, e := stringField(b, 2)
++	return k, v, e
++}
++func messageField(n int, b []byte) []byte {
++	out := binary.AppendUvarint(nil, uint64(n<<3|2))
++	out = binary.AppendUvarint(out, uint64(len(b)))
++	return append(out, b...)
++}
++func request(ref string) ([]byte, error) {
++	if !validRef.MatchString(ref) {
++		return nil, errors.New("exact native ref required")
++	}
++	// Ref=2; EarlyExit=3; Limit=5. No active subscription, latest selection or mutation.
++	b := messageField(2, []byte(ref))
++	b = append(b, 24, 1, 40, 1)
++	frame := make([]byte, 5)
++	binary.BigEndian.PutUint32(frame[1:], uint32(len(b)))
++	return append(frame, b...), nil
++}
++func descriptors(b []byte) ([]map[string]any, error) {
++	fs, e := fields(b)
++	if e != nil {
++		return nil, e
++	}
++	out := []map[string]any{}
++	for _, f := range fs {
++		var raw []byte
++		if f.number == 1 {
++			raw = f.data
++		}
++		if f.number == 3 {
++			entries, err := fields(f.data)
++			if err != nil {
++				return nil, err
++			}
++			for _, v := range entries {
++				if v.number == 2 {
++					raw = v.data
++				}
++			}
++		}
++		if raw == nil {
++			continue
++		}
++		df, err := fields(raw)
++		if err != nil {
++			return nil, err
++		}
++		d := map[string]any{}
++		for _, v := range df {
++			if v.number == 1 {
++				d["media_type"] = string(v.data)
++			}
++			if v.number == 2 {
++				if !digest.Match(v.data) {
++					return nil, errors.New("invalid result digest")
++				}
++				d["digest"] = string(v.data)
++			}
++			if v.number == 3 {
++				d["size"] = v.integer
++			}
++		}
++		out = append(out, d)
++	}
++	return out, nil
++}
++func project(event []byte, expected string) (map[string]any, error) {
++	fs, e := fields(event)
++	if e != nil {
++		return nil, e
++	}
++	var record []byte
++	var eventType uint64
++	for _, f := range fs {
++		if f.number == 1 {
++			eventType = f.integer
++		}
++		if f.number == 2 {
++			record = f.data
++		}
++	}
++	if len(record) == 0 {
++		return nil, errors.New("missing record")
++	}
++	fs, e = fields(record)
++	if e != nil {
++		return nil, e
++	}
++	out := map[string]any{"ref": expected, "event_type": eventType, "error_present": false, "external_error_present": false, "exporters": []map[string]string{}, "exporter_response": map[string]string{}}
++	var actual string
++	for _, f := range fs {
++		switch f.number {
++		case 1:
++			actual = string(f.data)
++		case 4:
++			ef, err := fields(f.data)
++			if err != nil {
++				return nil, err
++			}
++			ex := map[string]string{}
++			for _, v := range ef {
++				if v.number == 1 {
++					ex["type"] = string(v.data)
++				}
++				if v.number == 2 {
++					k, val, err := mapEntry(v.data)
++					if err != nil {
++						return nil, err
++					}
++					if k == "name" {
++						ex[k] = val
++					}
++				}
++			}
++			out["exporters"] = append(out["exporters"].([]map[string]string), ex)
++		case 5:
++			out["error_present"] = true // Never decode error details/source.
++		case 6, 7:
++			t, err := timestamp(f.data)
++			if err != nil {
++				return nil, err
++			}
++			if f.number == 6 {
++				out["created_at"] = t
++			} else {
++				out["completed_at"] = t
++			}
++		case 9:
++			k, v, err := mapEntry(f.data)
++			if err != nil {
++				return nil, err
++			}
++			if k == "image.name" || k == "containerimage.config.digest" || k == "containerimage.digest" {
++				if k != "image.name" && !digest.MatchString(v) {
++					return nil, errors.New("invalid digest")
++				}
++				out["exporter_response"].(map[string]string)[k] = v
++			}
++		case 10:
++			d, err := descriptors(f.data)
++			if err != nil {
++				return nil, err
++			}
++			out["result_descriptors"] = d
++		case 11:
++			ef, err := fields(f.data)
++			if err != nil {
++				return nil, err
++			}
++			for _, v := range ef {
++				if v.number == 2 {
++					d, err := descriptors(v.data)
++					if err != nil {
++						return nil, err
++					}
++					existing, _ := out["platform_result_descriptors"].([]map[string]any)
++					out["platform_result_descriptors"] = append(existing, d...)
++				}
++			}
++		case 18:
++			out["external_error_present"] = true
++		}
++	}
++	if actual != expected {
++		return nil, errors.New("native ref mismatch")
++	}
++	return out, nil
++}
++
++type bufferedConn struct {
++	net.Conn
++	r *bufio.Reader
++}
++
++func (c bufferedConn) Read(b []byte) (int, error) { return c.r.Read(b) }
++func engineDial(ctx context.Context, _ string, _ string, _ *tls.Config) (net.Conn, error) {
++	c, e := (&net.Dialer{}).DialContext(ctx, "unix", "/var/run/docker.sock")
++	if e != nil {
++		return nil, e
++	}
++	_ = c.SetDeadline(time.Now().Add(20 * time.Second))
++	req, _ := http.NewRequestWithContext(ctx, "POST", "http://docker/grpc", http.NoBody)
++	req.Header.Set("Connection", "Upgrade")
++	req.Header.Set("Upgrade", "h2c")
++	if e = req.Write(c); e != nil {
++		c.Close()
++		return nil, e
++	}
++	r := bufio.NewReader(c)
++	resp, e := http.ReadResponse(r, req)
++	if e != nil {
++		c.Close()
++		return nil, e
++	}
++	if resp.StatusCode != 101 {
++		c.Close()
++		return nil, fmt.Errorf("engine upgrade HTTP %d", resp.StatusCode)
++	}
++	return bufferedConn{c, r}, nil
++}
++func readResult(resp *http.Response, ref string) (map[string]any, error) {
++	defer resp.Body.Close()
++	if resp.StatusCode != 200 {
++		return nil, fmt.Errorf("RPC HTTP %d", resp.StatusCode)
++	}
++	limited := io.LimitReader(resp.Body, maxMessage+6)
++	var header [5]byte
++	_, e := io.ReadFull(limited, header[:])
++	if e == io.EOF {
++		return nil, fmt.Errorf("native record unavailable (grpc-status %s)", resp.Trailer.Get("Grpc-Status"))
++	}
++	if e != nil {
++		return nil, e
++	}
++	n := binary.BigEndian.Uint32(header[1:])
++	if header[0] != 0 || n > maxMessage {
++		return nil, errors.New("unsupported or oversized frame")
++	}
++	b := make([]byte, n)
++	if _, e = io.ReadFull(limited, b); e != nil {
++		return nil, e
++	}
++	var extra [1]byte
++	if _, e = limited.Read(extra[:]); e != io.EOF {
++		return nil, errors.New("multiple records or incomplete RPC")
++	}
++	if resp.Trailer.Get("Grpc-Status") != "0" {
++		return nil, errors.New("RPC did not complete successfully")
++	}
++	return project(b, ref)
++}
++
++// Only index/manifest JSON linked from the exact completed history record is read.
++// Config blobs, layers, attestations, logs and provenance are never requested.
++type descriptor struct {
++	MediaType string `json:"mediaType"`
++	Digest    string `json:"digest"`
++	Size      int64  `json:"size"`
++	Platform  struct {
++		OS           string `json:"os"`
++		Architecture string `json:"architecture"`
++	} `json:"platform"`
++}
++
++func grpcRequest(ctx context.Context, tr *http2.Transport, path string, b []byte) (*http.Response, error) {
++	frame := make([]byte, 5)
++	binary.BigEndian.PutUint32(frame[1:], uint32(len(b)))
++	frame = append(frame, b...)
++	req, _ := http.NewRequestWithContext(ctx, "POST", "http://docker"+path, bytes.NewReader(frame))
++	req.Header.Set("Content-Type", "application/grpc")
++	req.Header.Set("Te", "trailers")
++	req.Header.Set("Grpc-Timeout", "20S")
++	return tr.RoundTrip(req)
++}
++func readContent(resp *http.Response, expected descriptor) ([]byte, error) {
++	defer resp.Body.Close()
++	if resp.StatusCode != 200 {
++		return nil, errors.New("content RPC HTTP failure")
++	}
++	r := io.LimitReader(resp.Body, 131072)
++	var data []byte
++	for frames := 0; ; frames++ {
++		var h [5]byte
++		_, e := io.ReadFull(r, h[:])
++		if e == io.EOF {
++			break
++		}
++		if e != nil {
++			return nil, e
++		}
++		n := binary.BigEndian.Uint32(h[1:])
++		if frames >= 8 || h[0] != 0 || n > 65550 {
++			return nil, errors.New("content frame limit")
++		}
++		b := make([]byte, n)
++		if _, e = io.ReadFull(r, b); e != nil {
++			return nil, e
++		}
++		fs, e := fields(b)
++		if e != nil {
++			return nil, e
++		}
++		var offset uint64
++		var chunk []byte
++		for _, f := range fs {
++			if f.number == 1 {
++				offset = f.integer
++			}
++			if f.number == 2 {
++				chunk = f.data
++			}
++		}
++		if offset != uint64(len(data)) || len(data)+len(chunk) > 65536 {
++			return nil, errors.New("content size or offset mismatch")
++		}
++		data = append(data, chunk...)
++	}
++	if resp.Trailer.Get("Grpc-Status") != "0" || len(data) != int(expected.Size) || fmt.Sprintf("sha256:%x", sha256.Sum256(data)) != expected.Digest {
++		return nil, errors.New("content identity or RPC failure")
++	}
++	return data, nil
++}
++func isIndex(t string) bool {
++	return t == "application/vnd.oci.image.index.v1+json" || t == "application/vnd.docker.distribution.manifest.list.v2+json"
++}
++func isManifest(t string) bool {
++	return t == "application/vnd.oci.image.manifest.v1+json" || t == "application/vnd.docker.distribution.manifest.v2+json"
++}
++func resolveConfig(out map[string]any, tag string, fetch func(descriptor) ([]byte, error)) error {
++	if out["event_type"] != uint64(1) || out["error_present"] != false || out["external_error_present"] != false || out["completed_at"] == nil {
++		return errors.New("not successful completion")
++	}
++	ex, _ := out["exporters"].([]map[string]string)
++	if len(ex) != 1 || ex[0]["type"] != "image" || (ex[0]["name"] != tag && ex[0]["name"] != "docker.io/library/"+tag) {
++		return errors.New("output tag mismatch")
++	}
++	var d descriptor
++	results, ok := out["result_descriptors"].([]map[string]any)
++	if !ok || len(results) == 0 {
++		return errors.New("missing output descriptors")
++	}
++	for _, v := range results {
++		candidate := descriptor{MediaType: v["media_type"].(string), Digest: v["digest"].(string), Size: int64(v["size"].(uint64))}
++		if d.Digest != "" && d.Digest != candidate.Digest {
++			return errors.New("multiple outputs")
++		}
++		d = candidate
++	}
++	chain := []descriptor{}
++	for depth := 0; depth < 2; depth++ {
++		if !digest.MatchString(d.Digest) || d.Size <= 0 || d.Size > 65536 || (!isIndex(d.MediaType) && !isManifest(d.MediaType)) {
++			return errors.New("not an admitted output manifest")
++		}
++		raw, e := fetch(d)
++		if e != nil {
++			return e
++		}
++		chain = append(chain, d)
++		var doc struct {
++			SchemaVersion int          `json:"schemaVersion"`
++			MediaType     string       `json:"mediaType"`
++			Manifests     []descriptor `json:"manifests"`
++			Config        descriptor   `json:"config"`
++		}
++		if e = json.Unmarshal(raw, &doc); e != nil {
++			return e
++		}
++		if doc.SchemaVersion != 2 || doc.MediaType != d.MediaType {
++			return errors.New("manifest schema mismatch")
++		}
++		if isIndex(d.MediaType) {
++			var selected []descriptor
++			for _, v := range doc.Manifests {
++				if isManifest(v.MediaType) && v.Platform.OS == "linux" && v.Platform.Architecture == "amd64" {
++					selected = append(selected, v)
++				}
++			}
++			if len(selected) != 1 {
++				return errors.New("ambiguous native platform")
++			}
++			d = selected[0]
++			continue
++		}
++		if (doc.Config.MediaType != "application/vnd.oci.image.config.v1+json" && doc.Config.MediaType != "application/vnd.docker.container.image.v1+json") || !digest.MatchString(doc.Config.Digest) {
++			return errors.New("invalid config descriptor")
++		}
++		out["verified_output_config_id"] = doc.Config.Digest
++		out["output_manifest_chain"] = chain
++		return nil
++	}
++	return errors.New("manifest depth limit")
++}
++func main() {
++	if len(os.Args) != 2 && len(os.Args) != 3 {
++		fmt.Fprintln(os.Stderr, "one exact native ref required")
++		os.Exit(2)
++	}
++	ref := os.Args[1]
++	body, e := request(ref)
++	if e != nil {
++		fmt.Fprintln(os.Stderr, e)
++		os.Exit(2)
++	}
++	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
++	defer cancel()
++	tr := &http2.Transport{AllowHTTP: true, DialTLSContext: engineDial}
++	defer tr.CloseIdleConnections()
++	req, _ := http.NewRequestWithContext(ctx, "POST", "http://docker"+rpc, bytes.NewReader(body))
++	req.Header.Set("Content-Type", "application/grpc")
++	req.Header.Set("Te", "trailers")
++	req.Header.Set("Grpc-Timeout", "20S")
++	resp, e := tr.RoundTrip(req)
++	if e == nil {
++		var out map[string]any
++		out, e = readResult(resp, ref)
++		if e == nil {
++			if len(os.Args) == 3 {
++				e = resolveConfig(out, os.Args[2], func(d descriptor) ([]byte, error) {
++					req := messageField(1, []byte(d.Digest))
++					req = append(req, 24)
++					req = binary.AppendUvarint(req, uint64(d.Size))
++					resp, err := grpcRequest(ctx, tr, "/containerd.services.content.v1.Content/Read", req)
++					if err != nil {
++						return nil, err
++					}
++					return readContent(resp, d)
++				})
++			}
++			if e == nil {
++				e = json.NewEncoder(os.Stdout).Encode(out)
++			}
++		}
++	}
++	if e != nil {
++		fmt.Fprintln(os.Stderr, e)
++		os.Exit(1)
++	}
++}
+diff --git a/docs/build-history-a63f/pass2/native-reader/main_test.go b/docs/build-history-a63f/pass2/native-reader/main_test.go
+new file mode 100644
+index 0000000..bb7602a
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-reader/main_test.go
+@@ -0,0 +1,198 @@
++package main
++
++import (
++	"bytes"
++	"encoding/binary"
++	"encoding/json"
++	"io"
++	"net/http"
++	"strings"
++	"testing"
++)
++
++const ref = "imhco5xoke5vkderq2l42eltr"
++
++func msg(n int, b []byte) []byte { return messageField(n, b) }
++func entry(k, v string) []byte   { return append(msg(1, []byte(k)), msg(2, []byte(v))...) }
++func event(r string) []byte {
++	b := msg(1, []byte(r))
++	b = append(b, msg(7, []byte{8, 128, 200, 175, 216, 6})...)
++	b = append(b, msg(9, entry("containerimage.config.digest", "sha256:"+strings.Repeat("a", 64)))...)
++	b = append(b, msg(9, entry("containerimage.digest", "sha256:"+strings.Repeat("b", 64)))...)
++	return append([]byte{8, 1}, msg(2, b)...)
++}
++func response(payload []byte, status string) *http.Response {
++	b := make([]byte, 5)
++	binary.BigEndian.PutUint32(b[1:], uint32(len(payload)))
++	b = append(b, payload...)
++	return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(b)), Trailer: http.Header{"Grpc-Status": {status}}}
++}
++func TestExactRequest(t *testing.T) {
++	b, e := request(ref)
++	if e != nil {
++		t.Fatal(e)
++	}
++	f, e := fields(b[5:])
++	if e != nil || len(f) != 3 || f[0].number != 2 || string(f[0].data) != ref || f[1].number != 3 || f[1].integer != 1 || f[2].number != 5 || f[2].integer != 1 {
++		t.Fatalf("unexpected request %v %v", f, e)
++	}
++}
++func TestRefRequired(t *testing.T) {
++	for _, v := range []string{"", "latest", "../x", ref + "/../"} {
++		if _, e := request(v); e == nil {
++			t.Fatal(v)
++		}
++	}
++}
++func TestDistinctDigests(t *testing.T) {
++	p, e := project(event(ref), ref)
++	if e != nil {
++		t.Fatal(e)
++	}
++	m := p["exporter_response"].(map[string]string)
++	if m["containerimage.config.digest"] == m["containerimage.digest"] {
++		t.Fatal("digest conflation")
++	}
++}
++func TestForeignRef(t *testing.T) {
++	if _, e := project(event(strings.Repeat("a", 24)), ref); e == nil {
++		t.Fatal("foreign ref")
++	}
++}
++func TestNoRecord(t *testing.T) {
++	if _, e := project(nil, ref); e == nil {
++		t.Fatal("missing record")
++	}
++}
++func TestPrivateFieldsNotProjected(t *testing.T) {
++	f, _ := fields(event(ref))
++	r := f[1].data
++	r = append(r, msg(3, entry("build-arg:SECRET", "private sentinel"))...)
++	r = append(r, msg(8, []byte("source logs private sentinel"))...)
++	p, e := project(append([]byte{8, 1}, msg(2, r)...), ref)
++	if e != nil {
++		t.Fatal(e)
++	}
++	b, _ := json.Marshal(p)
++	if bytes.Contains(b, []byte("private sentinel")) {
++		t.Fatal(string(b))
++	}
++}
++func TestErrorPresenceOnly(t *testing.T) {
++	f, _ := fields(event(ref))
++	r := append(f[1].data, msg(5, msg(2, []byte("private error sentinel")))...)
++	r = append(r, msg(18, []byte("private attachment"))...)
++	p, e := project(msg(2, r), ref)
++	if e != nil {
++		t.Fatal(e)
++	}
++	if !p["error_present"].(bool) || !p["external_error_present"].(bool) {
++		t.Fatal(p)
++	}
++	b, _ := json.Marshal(p)
++	if bytes.Contains(b, []byte("private")) {
++		t.Fatal(string(b))
++	}
++}
++func TestMalformed(t *testing.T) {
++	for _, b := range [][]byte{{0}, {18, 255}, {18, 2, 10}, {255, 255, 255}} {
++		if _, e := project(b, ref); e == nil {
++			t.Fatal(b)
++		}
++	}
++}
++func TestFrameSuccess(t *testing.T) {
++	if _, e := readResult(response(event(ref), "0"), ref); e != nil {
++		t.Fatal(e)
++	}
++}
++func TestFrameStatus(t *testing.T) {
++	if _, e := readResult(response(event(ref), "13"), ref); e == nil {
++		t.Fatal("nonzero status")
++	}
++}
++func TestFrameBound(t *testing.T) {
++	r := response(event(ref), "0")
++	b := make([]byte, 5)
++	binary.BigEndian.PutUint32(b[1:], maxMessage+1)
++	r.Body = io.NopCloser(bytes.NewReader(b))
++	if _, e := readResult(r, ref); e == nil {
++		t.Fatal("oversize")
++	}
++}
++func TestExtraRecord(t *testing.T) {
++	r := response(event(ref), "0")
++	b, _ := io.ReadAll(r.Body)
++	r.Body = io.NopCloser(bytes.NewReader(append(b, b...)))
++	if _, e := readResult(r, ref); e == nil {
++		t.Fatal("extra record")
++	}
++}
++func fixtureOutput() (map[string]any, []byte) {
++	manifest := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"sha256:` + strings.Repeat("c", 64) + `","size":100},"layers":[],"annotations":{"secret":"not projected"}}`)
++	out := map[string]any{"event_type": uint64(1), "error_present": false, "external_error_present": false, "completed_at": "2026-11-25T21:22:26Z", "exporters": []map[string]string{{"type": "image", "name": "docker.io/library/own_service:built"}}, "result_descriptors": []map[string]any{{"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:" + strings.Repeat("b", 64), "size": uint64(len(manifest))}}}
++	return out, manifest
++}
++func TestResolveConfigNoConfigRead(t *testing.T) {
++	out, raw := fixtureOutput()
++	count := 0
++	e := resolveConfig(out, "own_service:built", func(d descriptor) ([]byte, error) {
++		count++
++		if !isManifest(d.MediaType) {
++			t.Fatal("config requested")
++		}
++		return raw, nil
++	})
++	if e != nil || count != 1 || out["verified_output_config_id"] != "sha256:"+strings.Repeat("c", 64) {
++		t.Fatal(out, e, count)
++	}
++	b, _ := json.Marshal(out)
++	if bytes.Contains(b, []byte("not projected")) {
++		t.Fatal(string(b))
++	}
++}
++func TestResolveDeniesBeforeContent(t *testing.T) {
++	for _, kind := range []string{"failed", "external", "tag", "incomplete", "planless", "running"} {
++		out, _ := fixtureOutput()
++		tag := "own_service:built"
++		switch kind {
++		case "failed":
++			out["error_present"] = true
++		case "external":
++			out["external_error_present"] = true
++		case "tag":
++			tag = "sibling_service:built"
++		case "incomplete":
++			delete(out, "completed_at")
++		case "planless":
++			delete(out, "result_descriptors")
++		case "running":
++			out["event_type"] = uint64(0)
++		}
++		if e := resolveConfig(out, tag, func(descriptor) ([]byte, error) { t.Fatal("content fetched", kind); return nil, nil }); e == nil {
++			t.Fatal(kind)
++		}
++	}
++}
++func TestContentDigestValidation(t *testing.T) {
++	raw := []byte("{}")
++	d := descriptor{Digest: "sha256:" + strings.Repeat("a", 64), Size: 2}
++	b := msg(2, raw)
++	resp := response(b, "0")
++	if _, e := readContent(resp, d); e == nil {
++		t.Fatal("wrong digest accepted")
++	}
++}
++func TestOnlyDescriptorProjection(t *testing.T) {
++	raw := append(msg(1, []byte("application/vnd.oci.image.index.v1+json")), msg(2, []byte("sha256:"+strings.Repeat("a", 64)))...)
++	raw = append(raw, 24, 100)
++	raw = append(raw, msg(5, entry("private", "sentinel"))...)
++	d, e := descriptors(msg(1, raw))
++	if e != nil || len(d) != 1 {
++		t.Fatal(d, e)
++	}
++	b, _ := json.Marshal(d)
++	if bytes.Contains(b, []byte("sentinel")) {
++		t.Fatal(string(b))
++	}
++}
+diff --git a/docs/build-history-a63f/pass2/native-record-with-descriptors.json b/docs/build-history-a63f/pass2/native-record-with-descriptors.json
+new file mode 100644
+index 0000000..fded6fc
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-record-with-descriptors.json
+@@ -0,0 +1 @@
++{"completed_at":"2026-11-25T21:22:26.552291255Z","created_at":"2026-11-25T21:19:55.40564477Z","error_present":false,"event_type":1,"exporter_response":{},"exporters":[{"name":"docker.io/library/kd_8355_connector346_php-test:dev365-b07-c054","type":"image"}],"external_error_present":false,"ref":"imhco5xoke5vkderq2l42eltr","result_descriptors":[{"digest":"sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d","media_type":"application/vnd.oci.image.index.v1+json","size":856},{"digest":"sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d","media_type":"application/vnd.oci.image.index.v1+json","size":856}]}
+diff --git a/docs/build-history-a63f/pass2/native-record.exit b/docs/build-history-a63f/pass2/native-record.exit
+new file mode 100644
+index 0000000..573541a
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-record.exit
+@@ -0,0 +1 @@
++0
+diff --git a/docs/build-history-a63f/pass2/native-record.json b/docs/build-history-a63f/pass2/native-record.json
+new file mode 100644
+index 0000000..a70537d
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/native-record.json
+@@ -0,0 +1 @@
++{"completed_at":"2026-11-25T21:22:26.552291255Z","created_at":"2026-11-25T21:19:55.40564477Z","error_present":false,"event_type":1,"exporter_response":{},"exporters":[{"name":"docker.io/library/kd_8355_connector346_php-test:dev365-b07-c054","type":"image"}],"external_error_present":false,"ref":"imhco5xoke5vkderq2l42eltr"}
+diff --git a/docs/build-history-a63f/pass2/native-record.stderr b/docs/build-history-a63f/pass2/native-record.stderr
+new file mode 100644
+index 0000000..e69de29
+diff --git a/docs/build-history-a63f/pass2/partial-directory-settlement.json b/docs/build-history-a63f/pass2/partial-directory-settlement.json
+new file mode 100644
+index 0000000..0cb1c96
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/partial-directory-settlement.json
+@@ -0,0 +1 @@
++{"scope": "only migration-created empty successful-builds directory", "device": 64512, "inode": 186136512, "previous_uid": 0, "uid": 1000, "gid": 999, "mode": "0o700", "claim_and_model_unchanged": true, "receipt_created": false}
+diff --git a/docs/build-history-a63f/pass2/restoration-attempt.json b/docs/build-history-a63f/pass2/restoration-attempt.json
+new file mode 100644
+index 0000000..70a828c
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/restoration-attempt.json
+@@ -0,0 +1,5 @@
++{
++  "returncode": 0,
++  "stdout": "{\"request_id\": \"a63f09f3-5213-4a87-add9-a983718059eb\", \"receipt_sha256\": \"517ab65da7da14ba04a34af76dd3cc109e2362b70e67d71c1489dbefd75d38c0\", \"proof_sha256\": \"d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20\", \"claim_sha256\": \"40c4f7078f736061e6965e44b13d03146ca49c0e98de0160657962f8bb14b7e6\", \"saved_model_sha256\": \"f44205b502c4cb713ccc7cb0405f52b4bcddf51a758824821d5063a15d431462\", \"image\": \"kd_8355_connector346_php-test:dev365-b07-c054\", \"image_id\": \"sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d\", \"engine_commands\": 0, \"owner_commands\": 0, \"applied\": true, \"claim_and_model_unchanged\": true}\n",
++  "stderr": ""
++}
+diff --git a/docs/build-history-a63f/pass2/restoration-custody-api-error.json b/docs/build-history-a63f/pass2/restoration-custody-api-error.json
+new file mode 100644
+index 0000000..f4f6f7a
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/restoration-custody-api-error.json
+@@ -0,0 +1,5 @@
++{
++  "returncode": 1,
++  "stdout": "",
++  "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 148, in <module>\n  File \"<string>\", line 144, in main\n  File \"<string>\", line 104, in restore\nAttributeError: 'PosixPath' object has no attribute 'chown'\n"
++}
+diff --git a/docs/build-history-a63f/pass2/restoration-preflight-stats.json b/docs/build-history-a63f/pass2/restoration-preflight-stats.json
+new file mode 100644
+index 0000000..ce4e06c
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/restoration-preflight-stats.json
+@@ -0,0 +1,64 @@
++[
++  {
++    "slot": 0,
++    "present": true,
++    "uid": 1000,
++    "mode": "0o700",
++    "nlink": 108,
++    "is_dir": true
++  },
++  {
++    "slot": 1,
++    "present": true,
++    "uid": 1000,
++    "mode": "0o700",
++    "nlink": 2,
++    "is_dir": true
++  },
++  {
++    "slot": 2,
++    "present": true,
++    "uid": 1000,
++    "mode": "0o700",
++    "nlink": 2,
++    "is_dir": true
++  },
++  {
++    "slot": 3,
++    "present": true,
++    "uid": 1000,
++    "mode": "0o600",
++    "nlink": 1,
++    "is_dir": false
++  },
++  {
++    "slot": 4,
++    "present": true,
++    "uid": 1000,
++    "mode": "0o600",
++    "nlink": 1,
++    "is_dir": false
++  },
++  {
++    "slot": 5,
++    "present": false
++  },
++  {
++    "slot": 6,
++    "present": true,
++    "uid": 0,
++    "mode": "0o555",
++    "nlink": 1,
++    "is_dir": false,
++    "sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91"
++  },
++  {
++    "slot": 7,
++    "present": true,
++    "uid": 0,
++    "mode": "0o555",
++    "nlink": 1,
++    "is_dir": false,
++    "sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee"
++  }
++]
+diff --git a/docs/build-history-a63f/pass2/restoration-tests.txt b/docs/build-history-a63f/pass2/restoration-tests.txt
+new file mode 100644
+index 0000000..d4fba18
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/restoration-tests.txt
+@@ -0,0 +1,16 @@
++test_dry_run_has_no_writes (__main__.RestoreTests.test_dry_run_has_no_writes) ... ok
++test_exact_native_output_restores_only_one_receipt (__main__.RestoreTests.test_exact_native_output_restores_only_one_receipt) ... ok
++test_existing_receipt_is_preserved (__main__.RestoreTests.test_existing_receipt_is_preserved) ... ok
++test_foreign_claim_denied (__main__.RestoreTests.test_foreign_claim_denied) ... ok
++test_foreign_clone_denied (__main__.RestoreTests.test_foreign_clone_denied) ... ok
++test_insecure_claim_denied (__main__.RestoreTests.test_insecure_claim_denied) ... ok
++test_model_only_reference_never_proves_success (__main__.RestoreTests.test_model_only_reference_never_proves_success) ... ok
++test_native_proof_negative_cases (__main__.RestoreTests.test_native_proof_negative_cases) ... ok
++test_restored_record_accepted_by_installed_reader_without_engine (__main__.RestoreTests.test_restored_record_accepted_by_installed_reader_without_engine) ... ok
++test_root_migration_preserves_broker_uid1000 (__main__.RestoreTests.test_root_migration_preserves_broker_uid1000) ... skipped 'root-only private custody qualification'
++test_symlink_model_denied (__main__.RestoreTests.test_symlink_model_denied) ... ok
++
++----------------------------------------------------------------------
++Ran 11 tests in 0.034s
++
++OK (skipped=1)
+diff --git a/docs/build-history-a63f/pass2/restoration.json b/docs/build-history-a63f/pass2/restoration.json
+new file mode 100644
+index 0000000..8888857
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/restoration.json
+@@ -0,0 +1,17 @@
++{
++  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
++  "receipt_sha256": "517ab65da7da14ba04a34af76dd3cc109e2362b70e67d71c1489dbefd75d38c0",
++  "proof_sha256": "d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20",
++  "claim_sha256": "40c4f7078f736061e6965e44b13d03146ca49c0e98de0160657962f8bb14b7e6",
++  "saved_model_sha256": "f44205b502c4cb713ccc7cb0405f52b4bcddf51a758824821d5063a15d431462",
++  "image": "kd_8355_connector346_php-test:dev365-b07-c054",
++  "image_id": "sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d",
++  "engine_commands": 0,
++  "owner_commands": 0,
++  "applied": true,
++  "claim_and_model_unchanged": true,
++  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "unchanged_container": true,
++  "restart": false
++}
+diff --git a/docs/build-history-a63f/pass2/restore-known-output.py b/docs/build-history-a63f/pass2/restore-known-output.py
+new file mode 100644
+index 0000000..78f6388
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/restore-known-output.py
+@@ -0,0 +1,148 @@
++#!/usr/bin/env python3
++"""Support-only one-output historical migration; no public agent import endpoint.
++
++No engine or owner command is executed. The reviewed native proof supplies the
++historical output, while the pre-existing immutable claim supplies exact scope.
++"""
++import hashlib
++import json
++import os
++from pathlib import Path
++import stat
++import sys
++import tempfile
++
++REQUEST = 'a63f09f3-5213-4a87-add9-a983718059eb'
++ROOT = '/data/tasks/8355-impl-menter-le_vmaz2aad'
++PROJECT = 'kd_8355_connector346'
++SERVICE = 'php-test'
++TAG = PROJECT + '_' + SERVICE + ':dev365-b07-c054'
++REF = 'imhco5xoke5vkderq2l42eltr'
++# Exact engine .Id supplied in the owner's separately accepted typed evidence.
++# This engine uses a containerd store: do not substitute the config digest.
++ENGINE_ID = 'sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d'
++CONFIG_ID = 'sha256:33fe3a440d44b0ca312f52de6a53401c3e1628a3388b949e40a644b0b819e84b'
++INDEX_MEDIA = 'application/vnd.oci.image.index.v1+json'
++DEPENDENCIES = {
++ 'kandev-agent-docker-broker': '9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91',
++ 'kandev-agent-docker-operations.py': 'd60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee',
++}
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def read(path, owner, limit=8192):
++    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++    with os.fdopen(fd, 'rb') as stream:
++        before = os.fstat(stream.fileno())
++        assert stat.S_ISREG(before.st_mode) and before.st_uid == owner
++        assert before.st_nlink == 1 and not before.st_mode & 0o022
++        data = stream.read(limit + 1)
++        stamp = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
++        assert len(data) <= limit and stamp(before) == stamp(os.fstat(stream.fileno()))
++        assert stamp(before) == stamp(path.stat(follow_symlinks=False))
++    return data
++
++
++def validate_proof(proof):
++    assert proof['ref'] == REF and proof['event_type'] == 1
++    assert proof['error_present'] is False and proof['external_error_present'] is False
++    assert proof['created_at'] == '2026-11-25T21:19:55.40564477Z'
++    assert proof['completed_at'] == '2026-11-25T21:22:26.552291255Z'
++    assert proof['exporters'] == [{'name': 'docker.io/library/' + TAG, 'type': 'image'}]
++    assert proof['result_descriptors'] and all(
++        d['digest'] == ENGINE_ID and d['media_type'] == INDEX_MEDIA
++        for d in proof['result_descriptors'])
++    assert proof['output_manifest_chain'][0]['digest'] == ENGINE_ID
++    assert proof['output_manifest_chain'][0]['mediaType'] == INDEX_MEDIA
++    assert proof['verified_output_config_id'] == CONFIG_ID and CONFIG_ID != ENGINE_ID
++
++
++def restore(directory, proof_bytes, *, apply=False):
++    owner = directory.stat(follow_symlinks=False).st_uid
++    group = directory.stat(follow_symlinks=False).st_gid
++    assert os.getuid() in (0, owner)
++    proof = json.loads(proof_bytes)
++    validate_proof(proof)
++    for path in (directory, directory / 'projects', directory / sha(ROOT.encode())):
++        info = path.stat(follow_symlinks=False)
++        assert stat.S_ISDIR(info.st_mode) and info.st_uid == owner and not info.st_mode & 0o022
++    claim_path = directory / 'projects' / (sha(PROJECT.encode()) + '.json')
++    task_directory = directory / sha(ROOT.encode())
++    model_path = task_directory / (sha(PROJECT.encode()) + '.json')
++    claim_before = read(claim_path, owner)
++    model_before = read(model_path, owner, 1024 * 1024)
++    expected = dict(task_root=ROOT, cwd=ROOT, project=PROJECT)
++    assert json.loads(claim_before) == expected
++    model = json.loads(model_before)
++    assert model['version'] == 1 and all(model.get(k) == v for k, v in expected.items())
++    assert isinstance(model['model'], dict)
++    # A model image reference/build key is deliberately not used as output proof.
++    output_directory = task_directory / 'successful-builds' / sha(ROOT.encode())
++    target = output_directory / (sha(TAG.encode()) + '.json')
++    assert not target.exists() and not target.is_symlink(), 'existing receipt preserved; stop'
++    record = dict(version=1, kind='successful-build-output', **expected,
++                  service=SERVICE, image=TAG, image_id=ENGINE_ID,
++                  observed_at=proof['completed_at'],
++                  restoration=dict(request_id=REQUEST, native_ref=REF,
++                                   native_proof_sha256=sha(proof_bytes),
++                                   index_digest=ENGINE_ID, config_digest=CONFIG_ID,
++                                   proof_kind='native-completed-output-and-manifest-chain'))
++    payload = (json.dumps(record, sort_keys=True) + '\n').encode()
++    assert len(payload) <= 8192
++    result = dict(request_id=REQUEST, receipt_sha256=sha(payload),
++                  proof_sha256=sha(proof_bytes), claim_sha256=sha(claim_before),
++                  saved_model_sha256=sha(model_before), image=TAG, image_id=ENGINE_ID,
++                  engine_commands=0, owner_commands=0, applied=False)
++    if not apply:
++        return result
++    for path in (directory, task_directory, output_directory.parent, output_directory):
++        if not path.exists():
++            path.mkdir(mode=0o700)
++            if path.stat().st_uid != owner:
++                os.chown(path, owner, group, follow_symlinks=False)
++        s = path.stat(follow_symlinks=False)
++        assert stat.S_ISDIR(s.st_mode) and s.st_uid == owner and not s.st_mode & 0o022
++    assert len(list(output_directory.glob('*.json'))) < 64
++    assert read(claim_path, owner) == claim_before
++    assert read(model_path, owner, 1024 * 1024) == model_before
++    fd, temporary = tempfile.mkstemp(prefix='.restored-', dir=output_directory)
++    try:
++        with os.fdopen(fd, 'wb') as stream:
++            if os.fstat(stream.fileno()).st_uid != owner:
++                os.fchown(stream.fileno(), owner, group)
++            stream.write(payload); stream.flush(); os.fsync(stream.fileno())
++        # Atomic no-replace publication; never overwrite any existing receipt.
++        os.link(temporary, target, follow_symlinks=False)
++    finally:
++        os.unlink(temporary)
++    fd = os.open(output_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
++    try:
++        os.fsync(fd)
++    finally:
++        os.close(fd)
++    assert read(claim_path, owner) == claim_before
++    assert read(model_path, owner, 1024 * 1024) == model_before
++    assert read(target, owner) == payload
++    result.update(applied=True, claim_and_model_unchanged=True)
++    return result
++
++
++def main():
++    assert os.getuid() == 0, 'reviewed host Support only'
++    assert sys.argv == [sys.argv[0], '--apply'], 'fixed reviewed apply operation only'
++    # Hash review is delivered by the reviewed host worker, never by a task file.
++    header = json.loads(sys.stdin.buffer.readline(8192))
++    proof_bytes = sys.stdin.buffer.read(8193)
++    assert header['request_id'] == REQUEST and len(proof_bytes) <= 8192
++    assert sha(proof_bytes) == header['proof_sha256']
++    for name, digest in DEPENDENCIES.items():
++        assert sha(read(Path('/usr/local/bin') / name, 0, 1024 * 1024)) == digest
++    directory = Path('/data/agent-docker-models')
++    assert directory.stat(follow_symlinks=False).st_uid == 1000, 'existing broker custody differs'
++    print(json.dumps(restore(directory, proof_bytes, apply=True)))
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/docs/build-history-a63f/pass2/result.json b/docs/build-history-a63f/pass2/result.json
+new file mode 100644
+index 0000000..3df3ce2
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/result.json
+@@ -0,0 +1,65 @@
++{
++  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
++  "status": "RESOLVED",
++  "scope": "exact prior successful-output metadata recovery; separately bound owner acceptance pending",
++  "source": {
++    "deployment_recovery_commit": "b98fe81",
++    "forward_receipt_source_commit": "cb2ba9121d75190bb140538ac6149787731a848e"
++  },
++  "installed": {
++    "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
++    "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "new_module_or_binary_install": false,
++    "compose_automatic_capture": "source-only",
++    "restart": false
++  },
++  "native_proof": {
++    "ref": "imhco5xoke5vkderq2l42eltr",
++    "builder_node": "default/default",
++    "proof_sha256": "d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20",
++    "completed_output_index_and_supplied_accepted_engine_id": "sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d",
++    "config_descriptor_digest": "sha256:33fe3a440d44b0ca312f52de6a53401c3e1628a3388b949e40a644b0b819e84b"
++  },
++  "recovery": {
++    "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
++    "receipt_sha256": "517ab65da7da14ba04a34af76dd3cc109e2362b70e67d71c1489dbefd75d38c0",
++    "proof_sha256": "d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20",
++    "claim_sha256": "40c4f7078f736061e6965e44b13d03146ca49c0e98de0160657962f8bb14b7e6",
++    "saved_model_sha256": "f44205b502c4cb713ccc7cb0405f52b4bcddf51a758824821d5063a15d431462",
++    "image": "kd_8355_connector346_php-test:dev365-b07-c054",
++    "image_id": "sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d",
++    "engine_commands": 0,
++    "owner_commands": 0,
++    "applied": true,
++    "claim_and_model_unchanged": true,
++    "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++    "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++    "unchanged_container": true,
++    "restart": false
++  },
++  "verification": {
++    "native_reader_tests": 16,
++    "actual_root_synthetic_migration_tests": 11,
++    "installed_real_wrapper_mocked_engine_tests": 3,
++    "installed_receipt_reader_readback": {
++      "installed_reader_recognizes_restored_output": true,
++      "exact_claim_rechecked": true,
++      "engine_calls": 0,
++      "owner_commands": 0,
++      "broker_metadata_uid": 1000,
++      "image": "kd_8355_connector346_php-test:dev365-b07-c054",
++      "image_id": "sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d"
++    }
++  },
++  "owner_acceptance": {
++    "performed": false,
++    "next_action": "Root binds ONE restricted exact-tag image inspect in unchanged task/session/cwd. No model change, ID fallback or build in this acceptance."
++  },
++  "constraints": {
++    "live_owner_commands": 0,
++    "image_tag_model_claim_resource_changes": 0,
++    "service_restarts": 0,
++    "broker_cap_or_security_policy_changes": 0,
++    "new_public_admission_or_import_route": false
++  }
++}
+diff --git a/docs/build-history-a63f/pass2/reviewed.json b/docs/build-history-a63f/pass2/reviewed.json
+new file mode 100644
+index 0000000..ea34b51
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/reviewed.json
+@@ -0,0 +1,15 @@
++{
++  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
++  "scope": "Support-only restore of ONE native-success-proven legacy Build365 output receipt. No public import, owner command, model/claim/image/resource mutation, restart or candidate exposure.",
++  "proof_sha256": "d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20",
++  "restore_sha256": "9a50dbc2d5b8acc9cadea93f0fcf5022e479450caac74e4ab091b00126d794de",
++  "native_reader_source_sha256": "8b0a3015e2ad142c46f50d81d4e31fc70d9529187cf3b39849af264a8f950060",
++  "tests": {
++    "native_reader": 16,
++    "restoration": 11
++  },
++  "installed_operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
++  "mode": "exact-output legacy repair; preserve all claims and resources",
++  "metadata_custody": "Preserve existing broker UID1000/GID from protected metadata directory; Support remains root, task caller unchanged.",
++  "qualification": "16 native reader tests;11 root synthetic migration tests including actual root-to-broker-UID1000 custody branch"
++}
+diff --git a/docs/build-history-a63f/pass2/root-custody-tests.txt b/docs/build-history-a63f/pass2/root-custody-tests.txt
+new file mode 100644
+index 0000000..9632b12
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/root-custody-tests.txt
+@@ -0,0 +1,16 @@
++test_dry_run_has_no_writes (__main__.RestoreTests.test_dry_run_has_no_writes) ... ok
++test_exact_native_output_restores_only_one_receipt (__main__.RestoreTests.test_exact_native_output_restores_only_one_receipt) ... ok
++test_existing_receipt_is_preserved (__main__.RestoreTests.test_existing_receipt_is_preserved) ... ok
++test_foreign_claim_denied (__main__.RestoreTests.test_foreign_claim_denied) ... ok
++test_foreign_clone_denied (__main__.RestoreTests.test_foreign_clone_denied) ... ok
++test_insecure_claim_denied (__main__.RestoreTests.test_insecure_claim_denied) ... ok
++test_model_only_reference_never_proves_success (__main__.RestoreTests.test_model_only_reference_never_proves_success) ... ok
++test_native_proof_negative_cases (__main__.RestoreTests.test_native_proof_negative_cases) ... ok
++test_restored_record_accepted_by_installed_reader_without_engine (__main__.RestoreTests.test_restored_record_accepted_by_installed_reader_without_engine) ... ok
++test_root_migration_preserves_broker_uid1000 (__main__.RestoreTests.test_root_migration_preserves_broker_uid1000) ... ok
++test_symlink_model_denied (__main__.RestoreTests.test_symlink_model_denied) ... ok
++
++----------------------------------------------------------------------
++Ran 11 tests in 0.033s
++
++OK
+diff --git a/docs/build-history-a63f/pass2/settle-partial-directory.py b/docs/build-history-a63f/pass2/settle-partial-directory.py
+new file mode 100644
+index 0000000..cfa6f17
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/settle-partial-directory.py
+@@ -0,0 +1,33 @@
++#!/usr/bin/env python3
++"""Settle only this migration's newly created empty metadata directory."""
++import json
++from pathlib import Path
++import subprocess
++
++SCRIPT = r'''
++import hashlib,json,os,stat
++from pathlib import Path
++h=lambda s:hashlib.sha256(s.encode()).hexdigest()
++r='/data/tasks/8355-impl-menter-le_vmaz2aad';project='kd_8355_connector346'
++base=Path('/data/agent-docker-models');task=base/h(r);partial=task/'successful-builds'
++parent=task.stat(follow_symlinks=False)
++assert stat.S_ISDIR(parent.st_mode) and parent.st_uid==1000 and parent.st_mode&0o777==0o700
++claim=base/'projects'/(h(project)+'.json');model=task/claim.name
++before=[hashlib.sha256(p.read_bytes()).hexdigest() for p in (claim,model)]
++assert not (partial/h(r)/(h(project+'_php-test:dev365-b07-c054')+'.json')).exists()
++fd=os.open(partial,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
++try:
++ s=os.fstat(fd)
++ assert s.st_uid==0 and s.st_mode&0o777==0o700 and s.st_nlink==2 and not os.listdir(fd)
++ assert (s.st_dev,s.st_ino)==(partial.stat(follow_symlinks=False).st_dev,partial.stat(follow_symlinks=False).st_ino)
++ os.fchown(fd,parent.st_uid,parent.st_gid);os.fsync(fd)
++ after=os.fstat(fd)
++ assert (after.st_uid,after.st_gid)==(parent.st_uid,parent.st_gid)
++ assert [hashlib.sha256(p.read_bytes()).hexdigest() for p in (claim,model)]==before
++ print(json.dumps(dict(scope='only migration-created empty successful-builds directory',device=s.st_dev,inode=s.st_ino,previous_uid=s.st_uid,uid=after.st_uid,gid=after.st_gid,mode=oct(after.st_mode&0o777),claim_and_model_unchanged=True,receipt_created=False)))
++finally:os.close(fd)
++'''
++result=subprocess.run(['docker','exec','-i','--user','0','kandev','/usr/bin/python3','-I','-B','-c',SCRIPT],capture_output=True,check=True)
++output=Path(__file__).with_name('partial-directory-settlement.json')
++output.write_bytes(result.stdout)
++print(result.stdout.decode())
+diff --git a/docs/build-history-a63f/pass2/test_restore.py b/docs/build-history-a63f/pass2/test_restore.py
+new file mode 100644
+index 0000000..be7c769
+--- /dev/null
++++ b/docs/build-history-a63f/pass2/test_restore.py
+@@ -0,0 +1,114 @@
++#!/usr/bin/env python3
++"""Private synthetic native-proof restoration tests; no engine or owner state."""
++import copy
++import importlib.util
++import json
++import os
++from pathlib import Path
++import runpy
++import tempfile
++from types import SimpleNamespace
++import unittest
++
++HERE = Path(__file__).resolve().parent
++spec = importlib.util.spec_from_file_location('known_restore', HERE / 'restore-known-output.py')
++restore = importlib.util.module_from_spec(spec); spec.loader.exec_module(restore)
++
++
++class RestoreTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory(prefix='kandev-a63f-restore-test-')
++        self.addCleanup(self.temp.cleanup)
++        self.directory = Path(self.temp.name) / 'models'; self.directory.mkdir(mode=0o700)
++        self.projects = self.directory / 'projects'; self.projects.mkdir(mode=0o700)
++        self.task = self.directory / restore.sha(restore.ROOT.encode()); self.task.mkdir(mode=0o700)
++        self.claim = self.projects / (restore.sha(restore.PROJECT.encode()) + '.json')
++        self.model = self.task / self.claim.name
++        self.owner = dict(task_root=restore.ROOT, cwd=restore.ROOT, project=restore.PROJECT)
++        self.write(self.claim, self.owner)
++        self.write(self.model, dict(version=1, **self.owner, model={'services': {'php-test': {'image': restore.TAG}}}))
++        self.proof = json.loads((HERE / 'native-output-proof.json').read_text())
++        self.original = (self.claim.read_bytes(), self.model.read_bytes())
++
++    def write(self, path, value):
++        path.write_text(json.dumps(value)); path.chmod(0o600)
++
++    def apply(self):
++        return restore.restore(self.directory, json.dumps(self.proof).encode(), apply=True)
++
++    def test_exact_native_output_restores_only_one_receipt(self):
++        result = self.apply(); self.assertTrue(result['applied'])
++        self.assertEqual(result['engine_commands'], 0)
++        self.assertEqual((self.claim.read_bytes(), self.model.read_bytes()), self.original)
++        paths = list(self.task.glob('successful-builds/*/*.json')); self.assertEqual(len(paths), 1)
++        record = json.loads(paths[0].read_bytes()); self.assertEqual(record['image_id'], restore.ENGINE_ID)
++        self.assertNotEqual(record['image_id'], record['restoration']['config_digest'])
++        self.assertEqual(paths[0].stat().st_mode & 0o777, 0o600)
++        self.assertEqual(paths[0].stat().st_nlink, 1)
++
++    @unittest.skipUnless(os.getuid() == 0, 'root-only private custody qualification')
++    def test_root_migration_preserves_broker_uid1000(self):
++        for path in (self.directory, self.projects, self.task, self.claim, self.model):
++            os.chown(path, 1000, 999, follow_symlinks=False)
++        self.apply()
++        path = next(self.task.glob('successful-builds/*/*.json'))
++        for item in (path.parent.parent, path.parent, path):
++            self.assertEqual((item.stat().st_uid, item.stat().st_gid), (1000, 999))
++
++    def test_native_proof_negative_cases(self):
++        for field, value in [('ref', 'foreign-ref'), ('event_type', 0), ('error_present', True),
++                             ('external_error_present', True), ('completed_at', None),
++                             ('verified_output_config_id', restore.ENGINE_ID),
++                             ('exporters', [{'name': 'sibling:tag', 'type': 'image'}]),
++                             ('result_descriptors', []), ('created_at', 'wrong')]:
++            with self.subTest(field=field):
++                proof = copy.deepcopy(self.proof); proof[field] = value
++                with self.assertRaises((AssertionError, KeyError, TypeError)):
++                    restore.restore(self.directory, json.dumps(proof).encode(), apply=True)
++        self.assertEqual(list(self.task.glob('successful-builds/*/*.json')), [])
++
++    def test_foreign_claim_denied(self):
++        self.write(self.claim, dict(self.owner, task_root='/data/tasks/foreign'))
++        with self.assertRaises(AssertionError): self.apply()
++
++    def test_foreign_clone_denied(self):
++        self.write(self.model, dict(version=1, **dict(self.owner, cwd=restore.ROOT+'/sibling'), model={}))
++        with self.assertRaises(AssertionError): self.apply()
++
++    def test_existing_receipt_is_preserved(self):
++        self.apply(); path = next(self.task.glob('successful-builds/*/*.json')); before = path.read_bytes()
++        with self.assertRaisesRegex(AssertionError, 'existing receipt preserved'): self.apply()
++        self.assertEqual(path.read_bytes(), before)
++
++    def test_model_only_reference_never_proves_success(self):
++        self.proof.pop('exporters')
++        with self.assertRaises(KeyError): self.apply()
++        self.assertEqual(list(self.task.glob('successful-builds/*/*.json')), [])
++
++    def test_insecure_claim_denied(self):
++        self.claim.chmod(0o666)
++        with self.assertRaises(AssertionError): self.apply()
++
++    def test_symlink_model_denied(self):
++        target = self.task/'elsewhere'; self.model.rename(target); self.model.symlink_to(target)
++        with self.assertRaises(OSError): self.apply()
++
++    def test_dry_run_has_no_writes(self):
++        result = restore.restore(self.directory, json.dumps(self.proof).encode())
++        self.assertFalse(result['applied']); self.assertFalse((self.task/'successful-builds').exists())
++
++    def test_restored_record_accepted_by_installed_reader_without_engine(self):
++        self.apply()
++        path=Path('/usr/local/bin/kandev-agent-docker-operations.py')
++        if not path.exists(): path=HERE.parents[2]/'scripts/kandev-agent-docker-operations.py'
++        module=runpy.run_path(str(path)); calls=[]
++        def check(root,cwd,project):
++            self.assertEqual((str(root),str(cwd),project),(restore.ROOT,restore.ROOT,restore.PROJECT)); calls.append(True)
++        broker=SimpleNamespace(MODEL_DIR=self.directory,BrokerError=RuntimeError,
++            scoped_build_image=lambda image,project,service: image if (image,project,service)==(restore.TAG,restore.PROJECT,restore.SERVICE) else None,
++            load_scoped_model=check)
++        records=module['successful_build_images'](broker,Path(restore.ROOT),Path(restore.ROOT))
++        self.assertEqual(records[restore.TAG]['image_id'],restore.ENGINE_ID); self.assertEqual(calls,[True])
++
++
++if __name__ == '__main__': unittest.main(verbosity=2)

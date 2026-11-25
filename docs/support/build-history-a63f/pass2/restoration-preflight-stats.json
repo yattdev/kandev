@@ -1,0 +1,64 @@
+[
+  {
+    "slot": 0,
+    "present": true,
+    "uid": 1000,
+    "mode": "0o700",
+    "nlink": 108,
+    "is_dir": true
+  },
+  {
+    "slot": 1,
+    "present": true,
+    "uid": 1000,
+    "mode": "0o700",
+    "nlink": 2,
+    "is_dir": true
+  },
+  {
+    "slot": 2,
+    "present": true,
+    "uid": 1000,
+    "mode": "0o700",
+    "nlink": 2,
+    "is_dir": true
+  },
+  {
+    "slot": 3,
+    "present": true,
+    "uid": 1000,
+    "mode": "0o600",
+    "nlink": 1,
+    "is_dir": false
+  },
+  {
+    "slot": 4,
+    "present": true,
+    "uid": 1000,
+    "mode": "0o600",
+    "nlink": 1,
+    "is_dir": false
+  },
+  {
+    "slot": 5,
+    "present": false
+  },
+  {
+    "slot": 6,
+    "present": true,
+    "uid": 0,
+    "mode": "0o555",
+    "nlink": 1,
+    "is_dir": false,
+    "sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91"
+  },
+  {
+    "slot": 7,
+    "present": true,
+    "uid": 0,
+    "mode": "0o555",
+    "nlink": 1,
+    "is_dir": false,
+    "sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee"
+  }
+]

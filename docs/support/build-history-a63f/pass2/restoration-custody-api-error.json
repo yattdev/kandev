@@ -1,0 +1,5 @@
+{
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 148, in <module>\n  File \"<string>\", line 144, in main\n  File \"<string>\", line 104, in restore\nAttributeError: 'PosixPath' object has no attribute 'chown'\n"
+}

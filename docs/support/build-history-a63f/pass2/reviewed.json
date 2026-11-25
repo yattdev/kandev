@@ -1,0 +1,15 @@
+{
+  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
+  "scope": "Support-only restore of ONE native-success-proven legacy Build365 output receipt. No public import, owner command, model/claim/image/resource mutation, restart or candidate exposure.",
+  "proof_sha256": "d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20",
+  "restore_sha256": "9a50dbc2d5b8acc9cadea93f0fcf5022e479450caac74e4ab091b00126d794de",
+  "native_reader_source_sha256": "8b0a3015e2ad142c46f50d81d4e31fc70d9529187cf3b39849af264a8f950060",
+  "tests": {
+    "native_reader": 16,
+    "restoration": 11
+  },
+  "installed_operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
+  "mode": "exact-output legacy repair; preserve all claims and resources",
+  "metadata_custody": "Preserve existing broker UID1000/GID from protected metadata directory; Support remains root, task caller unchanged.",
+  "qualification": "16 native reader tests;11 root synthetic migration tests including actual root-to-broker-UID1000 custody branch"
+}

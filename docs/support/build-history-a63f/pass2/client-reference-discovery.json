@@ -1,0 +1,21 @@
+{
+  "kind": "buildx-client-reference-discovery/v1",
+  "read_only": true,
+  "discovery_only_not_build_proof": true,
+  "candidates": [],
+  "roots": [
+    {
+      "path": "/data/home/.docker/buildx/refs",
+      "present": true,
+      "metadata_files_examined": 0,
+      "bounded": true,
+      "truncated": true
+    },
+    {
+      "path": "/root/.docker/buildx/refs",
+      "present": false,
+      "metadata_files_examined": 0,
+      "bounded": true
+    }
+  ]
+}

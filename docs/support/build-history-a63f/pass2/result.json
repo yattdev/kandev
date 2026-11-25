@@ -1,0 +1,65 @@
+{
+  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
+  "status": "RESOLVED",
+  "scope": "exact prior successful-output metadata recovery; separately bound owner acceptance pending",
+  "source": {
+    "deployment_recovery_commit": "b98fe81",
+    "forward_receipt_source_commit": "cb2ba9121d75190bb140538ac6149787731a848e"
+  },
+  "installed": {
+    "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
+    "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
+    "new_module_or_binary_install": false,
+    "compose_automatic_capture": "source-only",
+    "restart": false
+  },
+  "native_proof": {
+    "ref": "imhco5xoke5vkderq2l42eltr",
+    "builder_node": "default/default",
+    "proof_sha256": "d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20",
+    "completed_output_index_and_supplied_accepted_engine_id": "sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d",
+    "config_descriptor_digest": "sha256:33fe3a440d44b0ca312f52de6a53401c3e1628a3388b949e40a644b0b819e84b"
+  },
+  "recovery": {
+    "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
+    "receipt_sha256": "517ab65da7da14ba04a34af76dd3cc109e2362b70e67d71c1489dbefd75d38c0",
+    "proof_sha256": "d54c040a5895e780b8635c7eb9874b49b7cf5bb765112cfebde4fe99b15f0e20",
+    "claim_sha256": "40c4f7078f736061e6965e44b13d03146ca49c0e98de0160657962f8bb14b7e6",
+    "saved_model_sha256": "f44205b502c4cb713ccc7cb0405f52b4bcddf51a758824821d5063a15d431462",
+    "image": "kd_8355_connector346_php-test:dev365-b07-c054",
+    "image_id": "sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d",
+    "engine_commands": 0,
+    "owner_commands": 0,
+    "applied": true,
+    "claim_and_model_unchanged": true,
+    "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
+    "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
+    "unchanged_container": true,
+    "restart": false
+  },
+  "verification": {
+    "native_reader_tests": 16,
+    "actual_root_synthetic_migration_tests": 11,
+    "installed_real_wrapper_mocked_engine_tests": 3,
+    "installed_receipt_reader_readback": {
+      "installed_reader_recognizes_restored_output": true,
+      "exact_claim_rechecked": true,
+      "engine_calls": 0,
+      "owner_commands": 0,
+      "broker_metadata_uid": 1000,
+      "image": "kd_8355_connector346_php-test:dev365-b07-c054",
+      "image_id": "sha256:852c97dd37a51a4c6d5a933444e8f082594205aa8003d4616b6fc8ab689a7e0d"
+    }
+  },
+  "owner_acceptance": {
+    "performed": false,
+    "next_action": "Root binds ONE restricted exact-tag image inspect in unchanged task/session/cwd. No model change, ID fallback or build in this acceptance."
+  },
+  "constraints": {
+    "live_owner_commands": 0,
+    "image_tag_model_claim_resource_changes": 0,
+    "service_restarts": 0,
+    "broker_cap_or_security_policy_changes": 0,
+    "new_public_admission_or_import_route": false
+  }
+}

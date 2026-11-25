@@ -1,13 +1,10 @@
-# Build-history incident: current Support status
+# Build history a63f: current recovery result
 
-Request `a63f09f3-5213-4a87-add9-a983718059eb`.
+The [pass2 native proof and applied recovery](pass2/README.md) is the current
+result for request `a63f09f3-5213-4a87-add9-a983718059eb`: RESOLVED for the
+existing-output metadata recovery; Root owns separate owner acceptance.
 
-See [escalation pass 1](pass1/README.md) for the current metadata-reader split,
-exact source/installed qualifications and narrowed native-proof handoff.
-The current owner remains stopped pending authentic legacy proof/restoration;
-no operational acceptance is performed by Support.
-
-The [first-pass report](first-pass-README.md) and original [legacy design](legacy-recovery-design.md)
-are historical context. Their statement that all metadata exposure needs broker
-restart is superseded. Native BuildKit evidence may exist independently of the
-broker's overwritten model; its actual presence has not been inspected.
+The [pass1 decoupled installed reader](pass1/README.md) and
+[first-pass candidate report](first-pass-README.md) preserve prior source,
+qualification and installation history. Their historical blockers do not override
+pass2's independently recovered native proof and applied receipt.

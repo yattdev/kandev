@@ -1,0 +1,34 @@
+=== RUN   TestExactRequest
+--- PASS: TestExactRequest (0.00s)
+=== RUN   TestRefRequired
+--- PASS: TestRefRequired (0.00s)
+=== RUN   TestDistinctDigests
+--- PASS: TestDistinctDigests (0.00s)
+=== RUN   TestForeignRef
+--- PASS: TestForeignRef (0.00s)
+=== RUN   TestNoRecord
+--- PASS: TestNoRecord (0.00s)
+=== RUN   TestPrivateFieldsNotProjected
+--- PASS: TestPrivateFieldsNotProjected (0.00s)
+=== RUN   TestErrorPresenceOnly
+--- PASS: TestErrorPresenceOnly (0.00s)
+=== RUN   TestMalformed
+--- PASS: TestMalformed (0.00s)
+=== RUN   TestFrameSuccess
+--- PASS: TestFrameSuccess (0.00s)
+=== RUN   TestFrameStatus
+--- PASS: TestFrameStatus (0.00s)
+=== RUN   TestFrameBound
+--- PASS: TestFrameBound (0.00s)
+=== RUN   TestExtraRecord
+--- PASS: TestExtraRecord (0.00s)
+=== RUN   TestResolveConfigNoConfigRead
+--- PASS: TestResolveConfigNoConfigRead (0.00s)
+=== RUN   TestResolveDeniesBeforeContent
+--- PASS: TestResolveDeniesBeforeContent (0.00s)
+=== RUN   TestContentDigestValidation
+--- PASS: TestContentDigestValidation (0.00s)
+=== RUN   TestOnlyDescriptorProjection
+--- PASS: TestOnlyDescriptorProjection (0.00s)
+PASS
+ok  	kandev.support/a63f-native-reader	0.004s

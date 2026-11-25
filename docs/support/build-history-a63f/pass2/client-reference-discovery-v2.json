@@ -1,0 +1,20 @@
+{
+  "kind": "buildx-client-reference-discovery/v2",
+  "read_only": true,
+  "discovery_only_not_build_proof": true,
+  "root_uid": 1000,
+  "file_limit": 256,
+  "metadata_files_examined": 256,
+  "truncated": true,
+  "candidates": [
+    {
+      "builder": "default",
+      "node": "default",
+      "ref": "imhco5xoke5vkderq2l42eltr",
+      "target": "php-test",
+      "context_task_component_matches": true,
+      "metadata_sha256": "685066d049b8a3df3159c78573d2179805f1f87f1e6cbfb7528de4cfc857c371",
+      "mtime_ns": 1795641595403220310
+    }
+  ]
+}
