@@ -1,0 +1,32 @@
+{
+  "kandev-agent-docker-broker": {
+    "sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
+    "uid": 0,
+    "mode": "0o555",
+    "nlink": 1
+  },
+  "kandev-agent-docker-operations.py": {
+    "sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
+    "uid": 0,
+    "mode": "0o555",
+    "nlink": 1
+  },
+  "docker": {
+    "sha256": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
+    "uid": 0,
+    "mode": "0o755",
+    "nlink": 1
+  },
+  "kandev-agent-docker-client": {
+    "sha256": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
+    "uid": 0,
+    "mode": "0o555",
+    "nlink": 1
+  },
+  "kandev-agent-guard": {
+    "sha256": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f",
+    "uid": 0,
+    "mode": "0o755",
+    "nlink": 1
+  }
+}

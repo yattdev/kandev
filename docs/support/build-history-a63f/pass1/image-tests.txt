@@ -1,0 +1,24 @@
+{"installed": false, "source_sha256": {"/home/ayattara/Code/kandev/scripts/kandev-agent-docker-broker": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15", "/home/ayattara/Code/kandev/scripts/kandev-agent-docker-operations.py": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee"}, "live_task_operations": 0, "real_engine_calls": 0, "builds": 0, "pulls": 0}
+test_arbitrary_or_unknown_image_id_is_never_inspected (__main__.ImageTests.test_arbitrary_or_unknown_image_id_is_never_inspected) ... ok
+test_bare_id_does_not_implicitly_change_resource_type (__main__.ImageTests.test_bare_id_does_not_implicitly_change_resource_type) ... ok
+test_conflicting_or_unsupported_type_is_denied (__main__.ImageTests.test_conflicting_or_unsupported_type_is_denied) ... ok
+test_container_inspection_still_works (__main__.ImageTests.test_container_inspection_still_works) ... ok
+test_container_type_never_reads_image_metadata (__main__.ImageTests.test_container_type_never_reads_image_metadata) ... ok
+test_exact_id_formats_do_not_confuse_registry_digest (__main__.ImageTests.test_exact_id_formats_do_not_confuse_registry_digest) ... ok
+test_exact_owned_local_id_is_admitted_with_curated_metadata (__main__.ImageTests.test_exact_owned_local_id_is_admitted_with_curated_metadata) ... ok
+test_existing_owned_build_tag_route_is_preserved (__main__.ImageTests.test_existing_owned_build_tag_route_is_preserved) ... ok
+test_generic_explicit_image_type_is_admitted (__main__.ImageTests.test_generic_explicit_image_type_is_admitted) ... ok
+test_hmac_boundary_and_installed_client_framing (__main__.ImageTests.test_hmac_boundary_and_installed_client_framing) ... ok
+test_image_type_never_falls_back_to_container (__main__.ImageTests.test_image_type_never_falls_back_to_container) ... ok
+test_malformed_identity_or_changed_final_id_is_denied (__main__.ImageTests.test_malformed_identity_or_changed_final_id_is_denied) ... ok
+test_model_claim_changes_during_lookup_are_denied (__main__.ImageTests.test_model_claim_changes_during_lookup_are_denied) ... ok
+test_model_reference_alone_does_not_grant_image_ownership (__main__.ImageTests.test_model_reference_alone_does_not_grant_image_ownership) ... ok
+test_other_task_build_cannot_authorize_id (__main__.ImageTests.test_other_task_build_cannot_authorize_id) ... ok
+test_private_env_format_is_denied_before_engine_query (__main__.ImageTests.test_private_env_format_is_denied_before_engine_query) ... ok
+test_registry_digest_is_not_an_image_id_alias (__main__.ImageTests.test_registry_digest_is_not_an_image_id_alias) ... ok
+test_sibling_clone_build_cannot_authorize_id (__main__.ImageTests.test_sibling_clone_build_cannot_authorize_id) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.053s
+
+OK

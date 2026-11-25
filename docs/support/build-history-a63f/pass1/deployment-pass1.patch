@@ -1,0 +1,1359 @@
+diff --git a/docs/build-history-a63f/README.md b/docs/build-history-a63f/README.md
+index cba68fb..bed7228 100644
+--- a/docs/build-history-a63f/README.md
++++ b/docs/build-history-a63f/README.md
+@@ -1 +1 @@
+-# Successful build ownership across runtime model replacement
++# Build-history incident: current Support status
+@@ -4,3 +3,0 @@ Request `a63f09f3-5213-4a87-add9-a983718059eb`.
+-Status: **source repair and private candidate qualification complete; current
+-owner recovery BLOCKED by legacy proof and preserving exposure requirements**.
+-No installed code, owner resource, identity, model or claim is changed.
+@@ -8 +5,4 @@ No installed code, owner resource, identity, model or claim is changed.
+-## Exact installed semantics and incident diagnosis
++See [escalation pass 1](pass1/README.md) for the current metadata-reader split,
++exact source/installed qualifications and narrowed native-proof handoff.
++The current owner remains stopped pending authentic legacy proof/restoration;
++no operational acceptance is performed by Support.
+@@ -10,159 +10,4 @@ No installed code, owner resource, identity, model or claim is changed.
+-The installed broker stores one model per `(task_root, project)` at
+-`model_path`, plus an immutable task/clone/project claim. `save_scoped_model`
+-atomically replaces the entire current model; it does not keep a build-history
+-record. `render_model_for_command` runs for `config`, `build`, `run` and other
+-model commands. Thus a runtime overlay with an image but no build replaces the
+-prior build model for that alias, even though the immutable project claim
+-continues to belong to the same clone.
+-
+-`owned_build_image` and `Operations.build_images_here` authorize images by
+-scanning those current models and requiring a scoped service image **and a
+-build definition**. The runtime model's reference alone does not qualify.
+-Exact-tag lookup consequently fails before an image engine query; typed-ID
+-lookup also loses its candidates. A previous successful engine build and
+-metadata acceptance do not persist an independent ownership receipt.
+-
+-The source and installed private characterization reproduce precisely:
+-
+-1. Start with no saved model or history and perform an authenticated selected
+-   service build against a private fake engine. Tag/ID admission initially works.
+-2. Save a same-project image-only runtime model with `read_only`, non-root user
+-   and `network_mode: none`. The synthetic replacement uses `config` so no
+-   runtime container is required; the actual `run` path shares the same model
+-   rendering/saving function.
+-3. The original scoped tag is denied with `IMAGE_NOT_AUTHORIZED` without
+-   querying it. The immutable task/clone/project claim is unchanged.
+-
+-This is a lifetime defect, consistent with the supplied build365/runtime366
+-sequence, not a recurrence of the 6b30 type-discrimination bug or the 5746
+-bootstrap question. Support has not read the owner's private model, claim,
+-image, source, receipts or environment and does not claim independent live
+-attribution beyond the supplied sequence and source-identical characterization.
+-
+-There is no installed history reader, success-receipt import or restoration
+-verb. `config` with an old build definition would create current-model admission
+-from a model alone; it is **not** an acceptable recovery here. Listing images,
+-using another type/actor or inspecting the raw ID does not establish historical
+-ownership. No such workaround is proposed or attempted.
+-
+-## Minimal source repair
+-
+-The candidate adds durable successful-output receipts separately from the
+-mutable current model. A receipt is written only after an admitted engine build
+-returns zero and a bounded `image inspect --format '{{json .Id}}' <scoped-tag>`
+-captures the actual local output ID. Model registration, a runtime reference,
+-failed build, dry-run, print/check mode or caller-supplied metadata cannot create
+-one. No public receipt-writing/import command is added.
+-
+-Receipts bind task root, exact clone directory, existing project claim, service,
+-scoped output tag, engine `.Id`, version and observation timestamp. They are
+-platform-owned single-link regular files, mode 0600, bounded to 8 KiB each and
+-64 current tag receipts per exact clone. Writes use a private file, fsync,
+-atomic replacement and directory fsync. Reads check stable file custody,
+-record/path binding and the still-valid immutable project claim. They do not
+-load source, environment, package data, application config or customer content.
+-
+-Historical metadata admission requires the current tag to resolve to the saved
+-engine ID. Retargeting the tag cannot admit another image. Missing/foreign,
+-sibling-clone, revoked-claim, malformed, symlinked, writable and over-limit
+-receipts fail closed. Retained tag reads use the existing curated typed-ID
+-projection; private image environment and entrypoint are not exposed.
+-Registry manifest/RepoDigest and local engine `.Id` remain separate identities.
+-
+-The existing active-build-model predicate remains compatible. It does not
+-become successful-build provenance; the new retained admission path requires
+-the independently captured success receipt. Current runtime models are never
+-silently replaced by historical build definitions. Scout, volume, container,
+-network, task-access and lifecycle grants are not expanded.
+-
+-For Compose, receipt capture covers the precise selected-service build form:
+-
+-```text
+-build [--pull[=true|false]] [--no-cache[=true|false]] <one-build-service>
+-```
+-
+-Global dry-run is excluded. Other modes remain supported as before but produce
+-`BUILD_HISTORY_NOT_RECORDED` rather than falsely attesting which outputs were
+-built. Standalone admitted local `docker build` also records its actual scoped
+-output after success. If identity capture or persistence fails after an engine
+-zero exit, return 78 with `BUILD_COMPLETED_RECEIPT_UNAVAILABLE`; the build may
+-already exist and **must not be retried automatically**. No cleanup or rollback
+-of images/resources is attempted.
+-
+-## Source, installed and loaded status
+-
+-Deployment baseline: `4b23f583ce34876d50b3e3fb1aa6e065ee749d5c` (full revision in the review manifest).
+-Both checkouts were inspected. Product primary source HEAD remains
+-`cfd6bdf65ae6f631d7701c105791a099c0325cc3`, with all unrelated changes preserved.
+-This is a deployment policy repair; no product Go, binary overlay, Dockerfile,
+-Compose deployment, entrypoint, service or installer changes are required here.
+-
+-Installed broker SHA256 remains
+-`9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91`;
+-installed operations SHA256 remains
+-`d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4`.
+-Initial and final public-file readbacks match exactly, including wrapper/client/
+-guard custody. The candidate is loaded only inside private fixture namespaces.
+-No candidate image or binary build, installation, service restart or lifecycle
+-candidate activation occurs. The existing installed lifecycle surface is
+-preserved and is not invoked on behalf of this request.
+-
+-`candidate-review.json` binds the exact candidate pair and tests. Source AST
+-comparison verifies all preexisting broker functions/classes except the build
+-completion hook are unchanged. In the operations module only four existing
+-methods change; lifecycle, volume, native worker and all other top-level
+-handlers remain identical to the deployed preserving baseline.
+-
+-Installing the operations module alone is **not supported**: it depends on
+-new broker receipt functions. Compose build handling is long-running loaded
+-broker code, so hot-copying the module cannot activate the repair. A preserving
+-reviewed broker/module exposure is required; this request prohibits restart
+-and provides no authority to perform it. Any later Kandev image deployment
+-must use `scripts/kandev-safe-deploy` and its normal readiness/rollback gates,
+-never bare Compose recreate. No image deployment is attempted here.
+-
+-## Independent qualification
+-
+-- Unchanged installed pair: one synthetic characterization passes, demonstrating
+-  build admission followed by denial after runtime-model replacement.
+-- Final candidate: 26 cases pass with actual installed wrapper/client, HMAC,
+-  Unix transport and Compose 5.7.1 parser. The full build -> runtime model ->
+-  exact tag/typed ID sequence runs through that real transport. Engine responses
+-  and all models/claims/receipts are private synthetic fixtures.
+-- Source mode: 24 pass, two installed-transport cases skipped; normalized
+-  parser fixture only. Actual parser coverage is the candidate fixture above.
+-- Existing regressions pass: image 18; lifecycle 22; volume 24; broker 16+11
+-  and real Unix transport; task access passes with its new bounded post-build
+-  identity response and receipt assertion. No assertion or guard is weakened.
+-
+-The candidate fixture runs under an empty filesystem root and private network
+-namespace. Live `/data`, `/run`, `/app`, credentials and engine sockets are
+-absent. Reviewed public broker/module source is staged as platform-owned files;
+-actual installed wrapper/client and parser are retained. No live task IDs or
+-resources are used; no actual engine build, registry/package/provider contact,
+-app/test runtime or board operation occurs. See the test sources and raw output.
+-
+-## Existing build365: reserved recovery boundary
+-
+-The source repair protects future successful outputs. It intentionally does
+-not invent a receipt for `kd_8355_connector346_php-test:dev365-b07-c054` from its
+-name, a current model, a project claim, a local image's mere existence, or a
+-reported digest. The already-completed build predates this receipt mechanism.
+-The source patch alone therefore does **not** make Root's current acceptance
+-succeed after installation. Re-registering a historical build model is not
+-part of the fix or the next owner command.
+-
+-A concrete [legacy recovery design](legacy-recovery-design.md) records the
+-smallest reserved input and operation: trusted historical successful-build
+-attestation plus a separately reviewed exact-scope migration and preserving
+-exposure. It exposes no generic agent import capability and admits no sibling
+-or unregistered image. Support has not read or acted on the owner receipt
+-mentioned in the request. Without authentic proof, legacy admission stays denied.
+-
+-Finite next action: route that design and the tested pair to the broker
+-maintainer for reviewed preserving exposure **and** a trusted build365 recovery
+-contract. Root supplies/binds the original authoritative build and typed identity
+-proof through the approved support boundary. Only after those prerequisites
+-may Root bind one same-owner metadata acceptance. No owner inspect/config/build/
+-run retry, new actor, tag fabrication, resource change or polling is authorized
+-by this source-only result.
++The [first-pass report](first-pass-README.md) and original [legacy design](legacy-recovery-design.md)
++are historical context. Their statement that all metadata exposure needs broker
++restart is superseded. Native BuildKit evidence may exist independently of the
++broker's overwritten model; its actual presence has not been inspected.
+diff --git a/docs/build-history-a63f/first-pass-README.md b/docs/build-history-a63f/first-pass-README.md
+new file mode 100644
+index 0000000..5aa9eb1
+--- /dev/null
++++ b/docs/build-history-a63f/first-pass-README.md
+@@ -0,0 +1,170 @@
++> Historical first-pass report; superseded by escalation pass 1.
++
++# Successful build ownership across runtime model replacement
++
++Request `a63f09f3-5213-4a87-add9-a983718059eb`.
++Status: **source repair and private candidate qualification complete; current
++owner recovery BLOCKED by legacy proof and preserving exposure requirements**.
++No installed code, owner resource, identity, model or claim is changed.
++
++## Exact installed semantics and incident diagnosis
++
++The installed broker stores one model per `(task_root, project)` at
++`model_path`, plus an immutable task/clone/project claim. `save_scoped_model`
++atomically replaces the entire current model; it does not keep a build-history
++record. `render_model_for_command` runs for `config`, `build`, `run` and other
++model commands. Thus a runtime overlay with an image but no build replaces the
++prior build model for that alias, even though the immutable project claim
++continues to belong to the same clone.
++
++`owned_build_image` and `Operations.build_images_here` authorize images by
++scanning those current models and requiring a scoped service image **and a
++build definition**. The runtime model's reference alone does not qualify.
++Exact-tag lookup consequently fails before an image engine query; typed-ID
++lookup also loses its candidates. A previous successful engine build and
++metadata acceptance do not persist an independent ownership receipt.
++
++The source and installed private characterization reproduce precisely:
++
++1. Start with no saved model or history and perform an authenticated selected
++   service build against a private fake engine. Tag/ID admission initially works.
++2. Save a same-project image-only runtime model with `read_only`, non-root user
++   and `network_mode: none`. The synthetic replacement uses `config` so no
++   runtime container is required; the actual `run` path shares the same model
++   rendering/saving function.
++3. The original scoped tag is denied with `IMAGE_NOT_AUTHORIZED` without
++   querying it. The immutable task/clone/project claim is unchanged.
++
++This is a lifetime defect, consistent with the supplied build365/runtime366
++sequence, not a recurrence of the 6b30 type-discrimination bug or the 5746
++bootstrap question. Support has not read the owner's private model, claim,
++image, source, receipts or environment and does not claim independent live
++attribution beyond the supplied sequence and source-identical characterization.
++
++There is no installed history reader, success-receipt import or restoration
++verb. `config` with an old build definition would create current-model admission
++from a model alone; it is **not** an acceptable recovery here. Listing images,
++using another type/actor or inspecting the raw ID does not establish historical
++ownership. No such workaround is proposed or attempted.
++
++## Minimal source repair
++
++The candidate adds durable successful-output receipts separately from the
++mutable current model. A receipt is written only after an admitted engine build
++returns zero and a bounded `image inspect --format '{{json .Id}}' <scoped-tag>`
++captures the actual local output ID. Model registration, a runtime reference,
++failed build, dry-run, print/check mode or caller-supplied metadata cannot create
++one. No public receipt-writing/import command is added.
++
++Receipts bind task root, exact clone directory, existing project claim, service,
++scoped output tag, engine `.Id`, version and observation timestamp. They are
++platform-owned single-link regular files, mode 0600, bounded to 8 KiB each and
++64 current tag receipts per exact clone. Writes use a private file, fsync,
++atomic replacement and directory fsync. Reads check stable file custody,
++record/path binding and the still-valid immutable project claim. They do not
++load source, environment, package data, application config or customer content.
++
++Historical metadata admission requires the current tag to resolve to the saved
++engine ID. Retargeting the tag cannot admit another image. Missing/foreign,
++sibling-clone, revoked-claim, malformed, symlinked, writable and over-limit
++receipts fail closed. Retained tag reads use the existing curated typed-ID
++projection; private image environment and entrypoint are not exposed.
++Registry manifest/RepoDigest and local engine `.Id` remain separate identities.
++
++The existing active-build-model predicate remains compatible. It does not
++become successful-build provenance; the new retained admission path requires
++the independently captured success receipt. Current runtime models are never
++silently replaced by historical build definitions. Scout, volume, container,
++network, task-access and lifecycle grants are not expanded.
++
++For Compose, receipt capture covers the precise selected-service build form:
++
++```text
++build [--pull[=true|false]] [--no-cache[=true|false]] <one-build-service>
++```
++
++Global dry-run is excluded. Other modes remain supported as before but produce
++`BUILD_HISTORY_NOT_RECORDED` rather than falsely attesting which outputs were
++built. Standalone admitted local `docker build` also records its actual scoped
++output after success. If identity capture or persistence fails after an engine
++zero exit, return 78 with `BUILD_COMPLETED_RECEIPT_UNAVAILABLE`; the build may
++already exist and **must not be retried automatically**. No cleanup or rollback
++of images/resources is attempted.
++
++## Source, installed and loaded status
++
++Deployment baseline: `4b23f583ce34876d50b3e3fb1aa6e065ee749d5c` (full revision in the review manifest).
++Both checkouts were inspected. Product primary source HEAD remains
++`cfd6bdf65ae6f631d7701c105791a099c0325cc3`, with all unrelated changes preserved.
++This is a deployment policy repair; no product Go, binary overlay, Dockerfile,
++Compose deployment, entrypoint, service or installer changes are required here.
++
++Installed broker SHA256 remains
++`9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91`;
++installed operations SHA256 remains
++`d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4`.
++Initial and final public-file readbacks match exactly, including wrapper/client/
++guard custody. The candidate is loaded only inside private fixture namespaces.
++No candidate image or binary build, installation, service restart or lifecycle
++candidate activation occurs. The existing installed lifecycle surface is
++preserved and is not invoked on behalf of this request.
++
++`candidate-review.json` binds the exact candidate pair and tests. Source AST
++comparison verifies all preexisting broker functions/classes except the build
++completion hook are unchanged. In the operations module only four existing
++methods change; lifecycle, volume, native worker and all other top-level
++handlers remain identical to the deployed preserving baseline.
++
++Installing the operations module alone is **not supported**: it depends on
++new broker receipt functions. Compose build handling is long-running loaded
++broker code, so hot-copying the module cannot activate the repair. A preserving
++reviewed broker/module exposure is required; this request prohibits restart
++and provides no authority to perform it. Any later Kandev image deployment
++must use `scripts/kandev-safe-deploy` and its normal readiness/rollback gates,
++never bare Compose recreate. No image deployment is attempted here.
++
++## Independent qualification
++
++- Unchanged installed pair: one synthetic characterization passes, demonstrating
++  build admission followed by denial after runtime-model replacement.
++- Final candidate: 26 cases pass with actual installed wrapper/client, HMAC,
++  Unix transport and Compose 5.7.1 parser. The full build -> runtime model ->
++  exact tag/typed ID sequence runs through that real transport. Engine responses
++  and all models/claims/receipts are private synthetic fixtures.
++- Source mode: 24 pass, two installed-transport cases skipped; normalized
++  parser fixture only. Actual parser coverage is the candidate fixture above.
++- Existing regressions pass: image 18; lifecycle 22; volume 24; broker 16+11
++  and real Unix transport; task access passes with its new bounded post-build
++  identity response and receipt assertion. No assertion or guard is weakened.
++
++The candidate fixture runs under an empty filesystem root and private network
++namespace. Live `/data`, `/run`, `/app`, credentials and engine sockets are
++absent. Reviewed public broker/module source is staged as platform-owned files;
++actual installed wrapper/client and parser are retained. No live task IDs or
++resources are used; no actual engine build, registry/package/provider contact,
++app/test runtime or board operation occurs. See the test sources and raw output.
++
++## Existing build365: reserved recovery boundary
++
++The source repair protects future successful outputs. It intentionally does
++not invent a receipt for `kd_8355_connector346_php-test:dev365-b07-c054` from its
++name, a current model, a project claim, a local image's mere existence, or a
++reported digest. The already-completed build predates this receipt mechanism.
++The source patch alone therefore does **not** make Root's current acceptance
++succeed after installation. Re-registering a historical build model is not
++part of the fix or the next owner command.
++
++A concrete [legacy recovery design](legacy-recovery-design.md) records the
++smallest reserved input and operation: trusted historical successful-build
++attestation plus a separately reviewed exact-scope migration and preserving
++exposure. It exposes no generic agent import capability and admits no sibling
++or unregistered image. Support has not read or acted on the owner receipt
++mentioned in the request. Without authentic proof, legacy admission stays denied.
++
++Finite next action: route that design and the tested pair to the broker
++maintainer for reviewed preserving exposure **and** a trusted build365 recovery
++contract. Root supplies/binds the original authoritative build and typed identity
++proof through the approved support boundary. Only after those prerequisites
++may Root bind one same-owner metadata acceptance. No owner inspect/config/build/
++run retry, new actor, tag fabrication, resource change or polling is authorized
++by this source-only result.
+diff --git a/docs/build-history-a63f/pass1/README.md b/docs/build-history-a63f/pass1/README.md
+new file mode 100644
+index 0000000..744f1a1
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/README.md
+@@ -0,0 +1,122 @@
++# Escalation pass 1: decoupled reader and exact native-proof handoff
++
++Request `a63f09f3-5213-4a87-add9-a983718059eb`.
++The earlier source repair remains valid, but two parts of the blocker were too
++broad: metadata receipt reading need not wait for a broker restart, and absence
++of broker history does not prove absence of native BuildKit evidence.
++
++## Restart-free reader correction
++
++Receipt validation and standalone post-build capture now live in the already
++hot-loaded operations module. They depend only on APIs present in the unchanged
++installed broker (`9514b692...`). The source broker's future Compose completion
++hook delegates to that shared module. This removes the API coupling that made
++the first candidate unsuitable for module-only exposure.
++
++Three compatibility cases pass against the **old installed broker plus the new
++module**, including actual installed wrapper/client transport: a proven private
++fixture receipt survives runtime-model replacement; no receipt stays denied;
++a changed tag fails its pinned-ID check. No live legacy receipt is imported.
++The full candidate still passes 26 cases. Image 18, lifecycle 22, volume 24,
++broker 16+11 and transport, and task-access regressions pass. The same lifecycle,
++volume/native-worker and unrelated operations code is preserved by source AST
++comparison. The module has no public receipt-import or native-history command.
++
++`reviewed.json` pins the metadata module, existing broker/wrapper/client/guard,
++source tests and exact installed predecessor. Exposure uses the existing
++hash-gated atomic module installer, with a private backup and no restart.
++`installation.json` and installed fixture results, when present, record the
++actual effect; source qualification alone is not installation or owner acceptance.
++The forward automatic **Compose** capture hook remains source-only: this request
++still forbids a broker lifecycle operation. Standalone admitted builds can
++capture their own successful outputs using the shared hot module.
++
++There is no receipt for Build365 created by this repair. Reading a runtime model,
++a task-written receipt, a tag name, an image label or the supplied combined
++image-ID/RepoDigest notation cannot create one. No affected-owner metadata,
++config, build or run is performed. Root must keep the owner stopped.
++
++## Native history audit
++
++Socket-free help in an empty-root/network namespace identifies the public
++installed plugin as Buildx v0.38.1, revision
++`0dbe87f36ed472fe36b6796c3f70b4210a731fc5`. Public binary/script hashes and raw
++help are retained. This identifies reported client version/source; it does not
++attest the live BuildKit server version, record availability or an owner build.
++No engine-history request is made.
++
++The installed restricted wrapper rejects `buildx history` before an engine
++command. Three new baseline characterization cases pass using private models
++and the real wrapper/client/parser, confirming both the original model-loss
++behavior and that native history is not an already-admitted owner route.
++
++The version-bound primary source establishes these limits:
++
++- [Buildx listing implementation](https://github.com/docker/buildx/blob/v0.38.1/commands/history/ls.go)
++  returns reference/status/times, not exporter output identity. Its local option
++  uses repository identity, which is not an exact task/clone ownership proof.
++- [Query/filter implementation](https://github.com/docker/buildx/blob/v0.38.1/commands/history/utils.go)
++  supports reference/repository/status/time filters, not exact output-tag
++  filtering. A specific native record reference can avoid a shared-engine census.
++- [Inspection output](https://github.com/docker/buildx/blob/v0.38.1/commands/history/inspect.go)
++  does not expose raw `ExporterResponse`. Full output can include build arguments,
++  source/error/provenance information. Guessing an output template is not a
++  qualified proof reader.
++- [Export implementation](https://github.com/docker/buildx/blob/v0.38.1/commands/history/export.go)
++  bundles native records with other content/state; `--finalize` can mutate history.
++  Broad export, logs, import, prune or finalization are not acceptable substitutes.
++- The client's [dependency declaration](https://github.com/docker/buildx/blob/v0.38.1/go.mod)
++  names BuildKit v0.34.0. That version's
++  [native history schema](https://github.com/moby/buildkit/blob/v0.34.0/api/services/control/control.proto)
++  includes completion/error, exporters and exporter responses. It is a possible
++  engine-owned proof source, not evidence that this server retained Build365.
++
++## Revised minimum next input
++
++The [exact-record handoff](native-proof-handoff.md) narrows the next operation.
++Root supplies the original protected Build365 execution evidence, including its
++native BuildKit record Ref and builder/node identity if available, exact output
++tag and separately observed typed engine `.Id`. These must come from already
++produced evidence; no owner retry is needed. A short Kandev native-receipt ID,
++image ID and registry digest are not interchangeable with a BuildKit record Ref.
++
++A separately bound Support metadata review can then evaluate that one protected
++record/evidence tuple using existing reviewed host authority. The first pass
++should not have assumed a new trust issuer or human approval is always needed.
++It remains essential to establish actual successful output provenance before
++writing a single exact-scope retained receipt. No generic agent import grant,
++model re-registration or global history discovery is authorized.
++
++No safe current owner command can manufacture the missing proof. The remaining
++blocker is the unbound authentic historical evidence/restoration step, not the
++metadata reader's restart requirement. Root's one same-owner acceptance remains
++separate and pending; it must not run merely because the reader is exposed.
++
++Both checkouts were rechecked. No upstream-only limitation is claimed. Available
++tools provide reviewed host execution but no separate callable broker-maintainer
++or task-receipt reader. Host escalation was used for private/public-source
++qualification, with no review rejection. No service restart, new trust grant,
++provider/target/customer operation, claim/data mutation or live owner proxy is
++performed. This result returns through the existing Support broker notification
++path; no human message relay or task polling is requested.
++
++## Installed result
++
++The decoupled reader is installed from deployment source commit `cb2ba9121d75190bb140538ac6149787731a848e`.
++Operations SHA256: `d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee`.
++The broker stays `9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91`;
++wrapper/client/guard hashes match the review. Container identity, image and start
++time match before/after in `installation.json`; no restart or binary/image
++replacement occurred. The existing module backup is retained privately.
++
++All three reader compatibility cases pass against the **actual installed pair**,
++including real wrapper/client and protected synthetic success receipts. All
++three installed boundary cases also pass: no receipt does not recover a tag,
++and native `buildx history` remains outside the owner catalog. The installed
++image suite passes 18 cases and lifecycle suite 22. All fixtures hide live task
++state and use a fake engine; these are not affected-owner acceptance.
++
++The forward Compose completion hook is still not installed. No Build365 receipt
++is seeded, no project claim/model is restored, and no owner image is inspected.
++Actual recovery remains unverified and blocked on the separately bound authentic
++historical-proof/restoration operation. Root must not retry on installation alone.
+diff --git a/docs/build-history-a63f/pass1/broker-tests.txt b/docs/build-history-a63f/pass1/broker-tests.txt
+new file mode 100644
+index 0000000..eea00e6
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/broker-tests.txt
+@@ -0,0 +1,12 @@
++................
++----------------------------------------------------------------------
++Ran 16 tests in 0.324s
++
++OK
++...........
++----------------------------------------------------------------------
++Ran 11 tests in 0.012s
++
++OK
++PASS: real Unix broker transport uses the kernel peer PID and rejects malformed JSON
++PASS: task Docker broker policy tests
+diff --git a/docs/build-history-a63f/pass1/buildx-public-help.jsonl b/docs/build-history-a63f/pass1/buildx-public-help.jsonl
+new file mode 100644
+index 0000000..9a2a5fd
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/buildx-public-help.jsonl
+@@ -0,0 +1,4 @@
++{"argv": ["version"], "returncode": 0, "stdout": "github.com/docker/buildx v0.38.1 0dbe87f36ed472fe36b6796c3f70b4210a731fc5\n", "stderr": ""}
++{"argv": ["history", "--help"], "returncode": 0, "stdout": "Commands to work on build records\n\nUsage:\n  docker-buildx history\n  docker-buildx history [command]\n\nAvailable Commands:\n  export      Export build records into Docker Desktop bundle\n  import      Import build records into Docker Desktop\n  inspect     Inspect a build record\n  logs        Print the logs of a build record\n  ls          List build records\n  open        Open a build record in Docker Desktop\n  rm          Remove build records\n  trace       Show the OpenTelemetry trace of a build record\n\nFlags:\n  -h, --help   help for history\n\nGlobal Flags:\n      --builder string   Override the configured builder instance\n  -D, --debug            Enable debug logging\n\nUse \"docker-buildx history [command] --help\" for more information about a command.\n\nExperimental commands and flags are hidden. Set BUILDX_EXPERIMENTAL=1 to show them.\n", "stderr": ""}
++{"argv": ["history", "ls", "--help"], "returncode": 0, "stdout": "List build records\n\nUsage:\n  docker-buildx history ls [OPTIONS]\n\nFlags:\n      --filter stringArray   Provide filter values (e.g., \"status=error\")\n      --format string        Format the output (default \"table\")\n  -h, --help                 help for ls\n      --local                List records for current repository only\n      --no-trunc             Don't truncate output\n\nGlobal Flags:\n      --builder string   Override the configured builder instance\n  -D, --debug            Enable debug logging\n\nExperimental commands and flags are hidden. Set BUILDX_EXPERIMENTAL=1 to show them.\n", "stderr": ""}
++{"argv": ["history", "inspect", "--help"], "returncode": 0, "stdout": "Inspect a build record\n\nUsage:\n  docker-buildx history inspect [OPTIONS] [REF]\n  docker-buildx history inspect [command]\n\nAvailable Commands:\n  attachment  Inspect a build record attachment\n\nFlags:\n      --format string   Format the output (default \"pretty\")\n  -h, --help            help for inspect\n\nGlobal Flags:\n      --builder string   Override the configured builder instance\n  -D, --debug            Enable debug logging\n\nUse \"docker-buildx history inspect [command] --help\" for more information about a command.\n\nExperimental commands and flags are hidden. Set BUILDX_EXPERIMENTAL=1 to show them.\n", "stderr": ""}
+diff --git a/docs/build-history-a63f/pass1/full-candidate-tests.txt b/docs/build-history-a63f/pass1/full-candidate-tests.txt
+new file mode 100644
+index 0000000..bdc7b62
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/full-candidate-tests.txt
+@@ -0,0 +1,32 @@
++{"candidate": true, "baseline": false, "reader_only_candidate": false, "broker_sha256": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_claim_revocation_blocks_retained_output (__main__.HistoryTests.test_claim_revocation_blocks_retained_output) ... ok
++test_cli_builder_secret_and_ssh_overrides_remain_denied (__main__.HistoryTests.test_cli_builder_secret_and_ssh_overrides_remain_denied) ... ok
++test_config_registers_model_without_build_or_output_proof (__main__.HistoryTests.test_config_registers_model_without_build_or_output_proof) ... ok
++test_config_with_build_is_not_a_success_receipt (__main__.HistoryTests.test_config_with_build_is_not_a_success_receipt) ... ok
++test_context_and_dockerfile_cannot_escape_task (__main__.HistoryTests.test_context_and_dockerfile_cannot_escape_task) ... ok
++test_denied_old_id_is_not_admitted_by_new_build (__main__.HistoryTests.test_denied_old_id_is_not_admitted_by_new_build) ... ok
++test_dry_run_print_check_and_ambiguous_modes_cannot_attest (__main__.HistoryTests.test_dry_run_print_check_and_ambiguous_modes_cannot_attest) ... ok
++test_failed_build_does_not_renew_or_create_history (__main__.HistoryTests.test_failed_build_does_not_renew_or_create_history) ... ok
++test_failed_build_preserves_registration_but_proves_no_image (__main__.HistoryTests.test_failed_build_preserves_registration_but_proves_no_image) ... ok
++test_foreign_project_claim_cannot_be_bootstrapped (__main__.HistoryTests.test_foreign_project_claim_cannot_be_bootstrapped) ... ok
++test_fresh_build_has_no_historical_model_or_image_prerequisite (__main__.HistoryTests.test_fresh_build_has_no_historical_model_or_image_prerequisite) ... ok
++test_historical_tag_retargeting_cannot_admit_changed_image (__main__.HistoryTests.test_historical_tag_retargeting_cannot_admit_changed_image) ... ok
++test_history_limit_denies_before_engine_queries (__main__.HistoryTests.test_history_limit_denies_before_engine_queries) ... ok
++test_history_metadata_remains_curated_and_typed (__main__.HistoryTests.test_history_metadata_remains_curated_and_typed) ... ok
++test_installed_client_frame_uses_same_task_root_and_alias (__main__.HistoryTests.test_installed_client_frame_uses_same_task_root_and_alias) ... ok
++test_missing_post_build_identity_cannot_create_receipt (__main__.HistoryTests.test_missing_post_build_identity_cannot_create_receipt) ... ok
++test_model_only_runtime_reference_creates_no_history (__main__.HistoryTests.test_model_only_runtime_reference_creates_no_history) ... ok
++test_other_task_project_claim_denies (__main__.HistoryTests.test_other_task_project_claim_denies) ... ok
++test_real_wrapper_client_build_runtime_then_tag_and_id (__main__.HistoryTests.test_real_wrapper_client_build_runtime_then_tag_and_id) ... ok
++test_receipt_custody_and_binding_fail_closed (__main__.HistoryTests.test_receipt_custody_and_binding_fail_closed) ... ok
++test_receipt_failure_reports_completed_build_without_retry (__main__.HistoryTests.test_receipt_failure_reports_completed_build_without_retry) ... ok
++test_reserved_build_grants_remain_denied (__main__.HistoryTests.test_reserved_build_grants_remain_denied) ... ok
++test_sibling_and_other_task_do_not_inherit_receipts (__main__.HistoryTests.test_sibling_and_other_task_do_not_inherit_receipts) ... ok
++test_standalone_build_records_same_scoped_success_history (__main__.HistoryTests.test_standalone_build_records_same_scoped_success_history) ... ok
++test_successful_output_survives_runtime_replacement (__main__.HistoryTests.test_successful_output_survives_runtime_replacement) ... ok
++test_wrong_token_and_outside_cwd_deny_before_parser (__main__.HistoryTests.test_wrong_token_and_outside_cwd_deny_before_parser) ... ok
++
++----------------------------------------------------------------------
++Ran 26 tests in 3.032s
++
++OK
+diff --git a/docs/build-history-a63f/pass1/image-tests.txt b/docs/build-history-a63f/pass1/image-tests.txt
+new file mode 100644
+index 0000000..eae0777
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/image-tests.txt
+@@ -0,0 +1,24 @@
++{"installed": false, "source_sha256": {"/home/ayattara/Code/kandev/scripts/kandev-agent-docker-broker": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15", "/home/ayattara/Code/kandev/scripts/kandev-agent-docker-operations.py": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee"}, "live_task_operations": 0, "real_engine_calls": 0, "builds": 0, "pulls": 0}
++test_arbitrary_or_unknown_image_id_is_never_inspected (__main__.ImageTests.test_arbitrary_or_unknown_image_id_is_never_inspected) ... ok
++test_bare_id_does_not_implicitly_change_resource_type (__main__.ImageTests.test_bare_id_does_not_implicitly_change_resource_type) ... ok
++test_conflicting_or_unsupported_type_is_denied (__main__.ImageTests.test_conflicting_or_unsupported_type_is_denied) ... ok
++test_container_inspection_still_works (__main__.ImageTests.test_container_inspection_still_works) ... ok
++test_container_type_never_reads_image_metadata (__main__.ImageTests.test_container_type_never_reads_image_metadata) ... ok
++test_exact_id_formats_do_not_confuse_registry_digest (__main__.ImageTests.test_exact_id_formats_do_not_confuse_registry_digest) ... ok
++test_exact_owned_local_id_is_admitted_with_curated_metadata (__main__.ImageTests.test_exact_owned_local_id_is_admitted_with_curated_metadata) ... ok
++test_existing_owned_build_tag_route_is_preserved (__main__.ImageTests.test_existing_owned_build_tag_route_is_preserved) ... ok
++test_generic_explicit_image_type_is_admitted (__main__.ImageTests.test_generic_explicit_image_type_is_admitted) ... ok
++test_hmac_boundary_and_installed_client_framing (__main__.ImageTests.test_hmac_boundary_and_installed_client_framing) ... ok
++test_image_type_never_falls_back_to_container (__main__.ImageTests.test_image_type_never_falls_back_to_container) ... ok
++test_malformed_identity_or_changed_final_id_is_denied (__main__.ImageTests.test_malformed_identity_or_changed_final_id_is_denied) ... ok
++test_model_claim_changes_during_lookup_are_denied (__main__.ImageTests.test_model_claim_changes_during_lookup_are_denied) ... ok
++test_model_reference_alone_does_not_grant_image_ownership (__main__.ImageTests.test_model_reference_alone_does_not_grant_image_ownership) ... ok
++test_other_task_build_cannot_authorize_id (__main__.ImageTests.test_other_task_build_cannot_authorize_id) ... ok
++test_private_env_format_is_denied_before_engine_query (__main__.ImageTests.test_private_env_format_is_denied_before_engine_query) ... ok
++test_registry_digest_is_not_an_image_id_alias (__main__.ImageTests.test_registry_digest_is_not_an_image_id_alias) ... ok
++test_sibling_clone_build_cannot_authorize_id (__main__.ImageTests.test_sibling_clone_build_cannot_authorize_id) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 0.053s
++
++OK
+diff --git a/docs/build-history-a63f/pass1/installation.json b/docs/build-history-a63f/pass1/installation.json
+new file mode 100644
+index 0000000..001a0fc
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/installation.json
+@@ -0,0 +1,12 @@
++{
++  "installed": true,
++  "path": "/usr/local/bin/kandev-agent-docker-operations.py",
++  "previous_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
++  "installed_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
++  "backup": "/tmp/kandev-image-inspect-before-6b30-x3xeudx6/operations.py",
++  "restart": false,
++  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
++  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "unchanged_container": true
++}
+diff --git a/docs/build-history-a63f/pass1/installed-boundary-after-tests.txt b/docs/build-history-a63f/pass1/installed-boundary-after-tests.txt
+new file mode 100644
+index 0000000..73813ae
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/installed-boundary-after-tests.txt
+@@ -0,0 +1,9 @@
++{"candidate": false, "baseline": true, "reader_only_candidate": false, "reader_only_installed": false, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_actual_current_model_replacement_loses_build_admission (__main__.BaselineCharacterization.test_actual_current_model_replacement_loses_build_admission) ... ok
++test_native_history_is_not_an_installed_guarded_route (__main__.BaselineCharacterization.test_native_history_is_not_an_installed_guarded_route) ... ok
++test_real_wrapper_rejects_native_history_without_engine_call (__main__.BaselineCharacterization.test_real_wrapper_rejects_native_history_without_engine_call) ... ok
++
++----------------------------------------------------------------------
++Ran 3 tests in 0.630s
++
++OK
+diff --git a/docs/build-history-a63f/pass1/installed-boundary-tests.txt b/docs/build-history-a63f/pass1/installed-boundary-tests.txt
+new file mode 100644
+index 0000000..62fe310
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/installed-boundary-tests.txt
+@@ -0,0 +1,9 @@
++{"candidate": false, "baseline": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_actual_current_model_replacement_loses_build_admission (__main__.BaselineCharacterization.test_actual_current_model_replacement_loses_build_admission) ... ok
++test_native_history_is_not_an_installed_guarded_route (__main__.BaselineCharacterization.test_native_history_is_not_an_installed_guarded_route) ... ok
++test_real_wrapper_rejects_native_history_without_engine_call (__main__.BaselineCharacterization.test_real_wrapper_rejects_native_history_without_engine_call) ... ok
++
++----------------------------------------------------------------------
++Ran 3 tests in 0.629s
++
++OK
+diff --git a/docs/build-history-a63f/pass1/installed-image-tests.txt b/docs/build-history-a63f/pass1/installed-image-tests.txt
+new file mode 100644
+index 0000000..9f5d76d
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/installed-image-tests.txt
+@@ -0,0 +1,24 @@
++{"installed": true, "source_sha256": {"/usr/local/bin/kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "/usr/local/bin/kandev-agent-docker-operations.py": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee"}, "live_task_operations": 0, "real_engine_calls": 0, "builds": 0, "pulls": 0}
++test_arbitrary_or_unknown_image_id_is_never_inspected (__main__.ImageTests.test_arbitrary_or_unknown_image_id_is_never_inspected) ... ok
++test_bare_id_does_not_implicitly_change_resource_type (__main__.ImageTests.test_bare_id_does_not_implicitly_change_resource_type) ... ok
++test_conflicting_or_unsupported_type_is_denied (__main__.ImageTests.test_conflicting_or_unsupported_type_is_denied) ... ok
++test_container_inspection_still_works (__main__.ImageTests.test_container_inspection_still_works) ... ok
++test_container_type_never_reads_image_metadata (__main__.ImageTests.test_container_type_never_reads_image_metadata) ... ok
++test_exact_id_formats_do_not_confuse_registry_digest (__main__.ImageTests.test_exact_id_formats_do_not_confuse_registry_digest) ... ok
++test_exact_owned_local_id_is_admitted_with_curated_metadata (__main__.ImageTests.test_exact_owned_local_id_is_admitted_with_curated_metadata) ... ok
++test_existing_owned_build_tag_route_is_preserved (__main__.ImageTests.test_existing_owned_build_tag_route_is_preserved) ... ok
++test_generic_explicit_image_type_is_admitted (__main__.ImageTests.test_generic_explicit_image_type_is_admitted) ... ok
++test_hmac_boundary_and_installed_client_framing (__main__.ImageTests.test_hmac_boundary_and_installed_client_framing) ... ok
++test_image_type_never_falls_back_to_container (__main__.ImageTests.test_image_type_never_falls_back_to_container) ... ok
++test_malformed_identity_or_changed_final_id_is_denied (__main__.ImageTests.test_malformed_identity_or_changed_final_id_is_denied) ... ok
++test_model_claim_changes_during_lookup_are_denied (__main__.ImageTests.test_model_claim_changes_during_lookup_are_denied) ... ok
++test_model_reference_alone_does_not_grant_image_ownership (__main__.ImageTests.test_model_reference_alone_does_not_grant_image_ownership) ... ok
++test_other_task_build_cannot_authorize_id (__main__.ImageTests.test_other_task_build_cannot_authorize_id) ... ok
++test_private_env_format_is_denied_before_engine_query (__main__.ImageTests.test_private_env_format_is_denied_before_engine_query) ... ok
++test_registry_digest_is_not_an_image_id_alias (__main__.ImageTests.test_registry_digest_is_not_an_image_id_alias) ... ok
++test_sibling_clone_build_cannot_authorize_id (__main__.ImageTests.test_sibling_clone_build_cannot_authorize_id) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 0.570s
++
++OK
+diff --git a/docs/build-history-a63f/pass1/installed-lifecycle-tests.txt b/docs/build-history-a63f/pass1/installed-lifecycle-tests.txt
+new file mode 100644
+index 0000000..3a7b9de
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/installed-lifecycle-tests.txt
+@@ -0,0 +1,28 @@
++{"installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "fixture": "private namespaces; live /data /run /app hidden; copied public interpreter backend", "authorization_mocks": 0, "live_task_operations": 0, "real_engine_calls": 0, "restarts": 0}
++test_active_planless_read_preserves_all_tables (__main__.LifecycleTests.test_active_planless_read_preserves_all_tables) ... ok
++test_ambiguous_launch_has_no_sole_session_fallback (__main__.LifecycleTests.test_ambiguous_launch_has_no_sole_session_fallback) ... ok
++test_archived_caller_denied_before_target (__main__.LifecycleTests.test_archived_caller_denied_before_target) ... ok
++test_archived_plan_is_retained_without_content_read (__main__.LifecycleTests.test_archived_plan_is_retained_without_content_read) ... ok
++test_audit_failure_is_typed_and_does_not_leak_path (__main__.LifecycleTests.test_audit_failure_is_typed_and_does_not_leak_path) ... ok
++test_caller_revocation_during_read_discards_result (__main__.LifecycleTests.test_caller_revocation_during_read_discards_result) ... ok
++test_caller_storage_fault_is_not_missing (__main__.LifecycleTests.test_caller_storage_fault_is_not_missing) ... ok
++test_exited_original_peer_pidfd_denies_before_target (__main__.LifecycleTests.test_exited_original_peer_pidfd_denies_before_target) ... ok
++test_full_wrapper_hmac_pidfd_and_metadata_path (__main__.LifecycleTests.test_full_wrapper_hmac_pidfd_and_metadata_path) ... ok
++test_incarnation_change_during_read_discards_result (__main__.LifecycleTests.test_incarnation_change_during_read_discards_result) ... ok
++test_malformed_target_and_identity_override_are_rejected (__main__.LifecycleTests.test_malformed_target_and_identity_override_are_rejected) ... ok
++test_mismatched_session_environment_denied_before_target (__main__.LifecycleTests.test_mismatched_session_environment_denied_before_target) ... ok
++test_missing_and_both_foreign_workspaces_are_identically_masked (__main__.LifecycleTests.test_missing_and_both_foreign_workspaces_are_identically_masked) ... ok
++test_missing_socket_peer_denies_before_target (__main__.LifecycleTests.test_missing_socket_peer_denies_before_target) ... ok
++test_ordinary_task_denied_before_target (__main__.LifecycleTests.test_ordinary_task_denied_before_target) ... ok
++test_other_launch_pid_denied_before_target (__main__.LifecycleTests.test_other_launch_pid_denied_before_target) ... ok
++test_projection_bound (__main__.LifecycleTests.test_projection_bound) ... ok
++test_real_validator_custody_rejects_writable_copy (__main__.LifecycleTests.test_real_validator_custody_rejects_writable_copy) ... ok
++test_real_validator_pin_drift_is_unavailable (__main__.LifecycleTests.test_real_validator_pin_drift_is_unavailable) ... ok
++test_revoked_session_denied_before_target (__main__.LifecycleTests.test_revoked_session_denied_before_target) ... ok
++test_target_storage_fault_is_not_missing (__main__.LifecycleTests.test_target_storage_fault_is_not_missing) ... ok
++test_wrong_registered_root_denied_before_target (__main__.LifecycleTests.test_wrong_registered_root_denied_before_target) ... ok
++
++----------------------------------------------------------------------
++Ran 22 tests in 0.998s
++
++OK
+diff --git a/docs/build-history-a63f/pass1/installed-public-files.json b/docs/build-history-a63f/pass1/installed-public-files.json
+new file mode 100644
+index 0000000..ba34c5c
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/installed-public-files.json
+@@ -0,0 +1,32 @@
++{
++  "kandev-agent-docker-broker": {
++    "sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "uid": 0,
++    "mode": "0o555",
++    "nlink": 1
++  },
++  "kandev-agent-docker-operations.py": {
++    "sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
++    "uid": 0,
++    "mode": "0o555",
++    "nlink": 1
++  },
++  "docker": {
++    "sha256": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "uid": 0,
++    "mode": "0o755",
++    "nlink": 1
++  },
++  "kandev-agent-docker-client": {
++    "sha256": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "uid": 0,
++    "mode": "0o555",
++    "nlink": 1
++  },
++  "kandev-agent-guard": {
++    "sha256": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f",
++    "uid": 0,
++    "mode": "0o755",
++    "nlink": 1
++  }
++}
+diff --git a/docs/build-history-a63f/pass1/installed-reader-tests.txt b/docs/build-history-a63f/pass1/installed-reader-tests.txt
+new file mode 100644
+index 0000000..7216783
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/installed-reader-tests.txt
+@@ -0,0 +1,9 @@
++{"candidate": true, "baseline": false, "reader_only_candidate": false, "reader_only_installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_old_broker_new_reader_retains_proven_output (__main__.ReaderCompatibility.test_old_broker_new_reader_retains_proven_output) ... ok
++test_old_broker_without_success_receipt_stays_denied (__main__.ReaderCompatibility.test_old_broker_without_success_receipt_stays_denied) ... ok
++test_old_broker_reader_rejects_changed_output (__main__.ReaderCompatibility.test_old_broker_reader_rejects_changed_output) ... ok
++
++----------------------------------------------------------------------
++Ran 3 tests in 0.794s
++
++OK
+diff --git a/docs/build-history-a63f/pass1/lifecycle-tests.txt b/docs/build-history-a63f/pass1/lifecycle-tests.txt
+new file mode 100644
+index 0000000..d3581c5
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/lifecycle-tests.txt
+@@ -0,0 +1,28 @@
++{"installed": false, "broker_sha256": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "fixture": "private namespaces; live /data /run /app hidden; copied public interpreter backend", "authorization_mocks": 0, "live_task_operations": 0, "real_engine_calls": 0, "restarts": 0}
++test_active_planless_read_preserves_all_tables (__main__.LifecycleTests.test_active_planless_read_preserves_all_tables) ... ok
++test_ambiguous_launch_has_no_sole_session_fallback (__main__.LifecycleTests.test_ambiguous_launch_has_no_sole_session_fallback) ... ok
++test_archived_caller_denied_before_target (__main__.LifecycleTests.test_archived_caller_denied_before_target) ... ok
++test_archived_plan_is_retained_without_content_read (__main__.LifecycleTests.test_archived_plan_is_retained_without_content_read) ... ok
++test_audit_failure_is_typed_and_does_not_leak_path (__main__.LifecycleTests.test_audit_failure_is_typed_and_does_not_leak_path) ... ok
++test_caller_revocation_during_read_discards_result (__main__.LifecycleTests.test_caller_revocation_during_read_discards_result) ... ok
++test_caller_storage_fault_is_not_missing (__main__.LifecycleTests.test_caller_storage_fault_is_not_missing) ... ok
++test_exited_original_peer_pidfd_denies_before_target (__main__.LifecycleTests.test_exited_original_peer_pidfd_denies_before_target) ... ok
++test_full_wrapper_hmac_pidfd_and_metadata_path (__main__.LifecycleTests.test_full_wrapper_hmac_pidfd_and_metadata_path) ... ok
++test_incarnation_change_during_read_discards_result (__main__.LifecycleTests.test_incarnation_change_during_read_discards_result) ... ok
++test_malformed_target_and_identity_override_are_rejected (__main__.LifecycleTests.test_malformed_target_and_identity_override_are_rejected) ... ok
++test_mismatched_session_environment_denied_before_target (__main__.LifecycleTests.test_mismatched_session_environment_denied_before_target) ... ok
++test_missing_and_both_foreign_workspaces_are_identically_masked (__main__.LifecycleTests.test_missing_and_both_foreign_workspaces_are_identically_masked) ... ok
++test_missing_socket_peer_denies_before_target (__main__.LifecycleTests.test_missing_socket_peer_denies_before_target) ... ok
++test_ordinary_task_denied_before_target (__main__.LifecycleTests.test_ordinary_task_denied_before_target) ... ok
++test_other_launch_pid_denied_before_target (__main__.LifecycleTests.test_other_launch_pid_denied_before_target) ... ok
++test_projection_bound (__main__.LifecycleTests.test_projection_bound) ... ok
++test_real_validator_custody_rejects_writable_copy (__main__.LifecycleTests.test_real_validator_custody_rejects_writable_copy) ... ok
++test_real_validator_pin_drift_is_unavailable (__main__.LifecycleTests.test_real_validator_pin_drift_is_unavailable) ... ok
++test_revoked_session_denied_before_target (__main__.LifecycleTests.test_revoked_session_denied_before_target) ... ok
++test_target_storage_fault_is_not_missing (__main__.LifecycleTests.test_target_storage_fault_is_not_missing) ... ok
++test_wrong_registered_root_denied_before_target (__main__.LifecycleTests.test_wrong_registered_root_denied_before_target) ... ok
++
++----------------------------------------------------------------------
++Ran 22 tests in 1.238s
++
++OK
+diff --git a/docs/build-history-a63f/pass1/native-proof-handoff.md b/docs/build-history-a63f/pass1/native-proof-handoff.md
+new file mode 100644
+index 0000000..97bc5e2
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/native-proof-handoff.md
+@@ -0,0 +1,48 @@
++# One-record legacy proof handoff
++
++Request `a63f09f3-5213-4a87-add9-a983718059eb`; reviewed design, not execution.
++
++Required existing bindings:
++
++- Task `559695d6-ba34-42d0-b6d0-598a5b46ee0e`, Work session
++  `6b18155e-310e-42ea-81ff-7e82a2fe246d`, workspace
++  `25f53734-5aea-490e-b7ba-d5da6fe821dd`.
++- Root/clone `/data/tasks/8355-impl-menter-le_vmaz2aad`, project
++  `kd_8355_connector346`, service `php-test`, output tag
++  `kd_8355_connector346_php-test:dev365-b07-c054`.
++- Original protected zero-exit build record in the supplied 21:19:54–21:22:26
++  interval, its authenticated command/scope, and the separate accepted typed
++  image identity result. Native-record time zones must be explicit; do not
++  reinterpret the request's wall clock as UTC without evidence.
++- Exact native BuildKit record Ref plus original builder/node identity, if the
++  protected output supplies them. Neither Kandev receipt prefix `04f66a1f` nor
++  engine image/digest text is a substitute. Do not select latest, use offsets,
++  switch builder/context, infer a missing Ref or list unrelated records.
++
++The next Support contract can permit one read of that exact protected execution
++or native history record, projecting only completion/error presence, declared
++output tag(s), engine config ID, record reference and the scope-binding evidence.
++Existing reviewed host authority is sufficient for a properly bound read; no
++agent socket/credential/path exposure or new Coordinator identity is needed.
++Do not fetch image environment, logs, source attachments, build-arg values,
++credentials or customer content. A future minimal native adapter should query
++only the exact Ref and project required fields instead of exporting a broad
++Desktop bundle. The current guarded owner CLI does not provide that adapter.
++
++Successful legacy restoration must require an authentic engine-success/output
++witness matched to the same existing immutable claim and exact tag/typed ID.
++A current model, local-state cache, arbitrary task JSON, image label, timestamp
++alone, or reported digest alone is insufficient. Engine `.Id` and registry
++manifest/RepoDigest remain distinct. Missing/expired history preserves uncertainty;
++it must not trigger a wider search, new build, model-only seeding or relaxed guard.
++
++Only after that proof is verified under the separately bound operation may an
++operator-reviewed exact-scope migration write one retained output receipt. The
++new reader rechecks the immutable claim and current tag's ID before releasing
++curated metadata, so a retargeted tag remains denied. No import or migration
++is performed here and no public agent receipt-writing capability is added.
++
++Root then binds ONE restricted exact-tag metadata acceptance in the unchanged
++owner session. The installed reader alone is not permission to retry it.
++Future automatic Compose capture remains a distinct source hook requiring normal
++preserving broker exposure; no restart or service lifecycle is authorized here.
+diff --git a/docs/build-history-a63f/pass1/public-binary-and-script-hashes.json b/docs/build-history-a63f/pass1/public-binary-and-script-hashes.json
+new file mode 100644
+index 0000000..e23a922
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/public-binary-and-script-hashes.json
+@@ -0,0 +1,5 @@
++{
++  "/usr/libexec/docker/cli-plugins/docker-buildx": "c928ca76b5f4417029086635d8aa34145e6df2c4ab4b2727c6564c51bca47bd0",
++  "/usr/local/bin/kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++  "/usr/local/bin/kandev-agent-docker-operations.py": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4"
++}
+diff --git a/docs/build-history-a63f/pass1/reader-compatibility-tests.txt b/docs/build-history-a63f/pass1/reader-compatibility-tests.txt
+new file mode 100644
+index 0000000..933d20c
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/reader-compatibility-tests.txt
+@@ -0,0 +1,9 @@
++{"candidate": true, "baseline": false, "reader_only_candidate": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_old_broker_new_reader_retains_proven_output (__main__.ReaderCompatibility.test_old_broker_new_reader_retains_proven_output) ... ok
++test_old_broker_without_success_receipt_stays_denied (__main__.ReaderCompatibility.test_old_broker_without_success_receipt_stays_denied) ... ok
++test_old_broker_reader_rejects_changed_output (__main__.ReaderCompatibility.test_old_broker_reader_rejects_changed_output) ... ok
++
++----------------------------------------------------------------------
++Ran 3 tests in 0.794s
++
++OK
+diff --git a/docs/build-history-a63f/pass1/result.json b/docs/build-history-a63f/pass1/result.json
+new file mode 100644
+index 0000000..666fe02
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/result.json
+@@ -0,0 +1,64 @@
++{
++  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
++  "status": "BLOCKED",
++  "escalation_pass": 1,
++  "supersedes": "First-pass restart requirement for metadata receipt reading; absence of broker history does not prove absence of engine history",
++  "source_refactor_commit": "cb2ba9121d75190bb140538ac6149787731a848e",
++  "installed_metadata_reader": true,
++  "installed_operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
++  "installed_broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++  "unchanged_dependencies": {
++    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
++  },
++  "future_compose_capture_hook_installed": false,
++  "future_compose_capture_source_sha256": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15",
++  "native_history_client_version": "Buildx v0.38.1; version/help only; no engine history requested",
++  "tests": {
++    "full_source_candidate": 26,
++    "source_passed": 24,
++    "source_transport_skipped": 2,
++    "old_broker_reader_candidate": 3,
++    "installed_reader": 3,
++    "installed_boundary": 3,
++    "image_source_and_installed_each": 18,
++    "lifecycle_source_and_installed_each": 22,
++    "volume_source": 24,
++    "broker_source": "16+11 and real transport PASS",
++    "task_access_source": "PASS"
++  },
++  "legacy_receipt_seeded": false,
++  "owner_acceptance": false,
++  "live_owner_operations": 0,
++  "real_engine_builds": 0,
++  "registry_provider_target_contacts": 0,
++  "customer_private_data_reads": 0,
++  "task_resource_mutations": 0,
++  "restart_or_lifecycle_candidate_activation": false,
++  "missing_input": "Original protected Build365 command/success and separate typed image identity evidence; original native BuildKit Ref and builder/node identity if available. No broad history scan or model-only seeding.",
++  "next_action": "Root supplies already-produced exact proof tuple through the existing Support chain for one separately bound protected metadata verification and exact legacy restoration; owner remains stopped until Root separately binds ONE same-owner metadata acceptance. No restart needed for the installed reader.",
++  "evidence_sha256": {
++    "README.md": "1e47d006af935fcfe3701991f4c776688ce3285b53138efd5d1a2c54ed111bc4",
++    "broker-tests.txt": "4d38ee147d4754f34830086415a89d432aa1804939a01e0bd843c2a77cba97b8",
++    "buildx-public-help.jsonl": "e63ba1a7ff0ae44b52d22baec1e642b498d9f08f7fdba1e46dad6d13870f4b3f",
++    "full-candidate-tests.txt": "f669e1db5534369b9f45982aad67c2bdb8406d4012ad49dd2807a41dcea090b4",
++    "image-tests.txt": "375bd8549a404f6773d9156f1bac9c2556f148a0c820f1be6e2cc3ac51c6189f",
++    "installation.json": "dff6cba7d3396b5bb2e7c17fd2388c9cbf08357e69349d0de05049c89b15ff13",
++    "installed-boundary-after-tests.txt": "25a40bdffbc4fad589d4c34e3a5aecb5c6f30a56d3ce99f3ee7686e29d4ac29f",
++    "installed-boundary-tests.txt": "eccd0d6a386fbf1a1f5a88d81cb0785524ea418a38bdf0e598317418ebda739e",
++    "installed-image-tests.txt": "3760d57129e7b36427bf78e3678d02dd9dadfd166bd1a1dd3d9c55b9128c5879",
++    "installed-lifecycle-tests.txt": "adf43c76133c585f479a8d6a6588b7824b23f9fb1e0a20df8c130ca97f806422",
++    "installed-public-files.json": "3301bd998e988b20f8ccedb8e6210865563e168986911c8940f336c913cc9a44",
++    "installed-reader-tests.txt": "4395f723130b7e4e21c81d0b50d3cfef82a038701738676bcdc4a1bc731278e5",
++    "lifecycle-tests.txt": "cec13656849136f7f79ea7bd9fe1eb24a1662d1407581e61cfbeaa8f9bff0e0f",
++    "native-proof-handoff.md": "61bc4c17cb359663ec9f14a612ca80378876e8bfc48fcd6ed9b2db690db6f9c0",
++    "public-binary-and-script-hashes.json": "02cfbb11d141a448e36155cfaf09a09e85cb6d8c01e6542d7e20ab2e99f92998",
++    "reader-compatibility-tests.txt": "1e21b9222e52f4d4b7619535f5f549f2ba00aff142496c44e496d8a92bbe0e07",
++    "reviewed.json": "0ee1e9b7c64482e3fa37390e77edab1493981a3b17f2e0b20189d3cc8aebd3d2",
++    "source-history-tests.txt": "d677352b716a42e02e0a799c4f6296079a9dcfb29dad301d61654932fffab605",
++    "task-access-tests.txt": "c2f18a1d8be402b79e1e6584bd2f5a498b902861797195712441ed46e02f04aa",
++    "volume-tests.txt": "29215900f8ee14e843ab688fdc2480cda4ca72950c715d639166fddea042c386"
++  }
++}
+diff --git a/docs/build-history-a63f/pass1/reviewed.json b/docs/build-history-a63f/pass1/reviewed.json
+new file mode 100644
+index 0000000..df8f854
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/reviewed.json
+@@ -0,0 +1,48 @@
++{
++  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
++  "scope": "Decoupled exact-clone successful-output receipt reader and standalone post-build capture using existing hot-module route. No public import or history discovery. No legacy receipt seeded. No broker or service restart.",
++  "base_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
++  "candidate_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
++  "dependencies": {
++    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
++  },
++  "tests_sha256": {
++    "tests/test-build-history.py": "6e7c7f25aa79eeeb6cbf17793d2150cfd78d209220bedc11b50c42e72d3fd7ba",
++    "tests/run-build-history-fixture.py": "92623ae018b35f23a640fccfcdab2c724fdb5357e9480f83a8ba288e74edba38",
++    "tests/test-task-image-inspect.py": "674aceb61649fac0c31c53163928e61471f6399b67f243698cbf83dc2c73704b",
++    "tests/test-volume-preservation.py": "518e8994ebecf66ee9520b31ccf50bb9a854fa61a9fea9ed1a3187896c04b833",
++    "tests/test-task-lifecycle.py": "8939b9d6596a924802beca202c04e741f7efcdb2f9ec7853106d45dc01c03254",
++    "tests/test-task-access.py": "b560e4db77cda7bdfab964e813c4eed144d41cdd988679acc0475b204f44ed77"
++  },
++  "qualification": {
++    "old_broker_reader_compatibility_cases": 3,
++    "full_source_candidate_cases": 26,
++    "image_cases": 18,
++    "lifecycle_cases": 22,
++    "volume_cases": 24,
++    "broker_policy": "16+11 and transport PASS",
++    "task_access": "PASS"
++  },
++  "unchanged_top_level_nodes": [
++    "TaskLifecycle",
++    "VolumePreservation",
++    "handle",
++    "native_module_bytes",
++    "native_worker",
++    "native_worker_error"
++  ],
++  "changed_operations_methods": [
++    "build",
++    "build_images_here",
++    "handle",
++    "image_id_metadata"
++  ],
++  "new_helpers": [
++    "successful_build_images",
++    "record_successful_build_output"
++  ],
++  "activation": "Only per-request module; existing broker remains 9514b692. Forward Compose capture hook stays source-only. This does not restore build365 ownership without separately verified historical proof."
++}
+diff --git a/docs/build-history-a63f/pass1/source-history-tests.txt b/docs/build-history-a63f/pass1/source-history-tests.txt
+new file mode 100644
+index 0000000..c6059b6
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/source-history-tests.txt
+@@ -0,0 +1,32 @@
++{"candidate": true, "baseline": false, "reader_only_candidate": false, "broker_sha256": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "parser": "normalized fixture", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_claim_revocation_blocks_retained_output (__main__.HistoryTests.test_claim_revocation_blocks_retained_output) ... ok
++test_cli_builder_secret_and_ssh_overrides_remain_denied (__main__.HistoryTests.test_cli_builder_secret_and_ssh_overrides_remain_denied) ... ok
++test_config_registers_model_without_build_or_output_proof (__main__.HistoryTests.test_config_registers_model_without_build_or_output_proof) ... ok
++test_config_with_build_is_not_a_success_receipt (__main__.HistoryTests.test_config_with_build_is_not_a_success_receipt) ... ok
++test_context_and_dockerfile_cannot_escape_task (__main__.HistoryTests.test_context_and_dockerfile_cannot_escape_task) ... ok
++test_denied_old_id_is_not_admitted_by_new_build (__main__.HistoryTests.test_denied_old_id_is_not_admitted_by_new_build) ... ok
++test_dry_run_print_check_and_ambiguous_modes_cannot_attest (__main__.HistoryTests.test_dry_run_print_check_and_ambiguous_modes_cannot_attest) ... ok
++test_failed_build_does_not_renew_or_create_history (__main__.HistoryTests.test_failed_build_does_not_renew_or_create_history) ... ok
++test_failed_build_preserves_registration_but_proves_no_image (__main__.HistoryTests.test_failed_build_preserves_registration_but_proves_no_image) ... ok
++test_foreign_project_claim_cannot_be_bootstrapped (__main__.HistoryTests.test_foreign_project_claim_cannot_be_bootstrapped) ... ok
++test_fresh_build_has_no_historical_model_or_image_prerequisite (__main__.HistoryTests.test_fresh_build_has_no_historical_model_or_image_prerequisite) ... ok
++test_historical_tag_retargeting_cannot_admit_changed_image (__main__.HistoryTests.test_historical_tag_retargeting_cannot_admit_changed_image) ... ok
++test_history_limit_denies_before_engine_queries (__main__.HistoryTests.test_history_limit_denies_before_engine_queries) ... ok
++test_history_metadata_remains_curated_and_typed (__main__.HistoryTests.test_history_metadata_remains_curated_and_typed) ... ok
++test_installed_client_frame_uses_same_task_root_and_alias (__main__.HistoryTests.test_installed_client_frame_uses_same_task_root_and_alias) ... skipped 'installed wrapper/client qualified by installed mode'
++test_missing_post_build_identity_cannot_create_receipt (__main__.HistoryTests.test_missing_post_build_identity_cannot_create_receipt) ... ok
++test_model_only_runtime_reference_creates_no_history (__main__.HistoryTests.test_model_only_runtime_reference_creates_no_history) ... ok
++test_other_task_project_claim_denies (__main__.HistoryTests.test_other_task_project_claim_denies) ... ok
++test_real_wrapper_client_build_runtime_then_tag_and_id (__main__.HistoryTests.test_real_wrapper_client_build_runtime_then_tag_and_id) ... skipped 'real installed wrapper/client require isolated mode'
++test_receipt_custody_and_binding_fail_closed (__main__.HistoryTests.test_receipt_custody_and_binding_fail_closed) ... ok
++test_receipt_failure_reports_completed_build_without_retry (__main__.HistoryTests.test_receipt_failure_reports_completed_build_without_retry) ... ok
++test_reserved_build_grants_remain_denied (__main__.HistoryTests.test_reserved_build_grants_remain_denied) ... ok
++test_sibling_and_other_task_do_not_inherit_receipts (__main__.HistoryTests.test_sibling_and_other_task_do_not_inherit_receipts) ... ok
++test_standalone_build_records_same_scoped_success_history (__main__.HistoryTests.test_standalone_build_records_same_scoped_success_history) ... ok
++test_successful_output_survives_runtime_replacement (__main__.HistoryTests.test_successful_output_survives_runtime_replacement) ... ok
++test_wrong_token_and_outside_cwd_deny_before_parser (__main__.HistoryTests.test_wrong_token_and_outside_cwd_deny_before_parser) ... ok
++
++----------------------------------------------------------------------
++Ran 26 tests in 0.593s
++
++OK (skipped=2)
+diff --git a/docs/build-history-a63f/pass1/task-access-tests.txt b/docs/build-history-a63f/pass1/task-access-tests.txt
+new file mode 100644
+index 0000000..1be6120
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/task-access-tests.txt
+@@ -0,0 +1 @@
++PASS: automatic task Docker and fresh guarded Git access
+diff --git a/docs/build-history-a63f/pass1/volume-tests.txt b/docs/build-history-a63f/pass1/volume-tests.txt
+new file mode 100644
+index 0000000..297a7dd
+--- /dev/null
++++ b/docs/build-history-a63f/pass1/volume-tests.txt
+@@ -0,0 +1,5 @@
++........................
++----------------------------------------------------------------------
++Ran 24 tests in 0.790s
++
++OK
+diff --git a/scripts/kandev-agent-docker-broker b/scripts/kandev-agent-docker-broker
+index 14f27e0..56a3b06 100644
+--- a/scripts/kandev-agent-docker-broker
++++ b/scripts/kandev-agent-docker-broker
+@@ -1017,37 +1017,2 @@ def successful_build_images(task_root: Path, cwd: Path) -> dict[str, dict[str, A
+-    """Retain successful outputs independently of the current runtime model."""
+-    owner = hashlib.sha256(str(task_root).encode()).hexdigest()
+-    clone = hashlib.sha256(str(cwd).encode()).hexdigest()
+-    directory = MODEL_DIR / owner / "successful-builds" / clone
+-    paths = sorted(directory.glob("*.json"))
+-    if len(paths) > 64:
+-        raise BrokerError("IMAGE_METADATA_UNAVAILABLE: successful build history exceeds limit")
+-    result = {}
+-    for path in paths:
+-        try:
+-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+-            with os.fdopen(fd, "rb") as stream:
+-                before = os.fstat(stream.fileno())
+-                if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+-                        or before.st_mode & 0o022 or before.st_nlink != 1):
+-                    raise ValueError("invalid custody")
+-                data = stream.read(8193)
+-                stamp = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+-                if (len(data) > 8192 or stamp(before) != stamp(os.fstat(stream.fileno()))
+-                        or stamp(before) != stamp(path.stat(follow_symlinks=False))):
+-                    raise ValueError("unstable receipt")
+-            record = json.loads(data)
+-            project, service, image = record["project"], record["service"], record["image"]
+-            if (record["version"] != 1 or record["kind"] != "successful-build-output"
+-                    or record["task_root"] != str(task_root) or record["cwd"] != str(cwd)
+-                    or not isinstance(image, str) or not isinstance(project, str)
+-                    or not isinstance(service, str)
+-                    or not re.fullmatch(r"sha256:[0-9a-f]{64}", record["image_id"])
+-                    or image != scoped_build_image(image, project, service)
+-                    or path.name != hashlib.sha256(image.encode()).hexdigest() + ".json"):
+-                raise ValueError("invalid binding")
+-            # History cannot outlive its immutable task/clone/project claim.
+-            load_scoped_model(task_root, cwd, project)
+-            result[image] = record
+-        except (OSError, ValueError, KeyError, TypeError, BrokerError):
+-            raise BrokerError("IMAGE_METADATA_UNAVAILABLE: successful build receipt is invalid") from None
+-    return result
++    operations = runpy.run_path(str(Path(__file__).with_name("kandev-agent-docker-operations.py")))
++    return operations["successful_build_images"](SimpleNamespace(**globals()), task_root, cwd)
+@@ -1059,43 +1024,2 @@ def record_successful_build_output(
+-    """Called only after a real build returns zero, never by model registration."""
+-    load_scoped_model(task_root, cwd, project)
+-    if image != scoped_build_image(image, project, service):
+-        raise BrokerError("successful build output must use its scoped service tag")
+-    code, output, _ = run_command(
+-        [DOCKER_BIN, "image", "inspect", "--format", "{{json .Id}}", image], cwd,
+-    )
+-    try:
+-        identity = json.loads(output)
+-    except (ValueError, TypeError):
+-        identity = None
+-    if code != 0 or not isinstance(identity, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", identity):
+-        raise BrokerError("BUILD_COMPLETED_RECEIPT_UNAVAILABLE: scoped output identity unavailable")
+-    # Recheck the immutable claim after the engine observation.
+-    load_scoped_model(task_root, cwd, project)
+-    owner = hashlib.sha256(str(task_root).encode()).hexdigest()
+-    clone = hashlib.sha256(str(cwd).encode()).hexdigest()
+-    directory = MODEL_DIR / owner / "successful-builds" / clone
+-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+-    path = directory / (hashlib.sha256(image.encode()).hexdigest() + ".json")
+-    if not path.exists() and len(list(directory.glob("*.json"))) >= 64:
+-        raise BrokerError("BUILD_COMPLETED_RECEIPT_UNAVAILABLE: successful build history exceeds limit")
+-    record = {"version": 1, "kind": "successful-build-output", "task_root": str(task_root),
+-              "cwd": str(cwd), "project": project, "service": service, "image": image,
+-              "image_id": identity, "observed_at": datetime.now(timezone.utc).isoformat()}
+-    payload = json.dumps(record, sort_keys=True)
+-    if len(payload.encode()) > 8192:
+-        raise BrokerError("BUILD_COMPLETED_RECEIPT_UNAVAILABLE: successful build receipt exceeds limit")
+-    temporary = directory / ("." + str(uuid.uuid4()))
+-    try:
+-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+-        with os.fdopen(fd, "w") as stream:
+-            stream.write(payload)
+-            stream.flush()
+-            os.fsync(stream.fileno())
+-        temporary.replace(path)
+-        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+-        try:
+-            os.fsync(directory_fd)
+-        finally:
+-            os.close(directory_fd)
+-    finally:
+-        temporary.unlink(missing_ok=True)
++    operations = runpy.run_path(str(Path(__file__).with_name("kandev-agent-docker-operations.py")))
++    operations["record_successful_build_output"](SimpleNamespace(**globals()), task_root, cwd, project, service, image)
+diff --git a/scripts/kandev-agent-docker-operations.py b/scripts/kandev-agent-docker-operations.py
+index 41234b1..92c3fbf 100644
+--- a/scripts/kandev-agent-docker-operations.py
++++ b/scripts/kandev-agent-docker-operations.py
+@@ -13,0 +14 @@ import struct
++from typing import Any
+@@ -665,0 +667,88 @@ class TaskLifecycle:
++def successful_build_images(broker, task_root: Path, cwd: Path) -> dict[str, dict[str, Any]]:
++    """Retain successful outputs independently of the current runtime model."""
++    owner = hashlib.sha256(str(task_root).encode()).hexdigest()
++    clone = hashlib.sha256(str(cwd).encode()).hexdigest()
++    directory = broker.MODEL_DIR / owner / "successful-builds" / clone
++    paths = sorted(directory.glob("*.json"))
++    if len(paths) > 64:
++        raise broker.BrokerError("IMAGE_METADATA_UNAVAILABLE: successful build history exceeds limit")
++    result = {}
++    for path in paths:
++        try:
++            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++            with os.fdopen(fd, "rb") as stream:
++                before = os.fstat(stream.fileno())
++                if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
++                        or before.st_mode & 0o022 or before.st_nlink != 1):
++                    raise ValueError("invalid custody")
++                data = stream.read(8193)
++                stamp = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
++                if (len(data) > 8192 or stamp(before) != stamp(os.fstat(stream.fileno()))
++                        or stamp(before) != stamp(path.stat(follow_symlinks=False))):
++                    raise ValueError("unstable receipt")
++            record = json.loads(data)
++            project, service, image = record["project"], record["service"], record["image"]
++            if (record["version"] != 1 or record["kind"] != "successful-build-output"
++                    or record["task_root"] != str(task_root) or record["cwd"] != str(cwd)
++                    or not isinstance(image, str) or not isinstance(project, str)
++                    or not isinstance(service, str)
++                    or not re.fullmatch(r"sha256:[0-9a-f]{64}", record["image_id"])
++                    or image != broker.scoped_build_image(image, project, service)
++                    or path.name != hashlib.sha256(image.encode()).hexdigest() + ".json"):
++                raise ValueError("invalid binding")
++            # History cannot outlive its immutable task/clone/project claim.
++            broker.load_scoped_model(task_root, cwd, project)
++            result[image] = record
++        except (OSError, ValueError, KeyError, TypeError, broker.BrokerError):
++            raise broker.BrokerError("IMAGE_METADATA_UNAVAILABLE: successful build receipt is invalid") from None
++    return result
++
++
++def record_successful_build_output(
++    broker, task_root: Path, cwd: Path, project: str, service: str, image: str,
++) -> None:
++    """Called only after a real build returns zero, never by model registration."""
++    broker.load_scoped_model(task_root, cwd, project)
++    if image != broker.scoped_build_image(image, project, service):
++        raise broker.BrokerError("successful build output must use its scoped service tag")
++    code, output, _ = broker.run_command(
++        [broker.DOCKER_BIN, "image", "inspect", "--format", "{{json .Id}}", image], cwd,
++    )
++    try:
++        identity = json.loads(output)
++    except (ValueError, TypeError):
++        identity = None
++    if code != 0 or not isinstance(identity, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", identity):
++        raise broker.BrokerError("BUILD_COMPLETED_RECEIPT_UNAVAILABLE: scoped output identity unavailable")
++    # Recheck the immutable claim after the engine observation.
++    broker.load_scoped_model(task_root, cwd, project)
++    owner = hashlib.sha256(str(task_root).encode()).hexdigest()
++    clone = hashlib.sha256(str(cwd).encode()).hexdigest()
++    directory = broker.MODEL_DIR / owner / "successful-builds" / clone
++    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
++    path = directory / (hashlib.sha256(image.encode()).hexdigest() + ".json")
++    if not path.exists() and len(list(directory.glob("*.json"))) >= 64:
++        raise broker.BrokerError("BUILD_COMPLETED_RECEIPT_UNAVAILABLE: successful build history exceeds limit")
++    record = {"version": 1, "kind": "successful-build-output", "task_root": str(task_root),
++              "cwd": str(cwd), "project": project, "service": service, "image": image,
++              "image_id": identity, "observed_at": broker.datetime.now(broker.timezone.utc).isoformat()}
++    payload = json.dumps(record, sort_keys=True)
++    if len(payload.encode()) > 8192:
++        raise broker.BrokerError("BUILD_COMPLETED_RECEIPT_UNAVAILABLE: successful build receipt exceeds limit")
++    temporary = directory / ("." + str(uuid.uuid4()))
++    try:
++        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
++        with os.fdopen(fd, "w") as stream:
++            stream.write(payload)
++            stream.flush()
++            os.fsync(stream.fileno())
++        temporary.replace(path)
++        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
++        try:
++            os.fsync(directory_fd)
++        finally:
++            os.close(directory_fd)
++    finally:
++        temporary.unlink(missing_ok=True)
++
++
+@@ -748 +837 @@ class Operations:
+-        history = self.b.successful_build_images(self.root, self.cwd)
++        history = successful_build_images(self.b, self.root, self.cwd)
+@@ -877 +966 @@ class Operations:
+-                self.b.record_successful_build_output(self.root, self.cwd, project, 'image', image)
++                record_successful_build_output(self.b, self.root, self.cwd, project, 'image', image)
+@@ -1027 +1116 @@ class Operations:
+-                        record = self.b.successful_build_images(self.root, self.cwd).get(tail[0])
++                        record = successful_build_images(self.b, self.root, self.cwd).get(tail[0])
+diff --git a/tests/run-build-history-fixture.py b/tests/run-build-history-fixture.py
+index d503df7..8f41a4a 100644
+--- a/tests/run-build-history-fixture.py
++++ b/tests/run-build-history-fixture.py
+@@ -9 +9 @@ parser=argparse.ArgumentParser()
+-parser.add_argument('mode',choices=['baseline','candidate'])
++parser.add_argument('mode',choices=['baseline','candidate','reader-candidate','reader-installed'])
+diff --git a/tests/test-build-history.py b/tests/test-build-history.py
+index a5ff345..545667c 100644
+--- a/tests/test-build-history.py
++++ b/tests/test-build-history.py
+@@ -17,0 +18 @@ import threading
++from types import SimpleNamespace
+@@ -23,0 +25,2 @@ parser.add_argument('--baseline', action='store_true')
++parser.add_argument('--reader-candidate', action='store_true')
++parser.add_argument('--reader-installed', action='store_true')
+@@ -27 +30 @@ ROOT=Path(__file__).resolve().parents[1]
+-if not config.isolated and (config.candidate or config.baseline):
++if not config.isolated and (config.candidate or config.baseline or config.reader_candidate or config.reader_installed):
+@@ -30 +33 @@ p=pathlib.Path('/tmp/test-build-history.py');p.write_bytes(sys.stdin.buffer.read
+-if '--candidate' in sys.argv:
++if '--candidate' in sys.argv or '--reader-candidate' in sys.argv:
+@@ -41 +44 @@ os.execv('/usr/bin/python3',['python3','-I',str(p),'--isolated',*sys.argv[1:]])
+-    if config.candidate:
++    if config.candidate or config.reader_candidate:
+@@ -44 +47,2 @@ os.execv('/usr/bin/python3',['python3','-I',str(p),'--isolated',*sys.argv[1:]])
+-            argv+=['--ro-bind',str(ROOT/'scripts'/name),'/fixture-inputs/'+name]
++            source=Path('/usr/local/bin')/name if config.reader_candidate and name=='kandev-agent-docker-broker' else ROOT/'scripts'/name
++            argv+=['--ro-bind',str(source),'/fixture-inputs/'+name]
+@@ -47 +51,3 @@ os.execv('/usr/bin/python3',['python3','-I',str(p),'--isolated',*sys.argv[1:]])
+-    argv+=['/usr/bin/python3','-I','-c',bootstrap,'--candidate' if config.candidate else '--baseline']
++    mode=('--candidate' if config.candidate else '--reader-candidate' if config.reader_candidate
++          else '--reader-installed' if config.reader_installed else '--baseline')
++    argv+=['/usr/bin/python3','-I','-c',bootstrap,mode]
+@@ -91,0 +98 @@ class BaselineCharacterization(RuntimeModelMixin,fixture.FreshBuildTests):
++        self.assertEqual(self.inspect(NEW_ID)['returncode'],0)
+@@ -100,0 +108,74 @@ class BaselineCharacterization(RuntimeModelMixin,fixture.FreshBuildTests):
++    def test_native_history_is_not_an_installed_guarded_route(self):
++        for args in (['buildx','history','ls'],
++                     ['buildx','history','inspect','default/default/synthetic-ref']):
++            with self.assertRaisesRegex(broker.BrokerError,'unsupported task Docker command'):
++                self.execute(args=args)
++        self.assertEqual(self.renders,[])
++        self.assertEqual(self.replays,[])
++        self.assertEqual(self.image_queries,[])
++
++    def test_real_wrapper_rejects_native_history_without_engine_call(self):
++        endpoint=self.base/'history-private.sock'
++        with broker.ThreadedUnixServer(str(endpoint),broker.BrokerHandler) as server:
++            server.broker_key=self.key
++            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
++            try:
++                env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(self.base),
++                     'KANDEV_AGENT_GUARD_ACTIVE':'1','KANDEV_AGENT_GUARD_SCOPE':'project',
++                     'KANDEV_TASK_DOCKER_ACCESS':'restricted','COMPOSE_PROJECT_NAME':self.project,
++                     'KANDEV_AGENT_DOCKER_ROOT':str(self.root),'KANDEV_AGENT_DOCKER_SOCKET':str(endpoint),
++                     'KANDEV_AGENT_DOCKER_TOKEN':self.request['token']}
++                result=subprocess.run(['/usr/local/bin/docker','buildx','history','ls'],
++                    cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=15)
++                self.assertEqual(result.returncode,78,result.stderr)
++                self.assertIn('unsupported task Docker command',result.stderr)
++                self.assertEqual(self.renders+self.replays+self.image_queries,[])
++            finally:server.shutdown();thread.join(timeout=5);self.assertFalse(thread.is_alive())
++class ReaderCompatibility(RuntimeModelMixin,fixture.FreshBuildTests):
++    def capture_fixture_success(self):
++        # A private platform-side capture after the synthetic engine build's
++        # zero exit. This is not a live legacy-receipt import or agent API.
++        fixture.operations['record_successful_build_output'](
++            SimpleNamespace(**vars(broker)),self.root,self.root,self.project,'app',self.tag)
++
++    def test_old_broker_new_reader_retains_proven_output(self):
++        self.assertFalse(hasattr(broker,'successful_build_images'))
++        self.execute();self.capture_fixture_success();self.runtime()
++        endpoint=self.base/'reader-private.sock'
++        with broker.ThreadedUnixServer(str(endpoint),broker.BrokerHandler) as server:
++            server.broker_key=self.key
++            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
++            try:
++                env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(self.base),
++                     'KANDEV_AGENT_GUARD_ACTIVE':'1','KANDEV_AGENT_GUARD_SCOPE':'project',
++                     'KANDEV_TASK_DOCKER_ACCESS':'restricted','COMPOSE_PROJECT_NAME':self.project,
++                     'KANDEV_AGENT_DOCKER_ROOT':str(self.root),'KANDEV_AGENT_DOCKER_SOCKET':str(endpoint),
++                     'KANDEV_AGENT_DOCKER_TOKEN':self.request['token']}
++                for target in (self.tag,NEW_ID):
++                    result=subprocess.run(['/usr/local/bin/docker','image','inspect','--format','{{.Id}}',target],
++                        cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=15)
++                    self.assertEqual(result.returncode,0,result.stderr)
++                    self.assertEqual(result.stdout.strip(),NEW_ID)
++                env['KANDEV_AGENT_DOCKER_TOKEN']='wrong';before=len(self.image_queries)
++                result=subprocess.run(['/usr/local/bin/docker','image','inspect',self.tag],
++                    cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=15)
++                self.assertEqual(result.returncode,78)
++                self.assertEqual(len(self.image_queries),before)
++            finally:server.shutdown();thread.join(timeout=5);self.assertFalse(thread.is_alive())
++
++    def test_old_broker_without_success_receipt_stays_denied(self):
++        self.execute();self.runtime();self.image_queries.clear()
++        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):self.inspect(self.tag)
++        self.assertEqual(self.image_queries,[])
++
++    def test_old_broker_reader_rejects_changed_output(self):
++        self.execute();self.capture_fixture_success();self.runtime();self.image_queries.clear()
++        original=self.command
++        def retarget(argv,cwd,**kwargs):
++            if argv[1:3]==['image','inspect'] and argv[-1]==self.tag:
++                self.image_queries.append(argv);return 0,json.dumps(OLD_ID),''
++            return original(argv,cwd,**kwargs)
++        with mock.patch.object(broker,'run_command',side_effect=retarget):
++            with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):self.inspect(self.tag)
++        self.assertTrue(all(call[-1]==self.tag for call in self.image_queries))
++
+@@ -265,0 +347,2 @@ if __name__=='__main__':
++        'reader_only_candidate':config.reader_candidate,
++        'reader_only_installed':config.reader_installed,
+@@ -271 +354,6 @@ if __name__=='__main__':
+-    if config.baseline:
++    if config.reader_candidate or config.reader_installed:
++        for name in ('test_old_broker_new_reader_retains_proven_output',
++                     'test_old_broker_without_success_receipt_stays_denied',
++                     'test_old_broker_reader_rejects_changed_output'):
++            suite.addTest(ReaderCompatibility(name))
++    elif config.baseline:
+@@ -272,0 +361,2 @@ if __name__=='__main__':
++        suite.addTest(BaselineCharacterization('test_native_history_is_not_an_installed_guarded_route'))
++        suite.addTest(BaselineCharacterization('test_real_wrapper_rejects_native_history_without_engine_call'))

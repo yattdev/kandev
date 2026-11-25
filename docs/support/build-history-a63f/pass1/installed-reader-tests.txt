@@ -1,0 +1,9 @@
+{"candidate": true, "baseline": false, "reader_only_candidate": false, "reader_only_installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
+test_old_broker_new_reader_retains_proven_output (__main__.ReaderCompatibility.test_old_broker_new_reader_retains_proven_output) ... ok
+test_old_broker_without_success_receipt_stays_denied (__main__.ReaderCompatibility.test_old_broker_without_success_receipt_stays_denied) ... ok
+test_old_broker_reader_rejects_changed_output (__main__.ReaderCompatibility.test_old_broker_reader_rejects_changed_output) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.794s
+
+OK
