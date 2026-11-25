@@ -1,0 +1,31 @@
+{
+  "request_id": "5746e621-90d7-484d-ab99-15e75e4ab6a5",
+  "status": "RESOLVED",
+  "route": "existing restricted Compose build --pull --no-cache <Root-bound-service>",
+  "production_code_changed": false,
+  "installed_files_changed": false,
+  "new_trust_grant": false,
+  "build_registration": "scoped sanitized model and immutable task/clone/project claim before engine replay; not success provenance",
+  "public_provisioning": "ordinary engine FROM/tool/frontend resolution and recipe dependency fetching require Root new contract; no endpoint egress firewall claimed",
+  "ownership_predicate": "unchanged; old ID remains denied",
+  "unchanged_handler_AST_vs_image_fix_commit": "46867816144ee689b310b710cdfddb4ee36e88e9; Operations.build/build_images_here/image_id_metadata",
+  "source_cases": 11,
+  "source_passed": 10,
+  "source_skipped_installed_transport": 1,
+  "installed_cases_passed": 11,
+  "actual_parser": "Compose 5.7.1",
+  "engine": "mocked; no live engine connection",
+  "live_owner_operations": 0,
+  "real_builds": 0,
+  "registry_package_contacts": 0,
+  "installations_restarts_resource_mutations": 0,
+  "next_action": "Root binds one owner fresh build after same-owner current-source PHP8.4 dev recipe freeze and explicit public provisioning authorization; no owner retry authorized here",
+  "evidence_sha256": {
+    "source-tests.txt": "5ecfa0f241717c19ed5833546b2278fe89104a2497e1877ab9d628cf24b765ce",
+    "installed-tests.txt": "f4e431476ca46f4f1320e43b26fe0105024c7311e3067a10a6a3cc8bca73da7c",
+    "initial-fixture-framing.json": "5f32d41aaad1b5e95792659c7421648ebabf3f2fecd06b8c4450543e08f8b021",
+    "README.md": "2b541bba9794b291175cee2b73b1db35f6542f25f1009a7de348d3a05d5b0937",
+    "installed-public-files.json": "24badbd9dc7cc44887d163c35b4e5581c90a93f8021ea637bae3c5be3043cd4a"
+  },
+  "test_source_sha256": "783cc3271985ebe9236425b748e7f1486e62b1b165e5b6bedfe5676f003dd8fa"
+}

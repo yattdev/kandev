@@ -1,0 +1,19 @@
+{
+  "request_id": "5746e621-90d7-484d-ab99-15e75e4ab6a5",
+  "canonical_source_base": "9ee282c20a36b71d1d8ebae797865741bdc94a38",
+  "deployment_base": "0517d100df08579a763417b74f286b20a8d01b16",
+  "deployment_evidence_commits": [
+    "92a7f9b",
+    "4b23f58"
+  ],
+  "files_sha256": {
+    "source-tests.txt": "5ecfa0f241717c19ed5833546b2278fe89104a2497e1877ab9d628cf24b765ce",
+    "installed-tests.txt": "f4e431476ca46f4f1320e43b26fe0105024c7311e3067a10a6a3cc8bca73da7c",
+    "result.json": "c04c12ca0b5fc4918b5611392ddd3fe2c943009260fece9ad059a1fb350d4acc",
+    "initial-fixture-framing.json": "5f32d41aaad1b5e95792659c7421648ebabf3f2fecd06b8c4450543e08f8b021",
+    "deployment-evidence.patch": "2599096d2b3d6f83ecbce62aa9bce733ec146a4c57f0491869a66bc96d30f119",
+    "README.md": "6261755df37f86683743588b3c7c59df80cacbfc9d506a4a61667e3366c45764",
+    "installed-public-files.json": "24badbd9dc7cc44887d163c35b4e5581c90a93f8021ea637bae3c5be3043cd4a",
+    "test-fresh-build-bootstrap.py.txt": "783cc3271985ebe9236425b748e7f1486e62b1b165e5b6bedfe5676f003dd8fa"
+  }
+}

@@ -1,0 +1,609 @@
+diff --git a/docs/fresh-build-bootstrap-5746/README.md b/docs/fresh-build-bootstrap-5746/README.md
+new file mode 100644
+index 0000000..22c9806
+--- /dev/null
++++ b/docs/fresh-build-bootstrap-5746/README.md
+@@ -0,0 +1,202 @@
++# Restricted fresh dev-image bootstrap
++
++Request `5746e621-90d7-484d-ab99-15e75e4ab6a5`.
++
++**An existing restricted Compose route supports a fresh build without a prior
++registered task image. No guard repair or installation is required.** The
++reported `IMAGE_NOT_AUTHORIZED` is the expected historical-image denial and
++must remain in force. This result qualifies admission and registration, not
++an actual owner build, public image pin, dependency installation or vendor proof.
++
++## Supported route and caller recipe
++
++The same owner prepares a new local Dockerfile/context and a private overlay
++under its exact existing root. Root must select the source service from the
++original 719-byte model; `app` in the synthetic tests is not evidence of that
++service's live name. Keep the original file byte-for-byte, root, project alias,
++caller/session and DB/network/volume resources. The overlay changes only the
++selected source service's image/build definition. It must not change the DB
++service, its image, ports, binds, networks or volumes.
++
++Once Root binds the completed recipe, frozen context, public fetching conditions
++and one fresh tag, the one build invocation is:
++
++```sh
++test "$KANDEV_AGENT_DOCKER_ROOT" = /data/tasks/8355-impl-menter-le_vmaz2aad
++cd "$KANDEV_AGENT_DOCKER_ROOT"
++export COMPOSE_PROJECT_NAME=kd_8355_connector346
++# OWNER_SELECTED_SERVICE is the exact service name fixed by Root's new contract.
++KANDEV_TASK_DOCKER_ACCESS=restricted docker compose \
++  --project-directory "$KANDEV_AGENT_DOCKER_ROOT" \
++  -f "$KANDEV_AGENT_DOCKER_ROOT/.kandev/docker-compose.task.yml" \
++  -f "$KANDEV_AGENT_DOCKER_ROOT/.kandev/fresh-build.approved.yml" \
++  build --pull --no-cache "$OWNER_SELECTED_SERVICE"
++```
++
++This preserves the existing wrapper/client/token. Do not set guard markers,
++change Docker context/socket/binary, unset restricted mode or use alternate
++credentials. In the test only, an independent fixture supplies its own marker,
++key, root and socket. Root's real caller inherits its existing guard framing.
++
++The supported overlay shape, with **synthetic service/tag and unfilled pins**:
++
++```yaml
++services:
++  selected-service:
++    image: kd_8355_connector346_selected-service:fresh-bound-source-lock
++    build:
++      context: /data/tasks/8355-impl-menter-le_vmaz2aad/.kandev/approved-frozen-build-context
++      dockerfile: Dockerfile
++      pull: true
++      args:
++        PHP_BASE: "docker.io/library/php:<approved-8.4-variant>@sha256:<approved-manifest-digest>"
++        COMPOSER_BASE: "docker.io/library/composer:<approved-version>@sha256:<approved-manifest-digest>"
++```
++
++Root substitutes the actual selected service, new scoped tag and verified public
++pins before freezing the overlay; this template is not executable approval.
++Use the exact `<alias>_<selected-service>:<new-tag>` prefix. The broker retains
++a valid tag with that prefix; arbitrary/shared requested image names are
++rewritten to `<alias>_<service>:latest`. Thus Root must supply the fresh scoped
++tag explicitly to avoid unintentionally reusing `latest`. No tag, alias, claim
++or model referring to the denied historical ID is a provenance substitute.
++
++Omit `build.network` for the ordinary build network. Do not request host
++networking, insecure entitlements, SSH/secret forwarding, external contexts,
++additional contexts, cache imports/exports or extra output tags. `--pull` and
++`pull: true` intentionally allow public base refresh/resolution; `--no-cache`
++bypasses ordinary build-layer reuse, not the engine's content store or resolver.
++Neither flag proves that particular bytes were fetched or used.
++
++## Registration lifecycle and preserved denial
++
++The installed broker performs these steps under existing root/cwd HMAC framing:
++
++1. Parse the invocation's original files through the guarded Compose `config
++   --format json` path; explicit project directory remains the claim directory.
++2. Validate and translate the local build context and Dockerfile within the
++   task root. Sanitize the output image to the selected project's service tag.
++3. Atomically establish/check the project claim `(task_root, project_directory,
++   project)` and save that sanitized model. A different task or clone cannot
++   take the same claim. This requires **no historical image admission**.
++4. Replay `compose --project-name <alias> -f <private-sanitized-model> build
++   --pull --no-cache <one-service>`. The original files are freshly rendered;
++   another saved model is not substituted. Only the selected build is requested.
++   There is no `up`, DB command, network reservation, container start or cleanup.
++5. Return the engine exit and output. The saved model/claim already exist even
++   if the build fails. Registration therefore means authorized scope, not a
++   successful build attestation or source/vendor provenance. A failed attempt
++   must stop; it is not permission for another attempt or inspection.
++
++A separate `config` invocation also saves registration before its parser replay;
++it is not a read-only operation on the broker model registry. It is unnecessary
++as an extra live probe: a separately bound `build` already renders/registers.
++
++After a successful separately authorized build, the new scoped tag can resolve
++the new engine `.Id` through the existing own-build metadata route. The typed-ID
++reader admits only IDs resolving from this exact clone's registered build tags.
++It never admits the old ID merely because the old image was cited in the base
++model, or because a new build definition exists. Source tests explicitly retain
++that denial. Public `FROM` resolution is performed by the build engine; it is
++not raw agent permission to inspect public or shared local images.
++
++Engine `.Id` is a local image-config identity. A public `name@sha256:...` pin is
++a registry manifest identity. They are distinct; do not substitute either for
++the other. The test's fake digests and fake IDs prove no real public pin.
++
++## What Root must bind before any actual build
++
++The earlier no-download/offline contract does not authorize this fresh public
++bootstrap. Root's replacement contract must explicitly cover:
++
++- The unchanged task `559695d6-ba34-42d0-b6d0-598a5b46ee0e`, session
++  `6b18155e-310e-42ea-81ff-7e82a2fe246d`, root, alias, exact selected service,
++  overlay/Dockerfile hashes, new output tag, platform and one build operation.
++- The current source and lock binding: supplied snapshot manifest SHA256
++  `0314c9f3be642e78345d095472a9e8840fd5da6f3929f4d689a388dc9055381a`,
++  1110 files and lock SHA256
++  `c054e56486278858ade664db438315d6bdbe7f050640807bdddf33fcd85908fd`.
++  Support did not inspect or verify those private artifacts. The same owner
++  prepares and rechecks the completed current-source build context. Context
++  contents exclude `.env`, credentials, data, sockets, old vendor and irrelevant
++  runtime material, with Dockerfile COPY and `.dockerignore` reviewed together.
++- Real approved public PHP **8.4** base variant/platform and manifest pin, a
++  pinned Composer tool stage if used, and any Node/system build stages needed
++  by the new dev recipe. No stage, frontend, `COPY --from`, URL `ADD` or cache
++  source may refer to a sibling, historical/private image or undeclared source.
++- Explicit permission for the needed public registries, package repositories
++  and lock-declared source/dist endpoints. Public fetching uses the ordinary
++  engine builder and recipe's network. The broker is **not an endpoint egress
++  allow-list** and does not parse Dockerfile instructions to enforce a list.
++  Root must review recipe inputs accordingly; strict network enforcement would
++  require a separately reviewed provisioning design, not a guessed flag.
++- Exact PHP extensions/system packages and dev dependency installation from
++  the unchanged lock (`composer install`, not `update`; no `--no-dev`). Disable
++  application scripts/plugins unless separately bound. Composer/runtime
++  platform checks remain enabled; do not use `--ignore-platform-reqs` to force
++  acceptance. Include required test/dev packages and autoload generation in the
++  new recipe, and define inert lock/version/dev-vendor/autoload metadata checks.
++  Do not run application entrypoints, tests, providers or target calls as build
++  proof. Registration or copying a vendor directory cannot establish the
++  current source/lock/dev-vendor/autoload binding.
++- The distinction between one build and subsequent new-image metadata/runtime
++  acceptance. Capture the build exit and actual resolved inputs. Root separately
++  binds any later owner metadata read, DB/app/test start or dependency proof.
++  A successful admission test here is not any of those owner operations.
++
++A possible dev-image foundation uses `ARG PHP_BASE`, `ARG COMPOSER_BASE`, a
++public Composer tool stage, `FROM ${PHP_BASE}`, and `COPY --from=composer_tool
++/usr/bin/composer /usr/local/bin/composer`, followed by the frozen source and
++owner-approved extensions/locked dev install. This requires no historical own
++image. Support deliberately does not invent the project's extensions, source
++layout, scripts or vendor claims without reading its private source. The same
++owner can prepare that concrete recipe under Root's separate contract.
++
++If Root retains a strict zero-registry/zero-package-traffic requirement, all
++base/frontend/tool and package artifacts must first be independently qualified
++and provisioned through an already authorized mechanism. `network: none` limits
++RUN networking; `pull: false`/`--pull=false` do not prohibit base/frontend
++resolution. The installed route provides no general resolver firewall. No
++unregistered image import/retag/provenance grant is proposed to fill that gap.
++
++## Qualification and exact installed/source status
++
++Both checkouts were inspected. This is the deployment's existing build policy;
++no product-source or production guard correction is needed. Product checkout
++HEAD is `cfd6bdf65ae6f631d7701c105791a099c0325cc3`; unrelated changes are preserved.
++Deployment baseline is `0517d100df08579a763417b74f286b20a8d01b16`.
++
++Installed broker SHA256:
++`9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91`.
++Installed operations SHA256:
++`d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4`.
++The supplied `b0e635...` is the earlier image-repair revision. Readback observes
++the later lifecycle-module revision from the separate resolved request; this
++request neither installs, invokes, removes nor otherwise changes lifecycle
++capability. Its image/build handlers remain the preserving image-fix superset.
++Full wrapper/client/guard hashes and custody are in `installed-public-files.json`.
++No binary/image build, installation, server reload or restart is performed.
++
++`tests/test-fresh-build-bootstrap.py` passes 11 cases in installed mode, including
++actual Compose **5.7.1** parsing, original two-file model merging, HMAC/root/cwd,
++wrapper/client/private Unix transport, immutable claims, selected-service replay,
++registered-output ID lookup and historical-image denial. The engine is mocked.
++The parser/transport fixture uses an empty filesystem root and network namespace;
++live `/data`, `/run` and `/app`, engine sockets and credential stores are absent.
++Public scripts and private synthetic files only are available. Source mode
++passes 10 cases with a normalized parser fixture and skips installed transport.
++The real parser is covered by installed mode, not claimed from the source stub.
++
++The first installed-fixture attempt omitted its synthetic guard-active marker.
++The wrapper took its non-guarded path and the real Compose frontend failed on
++an absent socket inside the empty namespace. No engine connected or build,
++registry/package traffic occurred. The fixture was corrected to supply the
++existing marker (as the real owner already has); production policy was unchanged.
++`initial-fixture-framing.json` retains that failed attempt. Final source and
++installed outputs are stored separately; no failing run is called acceptance.
++
++**Finite next action:** Root issues one fresh, explicitly bound owner build
++contract after the same owner freezes the new PHP8.4 dev recipe and Root permits
++its required public provisioning. No owner retry or runtime action is authorized
++by this Support response. The old image remains denied and all existing
++DB/network/data/resources stay untouched. Support does no polling or census.
+diff --git a/docs/fresh-build-bootstrap-5746/initial-fixture-framing.json b/docs/fresh-build-bootstrap-5746/initial-fixture-framing.json
+new file mode 100644
+index 0000000..e712a24
+--- /dev/null
++++ b/docs/fresh-build-bootstrap-5746/initial-fixture-framing.json
+@@ -0,0 +1,4 @@
++{
++  "raw_output_sha256": "adf96aba5944a7564497636d9d2df9da200580fb4342c574b234efe0998bb653",
++  "output": "{\"installed\": true, \"broker_sha256\": \"9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91\", \"operations_sha256\": \"d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4\", \"real_parser\": true, \"engine\": \"mocked only\", \"real_builds\": 0, \"registry_package_contacts\": 0, \"live_owner_operations\": 0, \"installed_fixture\": \"empty filesystem root; no live /data /run /app; network namespace\", \"compose_version\": \"5.7.1\"}\ntest_cli_builder_secret_and_ssh_overrides_remain_denied (__main__.FreshBuildTests.test_cli_builder_secret_and_ssh_overrides_remain_denied) ... ok\ntest_config_registers_model_without_build_or_output_proof (__main__.FreshBuildTests.test_config_registers_model_without_build_or_output_proof) ... ok\ntest_context_and_dockerfile_cannot_escape_task (__main__.FreshBuildTests.test_context_and_dockerfile_cannot_escape_task) ... ok\ntest_denied_old_id_is_not_admitted_by_new_build (__main__.FreshBuildTests.test_denied_old_id_is_not_admitted_by_new_build) ... ok\ntest_failed_build_preserves_registration_but_proves_no_image (__main__.FreshBuildTests.test_failed_build_preserves_registration_but_proves_no_image) ... ok\ntest_foreign_project_claim_cannot_be_bootstrapped (__main__.FreshBuildTests.test_foreign_project_claim_cannot_be_bootstrapped) ... ok\ntest_fresh_build_has_no_historical_model_or_image_prerequisite (__main__.FreshBuildTests.test_fresh_build_has_no_historical_model_or_image_prerequisite) ... ok\ntest_installed_client_frame_uses_same_task_root_and_alias (__main__.FreshBuildTests.test_installed_client_frame_uses_same_task_root_and_alias) ... FAIL\ntest_other_task_project_claim_denies (__main__.FreshBuildTests.test_other_task_project_claim_denies) ... ok\ntest_reserved_build_grants_remain_denied (__main__.FreshBuildTests.test_reserved_build_grants_remain_denied) ... ok\ntest_wrong_token_and_outside_cwd_deny_before_parser (__main__.FreshBuildTests.test_wrong_token_and_outside_cwd_deny_before_parser) ... ok\n\n======================================================================\nFAIL: test_installed_client_frame_uses_same_task_root_and_alias (__main__.FreshBuildTests.test_installed_client_frame_uses_same_task_root_and_alias)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/tmp/test.py\", line 248, in test_installed_client_frame_uses_same_task_root_and_alias\n    self.assertEqual(result.returncode,0,result.stderr)\nAssertionError: 1 != 0 :  Image kd_fresh_bootstrap_fixture_app:fresh-source-lock Building \nfailed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory\n\n\n\n----------------------------------------------------------------------\nRan 11 tests in 0.960s\n\nFAILED (failures=1)\n"
++}
+diff --git a/docs/fresh-build-bootstrap-5746/installed-public-files.json b/docs/fresh-build-bootstrap-5746/installed-public-files.json
+new file mode 100644
+index 0000000..b14645e
+--- /dev/null
++++ b/docs/fresh-build-bootstrap-5746/installed-public-files.json
+@@ -0,0 +1,27 @@
++{
++  "kandev-agent-docker-broker": {
++    "sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "uid": 0,
++    "mode": "0o555"
++  },
++  "kandev-agent-docker-operations.py": {
++    "sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
++    "uid": 0,
++    "mode": "0o555"
++  },
++  "docker": {
++    "sha256": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "uid": 0,
++    "mode": "0o755"
++  },
++  "kandev-agent-docker-client": {
++    "sha256": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "uid": 0,
++    "mode": "0o555"
++  },
++  "kandev-agent-guard": {
++    "sha256": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f",
++    "uid": 0,
++    "mode": "0o755"
++  }
++}
+diff --git a/docs/fresh-build-bootstrap-5746/installed-tests.txt b/docs/fresh-build-bootstrap-5746/installed-tests.txt
+new file mode 100644
+index 0000000..c9ee9af
+--- /dev/null
++++ b/docs/fresh-build-bootstrap-5746/installed-tests.txt
+@@ -0,0 +1,17 @@
++{"installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4", "real_parser": true, "engine": "mocked only", "real_builds": 0, "registry_package_contacts": 0, "live_owner_operations": 0, "installed_fixture": "empty filesystem root; no live /data /run /app; network namespace", "compose_version": "5.7.1"}
++test_cli_builder_secret_and_ssh_overrides_remain_denied (__main__.FreshBuildTests.test_cli_builder_secret_and_ssh_overrides_remain_denied) ... ok
++test_config_registers_model_without_build_or_output_proof (__main__.FreshBuildTests.test_config_registers_model_without_build_or_output_proof) ... ok
++test_context_and_dockerfile_cannot_escape_task (__main__.FreshBuildTests.test_context_and_dockerfile_cannot_escape_task) ... ok
++test_denied_old_id_is_not_admitted_by_new_build (__main__.FreshBuildTests.test_denied_old_id_is_not_admitted_by_new_build) ... ok
++test_failed_build_preserves_registration_but_proves_no_image (__main__.FreshBuildTests.test_failed_build_preserves_registration_but_proves_no_image) ... ok
++test_foreign_project_claim_cannot_be_bootstrapped (__main__.FreshBuildTests.test_foreign_project_claim_cannot_be_bootstrapped) ... ok
++test_fresh_build_has_no_historical_model_or_image_prerequisite (__main__.FreshBuildTests.test_fresh_build_has_no_historical_model_or_image_prerequisite) ... ok
++test_installed_client_frame_uses_same_task_root_and_alias (__main__.FreshBuildTests.test_installed_client_frame_uses_same_task_root_and_alias) ... ok
++test_other_task_project_claim_denies (__main__.FreshBuildTests.test_other_task_project_claim_denies) ... ok
++test_reserved_build_grants_remain_denied (__main__.FreshBuildTests.test_reserved_build_grants_remain_denied) ... ok
++test_wrong_token_and_outside_cwd_deny_before_parser (__main__.FreshBuildTests.test_wrong_token_and_outside_cwd_deny_before_parser) ... ok
++
++----------------------------------------------------------------------
++Ran 11 tests in 1.102s
++
++OK
+diff --git a/docs/fresh-build-bootstrap-5746/result.json b/docs/fresh-build-bootstrap-5746/result.json
+new file mode 100644
+index 0000000..191e70a
+--- /dev/null
++++ b/docs/fresh-build-bootstrap-5746/result.json
+@@ -0,0 +1,31 @@
++{
++  "request_id": "5746e621-90d7-484d-ab99-15e75e4ab6a5",
++  "status": "RESOLVED",
++  "route": "existing restricted Compose build --pull --no-cache <Root-bound-service>",
++  "production_code_changed": false,
++  "installed_files_changed": false,
++  "new_trust_grant": false,
++  "build_registration": "scoped sanitized model and immutable task/clone/project claim before engine replay; not success provenance",
++  "public_provisioning": "ordinary engine FROM/tool/frontend resolution and recipe dependency fetching require Root new contract; no endpoint egress firewall claimed",
++  "ownership_predicate": "unchanged; old ID remains denied",
++  "unchanged_handler_AST_vs_image_fix_commit": "46867816144ee689b310b710cdfddb4ee36e88e9; Operations.build/build_images_here/image_id_metadata",
++  "source_cases": 11,
++  "source_passed": 10,
++  "source_skipped_installed_transport": 1,
++  "installed_cases_passed": 11,
++  "actual_parser": "Compose 5.7.1",
++  "engine": "mocked; no live engine connection",
++  "live_owner_operations": 0,
++  "real_builds": 0,
++  "registry_package_contacts": 0,
++  "installations_restarts_resource_mutations": 0,
++  "next_action": "Root binds one owner fresh build after same-owner current-source PHP8.4 dev recipe freeze and explicit public provisioning authorization; no owner retry authorized here",
++  "evidence_sha256": {
++    "source-tests.txt": "5ecfa0f241717c19ed5833546b2278fe89104a2497e1877ab9d628cf24b765ce",
++    "installed-tests.txt": "f4e431476ca46f4f1320e43b26fe0105024c7311e3067a10a6a3cc8bca73da7c",
++    "initial-fixture-framing.json": "5f32d41aaad1b5e95792659c7421648ebabf3f2fecd06b8c4450543e08f8b021",
++    "README.md": "2b541bba9794b291175cee2b73b1db35f6542f25f1009a7de348d3a05d5b0937",
++    "installed-public-files.json": "24badbd9dc7cc44887d163c35b4e5581c90a93f8021ea637bae3c5be3043cd4a"
++  },
++  "test_source_sha256": "783cc3271985ebe9236425b748e7f1486e62b1b165e5b6bedfe5676f003dd8fa"
++}
+diff --git a/docs/fresh-build-bootstrap-5746/source-tests.txt b/docs/fresh-build-bootstrap-5746/source-tests.txt
+new file mode 100644
+index 0000000..2cf086f
+--- /dev/null
++++ b/docs/fresh-build-bootstrap-5746/source-tests.txt
+@@ -0,0 +1,17 @@
++{"installed": false, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4", "real_parser": false, "engine": "mocked only", "real_builds": 0, "registry_package_contacts": 0, "live_owner_operations": 0, "installed_fixture": null}
++test_cli_builder_secret_and_ssh_overrides_remain_denied (__main__.FreshBuildTests.test_cli_builder_secret_and_ssh_overrides_remain_denied) ... ok
++test_config_registers_model_without_build_or_output_proof (__main__.FreshBuildTests.test_config_registers_model_without_build_or_output_proof) ... ok
++test_context_and_dockerfile_cannot_escape_task (__main__.FreshBuildTests.test_context_and_dockerfile_cannot_escape_task) ... ok
++test_denied_old_id_is_not_admitted_by_new_build (__main__.FreshBuildTests.test_denied_old_id_is_not_admitted_by_new_build) ... ok
++test_failed_build_preserves_registration_but_proves_no_image (__main__.FreshBuildTests.test_failed_build_preserves_registration_but_proves_no_image) ... ok
++test_foreign_project_claim_cannot_be_bootstrapped (__main__.FreshBuildTests.test_foreign_project_claim_cannot_be_bootstrapped) ... ok
++test_fresh_build_has_no_historical_model_or_image_prerequisite (__main__.FreshBuildTests.test_fresh_build_has_no_historical_model_or_image_prerequisite) ... ok
++test_installed_client_frame_uses_same_task_root_and_alias (__main__.FreshBuildTests.test_installed_client_frame_uses_same_task_root_and_alias) ... skipped 'installed wrapper/client qualified by installed mode'
++test_other_task_project_claim_denies (__main__.FreshBuildTests.test_other_task_project_claim_denies) ... ok
++test_reserved_build_grants_remain_denied (__main__.FreshBuildTests.test_reserved_build_grants_remain_denied) ... ok
++test_wrong_token_and_outside_cwd_deny_before_parser (__main__.FreshBuildTests.test_wrong_token_and_outside_cwd_deny_before_parser) ... ok
++
++----------------------------------------------------------------------
++Ran 11 tests in 0.070s
++
++OK (skipped=1)
+diff --git a/tests/test-fresh-build-bootstrap.py b/tests/test-fresh-build-bootstrap.py
+new file mode 100644
+index 0000000..1ea7477
+--- /dev/null
++++ b/tests/test-fresh-build-bootstrap.py
+@@ -0,0 +1,269 @@
++#!/usr/bin/env python3
++"""Restricted fresh-build admission: private models, real parser, fake engine.
++
++Installed mode runs in an empty-root/network namespace. No actual owner,
++registration, image, engine, registry, package manager or application is used.
++"""
++import argparse
++import copy
++import hashlib
++import importlib.machinery
++import importlib.util
++import json
++import os
++from pathlib import Path
++import runpy
++import subprocess
++import sys
++import tempfile
++import threading
++from unittest import mock
++import unittest
++
++parser = argparse.ArgumentParser()
++parser.add_argument('--installed', action='store_true')
++parser.add_argument('--isolated', action='store_true')
++config, remaining = parser.parse_known_args()
++ROOT = Path(__file__).resolve().parents[1]
++if config.installed and not config.isolated:
++    bootstrap = "import pathlib,sys,os; p=pathlib.Path('/tmp/test.py');p.write_bytes(sys.stdin.buffer.read());os.execv('/usr/bin/python3',['python3','-I',str(p),'--installed','--isolated'])"
++    argv = ['bwrap', '--unshare-user', '--uid', '0', '--gid', '0', '--unshare-net',
++            '--tmpfs', '/', '--ro-bind', '/usr', '/usr', '--ro-bind', '/lib', '/lib',
++            '--ro-bind', '/lib64', '/lib64', '--ro-bind', '/bin', '/bin',
++            '--ro-bind', '/proc', '/proc', '--dev', '/dev', '--dir', '/tmp',
++            '--dir', '/etc', '--ro-bind', '/etc/ld.so.cache', '/etc/ld.so.cache',
++            '--dir', '/run', '--chdir', '/tmp', '--die-with-parent', '--clearenv',
++            '--setenv', 'PATH', '/usr/local/bin:/usr/bin:/bin',
++            '/usr/bin/python3', '-I', '-c', bootstrap]
++    raise SystemExit(subprocess.run(argv, input=Path(__file__).read_bytes()).returncode)
++sys.argv = [sys.argv[0], *remaining]
++BROKER = Path('/usr/local/bin/kandev-agent-docker-broker') if config.installed else ROOT/'scripts/kandev-agent-docker-broker'
++OPS = Path('/usr/local/bin/kandev-agent-docker-operations.py') if config.installed else ROOT/'scripts/kandev-agent-docker-operations.py'
++loader = importlib.machinery.SourceFileLoader('fresh_bootstrap_broker', str(BROKER))
++spec = importlib.util.spec_from_loader(loader.name, loader)
++broker = importlib.util.module_from_spec(spec)
++loader.exec_module(broker)
++operations = runpy.run_path(str(OPS))
++NEW_ID = 'sha256:' + 'a'*64
++OLD_ID = 'sha256:' + 'b'*64
++
++
++class FreshBuildTests(unittest.TestCase):
++    def setUp(self):
++        temp = tempfile.TemporaryDirectory(prefix='fresh-bootstrap-')
++        self.addCleanup(temp.cleanup)
++        self.base = Path(temp.name).resolve()
++        self.root = self.base/'task'
++        self.private = self.root/'.kandev'
++        self.context = self.private/'frozen'
++        self.context.mkdir(parents=True)
++        (self.context/'payload.txt').write_text('private synthetic current source\n')
++        self.project = 'kd_fresh_bootstrap_fixture'
++        self.tag = self.project+'_app:fresh-source-lock'
++        self.base_image = 'docker.io/library/php:8.4-cli@sha256:' + 'c'*64
++        self.composer_image = 'docker.io/library/composer:2@sha256:' + 'd'*64
++        # Fake digests qualify admission only; not valid/resolved public image pins.
++        self.dockerfile = (self.context/'Dockerfile')
++        self.dockerfile.write_text('ARG PHP_BASE\nARG COMPOSER_BASE\n'
++            'FROM ${COMPOSER_BASE} AS composer_tool\nFROM ${PHP_BASE}\n'
++            'COPY --from=composer_tool /usr/bin/composer /usr/local/bin/composer\n'
++            'WORKDIR /opt/current\nCOPY . .\n'
++            'RUN php -r "exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 4 ? 0 : 1);"\n'
++            '# An owner-approved recipe may fetch locked dev dependencies here.\n')
++        self.original = {'services': {'db': {'image': 'fixture.invalid/db:10.11'},
++                                     'app': {'image': OLD_ID}}}
++        self.build = {'context': str(self.context), 'dockerfile': 'Dockerfile', 'pull': True,
++                      'args': {'PHP_BASE': self.base_image, 'COMPOSER_BASE': self.composer_image}}
++        self.overlay = {'services': {'app': {'image': self.tag, 'build': self.build}}}
++        self.base_file, self.overlay_file = self.private/'base.yml', self.private/'fresh.yml'
++        self.base_file.write_text(json.dumps(self.original))
++        self.overlay_file.write_text(json.dumps(self.overlay))
++        self.key = b'private-fixture-key-not-live'
++        self.request = {'task_root': str(self.root), 'cwd': str(self.root),
++            'token': broker.expected_token(self.key, self.root),
++            'compose_environment': {'COMPOSE_PROJECT_NAME': self.project},
++            'args': ['compose', '--project-directory', str(self.root), '-f', str(self.base_file),
++                     '-f', str(self.overlay_file), 'build', '--pull', '--no-cache', 'app']}
++        self.renders, self.replays, self.image_queries = [], [], []
++        self.engine_exit = 0
++        self.image_exists = False
++        original_tempfile = tempfile.NamedTemporaryFile
++        def private_tempfile(*args, **kwargs):
++            self.assertEqual(kwargs.pop('dir'), '/run/kandev-agent-docker')
++            return original_tempfile(*args, **kwargs, dir=self.base)
++        for name, value in [('MODEL_DIR', self.base/'models'), ('COMPOSE_AUDIT_LOG', self.base/'audit.jsonl')]:
++            patch = mock.patch.object(broker, name, value);patch.start();self.addCleanup(patch.stop)
++        for patch in [mock.patch.object(broker, 'translate_to_host', side_effect=lambda p:p),
++                      mock.patch.object(broker, 'run_command', side_effect=self.command),
++                      mock.patch.object(broker.tempfile, 'NamedTemporaryFile', side_effect=private_tempfile)]:
++            patch.start();self.addCleanup(patch.stop)
++
++    def merged(self):
++        result = copy.deepcopy(self.original)
++        result['services']['app'].update(copy.deepcopy(self.overlay['services']['app']))
++        return result
++
++    def command(self, argv, cwd, **kwargs):
++        if argv[0] == broker.GUARD_BIN:
++            self.assertEqual(argv[1:3], ['--', broker.COMPOSE_PLUGIN])
++            self.assertEqual(argv[-3:], ['config', '--format', 'json'])
++            self.renders.append(argv)
++            if config.installed:
++                # Actual parser only; no daemon/socket/config/secret paths exist here.
++                result = subprocess.run(argv[2:], cwd=cwd,
++                    env={'PATH': '/usr/bin:/bin', 'HOME': str(self.base),
++                         'DOCKER_CONFIG': str(self.base/'empty-config'),
++                         **kwargs['environment_overrides']},
++                    capture_output=True, text=True, timeout=15)
++                return result.returncode, result.stdout, result.stderr
++            return 0, json.dumps(self.merged()), ''
++        self.assertEqual(argv[0], broker.DOCKER_BIN)
++        if argv[1:3] == ['image', 'inspect']:
++            self.image_queries.append(argv)
++            self.assertNotEqual(argv[-1], OLD_ID, 'denied historical image reached engine')
++            if not self.image_exists:
++                return 1, '', 'No such image'
++            if argv[-1] == self.tag:
++                return 0, json.dumps(NEW_ID), ''
++            self.assertEqual(argv[-1], NEW_ID)
++            return 0, json.dumps({'Id': NEW_ID, 'RepoDigests': [], 'Os': 'linux',
++                'Architecture': 'fixture', 'Created': 'fixture', 'Size': 1,
++                'Config': {'WorkingDir': '/opt/current'}}), ''
++        self.assertEqual(argv[1:4], ['compose', '--project-name', self.project])
++        self.assertEqual(argv[-4:], ['build', '--pull', '--no-cache', 'app'])
++        model = json.loads(Path(argv[argv.index('-f')+1]).read_text())
++        # Registration happens before engine replay and is not success provenance.
++        self.assertEqual(broker.load_scoped_model(self.root, self.root, self.project), model)
++        self.assertEqual(model['services']['app']['image'], self.tag)
++        self.assertEqual(model['services']['app']['build']['context'], str(self.context))
++        self.assertEqual(model['services']['app']['build']['args']['PHP_BASE'], self.base_image)
++        self.assertEqual(model['services']['app']['build']['args']['COMPOSER_BASE'], self.composer_image)
++        self.assertEqual(model['services']['db']['image'], self.original['services']['db']['image'])
++        self.replays.append(argv)
++        self.image_exists = self.engine_exit == 0
++        return self.engine_exit, 'MOCK_BUILD_ONLY\n', '' if self.engine_exit == 0 else 'synthetic build failure'
++
++    def execute(self, **overrides):
++        self.overlay_file.write_text(json.dumps(self.overlay))
++        return broker.handle_request({**self.request, **overrides}, self.key)
++
++    def inspect(self, identity):
++        return broker.handle_request({**self.request, 'args':['image','inspect',identity]}, self.key)
++
++    def test_fresh_build_has_no_historical_model_or_image_prerequisite(self):
++        self.assertFalse(broker.MODEL_DIR.exists())
++        self.assertEqual(self.execute()['returncode'], 0)
++        self.assertEqual(len(self.replays), 1)
++        self.assertEqual(self.image_queries, [])
++        saved = broker.load_scoped_model(self.root, self.root, self.project)
++        self.assertTrue(saved['services']['app']['build']['pull'])
++        self.assertNotIn('network', saved['services']['app']['build'])
++        self.assertEqual(saved['services']['app'].get('volumes', []), [])
++        self.assertEqual(self.inspect(NEW_ID)['returncode'], 0)
++        self.assertTrue(all(call[-1] in {self.tag,NEW_ID} for call in self.image_queries))
++
++    def test_failed_build_preserves_registration_but_proves_no_image(self):
++        self.engine_exit = 19
++        self.assertEqual(self.execute()['returncode'], 19)
++        self.assertTrue(broker.load_scoped_model(self.root,self.root,self.project)['services']['app']['build'])
++        with self.assertRaisesRegex(broker.BrokerError, 'IMAGE_NOT_AUTHORIZED'):
++            self.inspect(NEW_ID)
++        self.assertFalse(any(call[-1] == NEW_ID for call in self.image_queries))
++
++    def test_denied_old_id_is_not_admitted_by_new_build(self):
++        self.execute()
++        with self.assertRaisesRegex(broker.BrokerError, 'IMAGE_NOT_AUTHORIZED'):
++            self.inspect(OLD_ID)
++        self.assertFalse(any(call[-1] == OLD_ID for call in self.image_queries))
++
++    def test_config_registers_model_without_build_or_output_proof(self):
++        request = [*self.request['args'][:-4], 'config', '--format', 'json']
++        # A config replay is a parser-only phase, intercepted separately below.
++        original = self.command
++        def config_only(argv,cwd,**kwargs):
++            if argv[0] == broker.DOCKER_BIN:
++                self.assertEqual(argv[-3:],['config','--format','json'])
++                return 0, Path(argv[argv.index('-f')+1]).read_text(), ''
++            return original(argv,cwd,**kwargs)
++        with mock.patch.object(broker,'run_command',side_effect=config_only):
++            self.assertEqual(self.execute(args=request)['returncode'],0)
++        self.assertEqual(self.replays,[])
++        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):
++            self.inspect(NEW_ID)
++
++    def test_foreign_project_claim_cannot_be_bootstrapped(self):
++        sibling=self.root/'sibling';sibling.mkdir()
++        broker.claim_project(self.root,sibling,self.project)
++        with self.assertRaisesRegex(broker.BrokerError,'different task clone'):
++            self.execute()
++        self.assertEqual(self.replays,[])
++
++    def test_wrong_token_and_outside_cwd_deny_before_parser(self):
++        for change in ({'token':'wrong'},{'cwd':str(self.base)}):
++            with self.assertRaises(broker.BrokerError):self.execute(**change)
++        self.assertEqual(self.renders,[])
++        self.assertEqual(self.replays,[])
++
++    def test_context_and_dockerfile_cannot_escape_task(self):
++        for change in ({'context':str(self.base)}, {'dockerfile':str(self.base/'Dockerfile')}):
++            self.overlay['services']['app']['build']={**self.build,**change}
++            with self.assertRaises(broker.BrokerError):self.execute()
++        self.assertEqual(self.replays,[])
++
++    def test_reserved_build_grants_remain_denied(self):
++        for field,value in [('ssh',['default']),('secrets',['secret']),('entitlements',['network.host']),
++                            ('additional_contexts',{'foreign':'docker-image://sibling'}),
++                            ('cache_from',['type=registry,ref=sibling']),('cache_to',['type=local,dest=/outside']),
++                            ('tags',['shared:tag'])]:
++            self.overlay['services']['app']['build']={**self.build,field:value}
++            with self.assertRaises(broker.BrokerError):self.execute()
++        self.assertEqual(self.replays,[])
++
++    def test_cli_builder_secret_and_ssh_overrides_remain_denied(self):
++        for flag in ['--builder=other','--secret=id=x','--ssh=default']:
++            with self.assertRaises(broker.BrokerError):
++                self.execute(args=[*self.request['args'][:-1],flag,'app'])
++        self.assertEqual(self.renders,[])
++
++    def test_other_task_project_claim_denies(self):
++        other=self.base/'other';other.mkdir()
++        broker.claim_project(other,other,self.project)
++        with self.assertRaisesRegex(broker.BrokerError,'different task clone'):self.execute()
++        self.assertEqual(self.replays,[])
++
++    def test_installed_client_frame_uses_same_task_root_and_alias(self):
++        if not config.installed:self.skipTest('installed wrapper/client qualified by installed mode')
++        sock=self.base/'broker.sock'
++        with broker.ThreadedUnixServer(str(sock),broker.BrokerHandler) as server:
++            server.broker_key=self.key
++            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
++            try:
++                env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(self.base),
++                     'KANDEV_AGENT_GUARD_ACTIVE':'1','KANDEV_AGENT_GUARD_SCOPE':'project',
++                     'KANDEV_AGENT_DOCKER_ROOT':str(self.root),
++                     'KANDEV_AGENT_DOCKER_SOCKET':str(sock),
++                     'KANDEV_AGENT_DOCKER_TOKEN':self.request['token'],
++                     'KANDEV_TASK_DOCKER_ACCESS':'restricted','COMPOSE_PROJECT_NAME':self.project}
++                result=subprocess.run(['/usr/local/bin/docker',*self.request['args']],cwd=self.root,
++                    env=env,capture_output=True,text=True,timeout=15)
++                self.assertEqual(result.returncode,0,result.stderr)
++                self.assertEqual(len(self.replays),1)
++                before=len(self.renders);env['KANDEV_AGENT_DOCKER_TOKEN']='wrong'
++                result=subprocess.run(['/usr/local/bin/docker',*self.request['args']],cwd=self.root,
++                    env=env,capture_output=True,text=True,timeout=15)
++                self.assertEqual(result.returncode,78)
++                self.assertEqual(len(self.renders),before)
++            finally:server.shutdown();thread.join(timeout=5)
++
++
++if __name__=='__main__':
++    metadata={'installed':config.installed,'broker_sha256':hashlib.sha256(BROKER.read_bytes()).hexdigest(),
++              'operations_sha256':hashlib.sha256(OPS.read_bytes()).hexdigest(),'real_parser':config.installed,
++              'engine':'mocked only','real_builds':0,'registry_package_contacts':0,'live_owner_operations':0,
++              'installed_fixture':'empty filesystem root; no live /data /run /app; network namespace' if config.installed else None}
++    if config.installed:
++        r=subprocess.run([broker.COMPOSE_PLUGIN,'version','--short'],capture_output=True,text=True,timeout=10)
++        assert r.returncode==0,r.stderr
++        metadata['compose_version']=r.stdout.strip()
++    print(json.dumps(metadata),flush=True)
++    unittest.main(verbosity=2)
