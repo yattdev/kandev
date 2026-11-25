@@ -1,0 +1,22 @@
+go: downloading github.com/kdlbs/acp-go-sdk v0.13.6-0.20261123142417-27925bf88fae
+=== RUN   TestSupportLifecycleCharacterization
+    support_5e629b49_characterization_test.go:34: active and retained archived detail reads succeed; workflow list omits archive
+    support_5e629b49_characterization_test.go:39: missing and foreign-owner task both return masked ErrTaskNotFound; neither proves deletion
+    support_5e629b49_characterization_test.go:54: planless retained task returns nil success; missing/foreign/denied authorizer failures stay typed in service
+    support_5e629b49_characterization_test.go:60: owner-scoped public detail also permits another owned workspace: insufficient as exact Coordinator workspace guard
+--- PASS: TestSupportLifecycleCharacterization (0.19s)
+PASS
+ok  	github.com/kandev/kandev/internal/task/service	0.218s
+=== RUN   TestSupportPlanReadErrorCharacterization
+=== RUN   TestSupportPlanReadErrorCharacterization/missing_or_inaccessible_task
+    support_5e629b49_characterization_test.go:24: source sentinel task not found currently projects as INTERNAL_ERROR
+=== RUN   TestSupportPlanReadErrorCharacterization/denied
+    support_5e629b49_characterization_test.go:24: source sentinel insufficient permissions for this action currently projects as INTERNAL_ERROR
+=== RUN   TestSupportPlanReadErrorCharacterization/missing_plan_sentinel
+    support_5e629b49_characterization_test.go:24: source sentinel task plan not found currently projects as INTERNAL_ERROR
+--- PASS: TestSupportPlanReadErrorCharacterization (0.00s)
+    --- PASS: TestSupportPlanReadErrorCharacterization/missing_or_inaccessible_task (0.00s)
+    --- PASS: TestSupportPlanReadErrorCharacterization/denied (0.00s)
+    --- PASS: TestSupportPlanReadErrorCharacterization/missing_plan_sentinel (0.00s)
+PASS
+ok  	github.com/kandev/kandev/internal/task/planws	0.023s

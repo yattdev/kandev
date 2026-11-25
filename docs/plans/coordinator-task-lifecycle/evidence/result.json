@@ -1,0 +1,35 @@
+{
+  "request_id": "5e629b49-3b50-472f-85d6-54a8382fa515",
+  "source_base": "8c4fd38852700a68272502cef39f46d122e7397c",
+  "official_deployed_version_tag": "f4484e17d99b805cd980ade543dbd4e2c5d6c4f8",
+  "deployment_commit": "f040d5508b9db2ced7dd273f3ac28a759e649aa1",
+  "deployment_broker_base_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
+  "deployment_broker_candidate_sha256": "064c4ef4869c7a80f9374eab567a73d90e6259b5ab1acb5377df8d62d87a64cc",
+  "launch_validator_sha256": "6a09ebeb96429f955546cf8b30616cd287cf92fe36156ea54f7d7b843ad78a96",
+  "candidate_built": false,
+  "candidate_installed": false,
+  "candidate_loaded": false,
+  "native_plan_mapper_repaired": false,
+  "live_target_reads": 0,
+  "live_task_operations": 0,
+  "new_trust_grants": 0,
+  "tests": {
+    "lookup_synthetic": 20,
+    "broker_policy": "PASS; subordinate suites 16 + 11",
+    "go_characterization": "PASS; 2 top-level tests, mapper has 3 subcases"
+  },
+  "installed_validator_interface": {
+    "result": "PASS",
+    "metadata_calls": 0,
+    "service_activation": false
+  },
+  "artifact_sha256": {
+    "README.md": "4f940ea89a6801c9593facef6bbc40b06f5915b017fcd50eea80607433b071c3",
+    "broker-regression-output.txt": "ee6edbaef51c952b3ab66babed44a629af5d2b7236922806ce5398da2f2795e4",
+    "broker-tests-output.txt": "8c3c49507f6e14af12b24822d014ecd1ffb478bf96ea5e3717a32f187faff9d3",
+    "characterization-output.txt": "4bde4dab3c1580b34f32eb4d7a845f3e120df2b9341a0cae7ae7499a01333f9c",
+    "deployment-lookup.patch": "349876676e42b54e410b34f64dd26bb39902f31ac25384f45c3eb918b4589e5d",
+    "planws-characterization.go.txt": "4e37bc0f6e3445f864be66ecf73ae17e9020f8860c8946d24048094101b31960",
+    "service-characterization.go.txt": "deffafcdb17695fa6782765d928368e9d2e6db82e3d4259233ce9460499b55b0"
+  }
+}

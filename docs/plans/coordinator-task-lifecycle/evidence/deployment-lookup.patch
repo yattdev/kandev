@@ -1,0 +1,509 @@
+diff --git a/docs/coordinator-task-lifecycle.md b/docs/coordinator-task-lifecycle.md
+new file mode 100644
+index 0000000..fe83efa
+--- /dev/null
++++ b/docs/coordinator-task-lifecycle.md
+@@ -0,0 +1,114 @@
++# Guarded Coordinator task lifecycle metadata
++
++Support request `5e629b49-3b50-472f-85d6-54a8382fa515`.
++Status: implemented and synthetically tested in deployment source on `main`;
++**not installed or loaded**. This request prohibits restart/exposure. Do not
++run the proposed command until a separately reviewed activation and Root-bound
++acceptance operation have been authorized.
++
++## Contract
++
++```sh
++docker kandev workspace task-lifecycle <task-UUID>
++```
++
++Uses the existing wrapper, task-scoped HMAC and broker Unix transport. Accepts
++only a target UUID. The broker authenticates the kernel peer against its exact
++active registered launch, task/session/incarnation/environment and Coordinator
++repository/workspace, then rechecks those identities before releasing a result.
++No session arguments, identity environment overrides, token changes, alternate
++actor or unique-session fallback are accepted.
++
++Success returns bounded JSON (`schema: task-lifecycle/v1`) with task ID,
++workspace ID, current workflow/step IDs, state, update/archive timestamps,
++`lifecycle: active|archived` and plan presence. `active` means not archived; it
++does not mean a session is running. Missing plans are
++`plan: {status: absent, code: PLAN_NOT_FOUND}`; retained plans are
++`plan: {status: present, code: null}`. No document body, title, path, session
++inventory, customer content, runtime configuration, queue or credential is read.
++
++Errors exit 78 with typed JSON on stdout and a fixed diagnostic on stderr:
++
++| Code | Meaning |
++| --- | --- |
++| `INVALID_ARGUMENT` | Requires one full target UUID. |
++| `ACCESS_DENIED` | Exact active Coordinator caller proof failed or changed. |
++| `TASK_NOT_FOUND_OR_INACCESSIBLE` | No visible row in the bound workspace; `deletion_evidence: unproven`. Foreign and missing responses are identical. |
++| `METADATA_UNAVAILABLE` | Storage, reviewed dependency, response bound or audit failed. |
++
++There is no deletion tombstone in this reader. Missing does not establish
++deleted, archived or moved. Same-owner foreign workspaces remain inaccessible.
++Same-workspace workflow movement is reflected only as current placement.
++
++The read uses a read-only metadata connection and one target snapshot. It
++performs no Docker/process launch, guard filesystem probe, provider call or
++board/data mutation. A fixed audit event records caller task/session/execution,
++workspace, target UUID and outcome. Output is at most 4 KiB.
++
++## Reviewed dependency and tests
++
++The new route reuses `process`, `ancestry` and `metadata` from the installed
++platform-owned `kandev-test-worker.py`, with SHA256 pinned to
++`6a09ebeb96429f955546cf8b30616cd287cf92fe36156ea54f7d7b843ad78a96`.
++Its custody must be root-owned, non-writable by agents, single-link and stable
++during loading. No worker service, policy, lease or registration is activated.
++Dependency drift fails closed and requires source/test review.
++
++`python3 tests/test-task-lifecycle.py` passes 20 synthetic cases, including
++active/archived/planless/missing, both foreign-workspace cases, caller
++revocation/mismatch/ambiguity, HMAC plus kernel-peer dispatch, PID/incarnation
++changes, bounded output and storage/audit failures. Tests run real fixture SQL,
++real launch metadata matching and real process identity; synthetic ancestry
++ends at the test's own process instead of traversing host-runner parents.
++Development tests substitute only platform-file custody and that synthetic
++ancestry boundary. Before/after fixture dumps prove read preservation.
++No live broker/board/database/task lookup is performed by these tests.
++
++The existing broker policy regression suite also passes. The installed
++validator's real custody, hash and callable interface were checked through the
++existing installed loader without calling metadata or starting its service.
++Installed-route/caller-bound acceptance of the new dispatch is still pending.
++
++## Source and installed status
++
++Both deployment and product source checkouts were inspected. Canonical source
++was fetched and verified at `8c4fd38852700a68272502cef39f46d122e7397c` before
++creating the isolated `support/task-lifecycle-5e629b49` worktree.
++That branch contains the native plan-error repair design and synthetic
++characterization; production product-source code remains unchanged.
++
++The existing public `GET /api/v1/tasks/:id` can return archived metadata, but
++is not an available task-bound Coordinator tool. `list_tasks` omits archived,
++ephemeral and automation-origin records. The current Coordinator item tool
++supports `proposal` and `stall`, not `task`. Native plan read error mapping
++still turns missing/inaccessible-task and permission failures into
++`INTERNAL_ERROR`; a plan-error implementation continuation remains required
++under the source repository's design gate. No live-ID status was inferred.
++
++Observed deployment, unchanged by this request:
++
++- Container: `8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57`.
++- Image: `sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4`.
++- Start: `2026-11-18T16:39:05.618274966Z`; restart count zero.
++- Version: `v0.101.0`; official source tag resolves to
++  `f4484e17d99b805cd980ade543dbd4e2c5d6c4f8`. Version/tag association alone is
++  not an independent build attestation for these binary hashes.
++- Backend SHA256: `6d234280b9f0b757e6a2f12ab7d1708ba79cb3440faed9f0e28a1e6db855bf8b`.
++- Agentctl SHA256: `933d38c1551698c7bd761710d91d00dd2c30f2adaf992858a771609435aa0917`.
++- Linux helper SHA256: `98d7dba49bbbc0ef6571fa201915c052940ff79f4959903b508445a124d15675`.
++- **Installed old broker** SHA256:
++  `9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91`.
++
++No candidate binary was built, no overlay replaced, and no broker file copied
++or restarted. Merely copying source would not change loaded dispatch. Future
++exposure must review the source/test patch and all still-required installed
++fixes, authorize the broker lifecycle operation separately, then allow Root's
++one read in its unchanged session/workspace. Any Kandev image deployment must
++use `scripts/kandev-safe-deploy`; none is authorized or required here yet.
++
++The request's Coordinator task/session/workspace IDs are supplied context only;
++Support did not read its private worktree, enumerate the 27 targets, inspect
++their records, repin an identity or clear G1. The finite next action is a
++reviewed exposure request bound to the published source patch and current
++broker/dependency hashes, followed by Root-owned acceptance. Native MCP plan
++error repair is separately planned in the pushed source package.
+diff --git a/scripts/kandev-agent-docker-broker b/scripts/kandev-agent-docker-broker
+index 0664050..31c0a21 100644
+--- a/scripts/kandev-agent-docker-broker
++++ b/scripts/kandev-agent-docker-broker
+@@ -91,0 +92,3 @@ NETWORK_SLOT_POOL = ipaddress.IPv4Network("198.18.0.0/15")
++# Reviewed dependency for the read-only Coordinator launch proof. Updating the
++# worker requires requalifying this capability; no unpinned validator fallback.
++TASK_LIFECYCLE_LAUNCH_SHA256 = "6a09ebeb96429f955546cf8b30616cd287cf92fe36156ea54f7d7b843ad78a96"
+@@ -2220,0 +2224 @@ def workspace_help() -> str:
++        "  docker kandev workspace task-lifecycle <task-uuid>\n"
+@@ -2492,0 +2497,95 @@ fi
++def lifecycle_error(code: str) -> dict[str, Any]:
++    error: dict[str, Any] = {"code": code}
++    if code == "TASK_NOT_FOUND_OR_INACCESSIBLE":
++        error["deletion_evidence"] = "unproven"
++    return {"returncode": 78, "stdout": json.dumps({
++        "schema": "task-lifecycle/v1", "error": error,
++    }, sort_keys=True) + "\n", "stderr": f"kandev-agent-docker: {code}\n"}
++
++
++def lifecycle_peer_identity(validator: dict[str, Any], peer_pid: int) -> tuple[Any, ...]:
++    process = validator["process"](peer_pid)
++    executable = process["exe"]
++    return (process["pid"], process["start"], process["mnt"], process["pidns"],
++            process["userns"], executable.st_dev, executable.st_ino)
++
++
++def lifecycle_caller(task_root: Path, peer_pid: int, validator: dict[str, Any]) -> dict[str, Any]:
++    # The kernel peer's ancestry must contain the exact registered launch.
++    # Never use request identity hints, registration mode or a sole-session
++    # fallback when the peer itself cannot be authenticated.
++    owner = validator["metadata"](
++        KANDEV_DB, task_root, ancestors=validator["ancestry"](peer_pid),
++    )
++    coordinator = coordinator_context(task_root)
++    if any(owner[key] != coordinator[key] for key in ("task_id", "workspace_id")):
++        raise BrokerError("Coordinator launch differs from its registration")
++    return {**owner, "workspace_name": coordinator["workspace_name"]}
++
++
++def lifecycle_target(workspace_id: str, task_id: str) -> dict[str, Any] | None:
++    with kandev_db() as database:
++        database.execute("BEGIN")
++        row = database.execute("""
++            SELECT t.id, t.workspace_id, t.workflow_id, t.workflow_step_id,
++                   t.state, t.updated_at, t.archived_at,
++                   EXISTS(SELECT 1 FROM task_plans p WHERE p.task_id=t.id) AS has_plan
++            FROM tasks t WHERE t.id=? AND t.workspace_id=?
++        """, (task_id, workspace_id)).fetchone()
++    if row is None:
++        return None
++    return {
++        "schema": "task-lifecycle/v1", "task_id": row["id"],
++        "workspace_id": row["workspace_id"], "state": row["state"],
++        "workflow_id": row["workflow_id"], "workflow_step_id": row["workflow_step_id"],
++        "updated_at": row["updated_at"], "archived_at": row["archived_at"],
++        "lifecycle": "archived" if row["archived_at"] is not None else "active",
++        "plan": {"status": "present" if row["has_plan"] else "absent",
++                 "code": None if row["has_plan"] else "PLAN_NOT_FOUND"},
++    }
++
++
++def handle_task_lifecycle(task_root: Path, args: list[str], peer_pid: int | None) -> dict[str, Any]:
++    if len(args) != 1 or not TASK_ID_RE.fullmatch(args[0]):
++        return lifecycle_error("INVALID_ARGUMENT")
++    if type(peer_pid) is not int or peer_pid <= 0:
++        return lifecycle_error("ACCESS_DENIED")
++    try:
++        validator, digest = load_worker_control(Path(__file__).with_name("kandev-test-worker.py"))
++        if digest != TASK_LIFECYCLE_LAUNCH_SHA256:
++            return lifecycle_error("METADATA_UNAVAILABLE")
++    except (BrokerError, OSError, ValueError):
++        return lifecycle_error("METADATA_UNAVAILABLE")
++    try:
++        peer = lifecycle_peer_identity(validator, peer_pid)
++        caller = lifecycle_caller(task_root, peer_pid, validator)
++    except (OSError, sqlite3.Error):
++        return lifecycle_error("METADATA_UNAVAILABLE")
++    except (BrokerError, RuntimeError, ValueError, KeyError):
++        return lifecycle_error("ACCESS_DENIED")
++    try:
++        target = lifecycle_target(caller["workspace_id"], args[0])
++        output = json.dumps(target, sort_keys=True) + "\n"
++        if len(output.encode()) > 4096:
++            return lifecycle_error("METADATA_UNAVAILABLE")
++    except (OSError, sqlite3.Error, ValueError, TypeError):
++        return lifecycle_error("METADATA_UNAVAILABLE")
++    try:
++        if (lifecycle_caller(task_root, peer_pid, validator) != caller
++                or lifecycle_peer_identity(validator, peer_pid) != peer):
++            return lifecycle_error("ACCESS_DENIED")
++    except (OSError, sqlite3.Error):
++        return lifecycle_error("METADATA_UNAVAILABLE")
++    except (BrokerError, RuntimeError, ValueError, KeyError):
++        return lifecycle_error("ACCESS_DENIED")
++    try:
++        audit_source(caller, "task-lifecycle", target_task_id=args[0],
++                     session_id=caller["session_id"], execution_id=caller["execution_id"],
++                     result="ok" if target is not None else "not-found-or-inaccessible")
++    except (BrokerError, OSError, ValueError):
++        return lifecycle_error("METADATA_UNAVAILABLE")
++    if target is None:
++        return lifecycle_error("TASK_NOT_FOUND_OR_INACCESSIBLE")
++    return {"returncode": 0, "stdout": output, "stderr": ""}
++
++
+@@ -2881,0 +2981,2 @@ def handle_request(
++    if args[:3] == ["kandev", "workspace", "task-lifecycle"]:
++        return handle_task_lifecycle(task_root, args[3:], peer_pid)
+diff --git a/tests/test-task-lifecycle.py b/tests/test-task-lifecycle.py
+new file mode 100644
+index 0000000..d6ac023
+--- /dev/null
++++ b/tests/test-task-lifecycle.py
+@@ -0,0 +1,274 @@
++#!/usr/bin/env python3
++"""Synthetic metadata/launch acceptance; never connects to a live broker or DB."""
++import hashlib
++import importlib.machinery
++import importlib.util
++import json
++import os
++from pathlib import Path
++import runpy
++import socket
++import sqlite3
++import tempfile
++import unittest
++from unittest import mock
++import uuid
++
++ROOT = Path(__file__).resolve().parents[1]
++loader = importlib.machinery.SourceFileLoader('lifecycle_broker', str(ROOT / 'scripts/kandev-agent-docker-broker'))
++spec = importlib.util.spec_from_loader(loader.name, loader)
++broker = importlib.util.module_from_spec(spec)
++loader.exec_module(broker)
++worker_path = ROOT / 'scripts/kandev-test-worker.py'
++VALIDATOR = runpy.run_path(str(worker_path))
++VALIDATOR_HASH = hashlib.sha256(worker_path.read_bytes()).hexdigest()
++
++
++def uid(number):
++    return str(uuid.UUID(int=number))
++
++
++class LifecycleTests(unittest.TestCase):
++    def setUp(self):
++        self.temporary = tempfile.TemporaryDirectory(prefix='kandev-lifecycle-test-')
++        self.addCleanup(self.temporary.cleanup)
++        self.base = Path(self.temporary.name)
++        self.root = Path('/data/tasks/coordinator-lifecycle-inert')  # lexical fixture, never created
++        self.database = self.base / 'fixture.db'
++        with sqlite3.connect(self.database) as db:
++            db.executescript('''
++                CREATE TABLE workspaces(id TEXT PRIMARY KEY, name TEXT, owner_id TEXT);
++                CREATE TABLE tasks(id TEXT PRIMARY KEY, workspace_id TEXT, archived_at TEXT,
++                    workflow_id TEXT, workflow_step_id TEXT, state TEXT, updated_at TEXT);
++                CREATE TABLE task_plans(task_id TEXT PRIMARY KEY, content TEXT);
++                CREATE TABLE task_environments(id TEXT, task_id TEXT, workspace_path TEXT,
++                    task_dir_name TEXT, status TEXT, ownership_generation INTEGER);
++                CREATE TABLE task_sessions(id TEXT, task_id TEXT, task_environment_id TEXT,
++                    state TEXT, queue_incarnation_id TEXT, workspace_path TEXT);
++                CREATE TABLE executors_running(task_id TEXT, session_id TEXT, agent_execution_id TEXT,
++                    pid INTEGER, local_pid INTEGER, status TEXT, runtime TEXT, worktree_path TEXT, metadata TEXT);
++                CREATE TABLE repositories(id TEXT, workspace_id TEXT, local_path TEXT, deleted_at TEXT);
++                CREATE TABLE task_repositories(task_id TEXT, repository_id TEXT);
++            ''')
++            db.executemany('INSERT INTO workspaces VALUES(?,?,?)', [
++                (uid(1), 'own', 'user-a'), (uid(2), 'foreign same owner', 'user-a'),
++                (uid(3), 'foreign other owner', 'user-b')])
++            db.executemany('INSERT INTO tasks VALUES(?,?,?,?,?,?,?)', [
++                (uid(10), uid(1), None, uid(100), uid(101), 'IN_PROGRESS', '2026-11-25T00:00:00Z'),
++                (uid(11), uid(1), None, uid(100), uid(101), 'CREATED', '2026-11-25T00:00:00Z'),
++                (uid(12), uid(1), '2026-11-24T00:00:00Z', uid(100), uid(102), 'COMPLETED', '2026-11-24T00:00:00Z'),
++                (uid(13), uid(2), None, uid(200), uid(201), 'CREATED', '2026-11-25T00:00:00Z'),
++                (uid(14), uid(3), None, uid(300), uid(301), 'CREATED', '2026-11-25T00:00:00Z')])
++            db.execute('INSERT INTO task_plans VALUES(?,?)', (uid(12), 'synthetic-retained-plan-must-not-be-read'))
++            db.execute('INSERT INTO task_environments VALUES(?,?,?,?,?,?)',
++                       (uid(20), uid(10), str(self.root), self.root.name, 'ready', 1))
++            db.execute('INSERT INTO task_sessions VALUES(?,?,?,?,?,?)',
++                       (uid(30), uid(10), uid(20), 'RUNNING', uid(40), str(self.root)))
++            db.execute('INSERT INTO executors_running VALUES(?,?,?,?,?,?,?,?,?)',
++                       (uid(10), uid(30), uid(50), os.getpid(), os.getpid(), 'running', 'standalone', str(self.root), '{}'))
++            db.execute('INSERT INTO repositories VALUES(?,?,?,NULL)', (uid(60), uid(1), broker.COORDINATOR_REPOSITORY))
++            db.execute('INSERT INTO task_repositories VALUES(?,?)', (uid(10), uid(60)))
++        for name, value in (
++            ('KANDEV_DB', self.database), ('COORDINATOR_AUDIT_LOG', self.base / 'audit.jsonl'),
++        ):
++            patch = mock.patch.object(broker, name, value)
++            patch.start()
++            self.addCleanup(patch.stop)
++        # Only development file custody is substituted: policy, real SQL,
++        # registered root/session matching and kernel process ancestry are real.
++        self.assertEqual(VALIDATOR_HASH, broker.TASK_LIFECYCLE_LAUNCH_SHA256)
++        self.validator = dict(VALIDATOR)
++        kernel_process = VALIDATOR['process']
++        def fixture_process(pid):
++            if pid != os.getpid():
++                raise VALIDATOR['WorkerError']('peer is outside the synthetic process fixture')
++            # Keep the real kernel PID/start/executable/namespaces, but end
++            # the synthetic ancestry at this fixture's launch. Do not inspect
++            # the host test runner's unrelated parent processes.
++            return {**kernel_process(pid), 'ppid': 0}
++        process_patch = mock.patch.dict(VALIDATOR['ancestry'].__globals__, {'process': fixture_process})
++        process_patch.start()
++        self.addCleanup(process_patch.stop)
++        self.validator['process'] = fixture_process
++        custody = mock.patch.object(broker, 'load_worker_control', return_value=(self.validator, VALIDATOR_HASH))
++        custody.start()
++        self.addCleanup(custody.stop)
++        commands = mock.patch.object(broker, 'run_command', side_effect=AssertionError('unexpected daemon/process command'))
++        self.commands = commands.start()
++        self.addCleanup(commands.stop)
++        self.target_reads = mock.patch.object(broker, 'lifecycle_target', wraps=broker.lifecycle_target).start()
++        self.addCleanup(mock.patch.stopall)
++
++    def execute(self, task=11, peer=None):
++        return broker.handle_task_lifecycle(self.root, [uid(task)], os.getpid() if peer is None else peer)
++
++    def code(self, result):
++        self.assertEqual(result['returncode'], 78)
++        return json.loads(result['stdout'])['error']['code']
++
++    def sql(self, statement, parameters=()):
++        with sqlite3.connect(self.database) as db:
++            db.execute(statement, parameters)
++
++    def snapshot(self):
++        with sqlite3.connect(self.database) as db:
++            return '\n'.join(db.iterdump())
++
++    def tearDown(self):
++        self.commands.assert_not_called()
++
++    def test_active_planless_read_is_bounded_and_database_unchanged(self):
++        before = self.snapshot()
++        result = self.execute()
++        self.assertEqual(result['returncode'], 0)
++        data = json.loads(result['stdout'])
++        self.assertEqual(data['lifecycle'], 'active')
++        self.assertEqual(data['workspace_id'], uid(1))
++        self.assertEqual(data['plan'], {'status': 'absent', 'code': 'PLAN_NOT_FOUND'})
++        self.assertLessEqual(len(result['stdout'].encode()), 4096)
++        self.assertEqual(before, self.snapshot())
++
++    def test_archived_plan_is_retained_without_content_exposure(self):
++        before = self.snapshot()
++        result = self.execute(12)
++        data = json.loads(result['stdout'])
++        self.assertEqual(data['lifecycle'], 'archived')
++        self.assertEqual(data['archived_at'], '2026-11-24T00:00:00Z')
++        self.assertEqual(data['plan'], {'status': 'present', 'code': None})
++        self.assertNotIn('synthetic-retained-plan', result['stdout'])
++        self.assertNotIn('content', result['stdout'])
++        self.assertEqual(before, self.snapshot())
++
++    def test_missing_and_both_foreign_workspaces_are_identically_masked(self):
++        missing = self.execute(999)
++        self.assertEqual(self.code(missing), 'TASK_NOT_FOUND_OR_INACCESSIBLE')
++        self.assertEqual(json.loads(missing['stdout'])['error']['deletion_evidence'], 'unproven')
++        self.assertEqual(self.execute(13), missing)
++        self.assertEqual(self.execute(14), missing)
++
++    def test_unknown_peer_is_denied_before_target_query(self):
++        for peer in (None, 0, -1, '1', True, 999999999):
++            result = broker.handle_task_lifecycle(self.root, [uid(11)], peer)
++            self.assertEqual(self.code(result), 'ACCESS_DENIED')
++        self.target_reads.assert_not_called()
++
++    def test_malformed_target_or_identity_override_is_rejected(self):
++        for args in ([], ['not-a-uuid'], [uid(11), '--session-id', uid(30)]):
++            self.assertEqual(self.code(broker.handle_task_lifecycle(self.root, args, os.getpid())), 'INVALID_ARGUMENT')
++        self.target_reads.assert_not_called()
++
++    def test_ordinary_task_is_denied_before_target_query(self):
++        self.sql('UPDATE repositories SET local_path=?', ('/data/home/Code/ordinary',))
++        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
++        self.target_reads.assert_not_called()
++
++    def test_other_launch_pid_is_denied_before_target_query(self):
++        self.sql('UPDATE executors_running SET pid=999999999,local_pid=999999999')
++        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
++        self.target_reads.assert_not_called()
++
++    def test_revoked_session_is_denied_before_target_query(self):
++        self.sql("UPDATE task_sessions SET state='COMPLETED'")
++        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
++        self.target_reads.assert_not_called()
++
++    def test_wrong_session_environment_is_denied_before_target_query(self):
++        self.sql('UPDATE task_sessions SET task_environment_id=?', (uid(999),))
++        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
++        self.target_reads.assert_not_called()
++
++    def test_ambiguous_launch_is_denied_without_sole_session_fallback(self):
++        self.sql('INSERT INTO task_sessions SELECT ?,task_id,task_environment_id,state,?,workspace_path FROM task_sessions', (uid(31), uid(41)))
++        self.sql('INSERT INTO executors_running SELECT task_id,?,?,pid,local_pid,status,runtime,worktree_path,metadata FROM executors_running', (uid(31), uid(51)))
++        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
++        self.target_reads.assert_not_called()
++
++    def test_source_pin_drift_is_unavailable(self):
++        with mock.patch.object(broker, 'load_worker_control', return_value=(self.validator, '0' * 64)):
++            self.assertEqual(self.code(self.execute()), 'METADATA_UNAVAILABLE')
++        self.target_reads.assert_not_called()
++
++    def test_storage_fault_is_not_missing(self):
++        self.sql('DROP TABLE task_plans')
++        self.assertEqual(self.code(self.execute()), 'METADATA_UNAVAILABLE')
++
++    def test_caller_metadata_fault_is_unavailable_before_target_query(self):
++        self.sql('DROP TABLE executors_running')
++        self.assertEqual(self.code(self.execute()), 'METADATA_UNAVAILABLE')
++        self.target_reads.assert_not_called()
++
++    def test_validator_custody_failure_is_unavailable(self):
++        with mock.patch.object(broker, 'load_worker_control', side_effect=broker.BrokerError('custody differs')):
++            self.assertEqual(self.code(self.execute()), 'METADATA_UNAVAILABLE')
++        self.target_reads.assert_not_called()
++
++    def test_incarnation_change_during_read_discards_result(self):
++        original = broker.lifecycle_target
++        def change(*args):
++            result = original(*args)
++            self.sql('UPDATE task_sessions SET queue_incarnation_id=?', (uid(42),))
++            return result
++        with mock.patch.object(broker, 'lifecycle_target', side_effect=change):
++            self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
++
++    def test_session_revocation_during_read_discards_result(self):
++        original = broker.lifecycle_target
++        def revoke(*args):
++            result = original(*args)
++            self.sql("UPDATE task_sessions SET state='COMPLETED'")
++            return result
++        with mock.patch.object(broker, 'lifecycle_target', side_effect=revoke):
++            self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
++
++    def test_peer_process_change_during_read_discards_result(self):
++        original = self.validator['process']
++        calls = 0
++        def changed(pid):
++            nonlocal calls
++            calls += 1
++            result = original(pid)
++            return {**result, 'start': result['start'] + (calls > 1)}
++        self.validator['process'] = changed
++        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
++
++    def test_oversize_projection_is_unavailable(self):
++        self.sql('UPDATE tasks SET state=? WHERE id=?', ('x' * 5000, uid(11)))
++        self.assertEqual(self.code(self.execute()), 'METADATA_UNAVAILABLE')
++
++    def test_audit_failure_does_not_release_target_or_raw_path(self):
++        directory = self.base / 'audit-is-a-directory'
++        directory.mkdir()
++        with mock.patch.object(broker, 'COORDINATOR_AUDIT_LOG', directory):
++            result = self.execute()
++        self.assertEqual(self.code(result), 'METADATA_UNAVAILABLE')
++        self.assertNotIn(str(self.base), result['stdout'] + result['stderr'])
++
++    def test_hmac_dispatch_forwards_kernel_peer_without_accepting_identity_payload(self):
++        # Real root/cwd/HMAC entry + real Unix handler, with target dispatch
++        # isolated because lexical /data/tasks fixtures must not be materialized.
++        key = b'synthetic-lifecycle-transport-key'
++        request = {'task_root': str(self.base), 'cwd': str(self.base),
++                   'token': broker.expected_token(key, self.base),
++                   'peer_pid': 999999999, 'session_id': uid(999),
++                   'args': ['kandev', 'workspace', 'task-lifecycle', uid(11)]}
++        reply = broker.lifecycle_error('ACCESS_DENIED')
++        from types import SimpleNamespace
++        with mock.patch.object(broker, 'handle_task_lifecycle', return_value=reply) as handle:
++            left, right = socket.socketpair()
++            with left, right:
++                left.settimeout(3)
++                left.sendall(json.dumps(request).encode() + b'\n')
++                left.shutdown(socket.SHUT_WR)
++                broker.BrokerHandler(right, 'synthetic', SimpleNamespace(broker_key=key))
++                actual = json.loads(left.recv(4096))
++                self.assertEqual(actual, reply)
++            handle.assert_called_once_with(self.base, [uid(11)], os.getpid())
++            handle.reset_mock()
++            request['token'] = 'wrong'
++            with self.assertRaises(broker.BrokerError):
++                broker.handle_request(request, key, peer_pid=os.getpid())
++            handle.assert_not_called()
++
++
++if __name__ == '__main__':
++    unittest.main(verbosity=2)

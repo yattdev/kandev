@@ -1,0 +1,25 @@
+test_active_planless_read_is_bounded_and_database_unchanged (__main__.LifecycleTests.test_active_planless_read_is_bounded_and_database_unchanged) ... ok
+test_ambiguous_launch_is_denied_without_sole_session_fallback (__main__.LifecycleTests.test_ambiguous_launch_is_denied_without_sole_session_fallback) ... ok
+test_archived_plan_is_retained_without_content_exposure (__main__.LifecycleTests.test_archived_plan_is_retained_without_content_exposure) ... ok
+test_audit_failure_does_not_release_target_or_raw_path (__main__.LifecycleTests.test_audit_failure_does_not_release_target_or_raw_path) ... ok
+test_caller_metadata_fault_is_unavailable_before_target_query (__main__.LifecycleTests.test_caller_metadata_fault_is_unavailable_before_target_query) ... ok
+test_hmac_dispatch_forwards_kernel_peer_without_accepting_identity_payload (__main__.LifecycleTests.test_hmac_dispatch_forwards_kernel_peer_without_accepting_identity_payload) ... ok
+test_incarnation_change_during_read_discards_result (__main__.LifecycleTests.test_incarnation_change_during_read_discards_result) ... ok
+test_malformed_target_or_identity_override_is_rejected (__main__.LifecycleTests.test_malformed_target_or_identity_override_is_rejected) ... ok
+test_missing_and_both_foreign_workspaces_are_identically_masked (__main__.LifecycleTests.test_missing_and_both_foreign_workspaces_are_identically_masked) ... ok
+test_ordinary_task_is_denied_before_target_query (__main__.LifecycleTests.test_ordinary_task_is_denied_before_target_query) ... ok
+test_other_launch_pid_is_denied_before_target_query (__main__.LifecycleTests.test_other_launch_pid_is_denied_before_target_query) ... ok
+test_oversize_projection_is_unavailable (__main__.LifecycleTests.test_oversize_projection_is_unavailable) ... ok
+test_peer_process_change_during_read_discards_result (__main__.LifecycleTests.test_peer_process_change_during_read_discards_result) ... ok
+test_revoked_session_is_denied_before_target_query (__main__.LifecycleTests.test_revoked_session_is_denied_before_target_query) ... ok
+test_session_revocation_during_read_discards_result (__main__.LifecycleTests.test_session_revocation_during_read_discards_result) ... ok
+test_source_pin_drift_is_unavailable (__main__.LifecycleTests.test_source_pin_drift_is_unavailable) ... ok
+test_storage_fault_is_not_missing (__main__.LifecycleTests.test_storage_fault_is_not_missing) ... ok
+test_unknown_peer_is_denied_before_target_query (__main__.LifecycleTests.test_unknown_peer_is_denied_before_target_query) ... ok
+test_validator_custody_failure_is_unavailable (__main__.LifecycleTests.test_validator_custody_failure_is_unavailable) ... ok
+test_wrong_session_environment_is_denied_before_target_query (__main__.LifecycleTests.test_wrong_session_environment_is_denied_before_target_query) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.347s
+
+OK

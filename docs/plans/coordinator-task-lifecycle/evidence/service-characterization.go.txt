@@ -1,0 +1,64 @@
+package service
+
+// Temporary characterization of EXISTING readers, not an implementation or
+// acceptance test for the proposed lifecycle capability. Removed before commit.
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/kandev/kandev/internal/task/models"
+	"github.com/kandev/kandev/internal/task/repository/repoerrors"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSupportLifecycleCharacterization(t *testing.T) {
+	svc, _, repo := createTestService(t)
+	seedScopedWorkspaces(t, repo)
+	ctx := context.Background()
+	require.NoError(t, repo.CreateWorkflow(ctx, &models.Workflow{ID: "wf-a", WorkspaceID: "ws-a", Name: "A"}))
+	for _, id := range []string{"support-active", "support-archived"} {
+		require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: id, WorkspaceID: "ws-a", WorkflowID: "wf-a", Title: id, Priority: "medium"}))
+	}
+	require.NoError(t, repo.ArchiveTask(ctx, "support-archived"))
+	active, err := svc.GetTask(ctxAs("user-a"), "support-active")
+	require.NoError(t, err)
+	require.Nil(t, active.ArchivedAt)
+	archived, err := svc.GetTask(ctxAs("user-a"), "support-archived")
+	require.NoError(t, err)
+	require.NotNil(t, archived.ArchivedAt)
+	listed, err := svc.ListTasks(ctxAs("user-a"), "wf-a")
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, active.ID, listed[0].ID)
+	t.Log("active and retained archived detail reads succeed; workflow list omits archive")
+	_, err = svc.GetTask(ctxAs("user-a"), "support-missing")
+	require.ErrorIs(t, err, repoerrors.ErrTaskNotFound)
+	_, foreignErr := svc.GetTask(ctxAs("user-a"), "task-b")
+	require.ErrorIs(t, foreignErr, repoerrors.ErrTaskNotFound)
+	t.Log("missing and foreign-owner task both return masked ErrTaskNotFound; neither proves deletion")
+	plan := NewPlanService(repo, nil, accessTestLogger(t))
+	plan.SetTaskAuthorizer(svc.AuthorizeTaskAccess)
+	for _, id := range []string{active.ID, archived.ID} {
+		got, readErr := plan.GetPlan(ctxAs("user-a"), id)
+		require.NoError(t, readErr)
+		require.Nil(t, got)
+	}
+	_, err = plan.GetPlan(ctxAs("user-a"), "support-missing")
+	require.ErrorIs(t, err, repoerrors.ErrTaskNotFound)
+	_, err = plan.GetPlan(ctxAs("user-a"), "task-b")
+	require.ErrorIs(t, err, repoerrors.ErrTaskNotFound)
+	plan.SetTaskAuthorizer(func(context.Context, string) error { return ErrForbidden })
+	_, err = plan.GetPlan(ctxAs("user-a"), active.ID)
+	require.True(t, errors.Is(err, ErrForbidden))
+	t.Log("planless retained task returns nil success; missing/foreign/denied authorizer failures stay typed in service")
+	require.NoError(t, repo.CreateWorkspace(ctx, &models.Workspace{ID: "ws-same-owner", Name: "same owner", OwnerID: "user-a"}))
+	require.NoError(t, repo.CreateTask(ctx, &models.Task{ID: "support-other-workspace", WorkspaceID: "ws-same-owner", Title: "other", Priority: "medium"}))
+	other, err := svc.GetTask(ctxAs("user-a"), "support-other-workspace")
+	require.NoError(t, err)
+	require.NotEqual(t, active.WorkspaceID, other.WorkspaceID)
+	t.Log("owner-scoped public detail also permits another owned workspace: insufficient as exact Coordinator workspace guard")
+	retained, err := repo.GetTask(ctx, archived.ID)
+	require.NoError(t, err)
+	require.Equal(t, archived.ArchivedAt, retained.ArchivedAt)
+}

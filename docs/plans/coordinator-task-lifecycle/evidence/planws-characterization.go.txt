@@ -1,0 +1,27 @@
+package planws
+
+// Temporary characterization of the current mapper; not the proposed repair.
+import (
+	"testing"
+
+	"github.com/kandev/kandev/internal/task/repository"
+	"github.com/kandev/kandev/internal/task/service"
+	ws "github.com/kandev/kandev/pkg/websocket"
+)
+
+func TestSupportPlanReadErrorCharacterization(t *testing.T) {
+	for name, input := range map[string]error{
+		"missing_or_inaccessible_task": repository.ErrTaskNotFound,
+		"denied": service.ErrForbidden,
+		"missing_plan_sentinel": service.ErrTaskPlanNotFound,
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := GetError(request(), input)
+			payload := decode(t, out, err)
+			if payload.Code != ws.ErrorCodeInternalError {
+				t.Fatalf("current mapper code=%s; expected characterization INTERNAL_ERROR", payload.Code)
+			}
+			t.Logf("source sentinel %v currently projects as %s", input, payload.Code)
+		})
+	}
+}
