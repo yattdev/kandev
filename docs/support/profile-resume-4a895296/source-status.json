@@ -1,0 +1,37 @@
+{
+  "primary_head": "cfd6bdf65ae6f631d7701c105791a099c0325cc3",
+  "canonical_upstream_verified": "f675a554a5b984cdb6d141c6e9f6a91e50d33694",
+  "canonical_worktree_head": "f675a554a5b984cdb6d141c6e9f6a91e50d33694",
+  "files": {
+    "apps/backend/internal/agent/runtime/lifecycle/profile_resolver.go": {
+      "primary_sha256": "69ef690b77d3d27666c0c650a9e5d141d2ddf32a9ba242fc0c08cb739618d0e0",
+      "canonical_sha256": "b78997f54f3fb0f6870bdaebd41ecfe2dce20de7297cc1f7f48d2c43b864216a"
+    },
+    "apps/backend/internal/agent/runtime/lifecycle/profile_resolver_test.go": {
+      "primary_sha256": "dbbc2d58be19fcc2ee1887beef4600029c9a7c624a724be352d208108aad5ad1",
+      "canonical_sha256": "51af5a371b0e4d184c6058876584ee6b76cffbc6cb7c6c145f3effa4d95a8cd9"
+    },
+    "apps/backend/internal/orchestrator/session_launch.go": {
+      "primary_sha256": "4e53cf0ce951581d1d3ab9a7d4bc4bb6972fd5b5658e23028c88d7783c3a1fc4",
+      "canonical_sha256": "53926e86b1e3139e489fbb1a4f7d2526935310e0572bb27a1973492922ea1423"
+    },
+    "apps/backend/internal/orchestrator/task_operations.go": {
+      "primary_sha256": "f1429fb0527c75867e13acabbb4026859b48c77713d5579dbda6fc0304b609ec",
+      "canonical_sha256": "fa8ea918ab4a6fdb98e91df0205348decf4c8e3f45ef519ff625e7b498c2e211"
+    },
+    "apps/backend/internal/mcp/handlers/handlers.go": {
+      "primary_sha256": "3df1cf99913bbedd2d8d5ba8f1a8332dc2fa945951f0c0e659957361d69deb12",
+      "canonical_sha256": "a66f010906ae5f5f7a06c4bcfb8f5d61c25b1705e71818304f50e5a58db354ca"
+    },
+    "apps/backend/pkg/websocket/actions.go": {
+      "primary_sha256": "bbec20391bab3f2e9db09780213ce566acad9447c620bf7100276746dac9c710",
+      "canonical_sha256": "532bb496702ad39e65e1637da085322fe0617e3a083080d849453a07277661ec"
+    },
+    "apps/backend/internal/agent/settings/models/models.go": {
+      "primary_sha256": "c10e3023d30d14d784a3bacb584e1b1c522a584a870f8552393b4f16cc290ddc",
+      "canonical_sha256": "d9ab1d1e528042006bbb479d8ccc40431f9ca0d16c0c4300ac34092c50565f06"
+    }
+  },
+  "runtime_invocations": 0,
+  "candidate_build_or_install": false
+}

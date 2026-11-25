@@ -1,0 +1,207 @@
+{
+  "workflow_defaults": {
+    "id": "4b024728-3ab7-4737-ba14-9c06620ed7c2",
+    "agent_profile_id": "",
+    "updated_at": "2026-11-09 18:17:02.029747107+00:00"
+  },
+  "workspace_defaults": {
+    "id": "25f53734-5aea-490e-b7ba-d5da6fe821dd",
+    "default_agent_profile_id": "ce9f96f7-4434-4729-b23b-926b4b72f417"
+  },
+  "steps": [
+    {
+      "id": "a23816ca-20b1-4e25-a504-a41828e8089e",
+      "name": "Backlogs",
+      "agent_profile_id": "",
+      "updated_at": "2026-11-09 18:17:02.112518067+00:00",
+      "event_action_types": {}
+    },
+    {
+      "id": "30f79868-6629-490f-b870-cc0fde128299",
+      "name": "Review",
+      "agent_profile_id": "2653283e-3df4-48d6-8242-774b24b54f38",
+      "updated_at": "2026-11-09 18:17:02.112518067+00:00",
+      "event_action_types": {
+        "on_enter": [
+          "auto_start_agent"
+        ]
+      }
+    },
+    {
+      "id": "5433a644-67cd-46f9-8230-2e55604bd412",
+      "name": "QA",
+      "agent_profile_id": "ac31ed46-6af3-473f-a920-6d53482f8eea",
+      "updated_at": "2026-11-09 18:17:02.112518067+00:00",
+      "event_action_types": {
+        "on_enter": [
+          "auto_start_agent"
+        ]
+      }
+    },
+    {
+      "id": "9ceebf05-da62-4ced-93f8-7f0b980882e8",
+      "name": "Human-QA",
+      "agent_profile_id": "ce9f96f7-4434-4729-b23b-926b4b72f417",
+      "updated_at": "2026-11-09 18:17:02.112518067+00:00",
+      "event_action_types": {
+        "on_enter": [
+          "auto_start_agent"
+        ],
+        "on_turn_start": [
+          "move_to_step"
+        ]
+      }
+    },
+    {
+      "id": "d49af17d-ad64-41d9-a841-3978371218e9",
+      "name": "Done",
+      "agent_profile_id": "ce9f96f7-4434-4729-b23b-926b4b72f417",
+      "updated_at": "2026-11-09 18:17:02.112518067+00:00",
+      "event_action_types": {
+        "on_enter": [
+          "auto_start_agent"
+        ]
+      }
+    }
+  ],
+  "configured_profiles": [
+    {
+      "id": "2653283e-3df4-48d6-8242-774b24b54f38",
+      "name": "Terra 6.1 High",
+      "agent_id": "8838a9d6-dd59-41da-9d4e-e2af688ef54c",
+      "agent_name": "copilot-acp",
+      "model": "gpt-6.1-terra",
+      "mode": "https://agentclientprotocol.com/protocol/session-modes#agent",
+      "workspace_id": "",
+      "enabled": 1,
+      "deleted_at": null,
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 0,
+      "role": "",
+      "mcp_selection_mode": "inherit",
+      "updated_at": "2026-11-12 23:22:50.63439905+00:00"
+    },
+    {
+      "id": "62434899-7d6b-432d-b93f-0b71c67eb35d",
+      "name": "AutoPilot Review",
+      "agent_id": "8838a9d6-dd59-41da-9d4e-e2af688ef54c",
+      "agent_name": "copilot-acp",
+      "model": "gpt-6.1-terra",
+      "mode": "https://agentclientprotocol.com/protocol/session-modes#autopilot",
+      "workspace_id": "",
+      "enabled": 1,
+      "deleted_at": "2026-11-09 17:51:18.219155611+00:00",
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 0,
+      "role": "",
+      "mcp_selection_mode": "inherit",
+      "updated_at": "2026-11-09 17:51:18.219155611+00:00"
+    },
+    {
+      "id": "ac31ed46-6af3-473f-a920-6d53482f8eea",
+      "name": "Sol 6.1 High",
+      "agent_id": "8838a9d6-dd59-41da-9d4e-e2af688ef54c",
+      "agent_name": "copilot-acp",
+      "model": "gpt-6.2-sol",
+      "mode": "https://agentclientprotocol.com/protocol/session-modes#agent",
+      "workspace_id": "",
+      "enabled": 1,
+      "deleted_at": null,
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 0,
+      "role": "",
+      "mcp_selection_mode": "inherit",
+      "updated_at": "2026-11-24 17:30:04.33475638+00:00"
+    },
+    {
+      "id": "ce9f96f7-4434-4729-b23b-926b4b72f417",
+      "name": "Terra 6.1  Medium",
+      "agent_id": "8838a9d6-dd59-41da-9d4e-e2af688ef54c",
+      "agent_name": "copilot-acp",
+      "model": "gpt-6.1-terra",
+      "mode": "https://agentclientprotocol.com/protocol/session-modes#agent",
+      "workspace_id": "",
+      "enabled": 1,
+      "deleted_at": null,
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 0,
+      "role": "",
+      "mcp_selection_mode": "inherit",
+      "updated_at": "2026-11-12 23:21:16.377181255+00:00"
+    }
+  ],
+  "same_agent_live_profiles": [
+    {
+      "id": "2653283e-3df4-48d6-8242-774b24b54f38",
+      "name": "Terra 6.1 High",
+      "agent_id": "8838a9d6-dd59-41da-9d4e-e2af688ef54c",
+      "agent_name": "copilot-acp",
+      "model": "gpt-6.1-terra",
+      "mode": "https://agentclientprotocol.com/protocol/session-modes#agent",
+      "workspace_id": "",
+      "enabled": 1,
+      "deleted_at": null,
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 0,
+      "role": "",
+      "mcp_selection_mode": "inherit",
+      "updated_at": "2026-11-12 23:22:50.63439905+00:00"
+    },
+    {
+      "id": "ce9f96f7-4434-4729-b23b-926b4b72f417",
+      "name": "Terra 6.1  Medium",
+      "agent_id": "8838a9d6-dd59-41da-9d4e-e2af688ef54c",
+      "agent_name": "copilot-acp",
+      "model": "gpt-6.1-terra",
+      "mode": "https://agentclientprotocol.com/protocol/session-modes#agent",
+      "workspace_id": "",
+      "enabled": 1,
+      "deleted_at": null,
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 0,
+      "role": "",
+      "mcp_selection_mode": "inherit",
+      "updated_at": "2026-11-12 23:21:16.377181255+00:00"
+    }
+  ],
+  "queued_message_identities": [],
+  "same_task_session_identities": [
+    {
+      "id": "16bcc779-85b0-45a1-9ab7-46f3668fe410",
+      "agent_profile_id": "62434899-7d6b-432d-b93f-0b71c67eb35d",
+      "state": "FAILED",
+      "is_primary": 1
+    },
+    {
+      "id": "279a2ebc-c7af-4429-aded-05aaaced39fb",
+      "agent_profile_id": "c06ad00e-0da1-429a-8174-54f97164a289",
+      "state": "COMPLETED",
+      "is_primary": 0
+    },
+    {
+      "id": "5de3140d-91b6-4d05-9ba4-8f8fd84db244",
+      "agent_profile_id": "62434899-7d6b-432d-b93f-0b71c67eb35d",
+      "state": "COMPLETED",
+      "is_primary": 0
+    },
+    {
+      "id": "8769ff0e-1536-4588-9ca5-f674a721ae26",
+      "agent_profile_id": "2d04a6db-0bd1-46fd-b4ef-8263c4ca291a",
+      "state": "COMPLETED",
+      "is_primary": 0
+    },
+    {
+      "id": "c592b25f-eed0-4836-b176-076f700d0826",
+      "agent_profile_id": "586e90c3-cc86-44d6-ab40-719e698faddd",
+      "state": "COMPLETED",
+      "is_primary": 0
+    }
+  ],
+  "publication_projection": "Only current workflow-referenced and same-agent/same-model candidate metadata retained; no content/credentials."
+}

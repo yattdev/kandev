@@ -1,0 +1,41 @@
+{
+  "request_id": "4a895296-0892-461d-857e-1f06f2fff8c4",
+  "status": "BLOCKED",
+  "cause": "Stored profile is explicitly soft-deleted; current workflow has no Backlogs/default binding or successor mapping. Candidate Review profile differs in mode/launch flags/reasoning representation.",
+  "missing_input": "Human workflow/profile maintainer designates exact successor for this existing session and accepts differences, or keeps hold. Current Review2653283e-3df4-48d6-8242-774b24b54f38 is candidate, not authorized equivalent.",
+  "task_id": "5129db6a-0707-421b-b80f-cce4c36a6ad1",
+  "session_id": "16bcc779-85b0-45a1-9ab7-46f3668fe410",
+  "old_profile_id": "62434899-7d6b-432d-b93f-0b71c67eb35d",
+  "workspace_id": "25f53734-5aea-490e-b7ba-d5da6fe821dd",
+  "read_only_evidence": [
+    "config-metadata.json",
+    "current-bindings-scoped.json",
+    "binding-differences.json",
+    "message-identities.json",
+    "installed-public-binaries.json",
+    "source-status.json"
+  ],
+  "source_build_installed": {
+    "product_source_changed": false,
+    "new_binary_build_or_install": false,
+    "service_restart": false,
+    "canonical_upstream_verified": "f675a554a5b984cdb6d141c6e9f6a91e50d33694",
+    "installed_hashes_file": "installed-public-binaries.json",
+    "source_characterization_tests": "did not execute: selected offline module cache lacks pinned ACP SDK; no package/provider traffic"
+  },
+  "preservation": {
+    "task_session_ids": true,
+    "primary_session": true,
+    "workflow_lane_profile_settings": true,
+    "pending_and_message_identity": true,
+    "continuation_worktrees_plans_PR_artifacts": true,
+    "mutation_count": 0,
+    "launch_resume_replay_provider_count": 0
+  },
+  "next_action": "Human-owned successor decision first; then separately reviewed metadata-only same-session binding repair preserving generations/incarnation/audit; Root binds ONE instruction acceptance only after repair/readback. No retry authorized by this report.",
+  "host_escalation": {
+    "used_for": "read-only exact configuration metadata and public binary identity",
+    "automatic_review_rejections": 0,
+    "agent_facing_restrictions_misapplied_to_support": false
+  }
+}

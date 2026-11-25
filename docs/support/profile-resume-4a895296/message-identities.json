@@ -1,0 +1,24 @@
+{
+  "session_binding_identity": {
+    "id": "16bcc779-85b0-45a1-9ab7-46f3668fe410",
+    "task_id": "5129db6a-0707-421b-b80f-cce4c36a6ad1",
+    "agent_profile_id": "62434899-7d6b-432d-b93f-0b71c67eb35d",
+    "execution_profile_id": "",
+    "queue_incarnation_id": "c6b81ff7-5421-433a-9f68-b53438295e24",
+    "exact_profile_generation": 0,
+    "exact_profile_revision": 0,
+    "route_generation": 0,
+    "route_state": ""
+  },
+  "time_window_utc": [
+    "2026-11-25 23:05:00",
+    "2026-11-25 23:07:00"
+  ],
+  "agent_delivery_submissions": {
+    "table_present": true,
+    "rows": []
+  },
+  "task_message_send_operations": {
+    "table_present": false
+  }
+}

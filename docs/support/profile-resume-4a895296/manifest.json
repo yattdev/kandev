@@ -1,0 +1,15 @@
+{
+  "README.md": "f1555c47b864f68d2583a8013f2b0483888ce91df4bb3cc0c747bca801644fd8",
+  "read-config-metadata.py": "c3714c9138ff55f2551e0963af1ea28a76854d965d1f7d9e9b8bbef45d387ea4",
+  "read-current-bindings.py": "35685ed0e1b8110e9aaa36b9f09ba0fb8e1501d5af667da488d890f3cc7b2c0f",
+  "read-binding-differences.py": "e4b68c0b1d2caf3abba89a6630255eec219ac204a915c1d91472fb8084b38d9b",
+  "read-message-identities.py": "450a1ea52fa3a80516ba13f2cab4c5f920ff30ac4af57b34944a0cd080e09834",
+  "config-metadata.json": "dc5d4d4f03a9cba04fcdf7d9c97b971925a8e842ec992ce4927cc1401f9523d3",
+  "current-bindings-scoped.json": "079bcb8d0e78df15bddcde844015e424761ca2c78345b5f634ba4eb780d18770",
+  "binding-differences.json": "96ce9882e07f29cb5ba9d592ac14f3729dcce5c91c4f2000f0cfb802831efcf2",
+  "message-identities.json": "55b2107c667d154a2a6b780b32ca005f47c09b02f9ecb61075b40f91765f3fd2",
+  "installed-public-binaries.json": "0b0950ea94deefac21edb299845a35f8c4c1cd40b8b009fa4b966c94ea49ac41",
+  "source-status.json": "b29fa817343200e7cf5504b1826264a27ea982b00b093328d32bb349145fb605",
+  "canonical-resolver-tests.txt": "3d167417f82fd277d9087f0a166183699d1a22f34ead58dedcf7eff94b1c8df2",
+  "result.json": "22491542901ab4e9fb61880533a6671aa7707c4d44edac921976cf1f0aa9f2d4"
+}

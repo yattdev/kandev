@@ -1,0 +1,7 @@
+go: downloading github.com/kdlbs/acp-go-sdk v0.13.6-0.20261123142417-27925bf88fae
+# github.com/kandev/kandev/internal/agent/runtime/lifecycle
+internal/agent/runtime/lifecycle/session.go:14:2: module lookup disabled by GOPROXY=off
+# github.com/kandev/kandev/internal/agent/runtime/lifecycle
+internal/agentctl/server/process/acp_preview.go:10:2: module lookup disabled by GOPROXY=off
+FAIL	github.com/kandev/kandev/internal/agent/runtime/lifecycle [setup failed]
+FAIL

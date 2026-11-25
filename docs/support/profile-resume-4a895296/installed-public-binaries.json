@@ -1,0 +1,8 @@
+{
+  "/app/apps/backend/bin/kandev": "6d234280b9f0b757e6a2f12ab7d1708ba79cb3440faed9f0e28a1e6db855bf8b",
+  "/usr/local/bin/agentctl": "933d38c1551698c7bd761710d91d00dd2c30f2adaf992858a771609435aa0917",
+  "backend_public_build_info": [
+    "/app/apps/backend/bin/kandev: go1.26.0"
+  ],
+  "build_info_exit": 0
+}

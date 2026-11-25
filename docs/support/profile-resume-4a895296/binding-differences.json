@@ -1,0 +1,58 @@
+[
+  {
+    "candidate_id": "2653283e-3df4-48d6-8242-774b24b54f38",
+    "equal_fields_and_reasoning": {
+      "agent_id": 1,
+      "model": 1,
+      "mode": 0,
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 1,
+      "allow_indexing": 1,
+      "role": 1,
+      "skill_ids": 1,
+      "desired_skills": 1,
+      "permissions": 1,
+      "cli_flags": 0,
+      "command_prefix": 1,
+      "mcp_selection_mode": 1,
+      "mcp_selected_servers": 1,
+      "copilot_selected_plugins": 1,
+      "fallback_model": 1,
+      "auto_fallback": 1,
+      "execution_agent_profile_id": 1,
+      "provider_kind": 1,
+      "require_exact_model": 1,
+      "old_reasoning_effort": "high",
+      "new_reasoning_effort": null
+    }
+  },
+  {
+    "candidate_id": "ce9f96f7-4434-4729-b23b-926b4b72f417",
+    "equal_fields_and_reasoning": {
+      "agent_id": 1,
+      "model": 1,
+      "mode": 0,
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 1,
+      "allow_indexing": 1,
+      "role": 1,
+      "skill_ids": 1,
+      "desired_skills": 1,
+      "permissions": 1,
+      "cli_flags": 0,
+      "command_prefix": 1,
+      "mcp_selection_mode": 1,
+      "mcp_selected_servers": 1,
+      "copilot_selected_plugins": 1,
+      "fallback_model": 1,
+      "auto_fallback": 1,
+      "execution_agent_profile_id": 1,
+      "provider_kind": 1,
+      "require_exact_model": 1,
+      "old_reasoning_effort": "high",
+      "new_reasoning_effort": "medium"
+    }
+  }
+]
