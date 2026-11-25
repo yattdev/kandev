@@ -78,10 +78,16 @@ same workspace returns current placement, without inferring historical movement.
 ## Out of scope
 
 Board census, reconciliation actions, deletion tombstones, historical placement,
-new Coordinator identities, cross-workspace grants and live activation are
+new Coordinator identities, cross-workspace grants and live task acceptance are
 excluded. The legacy registered-repository Coordinator is not repinned to the
 new native attended Coordinator surface.
 
 ## Delivery
 
 [Implementation plan](../../../plans/coordinator-task-lifecycle/plan.md).
+
+The metadata route (requirements 001, 002 and 004) is implemented and installed
+through the existing per-request module without restart. Requirement 003 remains
+a separately designed native MCP reader follow-up; no native plan-reader change
+is claimed. The typed plan-presence alternative is available in the metadata
+route. Root owns one separately bound live acceptance and reconciliation.

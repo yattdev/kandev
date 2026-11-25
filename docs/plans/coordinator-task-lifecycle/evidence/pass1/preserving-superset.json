@@ -1,0 +1,16 @@
+{
+  "baseline_commit": "08061e2716c8a3367a99590656656197dedc362d",
+  "baseline_sha256": "b0e635bd1b3eb8091845d814cfae159f77764ba5b68d68c8401057e1d41a76bc",
+  "candidate_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
+  "unchanged_top_level_handlers": [
+    "VolumePreservation",
+    "native_module_bytes",
+    "native_worker_error",
+    "native_worker"
+  ],
+  "existing_operations_methods": "All byte-equivalent AST except discovery help string",
+  "existing_module_dispatch": "Preserved after new typed lifecycle branch",
+  "prior_image_fix_commit": "46867816144ee689b310b710cdfddb4ee36e88e9",
+  "binary_overlay_replaced": false,
+  "immediate_installed_predecessor_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa"
+}

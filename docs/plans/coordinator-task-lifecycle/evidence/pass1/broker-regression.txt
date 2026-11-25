@@ -1,0 +1,12 @@
+................
+----------------------------------------------------------------------
+Ran 16 tests in 0.309s
+
+OK
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.012s
+
+OK
+PASS: real Unix broker transport uses the kernel peer PID and rejects malformed JSON
+PASS: task Docker broker policy tests

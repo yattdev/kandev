@@ -1,0 +1,28 @@
+{"installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa", "fixture": "private namespaces; live /data /run /app hidden; copied public interpreter backend", "authorization_mocks": 0, "live_task_operations": 0, "real_engine_calls": 0, "restarts": 0}
+test_active_planless_read_preserves_all_tables (__main__.LifecycleTests.test_active_planless_read_preserves_all_tables) ... ok
+test_ambiguous_launch_has_no_sole_session_fallback (__main__.LifecycleTests.test_ambiguous_launch_has_no_sole_session_fallback) ... ok
+test_archived_caller_denied_before_target (__main__.LifecycleTests.test_archived_caller_denied_before_target) ... ok
+test_archived_plan_is_retained_without_content_read (__main__.LifecycleTests.test_archived_plan_is_retained_without_content_read) ... ok
+test_audit_failure_is_typed_and_does_not_leak_path (__main__.LifecycleTests.test_audit_failure_is_typed_and_does_not_leak_path) ... ok
+test_caller_revocation_during_read_discards_result (__main__.LifecycleTests.test_caller_revocation_during_read_discards_result) ... ok
+test_caller_storage_fault_is_not_missing (__main__.LifecycleTests.test_caller_storage_fault_is_not_missing) ... ok
+test_exited_original_peer_pidfd_denies_before_target (__main__.LifecycleTests.test_exited_original_peer_pidfd_denies_before_target) ... ok
+test_full_wrapper_hmac_pidfd_and_metadata_path (__main__.LifecycleTests.test_full_wrapper_hmac_pidfd_and_metadata_path) ... ok
+test_incarnation_change_during_read_discards_result (__main__.LifecycleTests.test_incarnation_change_during_read_discards_result) ... ok
+test_malformed_target_and_identity_override_are_rejected (__main__.LifecycleTests.test_malformed_target_and_identity_override_are_rejected) ... ok
+test_mismatched_session_environment_denied_before_target (__main__.LifecycleTests.test_mismatched_session_environment_denied_before_target) ... ok
+test_missing_and_both_foreign_workspaces_are_identically_masked (__main__.LifecycleTests.test_missing_and_both_foreign_workspaces_are_identically_masked) ... ok
+test_missing_socket_peer_denies_before_target (__main__.LifecycleTests.test_missing_socket_peer_denies_before_target) ... ok
+test_ordinary_task_denied_before_target (__main__.LifecycleTests.test_ordinary_task_denied_before_target) ... ok
+test_other_launch_pid_denied_before_target (__main__.LifecycleTests.test_other_launch_pid_denied_before_target) ... ok
+test_projection_bound (__main__.LifecycleTests.test_projection_bound) ... ok
+test_real_validator_custody_rejects_writable_copy (__main__.LifecycleTests.test_real_validator_custody_rejects_writable_copy) ... ok
+test_real_validator_pin_drift_is_unavailable (__main__.LifecycleTests.test_real_validator_pin_drift_is_unavailable) ... ok
+test_revoked_session_denied_before_target (__main__.LifecycleTests.test_revoked_session_denied_before_target) ... ok
+test_target_storage_fault_is_not_missing (__main__.LifecycleTests.test_target_storage_fault_is_not_missing) ... ok
+test_wrong_registered_root_denied_before_target (__main__.LifecycleTests.test_wrong_registered_root_denied_before_target) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.938s
+
+OK

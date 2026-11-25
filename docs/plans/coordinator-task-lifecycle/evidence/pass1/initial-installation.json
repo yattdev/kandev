@@ -1,0 +1,12 @@
+{
+  "installed": true,
+  "path": "/usr/local/bin/kandev-agent-docker-operations.py",
+  "previous_sha256": "b0e635bd1b3eb8091845d814cfae159f77764ba5b68d68c8401057e1d41a76bc",
+  "installed_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa",
+  "backup": "/tmp/kandev-image-inspect-before-6b30-srlfym2j/operations.py",
+  "restart": false,
+  "request_id": "5e629b49-3b50-472f-85d6-54a8382fa515",
+  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
+  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
+  "unchanged_container": true
+}

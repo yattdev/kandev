@@ -1,0 +1,1481 @@
+diff --git a/docs/coordinator-task-lifecycle.md b/docs/coordinator-task-lifecycle.md
+index fe83efa..d60bd8e 100644
+--- a/docs/coordinator-task-lifecycle.md
++++ b/docs/coordinator-task-lifecycle.md
+@@ -4,4 +4,4 @@ Support request `5e629b49-3b50-472f-85d6-54a8382fa515`.
+-Status: implemented and synthetically tested in deployment source on `main`;
+-**not installed or loaded**. This request prohibits restart/exposure. Do not
+-run the proposed command until a separately reviewed activation and Root-bound
+-acceptance operation have been authorized.
++Status: escalation pass 1 qualifies a restart-free per-request module route.
++Installation and installed synthetic acceptance are recorded in
++[the activation evidence](task-lifecycle-pass1/README.md). Root owns the one
++separately bound live acceptance read; Support performs no target census.
+@@ -12 +12 @@ acceptance operation have been authorized.
+-docker kandev workspace task-lifecycle <task-UUID>
++docker kandev task-lifecycle <task-UUID>
+@@ -57 +57 @@ Dependency drift fails closed and requires source/test review.
+-`python3 tests/test-task-lifecycle.py` passes 20 synthetic cases, including
++`python3 tests/test-task-lifecycle.py` passes 22 synthetic cases, including
+@@ -59,12 +59,17 @@ active/archived/planless/missing, both foreign-workspace cases, caller
+-revocation/mismatch/ambiguity, HMAC plus kernel-peer dispatch, PID/incarnation
+-changes, bounded output and storage/audit failures. Tests run real fixture SQL,
+-real launch metadata matching and real process identity; synthetic ancestry
+-ends at the test's own process instead of traversing host-runner parents.
+-Development tests substitute only platform-file custody and that synthetic
+-ancestry boundary. Before/after fixture dumps prove read preservation.
+-No live broker/board/database/task lookup is performed by these tests.
+-
+-The existing broker policy regression suite also passes. The installed
+-validator's real custody, hash and callable interface were checked through the
+-existing installed loader without calling metadata or starting its service.
+-Installed-route/caller-bound acceptance of the new dispatch is still pending.
++revocation/mismatch/ambiguity, the real wrapper/client/HMAC/socket-peer dispatch,
++exited-peer pidfd denial, PID/incarnation changes, bounded output and
++storage/audit failures. Spoofed peer/session/workspace payload fields do not
++supply identity. Before/after fixture dumps prove read preservation.
++
++Tests run in private user and network namespaces with an empty filesystem root.
++Live `/data`, `/run` and `/app` are hidden. Public platform scripts and a copied
++public Python interpreter form a synthetic backend/agent ancestry boundary.
++The fixture uses the actual launch validator, process ancestry, file custody,
++registered Coordinator proof and read-only SQLite queries, with zero
++substitutions for those authorization functions. The engine boundary is an
++assertion that no command executes. Installed mode uses the installed files,
++including their real ownership/modes; source mode stages reviewed source into
++private root-owned files. This is synthetic qualification, not owner acceptance.
++
++Existing image metadata, volume preservation, broker policy and task-access
++regressions pass. See the recorded test outputs and preserving-superset check.
+@@ -85,2 +90,4 @@ still turns missing/inaccessible-task and permission failures into
+-`INTERNAL_ERROR`; a plan-error implementation continuation remains required
+-under the source repository's design gate. No live-ID status was inferred.
++`INTERNAL_ERROR`; this MCP reader is unchanged. The new typed lifecycle reader
++supplies the guarded metadata and `PLAN_NOT_FOUND` alternative without changing
++document permissions or inferring any live-ID status. The product-native error
++mapper follow-up remains separately designed, not required to use this route.
+@@ -88 +95,2 @@ under the source repository's design gate. No live-ID status was inferred.
+-Observed deployment, unchanged by this request:
++Deployment observed during this activation (identity/start time unchanged across
++module replacement; restart count zero):
+@@ -92 +100 @@ Observed deployment, unchanged by this request:
+-- Start: `2026-11-18T16:39:05.618274966Z`; restart count zero.
++- Start: `2026-11-25T20:31:11.237656793Z`; restart count zero.
+@@ -99 +107 @@ Observed deployment, unchanged by this request:
+-- **Installed old broker** SHA256:
++- **Unchanged installed broker** SHA256:
+@@ -102,13 +110,21 @@ Observed deployment, unchanged by this request:
+-No candidate binary was built, no overlay replaced, and no broker file copied
+-or restarted. Merely copying source would not change loaded dispatch. Future
+-exposure must review the source/test patch and all still-required installed
+-fixes, authorize the broker lifecycle operation separately, then allow Root's
+-one read in its unchanged session/workspace. Any Kandev image deployment must
+-use `scripts/kandev-safe-deploy`; none is authorized or required here yet.
+-
+-The request's Coordinator task/session/workspace IDs are supplied context only;
+-Support did not read its private worktree, enumerate the 27 targets, inspect
+-their records, repin an identity or clear G1. The finite next action is a
+-reviewed exposure request bound to the published source patch and current
+-broker/dependency hashes, followed by Root-owned acceptance. Native MCP plan
+-error repair is separately planned in the pushed source package.
++The earlier source-only prototype added `workspace task-lifecycle` to the
++long-running broker, which would have required a prohibited restart. Escalation
++identified that the unchanged broker already forwards unknown operations with
++its original `FramedInput` Unix stream to a per-request module. The revised
++`kandev task-lifecycle` route derives the actual peer using `SO_PEERCRED` and
++`SO_PEERPIDFD` on that stream. No caller PID from payload, numeric pidfd fallback,
++identity repinning, worker service or new credential is used.
++
++The dormant broker prototype is removed; source broker SHA256 now equals the
++unchanged installed broker. Only the root-owned operations module is replaced
++atomically through the existing hash-gated installer. The candidate preserves
++all preexisting handlers, including the installed immutable-image-ID fix,
++volume preservation and worker routes. The source AST comparison and regression
++results are retained with the review manifest. No backend/agentctl/helper binary
++or image is rebuilt or replaced, and no process is restarted.
++
++The request's Coordinator task/session/workspace IDs are supplied context only.
++Support does not read its private worktree, enumerate the 27 targets, inspect
++their records, repin an identity or clear G1. The finite next action is Root's
++one separately bound read with the command above in its unchanged authenticated
++Coordinator session. A missing/inaccessible result remains deletion-unproven.
+diff --git a/docs/task-lifecycle-pass1/README.md b/docs/task-lifecycle-pass1/README.md
+new file mode 100644
+index 0000000..224d53c
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/README.md
+@@ -0,0 +1,77 @@
++# Lifecycle lookup: escalation pass 1
++
++Request `5e629b49-3b50-472f-85d6-54a8382fa515`.
++
++The prior restart blocker was too broad. The existing broker forwards unknown
++operations to the operations module on every request and retains the original
++socket stream. The reviewed implementation uses that existing path and kernel
++peer pidfd; it does not change the long-running broker or grant another actor
++access. The command is `docker kandev task-lifecycle <task-UUID>`.
++
++The dormant source-only `workspace task-lifecycle` prototype is removed from
++the broker. Its source now matches installed SHA256 `9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91`.
++
++[The contract](../coordinator-task-lifecycle.md) documents bounded metadata,
++errors, absent-plan typing, masked cross-workspace absence and deletion
++uncertainty. Native MCP `get_task_plan` error mapping remains unchanged.
++
++## Review and preservation
++
++`reviewed.json` pins the candidate, current installed base, dependencies and
++acceptance tests. `preserving-superset.json` verifies every existing handler and
++operations method against the installed source baseline, with only the help
++string and new top-level dispatch branch changing. This preserves the previous
++image-ID repair (deployment commit `46867816144ee689b310b710cdfddb4ee36e88e9`),
++worker and volume routes. No binary overlay is replaced.
++
++Source lifecycle tests pass 22 cases with actual caller-validation, custody,
++process ancestry, Coordinator proof, wrapper/client/HMAC/Unix peer and SQLite
++fixture reads. Fixture namespaces hide live task data/runtime; the synthetic
++backend is a copied public interpreter. There are no authorization mocks and
++no real engine, provider or live task operations. Source regressions pass:
++18 image cases, 24 preservation cases, existing 16+11 broker cases and transport,
++and task-access checks. Installed acceptance must use the same isolated fixture
++against installed script bytes, not Root's task identity or target IDs.
++
++## Exposure
++
++The existing operator installer accepts an explicitly selected reviewed manifest:
++
++```sh
++python3 scripts/install-task-image-inspect.py --review docs/task-lifecycle-pass1/reviewed.json
++```
++
++It requires deployment `main`, exact source/test hashes, exact installed base
++and broker/wrapper/client/guard hashes, stable root-owned files, a private backup
++and atomic replacement of only the operations module. It checks unchanged
++container identity. `installation.json` records the actual operation; installed
++fixture outputs and final readback are recorded separately. No server restart,
++Kandev image deployment, board mutation or owner acceptance is part of it.
++
++Root then binds one read in its unchanged session/workspace. Support never runs
++a live target lookup or 27-record census. G1 remains Root's reconciliation.
++
++## Installed result
++
++Initial route implementation source commit `f7f74059804d28af0aff1a9b428273f26525fe5c`.
++Operations SHA256 is `d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4`.
++The original broker/client/wrapper/guard and pinned validator hashes match the
++review manifest. All 22 installed lifecycle cases and 18 installed image cases
++pass. The unchanged broker dispatches the new module on each request; the full
++installed fixture tests that actual dispatch with its private metadata and
++kernel-authenticated caller. This is no claim of affected-owner acceptance.
++
++Container identity and start time are unchanged across the install. The current
++start time observed before and after is `2026-11-25T20:31:11.237656793Z`, with
++restart count zero at final readback. This supersedes the earlier historical
++November 18 observation; Support performed no restart. No image or binaries
++were built, deployed or replaced. The result manifest records all evidence.
++
++Final review also tests loss of private fixture metadata after successful caller
++authorization. It returns typed `METADATA_UNAVAILABLE`, preserving uncertainty.
++The first installed revision passed the same 22 cases; `initial-*` receipts
++retain its exact provenance. Final receipts bind the subsequent one-line error
++mapping correction and expanded assertion within the storage-fault case.
++
++Final installed correction source commit `b8d4e3db1e826f7867fc2403d157c58b1fa4e57e`; installed
++operations SHA256 `d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4`. Final 22 lifecycle and 18 image cases pass.
+diff --git a/docs/task-lifecycle-pass1/broker-regression.txt b/docs/task-lifecycle-pass1/broker-regression.txt
+new file mode 100644
+index 0000000..57d1321
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/broker-regression.txt
+@@ -0,0 +1,12 @@
++................
++----------------------------------------------------------------------
++Ran 16 tests in 0.309s
++
++OK
++...........
++----------------------------------------------------------------------
++Ran 11 tests in 0.012s
++
++OK
++PASS: real Unix broker transport uses the kernel peer PID and rejects malformed JSON
++PASS: task Docker broker policy tests
+diff --git a/docs/task-lifecycle-pass1/initial-installation.json b/docs/task-lifecycle-pass1/initial-installation.json
+new file mode 100644
+index 0000000..74c5654
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/initial-installation.json
+@@ -0,0 +1,12 @@
++{
++  "installed": true,
++  "path": "/usr/local/bin/kandev-agent-docker-operations.py",
++  "previous_sha256": "b0e635bd1b3eb8091845d814cfae159f77764ba5b68d68c8401057e1d41a76bc",
++  "installed_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa",
++  "backup": "/tmp/kandev-image-inspect-before-6b30-srlfym2j/operations.py",
++  "restart": false,
++  "request_id": "5e629b49-3b50-472f-85d6-54a8382fa515",
++  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "unchanged_container": true
++}
+diff --git a/docs/task-lifecycle-pass1/initial-installed-image-regression.txt b/docs/task-lifecycle-pass1/initial-installed-image-regression.txt
+new file mode 100644
+index 0000000..b687da2
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/initial-installed-image-regression.txt
+@@ -0,0 +1,24 @@
++{"installed": true, "source_sha256": {"/usr/local/bin/kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "/usr/local/bin/kandev-agent-docker-operations.py": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa"}, "live_task_operations": 0, "real_engine_calls": 0, "builds": 0, "pulls": 0}
++test_arbitrary_or_unknown_image_id_is_never_inspected (__main__.ImageTests.test_arbitrary_or_unknown_image_id_is_never_inspected) ... ok
++test_bare_id_does_not_implicitly_change_resource_type (__main__.ImageTests.test_bare_id_does_not_implicitly_change_resource_type) ... ok
++test_conflicting_or_unsupported_type_is_denied (__main__.ImageTests.test_conflicting_or_unsupported_type_is_denied) ... ok
++test_container_inspection_still_works (__main__.ImageTests.test_container_inspection_still_works) ... ok
++test_container_type_never_reads_image_metadata (__main__.ImageTests.test_container_type_never_reads_image_metadata) ... ok
++test_exact_id_formats_do_not_confuse_registry_digest (__main__.ImageTests.test_exact_id_formats_do_not_confuse_registry_digest) ... ok
++test_exact_owned_local_id_is_admitted_with_curated_metadata (__main__.ImageTests.test_exact_owned_local_id_is_admitted_with_curated_metadata) ... ok
++test_existing_owned_build_tag_route_is_preserved (__main__.ImageTests.test_existing_owned_build_tag_route_is_preserved) ... ok
++test_generic_explicit_image_type_is_admitted (__main__.ImageTests.test_generic_explicit_image_type_is_admitted) ... ok
++test_hmac_boundary_and_installed_client_framing (__main__.ImageTests.test_hmac_boundary_and_installed_client_framing) ... ok
++test_image_type_never_falls_back_to_container (__main__.ImageTests.test_image_type_never_falls_back_to_container) ... ok
++test_malformed_identity_or_changed_final_id_is_denied (__main__.ImageTests.test_malformed_identity_or_changed_final_id_is_denied) ... ok
++test_model_claim_changes_during_lookup_are_denied (__main__.ImageTests.test_model_claim_changes_during_lookup_are_denied) ... ok
++test_model_reference_alone_does_not_grant_image_ownership (__main__.ImageTests.test_model_reference_alone_does_not_grant_image_ownership) ... ok
++test_other_task_build_cannot_authorize_id (__main__.ImageTests.test_other_task_build_cannot_authorize_id) ... ok
++test_private_env_format_is_denied_before_engine_query (__main__.ImageTests.test_private_env_format_is_denied_before_engine_query) ... ok
++test_registry_digest_is_not_an_image_id_alias (__main__.ImageTests.test_registry_digest_is_not_an_image_id_alias) ... ok
++test_sibling_clone_build_cannot_authorize_id (__main__.ImageTests.test_sibling_clone_build_cannot_authorize_id) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 0.571s
++
++OK
+diff --git a/docs/task-lifecycle-pass1/initial-installed-lifecycle-tests.txt b/docs/task-lifecycle-pass1/initial-installed-lifecycle-tests.txt
+new file mode 100644
+index 0000000..550404c
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/initial-installed-lifecycle-tests.txt
+@@ -0,0 +1,28 @@
++{"installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa", "fixture": "private namespaces; live /data /run /app hidden; copied public interpreter backend", "authorization_mocks": 0, "live_task_operations": 0, "real_engine_calls": 0, "restarts": 0}
++test_active_planless_read_preserves_all_tables (__main__.LifecycleTests.test_active_planless_read_preserves_all_tables) ... ok
++test_ambiguous_launch_has_no_sole_session_fallback (__main__.LifecycleTests.test_ambiguous_launch_has_no_sole_session_fallback) ... ok
++test_archived_caller_denied_before_target (__main__.LifecycleTests.test_archived_caller_denied_before_target) ... ok
++test_archived_plan_is_retained_without_content_read (__main__.LifecycleTests.test_archived_plan_is_retained_without_content_read) ... ok
++test_audit_failure_is_typed_and_does_not_leak_path (__main__.LifecycleTests.test_audit_failure_is_typed_and_does_not_leak_path) ... ok
++test_caller_revocation_during_read_discards_result (__main__.LifecycleTests.test_caller_revocation_during_read_discards_result) ... ok
++test_caller_storage_fault_is_not_missing (__main__.LifecycleTests.test_caller_storage_fault_is_not_missing) ... ok
++test_exited_original_peer_pidfd_denies_before_target (__main__.LifecycleTests.test_exited_original_peer_pidfd_denies_before_target) ... ok
++test_full_wrapper_hmac_pidfd_and_metadata_path (__main__.LifecycleTests.test_full_wrapper_hmac_pidfd_and_metadata_path) ... ok
++test_incarnation_change_during_read_discards_result (__main__.LifecycleTests.test_incarnation_change_during_read_discards_result) ... ok
++test_malformed_target_and_identity_override_are_rejected (__main__.LifecycleTests.test_malformed_target_and_identity_override_are_rejected) ... ok
++test_mismatched_session_environment_denied_before_target (__main__.LifecycleTests.test_mismatched_session_environment_denied_before_target) ... ok
++test_missing_and_both_foreign_workspaces_are_identically_masked (__main__.LifecycleTests.test_missing_and_both_foreign_workspaces_are_identically_masked) ... ok
++test_missing_socket_peer_denies_before_target (__main__.LifecycleTests.test_missing_socket_peer_denies_before_target) ... ok
++test_ordinary_task_denied_before_target (__main__.LifecycleTests.test_ordinary_task_denied_before_target) ... ok
++test_other_launch_pid_denied_before_target (__main__.LifecycleTests.test_other_launch_pid_denied_before_target) ... ok
++test_projection_bound (__main__.LifecycleTests.test_projection_bound) ... ok
++test_real_validator_custody_rejects_writable_copy (__main__.LifecycleTests.test_real_validator_custody_rejects_writable_copy) ... ok
++test_real_validator_pin_drift_is_unavailable (__main__.LifecycleTests.test_real_validator_pin_drift_is_unavailable) ... ok
++test_revoked_session_denied_before_target (__main__.LifecycleTests.test_revoked_session_denied_before_target) ... ok
++test_target_storage_fault_is_not_missing (__main__.LifecycleTests.test_target_storage_fault_is_not_missing) ... ok
++test_wrong_registered_root_denied_before_target (__main__.LifecycleTests.test_wrong_registered_root_denied_before_target) ... ok
++
++----------------------------------------------------------------------
++Ran 22 tests in 0.938s
++
++OK
+diff --git a/docs/task-lifecycle-pass1/initial-result.json b/docs/task-lifecycle-pass1/initial-result.json
+new file mode 100644
+index 0000000..61a05df
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/initial-result.json
+@@ -0,0 +1,50 @@
++{
++  "request_id": "5e629b49-3b50-472f-85d6-54a8382fa515",
++  "status": "RESOLVED",
++  "command": "docker kandev task-lifecycle <task-UUID>",
++  "source_commit": "f7f74059804d28af0aff1a9b428273f26525fe5c",
++  "source_product_go_changes": false,
++  "candidate_image_build": false,
++  "binary_overlay_replaced": false,
++  "installed": true,
++  "installed_operations_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa",
++  "previous_operations_sha256": "b0e635bd1b3eb8091845d814cfae159f77764ba5b68d68c8401057e1d41a76bc",
++  "loaded_effect": "Existing broker runpy.run_path dispatch reads operations on every request; installed fixture traverses actual wrapper/client/handler and module using private metadata",
++  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "post_install_container_readback": "\"8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57\" \"sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4\" \"2026-11-25T20:31:11.237656793Z\" 0",
++  "restart_or_recreate_by_support": false,
++  "tests": {
++    "source_lifecycle_cases": 22,
++    "installed_lifecycle_cases": 22,
++    "source_and_installed_image_cases_each": 18,
++    "volume_preservation_cases": 24,
++    "broker_policy": "PASS; 16+11 cases plus Unix transport",
++    "task_access": "PASS",
++    "authorization_mocks": 0
++  },
++  "live_target_lookups": 0,
++  "owner_acceptance": false,
++  "board_changes": 0,
++  "provider_calls": 0,
++  "limits": [
++    "No live ID status, deletion, archive or movement inferred",
++    "Native MCP get_task_plan error mapper is unchanged; use the new typed metadata route",
++    "No deletion tombstone: missing and foreign targets mask identically with deletion evidence unproven"
++  ],
++  "next_action": "Root binds ONE metadata read using the new command and one exact preserved task UUID in its unchanged Coordinator session/workspace; Support performs no reconciliation.",
++  "evidence_sha256": {
++    "README.md": "4d4afd4a150763c929e88f07f27be5724267e64aa72c9ec3164884073a9996ae",
++    "broker-regression.txt": "21dee80631fd7590af12f7b92ee9a5cf69fc22c6aaf4258b8d9cda586ff16290",
++    "installation.json": "54b9b4d827cefcc1c4b020f794a3678bfeb95e0121597c9801f6b59adf3fe8d4",
++    "installed-image-regression.txt": "5b974cf927cd74a62812187f422a7edf647256373b885c312869d28ff4d8bfc7",
++    "installed-lifecycle-tests.txt": "929f1519f2e59e3eaaa75c5aeca055e1bb58207d997eceeaee63aba4374f1718",
++    "installed-public-files.json": "845d849dc28f4f68146b586e5b53bcc0417064839a4a752aa61c817e9b769fcd",
++    "preserving-superset.json": "7509404c7d70eded4d7ed973aa7f28f5ca1d0885d1a1ea1d0f831cc7dd95a0d5",
++    "reviewed.json": "39a5776367c5a753197917ae8943d8f4ff9edeb6949094a58ae0bfc29003da84",
++    "source-image-regression.txt": "8e55e8c9b2805ae098478cee3cc056ac0584cf49a6e679514fe353d961b97e85",
++    "source-lifecycle-tests.txt": "382d54e8f1caf9d8b5cedd1a4785b1dda5a5fdf2ed523b45cf3d91fb590984a6",
++    "task-access-regression.txt": "c2f18a1d8be402b79e1e6584bd2f5a498b902861797195712441ed46e02f04aa",
++    "volume-regression.txt": "b1b792ea7ef622c65bfd112534f4f74c1203482363660794e67206ced6c2ad50"
++  }
++}
+diff --git a/docs/task-lifecycle-pass1/initial-reviewed.json b/docs/task-lifecycle-pass1/initial-reviewed.json
+new file mode 100644
+index 0000000..48ca471
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/initial-reviewed.json
+@@ -0,0 +1,29 @@
++{
++  "request_id": "5e629b49-3b50-472f-85d6-54a8382fa515",
++  "scope": "Read-only exact registered Coordinator same-workspace metadata; existing kernel socket peer and active launch/session proof. No new principal, session grant, worker lease or service restart.",
++  "base_sha256": "b0e635bd1b3eb8091845d814cfae159f77764ba5b68d68c8401057e1d41a76bc",
++  "candidate_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa",
++  "dependencies": {
++    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
++  },
++  "validator_sha256": "6a09ebeb96429f955546cf8b30616cd287cf92fe36156ea54f7d7b843ad78a96",
++  "tests_sha256": {
++    "tests/test-task-lifecycle.py": "74d602189960edff8e586032e49dd13ae7455cd18ae39955748de069bee80404",
++    "tests/test-task-image-inspect.py": "674aceb61649fac0c31c53163928e61471f6399b67f243698cbf83dc2c73704b",
++    "tests/test-volume-preservation.py": "518e8994ebecf66ee9520b31ccf50bb9a854fa61a9fea9ed1a3187896c04b833",
++    "tests/test-agent-docker-broker.py": "4acfd625d3bd5a5876aec16b698531992f9191a5308e0c422ff892842a82e7d9",
++    "tests/test-task-access.py": "e25741634bab2b62e7a13f8d3e9696d8a0368184ef0476ed85728dde5f1c9392"
++  },
++  "qualification": {
++    "lifecycle_cases": 22,
++    "authorization_mocks": 0,
++    "image_cases": 18,
++    "volume_cases": 24,
++    "broker_policy": "PASS; 16+11 cases and real Unix transport",
++    "task_access": "PASS"
++  },
++  "activation": "Atomic replacement of per-request operations module only through hash-gated existing operator installer. No loaded broker, client, wrapper, guard, binary, policy, task, plan, resource or lease replacement."
++}
+diff --git a/docs/task-lifecycle-pass1/installation.json b/docs/task-lifecycle-pass1/installation.json
+new file mode 100644
+index 0000000..edfd25d
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/installation.json
+@@ -0,0 +1,12 @@
++{
++  "installed": true,
++  "path": "/usr/local/bin/kandev-agent-docker-operations.py",
++  "previous_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa",
++  "installed_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
++  "backup": "/tmp/kandev-image-inspect-before-6b30-q0x37tr0/operations.py",
++  "restart": false,
++  "request_id": "5e629b49-3b50-472f-85d6-54a8382fa515",
++  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "unchanged_container": true
++}
+diff --git a/docs/task-lifecycle-pass1/installed-image-regression.txt b/docs/task-lifecycle-pass1/installed-image-regression.txt
+new file mode 100644
+index 0000000..87aa57d
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/installed-image-regression.txt
+@@ -0,0 +1,24 @@
++{"installed": true, "source_sha256": {"/usr/local/bin/kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "/usr/local/bin/kandev-agent-docker-operations.py": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4"}, "live_task_operations": 0, "real_engine_calls": 0, "builds": 0, "pulls": 0}
++test_arbitrary_or_unknown_image_id_is_never_inspected (__main__.ImageTests.test_arbitrary_or_unknown_image_id_is_never_inspected) ... ok
++test_bare_id_does_not_implicitly_change_resource_type (__main__.ImageTests.test_bare_id_does_not_implicitly_change_resource_type) ... ok
++test_conflicting_or_unsupported_type_is_denied (__main__.ImageTests.test_conflicting_or_unsupported_type_is_denied) ... ok
++test_container_inspection_still_works (__main__.ImageTests.test_container_inspection_still_works) ... ok
++test_container_type_never_reads_image_metadata (__main__.ImageTests.test_container_type_never_reads_image_metadata) ... ok
++test_exact_id_formats_do_not_confuse_registry_digest (__main__.ImageTests.test_exact_id_formats_do_not_confuse_registry_digest) ... ok
++test_exact_owned_local_id_is_admitted_with_curated_metadata (__main__.ImageTests.test_exact_owned_local_id_is_admitted_with_curated_metadata) ... ok
++test_existing_owned_build_tag_route_is_preserved (__main__.ImageTests.test_existing_owned_build_tag_route_is_preserved) ... ok
++test_generic_explicit_image_type_is_admitted (__main__.ImageTests.test_generic_explicit_image_type_is_admitted) ... ok
++test_hmac_boundary_and_installed_client_framing (__main__.ImageTests.test_hmac_boundary_and_installed_client_framing) ... ok
++test_image_type_never_falls_back_to_container (__main__.ImageTests.test_image_type_never_falls_back_to_container) ... ok
++test_malformed_identity_or_changed_final_id_is_denied (__main__.ImageTests.test_malformed_identity_or_changed_final_id_is_denied) ... ok
++test_model_claim_changes_during_lookup_are_denied (__main__.ImageTests.test_model_claim_changes_during_lookup_are_denied) ... ok
++test_model_reference_alone_does_not_grant_image_ownership (__main__.ImageTests.test_model_reference_alone_does_not_grant_image_ownership) ... ok
++test_other_task_build_cannot_authorize_id (__main__.ImageTests.test_other_task_build_cannot_authorize_id) ... ok
++test_private_env_format_is_denied_before_engine_query (__main__.ImageTests.test_private_env_format_is_denied_before_engine_query) ... ok
++test_registry_digest_is_not_an_image_id_alias (__main__.ImageTests.test_registry_digest_is_not_an_image_id_alias) ... ok
++test_sibling_clone_build_cannot_authorize_id (__main__.ImageTests.test_sibling_clone_build_cannot_authorize_id) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 0.577s
++
++OK
+diff --git a/docs/task-lifecycle-pass1/installed-lifecycle-tests.txt b/docs/task-lifecycle-pass1/installed-lifecycle-tests.txt
+new file mode 100644
+index 0000000..960ebb6
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/installed-lifecycle-tests.txt
+@@ -0,0 +1,28 @@
++{"installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4", "fixture": "private namespaces; live /data /run /app hidden; copied public interpreter backend", "authorization_mocks": 0, "live_task_operations": 0, "real_engine_calls": 0, "restarts": 0}
++test_active_planless_read_preserves_all_tables (__main__.LifecycleTests.test_active_planless_read_preserves_all_tables) ... ok
++test_ambiguous_launch_has_no_sole_session_fallback (__main__.LifecycleTests.test_ambiguous_launch_has_no_sole_session_fallback) ... ok
++test_archived_caller_denied_before_target (__main__.LifecycleTests.test_archived_caller_denied_before_target) ... ok
++test_archived_plan_is_retained_without_content_read (__main__.LifecycleTests.test_archived_plan_is_retained_without_content_read) ... ok
++test_audit_failure_is_typed_and_does_not_leak_path (__main__.LifecycleTests.test_audit_failure_is_typed_and_does_not_leak_path) ... ok
++test_caller_revocation_during_read_discards_result (__main__.LifecycleTests.test_caller_revocation_during_read_discards_result) ... ok
++test_caller_storage_fault_is_not_missing (__main__.LifecycleTests.test_caller_storage_fault_is_not_missing) ... ok
++test_exited_original_peer_pidfd_denies_before_target (__main__.LifecycleTests.test_exited_original_peer_pidfd_denies_before_target) ... ok
++test_full_wrapper_hmac_pidfd_and_metadata_path (__main__.LifecycleTests.test_full_wrapper_hmac_pidfd_and_metadata_path) ... ok
++test_incarnation_change_during_read_discards_result (__main__.LifecycleTests.test_incarnation_change_during_read_discards_result) ... ok
++test_malformed_target_and_identity_override_are_rejected (__main__.LifecycleTests.test_malformed_target_and_identity_override_are_rejected) ... ok
++test_mismatched_session_environment_denied_before_target (__main__.LifecycleTests.test_mismatched_session_environment_denied_before_target) ... ok
++test_missing_and_both_foreign_workspaces_are_identically_masked (__main__.LifecycleTests.test_missing_and_both_foreign_workspaces_are_identically_masked) ... ok
++test_missing_socket_peer_denies_before_target (__main__.LifecycleTests.test_missing_socket_peer_denies_before_target) ... ok
++test_ordinary_task_denied_before_target (__main__.LifecycleTests.test_ordinary_task_denied_before_target) ... ok
++test_other_launch_pid_denied_before_target (__main__.LifecycleTests.test_other_launch_pid_denied_before_target) ... ok
++test_projection_bound (__main__.LifecycleTests.test_projection_bound) ... ok
++test_real_validator_custody_rejects_writable_copy (__main__.LifecycleTests.test_real_validator_custody_rejects_writable_copy) ... ok
++test_real_validator_pin_drift_is_unavailable (__main__.LifecycleTests.test_real_validator_pin_drift_is_unavailable) ... ok
++test_revoked_session_denied_before_target (__main__.LifecycleTests.test_revoked_session_denied_before_target) ... ok
++test_target_storage_fault_is_not_missing (__main__.LifecycleTests.test_target_storage_fault_is_not_missing) ... ok
++test_wrong_registered_root_denied_before_target (__main__.LifecycleTests.test_wrong_registered_root_denied_before_target) ... ok
++
++----------------------------------------------------------------------
++Ran 22 tests in 1.026s
++
++OK
+diff --git a/docs/task-lifecycle-pass1/installed-public-files.json b/docs/task-lifecycle-pass1/installed-public-files.json
+new file mode 100644
+index 0000000..2415250
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/installed-public-files.json
+@@ -0,0 +1,38 @@
++{
++  "kandev-agent-docker-operations.py": {
++    "sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
++    "uid": 0,
++    "mode": "0o555",
++    "nlink": 1
++  },
++  "kandev-agent-docker-broker": {
++    "sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "uid": 0,
++    "mode": "0o555",
++    "nlink": 1
++  },
++  "docker": {
++    "sha256": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "uid": 0,
++    "mode": "0o755",
++    "nlink": 1
++  },
++  "kandev-agent-docker-client": {
++    "sha256": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "uid": 0,
++    "mode": "0o555",
++    "nlink": 1
++  },
++  "kandev-agent-guard": {
++    "sha256": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f",
++    "uid": 0,
++    "mode": "0o755",
++    "nlink": 1
++  },
++  "kandev-test-worker.py": {
++    "sha256": "6a09ebeb96429f955546cf8b30616cd287cf92fe36156ea54f7d7b843ad78a96",
++    "uid": 0,
++    "mode": "0o555",
++    "nlink": 1
++  }
++}
+diff --git a/docs/task-lifecycle-pass1/preserving-superset.json b/docs/task-lifecycle-pass1/preserving-superset.json
+new file mode 100644
+index 0000000..93fab4a
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/preserving-superset.json
+@@ -0,0 +1,16 @@
++{
++  "baseline_commit": "08061e2716c8a3367a99590656656197dedc362d",
++  "baseline_sha256": "b0e635bd1b3eb8091845d814cfae159f77764ba5b68d68c8401057e1d41a76bc",
++  "candidate_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
++  "unchanged_top_level_handlers": [
++    "VolumePreservation",
++    "native_module_bytes",
++    "native_worker_error",
++    "native_worker"
++  ],
++  "existing_operations_methods": "All byte-equivalent AST except discovery help string",
++  "existing_module_dispatch": "Preserved after new typed lifecycle branch",
++  "prior_image_fix_commit": "46867816144ee689b310b710cdfddb4ee36e88e9",
++  "binary_overlay_replaced": false,
++  "immediate_installed_predecessor_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa"
++}
+diff --git a/docs/task-lifecycle-pass1/result.json b/docs/task-lifecycle-pass1/result.json
+new file mode 100644
+index 0000000..544fecb
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/result.json
+@@ -0,0 +1,55 @@
++{
++  "request_id": "5e629b49-3b50-472f-85d6-54a8382fa515",
++  "status": "RESOLVED",
++  "command": "docker kandev task-lifecycle <task-UUID>",
++  "source_commit": "b8d4e3db1e826f7867fc2403d157c58b1fa4e57e",
++  "source_product_go_changes": false,
++  "candidate_image_build": false,
++  "binary_overlay_replaced": false,
++  "installed": true,
++  "installed_operations_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
++  "previous_operations_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa",
++  "loaded_effect": "Existing broker runpy.run_path dispatch reads operations on every request; installed fixture traverses actual wrapper/client/handler and module using private metadata",
++  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z",
++  "post_install_container_readback": "\"8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57\" \"sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4\" \"2026-11-25T20:31:11.237656793Z\" 0",
++  "restart_or_recreate_by_support": false,
++  "tests": {
++    "source_lifecycle_cases": 22,
++    "installed_lifecycle_cases": 22,
++    "source_and_installed_image_cases_each": 18,
++    "volume_preservation_cases": 24,
++    "broker_policy": "PASS; 16+11 cases plus Unix transport",
++    "task_access": "PASS",
++    "authorization_mocks": 0
++  },
++  "live_target_lookups": 0,
++  "owner_acceptance": false,
++  "board_changes": 0,
++  "provider_calls": 0,
++  "limits": [
++    "No live ID status, deletion, archive or movement inferred",
++    "Native MCP get_task_plan error mapper is unchanged; use the new typed metadata route",
++    "No deletion tombstone: missing and foreign targets mask identically with deletion evidence unproven"
++  ],
++  "next_action": "Root binds ONE metadata read using the new command and one exact preserved task UUID in its unchanged Coordinator session/workspace; Support performs no reconciliation.",
++  "evidence_sha256": {
++    "README.md": "58b4b0fb253a1df7c8a38907e6b73cba93875abb22189460ce7cfd0d73892da3",
++    "broker-regression.txt": "21dee80631fd7590af12f7b92ee9a5cf69fc22c6aaf4258b8d9cda586ff16290",
++    "initial-installation.json": "54b9b4d827cefcc1c4b020f794a3678bfeb95e0121597c9801f6b59adf3fe8d4",
++    "initial-installed-image-regression.txt": "5b974cf927cd74a62812187f422a7edf647256373b885c312869d28ff4d8bfc7",
++    "initial-installed-lifecycle-tests.txt": "929f1519f2e59e3eaaa75c5aeca055e1bb58207d997eceeaee63aba4374f1718",
++    "initial-result.json": "fa6672026d99ad6ce068bcf9bd1e1f839082669195fcf1c8e5c04bfe2eb4bf05",
++    "initial-reviewed.json": "39a5776367c5a753197917ae8943d8f4ff9edeb6949094a58ae0bfc29003da84",
++    "installation.json": "27fa2c9e6cf0589ba4ad06e30d0b4d9a7afe573200381e4969aeb1589398b61b",
++    "installed-image-regression.txt": "a401905bdfd9a8fce8a608931934cd77b587e80227f96a1c9419aa4697fbc846",
++    "installed-lifecycle-tests.txt": "7d3c0e4e16106ac9c1892d15e8845dd27c22f7b26cdfc9db97dfd753f29cb030",
++    "installed-public-files.json": "867d45e7109e4b1d46cba3bf6ca1e6faed82f168b5fd80cb9890f8c2a49ddc15",
++    "preserving-superset.json": "9aa0c98e442e3b26e04830adba51b25791f563d94a063ca6aa46952879c07c62",
++    "reviewed.json": "0c67930bac19b5547d1a8a2e1f5877fb349d0de3d6051b453057d330ee3901ed",
++    "source-image-regression.txt": "8e55e8c9b2805ae098478cee3cc056ac0584cf49a6e679514fe353d961b97e85",
++    "source-lifecycle-tests.txt": "9278f83bf5e5b828ac87c462e51f79bb9faf97a51d14b39aeb0e49c110fa8412",
++    "task-access-regression.txt": "c2f18a1d8be402b79e1e6584bd2f5a498b902861797195712441ed46e02f04aa",
++    "volume-regression.txt": "b1b792ea7ef622c65bfd112534f4f74c1203482363660794e67206ced6c2ad50"
++  }
++}
+diff --git a/docs/task-lifecycle-pass1/reviewed.json b/docs/task-lifecycle-pass1/reviewed.json
+new file mode 100644
+index 0000000..5eeb7b0
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/reviewed.json
+@@ -0,0 +1,29 @@
++{
++  "request_id": "5e629b49-3b50-472f-85d6-54a8382fa515",
++  "scope": "Read-only exact registered Coordinator same-workspace metadata; existing kernel socket peer and active launch/session proof. No new principal, session grant, worker lease or service restart.",
++  "base_sha256": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa",
++  "candidate_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
++  "dependencies": {
++    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
++  },
++  "validator_sha256": "6a09ebeb96429f955546cf8b30616cd287cf92fe36156ea54f7d7b843ad78a96",
++  "tests_sha256": {
++    "tests/test-task-lifecycle.py": "8939b9d6596a924802beca202c04e741f7efcdb2f9ec7853106d45dc01c03254",
++    "tests/test-task-image-inspect.py": "674aceb61649fac0c31c53163928e61471f6399b67f243698cbf83dc2c73704b",
++    "tests/test-volume-preservation.py": "518e8994ebecf66ee9520b31ccf50bb9a854fa61a9fea9ed1a3187896c04b833",
++    "tests/test-agent-docker-broker.py": "4acfd625d3bd5a5876aec16b698531992f9191a5308e0c422ff892842a82e7d9",
++    "tests/test-task-access.py": "e25741634bab2b62e7a13f8d3e9696d8a0368184ef0476ed85728dde5f1c9392"
++  },
++  "qualification": {
++    "lifecycle_cases": 22,
++    "authorization_mocks": 0,
++    "image_cases": 18,
++    "volume_cases": 24,
++    "broker_policy": "PASS; 16+11 cases and real Unix transport",
++    "task_access": "PASS"
++  },
++  "activation": "Atomic replacement of per-request operations module only through hash-gated existing operator installer. No loaded broker, client, wrapper, guard, binary, policy, task, plan, resource or lease replacement."
++}
+diff --git a/docs/task-lifecycle-pass1/source-image-regression.txt b/docs/task-lifecycle-pass1/source-image-regression.txt
+new file mode 100644
+index 0000000..8405ede
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/source-image-regression.txt
+@@ -0,0 +1,24 @@
++{"installed": false, "source_sha256": {"/home/ayattara/Code/kandev/scripts/kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "/home/ayattara/Code/kandev/scripts/kandev-agent-docker-operations.py": "83f8461d32ab08c30ab221451d8904bc6fdc669eb57e45b03915229a34c6c3fa"}, "live_task_operations": 0, "real_engine_calls": 0, "builds": 0, "pulls": 0}
++test_arbitrary_or_unknown_image_id_is_never_inspected (__main__.ImageTests.test_arbitrary_or_unknown_image_id_is_never_inspected) ... ok
++test_bare_id_does_not_implicitly_change_resource_type (__main__.ImageTests.test_bare_id_does_not_implicitly_change_resource_type) ... ok
++test_conflicting_or_unsupported_type_is_denied (__main__.ImageTests.test_conflicting_or_unsupported_type_is_denied) ... ok
++test_container_inspection_still_works (__main__.ImageTests.test_container_inspection_still_works) ... ok
++test_container_type_never_reads_image_metadata (__main__.ImageTests.test_container_type_never_reads_image_metadata) ... ok
++test_exact_id_formats_do_not_confuse_registry_digest (__main__.ImageTests.test_exact_id_formats_do_not_confuse_registry_digest) ... ok
++test_exact_owned_local_id_is_admitted_with_curated_metadata (__main__.ImageTests.test_exact_owned_local_id_is_admitted_with_curated_metadata) ... ok
++test_existing_owned_build_tag_route_is_preserved (__main__.ImageTests.test_existing_owned_build_tag_route_is_preserved) ... ok
++test_generic_explicit_image_type_is_admitted (__main__.ImageTests.test_generic_explicit_image_type_is_admitted) ... ok
++test_hmac_boundary_and_installed_client_framing (__main__.ImageTests.test_hmac_boundary_and_installed_client_framing) ... ok
++test_image_type_never_falls_back_to_container (__main__.ImageTests.test_image_type_never_falls_back_to_container) ... ok
++test_malformed_identity_or_changed_final_id_is_denied (__main__.ImageTests.test_malformed_identity_or_changed_final_id_is_denied) ... ok
++test_model_claim_changes_during_lookup_are_denied (__main__.ImageTests.test_model_claim_changes_during_lookup_are_denied) ... ok
++test_model_reference_alone_does_not_grant_image_ownership (__main__.ImageTests.test_model_reference_alone_does_not_grant_image_ownership) ... ok
++test_other_task_build_cannot_authorize_id (__main__.ImageTests.test_other_task_build_cannot_authorize_id) ... ok
++test_private_env_format_is_denied_before_engine_query (__main__.ImageTests.test_private_env_format_is_denied_before_engine_query) ... ok
++test_registry_digest_is_not_an_image_id_alias (__main__.ImageTests.test_registry_digest_is_not_an_image_id_alias) ... ok
++test_sibling_clone_build_cannot_authorize_id (__main__.ImageTests.test_sibling_clone_build_cannot_authorize_id) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 0.053s
++
++OK
+diff --git a/docs/task-lifecycle-pass1/source-lifecycle-tests.txt b/docs/task-lifecycle-pass1/source-lifecycle-tests.txt
+new file mode 100644
+index 0000000..8112be2
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/source-lifecycle-tests.txt
+@@ -0,0 +1,28 @@
++{"installed": false, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4", "fixture": "private namespaces; live /data /run /app hidden; copied public interpreter backend", "authorization_mocks": 0, "live_task_operations": 0, "real_engine_calls": 0, "restarts": 0}
++test_active_planless_read_preserves_all_tables (__main__.LifecycleTests.test_active_planless_read_preserves_all_tables) ... ok
++test_ambiguous_launch_has_no_sole_session_fallback (__main__.LifecycleTests.test_ambiguous_launch_has_no_sole_session_fallback) ... ok
++test_archived_caller_denied_before_target (__main__.LifecycleTests.test_archived_caller_denied_before_target) ... ok
++test_archived_plan_is_retained_without_content_read (__main__.LifecycleTests.test_archived_plan_is_retained_without_content_read) ... ok
++test_audit_failure_is_typed_and_does_not_leak_path (__main__.LifecycleTests.test_audit_failure_is_typed_and_does_not_leak_path) ... ok
++test_caller_revocation_during_read_discards_result (__main__.LifecycleTests.test_caller_revocation_during_read_discards_result) ... ok
++test_caller_storage_fault_is_not_missing (__main__.LifecycleTests.test_caller_storage_fault_is_not_missing) ... ok
++test_exited_original_peer_pidfd_denies_before_target (__main__.LifecycleTests.test_exited_original_peer_pidfd_denies_before_target) ... ok
++test_full_wrapper_hmac_pidfd_and_metadata_path (__main__.LifecycleTests.test_full_wrapper_hmac_pidfd_and_metadata_path) ... ok
++test_incarnation_change_during_read_discards_result (__main__.LifecycleTests.test_incarnation_change_during_read_discards_result) ... ok
++test_malformed_target_and_identity_override_are_rejected (__main__.LifecycleTests.test_malformed_target_and_identity_override_are_rejected) ... ok
++test_mismatched_session_environment_denied_before_target (__main__.LifecycleTests.test_mismatched_session_environment_denied_before_target) ... ok
++test_missing_and_both_foreign_workspaces_are_identically_masked (__main__.LifecycleTests.test_missing_and_both_foreign_workspaces_are_identically_masked) ... ok
++test_missing_socket_peer_denies_before_target (__main__.LifecycleTests.test_missing_socket_peer_denies_before_target) ... ok
++test_ordinary_task_denied_before_target (__main__.LifecycleTests.test_ordinary_task_denied_before_target) ... ok
++test_other_launch_pid_denied_before_target (__main__.LifecycleTests.test_other_launch_pid_denied_before_target) ... ok
++test_projection_bound (__main__.LifecycleTests.test_projection_bound) ... ok
++test_real_validator_custody_rejects_writable_copy (__main__.LifecycleTests.test_real_validator_custody_rejects_writable_copy) ... ok
++test_real_validator_pin_drift_is_unavailable (__main__.LifecycleTests.test_real_validator_pin_drift_is_unavailable) ... ok
++test_revoked_session_denied_before_target (__main__.LifecycleTests.test_revoked_session_denied_before_target) ... ok
++test_target_storage_fault_is_not_missing (__main__.LifecycleTests.test_target_storage_fault_is_not_missing) ... ok
++test_wrong_registered_root_denied_before_target (__main__.LifecycleTests.test_wrong_registered_root_denied_before_target) ... ok
++
++----------------------------------------------------------------------
++Ran 22 tests in 1.034s
++
++OK
+diff --git a/docs/task-lifecycle-pass1/task-access-regression.txt b/docs/task-lifecycle-pass1/task-access-regression.txt
+new file mode 100644
+index 0000000..1be6120
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/task-access-regression.txt
+@@ -0,0 +1 @@
++PASS: automatic task Docker and fresh guarded Git access
+diff --git a/docs/task-lifecycle-pass1/volume-regression.txt b/docs/task-lifecycle-pass1/volume-regression.txt
+new file mode 100644
+index 0000000..770ac88
+--- /dev/null
++++ b/docs/task-lifecycle-pass1/volume-regression.txt
+@@ -0,0 +1,5 @@
++........................
++----------------------------------------------------------------------
++Ran 24 tests in 0.756s
++
++OK
+diff --git a/scripts/install-task-image-inspect.py b/scripts/install-task-image-inspect.py
+index 5ea8872..4b0a453 100644
+--- a/scripts/install-task-image-inspect.py
++++ b/scripts/install-task-image-inspect.py
+@@ -2 +2 @@
+-"""Hash-gated, restart-free installation of the reviewed image metadata repair."""
++"""Hash-gated, restart-free installation of a reviewed per-request operations module."""
+@@ -3,0 +4 @@ import hashlib
++import argparse
+@@ -61,0 +63,6 @@ def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--review', type=Path, default=REVIEW)
++    args = parser.parse_args()
++    review_path = args.review.resolve(strict=True)
++    if not review_path.is_relative_to(ROOT / 'docs') or review_path.name != 'reviewed.json':
++        raise SystemExit('Review manifest must be a versioned docs reviewed.json')
+@@ -66 +73 @@ def main():
+-    review = json.loads(REVIEW.read_text())
++    review = json.loads(review_path.read_text())
+@@ -81 +88 @@ def main():
+-    output = REVIEW.with_name('installation.json')
++    output = review_path.with_name('installation.json')
+diff --git a/scripts/kandev-agent-docker-broker b/scripts/kandev-agent-docker-broker
+index 31c0a21..0664050 100644
+--- a/scripts/kandev-agent-docker-broker
++++ b/scripts/kandev-agent-docker-broker
+@@ -92,3 +91,0 @@ NETWORK_SLOT_POOL = ipaddress.IPv4Network("198.18.0.0/15")
+-# Reviewed dependency for the read-only Coordinator launch proof. Updating the
+-# worker requires requalifying this capability; no unpinned validator fallback.
+-TASK_LIFECYCLE_LAUNCH_SHA256 = "6a09ebeb96429f955546cf8b30616cd287cf92fe36156ea54f7d7b843ad78a96"
+@@ -2224 +2220,0 @@ def workspace_help() -> str:
+-        "  docker kandev workspace task-lifecycle <task-uuid>\n"
+@@ -2497,95 +2492,0 @@ fi
+-def lifecycle_error(code: str) -> dict[str, Any]:
+-    error: dict[str, Any] = {"code": code}
+-    if code == "TASK_NOT_FOUND_OR_INACCESSIBLE":
+-        error["deletion_evidence"] = "unproven"
+-    return {"returncode": 78, "stdout": json.dumps({
+-        "schema": "task-lifecycle/v1", "error": error,
+-    }, sort_keys=True) + "\n", "stderr": f"kandev-agent-docker: {code}\n"}
+-
+-
+-def lifecycle_peer_identity(validator: dict[str, Any], peer_pid: int) -> tuple[Any, ...]:
+-    process = validator["process"](peer_pid)
+-    executable = process["exe"]
+-    return (process["pid"], process["start"], process["mnt"], process["pidns"],
+-            process["userns"], executable.st_dev, executable.st_ino)
+-
+-
+-def lifecycle_caller(task_root: Path, peer_pid: int, validator: dict[str, Any]) -> dict[str, Any]:
+-    # The kernel peer's ancestry must contain the exact registered launch.
+-    # Never use request identity hints, registration mode or a sole-session
+-    # fallback when the peer itself cannot be authenticated.
+-    owner = validator["metadata"](
+-        KANDEV_DB, task_root, ancestors=validator["ancestry"](peer_pid),
+-    )
+-    coordinator = coordinator_context(task_root)
+-    if any(owner[key] != coordinator[key] for key in ("task_id", "workspace_id")):
+-        raise BrokerError("Coordinator launch differs from its registration")
+-    return {**owner, "workspace_name": coordinator["workspace_name"]}
+-
+-
+-def lifecycle_target(workspace_id: str, task_id: str) -> dict[str, Any] | None:
+-    with kandev_db() as database:
+-        database.execute("BEGIN")
+-        row = database.execute("""
+-            SELECT t.id, t.workspace_id, t.workflow_id, t.workflow_step_id,
+-                   t.state, t.updated_at, t.archived_at,
+-                   EXISTS(SELECT 1 FROM task_plans p WHERE p.task_id=t.id) AS has_plan
+-            FROM tasks t WHERE t.id=? AND t.workspace_id=?
+-        """, (task_id, workspace_id)).fetchone()
+-    if row is None:
+-        return None
+-    return {
+-        "schema": "task-lifecycle/v1", "task_id": row["id"],
+-        "workspace_id": row["workspace_id"], "state": row["state"],
+-        "workflow_id": row["workflow_id"], "workflow_step_id": row["workflow_step_id"],
+-        "updated_at": row["updated_at"], "archived_at": row["archived_at"],
+-        "lifecycle": "archived" if row["archived_at"] is not None else "active",
+-        "plan": {"status": "present" if row["has_plan"] else "absent",
+-                 "code": None if row["has_plan"] else "PLAN_NOT_FOUND"},
+-    }
+-
+-
+-def handle_task_lifecycle(task_root: Path, args: list[str], peer_pid: int | None) -> dict[str, Any]:
+-    if len(args) != 1 or not TASK_ID_RE.fullmatch(args[0]):
+-        return lifecycle_error("INVALID_ARGUMENT")
+-    if type(peer_pid) is not int or peer_pid <= 0:
+-        return lifecycle_error("ACCESS_DENIED")
+-    try:
+-        validator, digest = load_worker_control(Path(__file__).with_name("kandev-test-worker.py"))
+-        if digest != TASK_LIFECYCLE_LAUNCH_SHA256:
+-            return lifecycle_error("METADATA_UNAVAILABLE")
+-    except (BrokerError, OSError, ValueError):
+-        return lifecycle_error("METADATA_UNAVAILABLE")
+-    try:
+-        peer = lifecycle_peer_identity(validator, peer_pid)
+-        caller = lifecycle_caller(task_root, peer_pid, validator)
+-    except (OSError, sqlite3.Error):
+-        return lifecycle_error("METADATA_UNAVAILABLE")
+-    except (BrokerError, RuntimeError, ValueError, KeyError):
+-        return lifecycle_error("ACCESS_DENIED")
+-    try:
+-        target = lifecycle_target(caller["workspace_id"], args[0])
+-        output = json.dumps(target, sort_keys=True) + "\n"
+-        if len(output.encode()) > 4096:
+-            return lifecycle_error("METADATA_UNAVAILABLE")
+-    except (OSError, sqlite3.Error, ValueError, TypeError):
+-        return lifecycle_error("METADATA_UNAVAILABLE")
+-    try:
+-        if (lifecycle_caller(task_root, peer_pid, validator) != caller
+-                or lifecycle_peer_identity(validator, peer_pid) != peer):
+-            return lifecycle_error("ACCESS_DENIED")
+-    except (OSError, sqlite3.Error):
+-        return lifecycle_error("METADATA_UNAVAILABLE")
+-    except (BrokerError, RuntimeError, ValueError, KeyError):
+-        return lifecycle_error("ACCESS_DENIED")
+-    try:
+-        audit_source(caller, "task-lifecycle", target_task_id=args[0],
+-                     session_id=caller["session_id"], execution_id=caller["execution_id"],
+-                     result="ok" if target is not None else "not-found-or-inaccessible")
+-    except (BrokerError, OSError, ValueError):
+-        return lifecycle_error("METADATA_UNAVAILABLE")
+-    if target is None:
+-        return lifecycle_error("TASK_NOT_FOUND_OR_INACCESSIBLE")
+-    return {"returncode": 0, "stdout": output, "stderr": ""}
+-
+-
+@@ -2981,2 +2881,0 @@ def handle_request(
+-    if args[:3] == ["kandev", "workspace", "task-lifecycle"]:
+-        return handle_task_lifecycle(task_root, args[3:], peer_pid)
+diff --git a/scripts/kandev-agent-docker-operations.py b/scripts/kandev-agent-docker-operations.py
+index c9933a7..284ce36 100644
+--- a/scripts/kandev-agent-docker-operations.py
++++ b/scripts/kandev-agent-docker-operations.py
+@@ -538,0 +539,127 @@ class VolumePreservation:
++class TaskLifecycle:
++    """Read-only Coordinator metadata over the existing authenticated stream."""
++    VALIDATOR_SHA256 = '6a09ebeb96429f955546cf8b30616cd287cf92fe36156ea54f7d7b843ad78a96'
++
++    def __init__(self, broker, root, stdin):
++        self.b, self.root, self.stdin = broker, root, stdin
++
++    @staticmethod
++    def error(code):
++        error = {'code': code}
++        if code == 'TASK_NOT_FOUND_OR_INACCESSIBLE':
++            error['deletion_evidence'] = 'unproven'
++        return {'returncode': 78, 'stdout': json.dumps({
++            'schema': 'task-lifecycle/v1', 'error': error}, sort_keys=True) + '\n',
++            'stderr': 'kandev-agent-docker: ' + code + '\n'}
++
++    def peer(self):
++        if self.stdin is None or not hasattr(self.stdin, 'stream'):
++            raise ValueError('missing kernel peer')
++        with socket.fromfd(self.stdin.stream.fileno(), socket.AF_UNIX, socket.SOCK_STREAM) as peer:
++            if (peer.getsockopt(socket.SOL_SOCKET, socket.SO_DOMAIN) != socket.AF_UNIX
++                    or peer.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE) != socket.SOCK_STREAM):
++                raise ValueError('invalid peer transport')
++            pid, uid, _ = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
++            if pid <= 0 or uid != os.getuid():
++                raise ValueError('invalid kernel peer')
++            # Bind the original connection peer; no payload PID, environment
++            # identity, numeric pidfd_open fallback, or worker lease is used.
++            descriptor = peer.getsockopt(socket.SOL_SOCKET, 77)  # SO_PEERPIDFD
++        return pid, descriptor
++
++    @staticmethod
++    def check_peer(descriptor):
++        if select.select([descriptor], [], [], 0)[0]:
++            raise ValueError('original peer exited')
++
++    @staticmethod
++    def peer_identity(validator, pid):
++        process = validator['process'](pid)
++        exe = process['exe']
++        return (process['pid'], process['start'], process['mnt'], process['pidns'],
++                process['userns'], exe.st_dev, exe.st_ino)
++
++    def caller(self, validator, pid):
++        owner = validator['metadata'](self.b.KANDEV_DB, self.root,
++                                      ancestors=validator['ancestry'](pid))
++        coordinator = self.b.coordinator_context(self.root)
++        if any(owner[k] != coordinator[k] for k in ('task_id', 'workspace_id')):
++            raise ValueError('Coordinator launch differs from registration')
++        return owner
++
++    def target(self, workspace_id, task_id):
++        with self.b.kandev_db() as database:
++            database.execute('BEGIN')
++            row = database.execute('''
++                SELECT t.id,t.workspace_id,t.workflow_id,t.workflow_step_id,
++                       t.state,t.updated_at,t.archived_at,
++                       EXISTS(SELECT 1 FROM task_plans p WHERE p.task_id=t.id) AS has_plan
++                FROM tasks t WHERE t.id=? AND t.workspace_id=?
++            ''', (task_id, workspace_id)).fetchone()
++        if row is None:
++            return None
++        return {'schema': 'task-lifecycle/v1', 'task_id': row['id'],
++                'workspace_id': row['workspace_id'], 'state': row['state'],
++                'workflow_id': row['workflow_id'], 'workflow_step_id': row['workflow_step_id'],
++                'updated_at': row['updated_at'], 'archived_at': row['archived_at'],
++                'lifecycle': 'archived' if row['archived_at'] is not None else 'active',
++                'plan': {'status': 'present' if row['has_plan'] else 'absent',
++                         'code': None if row['has_plan'] else 'PLAN_NOT_FOUND'}}
++
++    def handle(self, args):
++        if len(args) != 1 or not self.b.TASK_ID_RE.fullmatch(args[0]):
++            return self.error('INVALID_ARGUMENT')
++        descriptor = None
++        try:
++            try:
++                pid, descriptor = self.peer()
++                self.check_peer(descriptor)
++            except (OSError, ValueError, AttributeError):
++                return self.error('ACCESS_DENIED')
++            try:
++                validator, digest = self.b.load_worker_control(Path(__file__).with_name('kandev-test-worker.py'))
++                if digest != self.VALIDATOR_SHA256:
++                    return self.error('METADATA_UNAVAILABLE')
++            except (self.b.BrokerError, OSError, ValueError):
++                return self.error('METADATA_UNAVAILABLE')
++            try:
++                peer = self.peer_identity(validator, pid)
++                caller = self.caller(validator, pid)
++            except (OSError, self.b.sqlite3.Error):
++                return self.error('METADATA_UNAVAILABLE')
++            except (self.b.BrokerError, RuntimeError, ValueError, KeyError):
++                return self.error('ACCESS_DENIED')
++            try:
++                target = self.target(caller['workspace_id'], args[0])
++                output = json.dumps(target, sort_keys=True) + '\n'
++                if len(output.encode()) > 4096:
++                    return self.error('METADATA_UNAVAILABLE')
++            except (self.b.BrokerError, OSError, self.b.sqlite3.Error, ValueError, TypeError):
++                return self.error('METADATA_UNAVAILABLE')
++            try:
++                self.check_peer(descriptor)
++                if (self.caller(validator, pid) != caller or self.peer_identity(validator, pid) != peer):
++                    return self.error('ACCESS_DENIED')
++                self.check_peer(descriptor)
++            except (OSError, self.b.sqlite3.Error):
++                return self.error('METADATA_UNAVAILABLE')
++            except (self.b.BrokerError, RuntimeError, ValueError, KeyError):
++                return self.error('ACCESS_DENIED')
++            try:
++                self.b.audit_source(caller, 'task-lifecycle', target_task_id=args[0],
++                                    session_id=caller['session_id'], execution_id=caller['execution_id'],
++                                    result='ok' if target is not None else 'not-found-or-inaccessible')
++            except (self.b.BrokerError, OSError, ValueError):
++                return self.error('METADATA_UNAVAILABLE')
++            try:
++                self.check_peer(descriptor)
++            except (OSError, ValueError):
++                return self.error('ACCESS_DENIED')
++            if target is None:
++                return self.error('TASK_NOT_FOUND_OR_INACCESSIBLE')
++            return {'returncode': 0, 'stdout': output, 'stderr': ''}
++        finally:
++            if descriptor is not None:
++                os.close(descriptor)
++
++
+@@ -829 +956 @@ class Operations:
+-            return {"returncode": 0, "stdout": "Task Docker: compose, build, buildx build, run, ps, images, inspect, logs, exec, start, stop, restart, rm, pull, version, scout. Resources are scoped automatically.\n", "stderr": ""}
++            return {"returncode": 0, "stdout": "Task Docker: compose, build, buildx build, run, ps, images, inspect, logs, exec, start, stop, restart, rm, pull, version, scout. Resources are scoped automatically.\nCoordinator metadata: docker kandev task-lifecycle <task-UUID>.\n", "stderr": ""}
+@@ -1017,0 +1145,2 @@ def handle(broker, root, cwd, args, stdin=None):
++    if args[:2] == ['kandev', 'task-lifecycle']:
++        return TaskLifecycle(broker, root, stdin).handle(args[2:])
+diff --git a/tests/test-task-lifecycle.py b/tests/test-task-lifecycle.py
+index d6ac023..771ac41 100644
+--- a/tests/test-task-lifecycle.py
++++ b/tests/test-task-lifecycle.py
+@@ -2 +2,2 @@
+-"""Synthetic metadata/launch acceptance; never connects to a live broker or DB."""
++"""Kernel-peer and source-bound synthetic acceptance, isolated from live data."""
++import argparse
+@@ -11,0 +13,2 @@ import sqlite3
++import subprocess
++import sys
+@@ -12,0 +16,2 @@ import tempfile
++import threading
++from types import SimpleNamespace
+@@ -17,2 +22,45 @@ import uuid
+-ROOT = Path(__file__).resolve().parents[1]
+-loader = importlib.machinery.SourceFileLoader('lifecycle_broker', str(ROOT / 'scripts/kandev-agent-docker-broker'))
++parser = argparse.ArgumentParser()
++parser.add_argument('--installed', action='store_true')
++parser.add_argument('--isolated', action='store_true')
++parser.add_argument('--source-root', default=str(Path(__file__).resolve().parents[1]))
++config, remaining = parser.parse_known_args()
++ROOT = Path(config.source_root)
++
++if not config.isolated:
++    bootstrap = '''import os,sys,shutil
++from pathlib import Path
++script=Path('/tmp/lifecycle-fixture.py');script.write_bytes(sys.stdin.buffer.read())
++if '--installed' not in sys.argv:
++ destination=Path('/fixture-platform/scripts');destination.mkdir(parents=True)
++ for name in ('kandev-agent-docker-broker','kandev-agent-docker-operations.py','kandev-test-worker.py'):
++  target=destination/name;shutil.copyfile('/fixture-inputs/'+name,target);target.chmod(0o555)
++ for name in ('docker','kandev-agent-docker-client'):
++  target=Path('/usr/local/bin')/name;shutil.copyfile('/fixture-inputs/'+name,target);target.chmod(0o555)
++backend=Path('/app/apps/backend/bin/kandev')
++shutil.copyfile('/usr/bin/python3',backend);backend.chmod(0o555)
++os.execv(str(backend),['__backend','-I',str(script),'--isolated',*sys.argv[1:]])
++'''
++    argv = ['bwrap', '--unshare-user', '--uid', '0', '--gid', '0', '--unshare-net',
++            '--tmpfs', '/', '--ro-bind', '/usr', '/usr', '--ro-bind', '/lib', '/lib',
++            '--ro-bind', '/lib64', '/lib64', '--ro-bind', '/bin', '/bin',
++            '--ro-bind', '/proc', '/proc', '--dev', '/dev', '--dir', '/etc',
++            '--ro-bind', '/etc/ld.so.cache', '/etc/ld.so.cache', '--dir', '/tmp',
++            '--dir', '/run', '--dir', '/data/tasks', '--dir', '/app/apps/backend/bin',
++            '--chdir', '/tmp', '--die-with-parent', '--clearenv',
++            '--setenv', 'PATH', '/usr/local/bin:/usr/bin:/bin']
++    if not config.installed:
++        argv += ['--tmpfs', '/usr/local/bin', '--ro-bind', str(ROOT / 'docker-host-path-wrapper.sh'),
++                 '/fixture-inputs/docker', '--ro-bind', str(ROOT / 'scripts/kandev-agent-docker-client'),
++                 '/fixture-inputs/kandev-agent-docker-client']
++        for name in ('kandev-agent-docker-broker','kandev-agent-docker-operations.py','kandev-test-worker.py'):
++            argv += ['--ro-bind', str(ROOT/'scripts'/name), '/fixture-inputs/'+name]
++    argv += ['/usr/bin/python3', '-I', '-c', bootstrap, '--source-root', '/fixture-platform']
++    if config.installed:
++        argv.append('--installed')
++    result = subprocess.run(argv, input=Path(__file__).read_bytes())
++    raise SystemExit(result.returncode)
++
++sys.argv = [sys.argv[0], *remaining]
++BROKER = Path('/usr/local/bin/kandev-agent-docker-broker') if config.installed else ROOT / 'scripts/kandev-agent-docker-broker'
++OPS = Path('/usr/local/bin/kandev-agent-docker-operations.py') if config.installed else ROOT / 'scripts/kandev-agent-docker-operations.py'
++loader = importlib.machinery.SourceFileLoader('lifecycle_broker', str(BROKER))
+@@ -22,3 +70,2 @@ loader.exec_module(broker)
+-worker_path = ROOT / 'scripts/kandev-test-worker.py'
+-VALIDATOR = runpy.run_path(str(worker_path))
+-VALIDATOR_HASH = hashlib.sha256(worker_path.read_bytes()).hexdigest()
++operations = runpy.run_path(str(OPS))
++Lifecycle = operations['TaskLifecycle']
+@@ -33,4 +80,6 @@ class LifecycleTests(unittest.TestCase):
+-        self.temporary = tempfile.TemporaryDirectory(prefix='kandev-lifecycle-test-')
+-        self.addCleanup(self.temporary.cleanup)
+-        self.base = Path(self.temporary.name)
+-        self.root = Path('/data/tasks/coordinator-lifecycle-inert')  # lexical fixture, never created
++        temporary = tempfile.TemporaryDirectory(prefix='lifecycle-fixture-')
++        self.addCleanup(temporary.cleanup)
++        self.base = Path(temporary.name)
++        self.root = Path('/data/tasks') / ('coordinator-' + uuid.uuid4().hex)
++        self.root.mkdir()
++        self.addCleanup(self.root.rmdir)
+@@ -40,12 +89,12 @@ class LifecycleTests(unittest.TestCase):
+-                CREATE TABLE workspaces(id TEXT PRIMARY KEY, name TEXT, owner_id TEXT);
+-                CREATE TABLE tasks(id TEXT PRIMARY KEY, workspace_id TEXT, archived_at TEXT,
+-                    workflow_id TEXT, workflow_step_id TEXT, state TEXT, updated_at TEXT);
+-                CREATE TABLE task_plans(task_id TEXT PRIMARY KEY, content TEXT);
+-                CREATE TABLE task_environments(id TEXT, task_id TEXT, workspace_path TEXT,
+-                    task_dir_name TEXT, status TEXT, ownership_generation INTEGER);
+-                CREATE TABLE task_sessions(id TEXT, task_id TEXT, task_environment_id TEXT,
+-                    state TEXT, queue_incarnation_id TEXT, workspace_path TEXT);
+-                CREATE TABLE executors_running(task_id TEXT, session_id TEXT, agent_execution_id TEXT,
+-                    pid INTEGER, local_pid INTEGER, status TEXT, runtime TEXT, worktree_path TEXT, metadata TEXT);
+-                CREATE TABLE repositories(id TEXT, workspace_id TEXT, local_path TEXT, deleted_at TEXT);
+-                CREATE TABLE task_repositories(task_id TEXT, repository_id TEXT);
++                CREATE TABLE workspaces(id TEXT PRIMARY KEY,name TEXT,owner_id TEXT);
++                CREATE TABLE tasks(id TEXT PRIMARY KEY,workspace_id TEXT,archived_at TEXT,
++                    workflow_id TEXT,workflow_step_id TEXT,state TEXT,updated_at TEXT);
++                CREATE TABLE task_plans(task_id TEXT PRIMARY KEY,content TEXT);
++                CREATE TABLE task_environments(id TEXT,task_id TEXT,workspace_path TEXT,
++                    task_dir_name TEXT,status TEXT,ownership_generation INTEGER);
++                CREATE TABLE task_sessions(id TEXT,task_id TEXT,task_environment_id TEXT,
++                    state TEXT,queue_incarnation_id TEXT,workspace_path TEXT);
++                CREATE TABLE executors_running(task_id TEXT,session_id TEXT,agent_execution_id TEXT,
++                    pid INTEGER,local_pid INTEGER,status TEXT,runtime TEXT,worktree_path TEXT,metadata TEXT);
++                CREATE TABLE repositories(id TEXT,workspace_id TEXT,local_path TEXT,deleted_at TEXT);
++                CREATE TABLE task_repositories(task_id TEXT,repository_id TEXT);
+@@ -54,2 +103 @@ class LifecycleTests(unittest.TestCase):
+-                (uid(1), 'own', 'user-a'), (uid(2), 'foreign same owner', 'user-a'),
+-                (uid(3), 'foreign other owner', 'user-b')])
++                (uid(1),'own','user-a'),(uid(2),'foreign same owner','user-a'),(uid(3),'foreign','user-b')])
+@@ -57,6 +105,6 @@ class LifecycleTests(unittest.TestCase):
+-                (uid(10), uid(1), None, uid(100), uid(101), 'IN_PROGRESS', '2026-11-25T00:00:00Z'),
+-                (uid(11), uid(1), None, uid(100), uid(101), 'CREATED', '2026-11-25T00:00:00Z'),
+-                (uid(12), uid(1), '2026-11-24T00:00:00Z', uid(100), uid(102), 'COMPLETED', '2026-11-24T00:00:00Z'),
+-                (uid(13), uid(2), None, uid(200), uid(201), 'CREATED', '2026-11-25T00:00:00Z'),
+-                (uid(14), uid(3), None, uid(300), uid(301), 'CREATED', '2026-11-25T00:00:00Z')])
+-            db.execute('INSERT INTO task_plans VALUES(?,?)', (uid(12), 'synthetic-retained-plan-must-not-be-read'))
++                (uid(10),uid(1),None,uid(100),uid(101),'IN_PROGRESS','2026-11-25T00:00:00Z'),
++                (uid(11),uid(1),None,uid(100),uid(101),'CREATED','2026-11-25T00:00:00Z'),
++                (uid(12),uid(1),'2026-11-24T00:00:00Z',uid(100),uid(102),'COMPLETED','2026-11-24T00:00:00Z'),
++                (uid(13),uid(2),None,uid(200),uid(201),'CREATED','2026-11-25T00:00:00Z'),
++                (uid(14),uid(3),None,uid(300),uid(301),'CREATED','2026-11-25T00:00:00Z')])
++            db.execute('INSERT INTO task_plans VALUES(?,?)',(uid(12),'retained-plan-content-must-not-be-read'))
+@@ -64 +112 @@ class LifecycleTests(unittest.TestCase):
+-                       (uid(20), uid(10), str(self.root), self.root.name, 'ready', 1))
++                       (uid(20),uid(10),str(self.root),self.root.name,'ready',1))
+@@ -66 +114 @@ class LifecycleTests(unittest.TestCase):
+-                       (uid(30), uid(10), uid(20), 'RUNNING', uid(40), str(self.root)))
++                       (uid(30),uid(10),uid(20),'RUNNING',uid(40),str(self.root)))
+@@ -68,40 +116,17 @@ class LifecycleTests(unittest.TestCase):
+-                       (uid(10), uid(30), uid(50), os.getpid(), os.getpid(), 'running', 'standalone', str(self.root), '{}'))
+-            db.execute('INSERT INTO repositories VALUES(?,?,?,NULL)', (uid(60), uid(1), broker.COORDINATOR_REPOSITORY))
+-            db.execute('INSERT INTO task_repositories VALUES(?,?)', (uid(10), uid(60)))
+-        for name, value in (
+-            ('KANDEV_DB', self.database), ('COORDINATOR_AUDIT_LOG', self.base / 'audit.jsonl'),
+-        ):
+-            patch = mock.patch.object(broker, name, value)
+-            patch.start()
+-            self.addCleanup(patch.stop)
+-        # Only development file custody is substituted: policy, real SQL,
+-        # registered root/session matching and kernel process ancestry are real.
+-        self.assertEqual(VALIDATOR_HASH, broker.TASK_LIFECYCLE_LAUNCH_SHA256)
+-        self.validator = dict(VALIDATOR)
+-        kernel_process = VALIDATOR['process']
+-        def fixture_process(pid):
+-            if pid != os.getpid():
+-                raise VALIDATOR['WorkerError']('peer is outside the synthetic process fixture')
+-            # Keep the real kernel PID/start/executable/namespaces, but end
+-            # the synthetic ancestry at this fixture's launch. Do not inspect
+-            # the host test runner's unrelated parent processes.
+-            return {**kernel_process(pid), 'ppid': 0}
+-        process_patch = mock.patch.dict(VALIDATOR['ancestry'].__globals__, {'process': fixture_process})
+-        process_patch.start()
+-        self.addCleanup(process_patch.stop)
+-        self.validator['process'] = fixture_process
+-        custody = mock.patch.object(broker, 'load_worker_control', return_value=(self.validator, VALIDATOR_HASH))
+-        custody.start()
+-        self.addCleanup(custody.stop)
+-        commands = mock.patch.object(broker, 'run_command', side_effect=AssertionError('unexpected daemon/process command'))
+-        self.commands = commands.start()
+-        self.addCleanup(commands.stop)
+-        self.target_reads = mock.patch.object(broker, 'lifecycle_target', wraps=broker.lifecycle_target).start()
+-        self.addCleanup(mock.patch.stopall)
+-
+-    def execute(self, task=11, peer=None):
+-        return broker.handle_task_lifecycle(self.root, [uid(task)], os.getpid() if peer is None else peer)
+-
+-    def code(self, result):
+-        self.assertEqual(result['returncode'], 78)
+-        return json.loads(result['stdout'])['error']['code']
++                       (uid(10),uid(30),uid(50),os.getpid(),os.getpid(),'running','standalone',str(self.root),'{}'))
++            db.execute('INSERT INTO repositories VALUES(?,?,?,NULL)',(uid(60),uid(1),broker.COORDINATOR_REPOSITORY))
++            db.execute('INSERT INTO task_repositories VALUES(?,?)',(uid(10),uid(60)))
++        for name,value in [('KANDEV_DB',self.database),('COORDINATOR_AUDIT_LOG',self.base/'audit.jsonl')]:
++            patch = mock.patch.object(broker,name,value)
++            patch.start();self.addCleanup(patch.stop)
++        self.queries = []
++        original_db = broker.kandev_db
++        def database():
++            result = original_db()
++            result.set_trace_callback(self.queries.append)
++            return result
++        patch = mock.patch.object(broker,'kandev_db',side_effect=database)
++        patch.start();self.addCleanup(patch.stop)
++        patch = mock.patch.object(broker,'run_command',side_effect=AssertionError('unexpected engine/process operation'))
++        self.commands = patch.start();self.addCleanup(patch.stop)
++        self.b = SimpleNamespace(**vars(broker))
+@@ -109 +134 @@ class LifecycleTests(unittest.TestCase):
+-    def sql(self, statement, parameters=()):
++    def sql(self,statement,parameters=()):
+@@ -111 +136 @@ class LifecycleTests(unittest.TestCase):
+-            db.execute(statement, parameters)
++            db.execute(statement,parameters)
+@@ -116,0 +142,12 @@ class LifecycleTests(unittest.TestCase):
++    def execute(self,number=11,args=None,root=None):
++        left,right = socket.socketpair()
++        with left,right,right.makefile('rb') as stream:
++            return Lifecycle(self.b,root or self.root,broker.FramedInput(stream)).handle(args or [uid(number)])
++
++    def code(self,result):
++        self.assertEqual(result['returncode'],78)
++        return json.loads(result['stdout'])['error']['code']
++
++    def assert_no_target_query(self):
++        self.assertFalse(any('AS has_plan' in q for q in self.queries))
++
+@@ -120,21 +157,16 @@ class LifecycleTests(unittest.TestCase):
+-    def test_active_planless_read_is_bounded_and_database_unchanged(self):
+-        before = self.snapshot()
+-        result = self.execute()
+-        self.assertEqual(result['returncode'], 0)
+-        data = json.loads(result['stdout'])
+-        self.assertEqual(data['lifecycle'], 'active')
+-        self.assertEqual(data['workspace_id'], uid(1))
+-        self.assertEqual(data['plan'], {'status': 'absent', 'code': 'PLAN_NOT_FOUND'})
+-        self.assertLessEqual(len(result['stdout'].encode()), 4096)
+-        self.assertEqual(before, self.snapshot())
+-
+-    def test_archived_plan_is_retained_without_content_exposure(self):
+-        before = self.snapshot()
+-        result = self.execute(12)
+-        data = json.loads(result['stdout'])
+-        self.assertEqual(data['lifecycle'], 'archived')
+-        self.assertEqual(data['archived_at'], '2026-11-24T00:00:00Z')
+-        self.assertEqual(data['plan'], {'status': 'present', 'code': None})
+-        self.assertNotIn('synthetic-retained-plan', result['stdout'])
+-        self.assertNotIn('content', result['stdout'])
+-        self.assertEqual(before, self.snapshot())
++    def test_active_planless_read_preserves_all_tables(self):
++        before = self.snapshot();result = self.execute();data = json.loads(result['stdout'])
++        self.assertEqual(result['returncode'],0)
++        self.assertEqual(data['lifecycle'],'active')
++        self.assertEqual(data['plan'],{'status':'absent','code':'PLAN_NOT_FOUND'})
++        self.assertLessEqual(len(result['stdout'].encode()),4096)
++        self.assertEqual(before,self.snapshot())
++
++    def test_archived_plan_is_retained_without_content_read(self):
++        before = self.snapshot();result = self.execute(12);data = json.loads(result['stdout'])
++        self.assertEqual(result['returncode'],0)
++        self.assertEqual(data['lifecycle'],'archived')
++        self.assertEqual(data['plan'],{'status':'present','code':None})
++        self.assertNotIn('retained-plan-content',result['stdout'])
++        self.assertEqual(before,self.snapshot())
++        self.assertFalse(any('SELECT content' in q for q in self.queries))
+@@ -144,22 +176,29 @@ class LifecycleTests(unittest.TestCase):
+-        self.assertEqual(self.code(missing), 'TASK_NOT_FOUND_OR_INACCESSIBLE')
+-        self.assertEqual(json.loads(missing['stdout'])['error']['deletion_evidence'], 'unproven')
+-        self.assertEqual(self.execute(13), missing)
+-        self.assertEqual(self.execute(14), missing)
+-
+-    def test_unknown_peer_is_denied_before_target_query(self):
+-        for peer in (None, 0, -1, '1', True, 999999999):
+-            result = broker.handle_task_lifecycle(self.root, [uid(11)], peer)
+-            self.assertEqual(self.code(result), 'ACCESS_DENIED')
+-        self.target_reads.assert_not_called()
+-
+-    def test_malformed_target_or_identity_override_is_rejected(self):
+-        for args in ([], ['not-a-uuid'], [uid(11), '--session-id', uid(30)]):
+-            self.assertEqual(self.code(broker.handle_task_lifecycle(self.root, args, os.getpid())), 'INVALID_ARGUMENT')
+-        self.target_reads.assert_not_called()
+-
+-    def test_ordinary_task_is_denied_before_target_query(self):
+-        self.sql('UPDATE repositories SET local_path=?', ('/data/home/Code/ordinary',))
+-        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
+-        self.target_reads.assert_not_called()
+-
+-    def test_other_launch_pid_is_denied_before_target_query(self):
++        self.assertEqual(self.code(missing),'TASK_NOT_FOUND_OR_INACCESSIBLE')
++        self.assertEqual(json.loads(missing['stdout'])['error']['deletion_evidence'],'unproven')
++        self.assertEqual(missing,self.execute(13));self.assertEqual(missing,self.execute(14))
++
++    def test_missing_socket_peer_denies_before_target(self):
++        self.assertEqual(self.code(Lifecycle(self.b,self.root,None).handle([uid(11)])),'ACCESS_DENIED')
++        self.assert_no_target_query()
++
++    def test_exited_original_peer_pidfd_denies_before_target(self):
++        listener = socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
++        with listener:
++            endpoint = str(self.base/'exited.sock');listener.bind(endpoint);listener.listen(1)
++            child = subprocess.Popen(['/usr/bin/python3','-I','-c',
++                'import socket,sys;s=socket.socket(socket.AF_UNIX);s.connect(sys.argv[1])',endpoint])
++            connection,_ = listener.accept();child.wait(timeout=5)
++            with connection,connection.makefile('rb') as stream:
++                result = Lifecycle(self.b,self.root,broker.FramedInput(stream)).handle([uid(11)])
++        self.assertEqual(self.code(result),'ACCESS_DENIED');self.assert_no_target_query()
++
++    def test_malformed_target_and_identity_override_are_rejected(self):
++        for args in (['not-a-uuid'],[uid(11),'--session-id',uid(30)]):
++            self.assertEqual(self.code(self.execute(args=args)),'INVALID_ARGUMENT')
++        self.assert_no_target_query()
++
++    def test_ordinary_task_denied_before_target(self):
++        self.sql('UPDATE repositories SET local_path=?',('/data/home/Code/ordinary',))
++        self.assertEqual(self.code(self.execute()),'ACCESS_DENIED');self.assert_no_target_query()
++
++    def test_other_launch_pid_denied_before_target(self):
+@@ -167,2 +206 @@ class LifecycleTests(unittest.TestCase):
+-        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
+-        self.target_reads.assert_not_called()
++        self.assertEqual(self.code(self.execute()),'ACCESS_DENIED');self.assert_no_target_query()
+@@ -170 +208 @@ class LifecycleTests(unittest.TestCase):
+-    def test_revoked_session_is_denied_before_target_query(self):
++    def test_revoked_session_denied_before_target(self):
+@@ -172,18 +210 @@ class LifecycleTests(unittest.TestCase):
+-        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
+-        self.target_reads.assert_not_called()
+-
+-    def test_wrong_session_environment_is_denied_before_target_query(self):
+-        self.sql('UPDATE task_sessions SET task_environment_id=?', (uid(999),))
+-        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
+-        self.target_reads.assert_not_called()
+-
+-    def test_ambiguous_launch_is_denied_without_sole_session_fallback(self):
+-        self.sql('INSERT INTO task_sessions SELECT ?,task_id,task_environment_id,state,?,workspace_path FROM task_sessions', (uid(31), uid(41)))
+-        self.sql('INSERT INTO executors_running SELECT task_id,?,?,pid,local_pid,status,runtime,worktree_path,metadata FROM executors_running', (uid(31), uid(51)))
+-        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
+-        self.target_reads.assert_not_called()
+-
+-    def test_source_pin_drift_is_unavailable(self):
+-        with mock.patch.object(broker, 'load_worker_control', return_value=(self.validator, '0' * 64)):
+-            self.assertEqual(self.code(self.execute()), 'METADATA_UNAVAILABLE')
+-        self.target_reads.assert_not_called()
++        self.assertEqual(self.code(self.execute()),'ACCESS_DENIED');self.assert_no_target_query()
+@@ -191,3 +212,3 @@ class LifecycleTests(unittest.TestCase):
+-    def test_storage_fault_is_not_missing(self):
+-        self.sql('DROP TABLE task_plans')
+-        self.assertEqual(self.code(self.execute()), 'METADATA_UNAVAILABLE')
++    def test_mismatched_session_environment_denied_before_target(self):
++        self.sql('UPDATE task_sessions SET task_environment_id=?',(uid(999),))
++        self.assertEqual(self.code(self.execute()),'ACCESS_DENIED');self.assert_no_target_query()
+@@ -195 +216,25 @@ class LifecycleTests(unittest.TestCase):
+-    def test_caller_metadata_fault_is_unavailable_before_target_query(self):
++    def test_ambiguous_launch_has_no_sole_session_fallback(self):
++        self.sql('INSERT INTO task_sessions SELECT ?,task_id,task_environment_id,state,?,workspace_path FROM task_sessions',(uid(31),uid(41)))
++        self.sql('INSERT INTO executors_running SELECT task_id,?,?,pid,local_pid,status,runtime,worktree_path,metadata FROM executors_running',(uid(31),uid(51)))
++        self.assertEqual(self.code(self.execute()),'ACCESS_DENIED');self.assert_no_target_query()
++
++    def test_wrong_registered_root_denied_before_target(self):
++        self.assertEqual(self.code(self.execute(root=Path('/data/tasks/unregistered-fixture'))),'ACCESS_DENIED')
++        self.assert_no_target_query()
++
++    def test_archived_caller_denied_before_target(self):
++        self.sql('UPDATE tasks SET archived_at=? WHERE id=?',('2026-01-01',uid(10)))
++        self.assertEqual(self.code(self.execute()),'ACCESS_DENIED');self.assert_no_target_query()
++
++    def test_real_validator_pin_drift_is_unavailable(self):
++        with mock.patch.object(Lifecycle,'VALIDATOR_SHA256','0'*64):
++            self.assertEqual(self.code(self.execute()),'METADATA_UNAVAILABLE')
++        self.assert_no_target_query()
++
++    def test_real_validator_custody_rejects_writable_copy(self):
++        source = OPS.with_name('kandev-test-worker.py').read_bytes()
++        candidate = self.base/'writable-validator.py';candidate.write_bytes(source);candidate.chmod(0o666)
++        with self.assertRaises(broker.BrokerError):
++            broker.load_worker_control(candidate)
++
++    def test_caller_storage_fault_is_not_missing(self):
+@@ -197,2 +242 @@ class LifecycleTests(unittest.TestCase):
+-        self.assertEqual(self.code(self.execute()), 'METADATA_UNAVAILABLE')
+-        self.target_reads.assert_not_called()
++        self.assertEqual(self.code(self.execute()),'METADATA_UNAVAILABLE');self.assert_no_target_query()
+@@ -200,2 +244,8 @@ class LifecycleTests(unittest.TestCase):
+-    def test_validator_custody_failure_is_unavailable(self):
+-        with mock.patch.object(broker, 'load_worker_control', side_effect=broker.BrokerError('custody differs')):
++    def test_target_storage_fault_is_not_missing(self):
++        self.sql('DROP TABLE task_plans')
++        self.assertEqual(self.code(self.execute()),'METADATA_UNAVAILABLE')
++        original = Lifecycle.target
++        def remove_and_read(instance, *args):
++            self.database.unlink()
++            return original(instance, *args)
++        with mock.patch.object(Lifecycle, 'target', remove_and_read):
+@@ -203 +253,7 @@ class LifecycleTests(unittest.TestCase):
+-        self.target_reads.assert_not_called()
++
++    def test_caller_revocation_during_read_discards_result(self):
++        original = Lifecycle.target
++        def revoke(instance,*args):
++            result=original(instance,*args);self.sql("UPDATE task_sessions SET state='COMPLETED'");return result
++        with mock.patch.object(Lifecycle,'target',revoke):
++            self.assertEqual(self.code(self.execute()),'ACCESS_DENIED')
+@@ -206,68 +262,63 @@ class LifecycleTests(unittest.TestCase):
+-        original = broker.lifecycle_target
+-        def change(*args):
+-            result = original(*args)
+-            self.sql('UPDATE task_sessions SET queue_incarnation_id=?', (uid(42),))
+-            return result
+-        with mock.patch.object(broker, 'lifecycle_target', side_effect=change):
+-            self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
+-
+-    def test_session_revocation_during_read_discards_result(self):
+-        original = broker.lifecycle_target
+-        def revoke(*args):
+-            result = original(*args)
+-            self.sql("UPDATE task_sessions SET state='COMPLETED'")
+-            return result
+-        with mock.patch.object(broker, 'lifecycle_target', side_effect=revoke):
+-            self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
+-
+-    def test_peer_process_change_during_read_discards_result(self):
+-        original = self.validator['process']
+-        calls = 0
+-        def changed(pid):
+-            nonlocal calls
+-            calls += 1
+-            result = original(pid)
+-            return {**result, 'start': result['start'] + (calls > 1)}
+-        self.validator['process'] = changed
+-        self.assertEqual(self.code(self.execute()), 'ACCESS_DENIED')
+-
+-    def test_oversize_projection_is_unavailable(self):
+-        self.sql('UPDATE tasks SET state=? WHERE id=?', ('x' * 5000, uid(11)))
+-        self.assertEqual(self.code(self.execute()), 'METADATA_UNAVAILABLE')
+-
+-    def test_audit_failure_does_not_release_target_or_raw_path(self):
+-        directory = self.base / 'audit-is-a-directory'
+-        directory.mkdir()
+-        with mock.patch.object(broker, 'COORDINATOR_AUDIT_LOG', directory):
+-            result = self.execute()
+-        self.assertEqual(self.code(result), 'METADATA_UNAVAILABLE')
+-        self.assertNotIn(str(self.base), result['stdout'] + result['stderr'])
+-
+-    def test_hmac_dispatch_forwards_kernel_peer_without_accepting_identity_payload(self):
+-        # Real root/cwd/HMAC entry + real Unix handler, with target dispatch
+-        # isolated because lexical /data/tasks fixtures must not be materialized.
+-        key = b'synthetic-lifecycle-transport-key'
+-        request = {'task_root': str(self.base), 'cwd': str(self.base),
+-                   'token': broker.expected_token(key, self.base),
+-                   'peer_pid': 999999999, 'session_id': uid(999),
+-                   'args': ['kandev', 'workspace', 'task-lifecycle', uid(11)]}
+-        reply = broker.lifecycle_error('ACCESS_DENIED')
+-        from types import SimpleNamespace
+-        with mock.patch.object(broker, 'handle_task_lifecycle', return_value=reply) as handle:
+-            left, right = socket.socketpair()
+-            with left, right:
+-                left.settimeout(3)
+-                left.sendall(json.dumps(request).encode() + b'\n')
+-                left.shutdown(socket.SHUT_WR)
+-                broker.BrokerHandler(right, 'synthetic', SimpleNamespace(broker_key=key))
+-                actual = json.loads(left.recv(4096))
+-                self.assertEqual(actual, reply)
+-            handle.assert_called_once_with(self.base, [uid(11)], os.getpid())
+-            handle.reset_mock()
+-            request['token'] = 'wrong'
+-            with self.assertRaises(broker.BrokerError):
+-                broker.handle_request(request, key, peer_pid=os.getpid())
+-            handle.assert_not_called()
+-
+-
+-if __name__ == '__main__':
++        original = Lifecycle.target
++        def change(instance,*args):
++            result=original(instance,*args);self.sql('UPDATE task_sessions SET queue_incarnation_id=?',(uid(42),));return result
++        with mock.patch.object(Lifecycle,'target',change):
++            self.assertEqual(self.code(self.execute()),'ACCESS_DENIED')
++
++    def test_projection_bound(self):
++        self.sql('UPDATE tasks SET state=? WHERE id=?',('x'*5000,uid(11)))
++        self.assertEqual(self.code(self.execute()),'METADATA_UNAVAILABLE')
++
++    def test_audit_failure_is_typed_and_does_not_leak_path(self):
++        directory=self.base/'audit-directory';directory.mkdir()
++        with mock.patch.object(broker,'COORDINATOR_AUDIT_LOG',directory):
++            result=self.execute()
++        self.assertEqual(self.code(result),'METADATA_UNAVAILABLE')
++        self.assertNotIn(str(self.base),result['stdout']+result['stderr'])
++
++    def test_full_wrapper_hmac_pidfd_and_metadata_path(self):
++        key=b'synthetic-lifecycle-key-not-a-production-credential'
++        endpoint=self.base/'broker.sock'
++        with broker.ThreadedUnixServer(str(endpoint),broker.BrokerHandler) as server:
++            server.broker_key=key
++            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
++            try:
++                env={**os.environ,'KANDEV_AGENT_GUARD_ACTIVE':'1','KANDEV_AGENT_GUARD_SCOPE':'project',
++                    'KANDEV_AGENT_DOCKER_ROOT':str(self.root),'KANDEV_AGENT_DOCKER_SOCKET':str(endpoint),
++                    'KANDEV_AGENT_DOCKER_TOKEN':broker.expected_token(key,self.root)}
++                result=subprocess.run(['/usr/local/bin/docker','kandev','task-lifecycle',uid(12)],
++                    cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=10)
++                self.assertEqual(result.returncode,0,result.stderr)
++                self.assertEqual(json.loads(result.stdout)['lifecycle'],'archived')
++                self.assertEqual(result.stderr,'')
++                with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
++                    connection.settimeout(5);connection.connect(str(endpoint))
++                    payload={'task_root':str(self.root),'cwd':str(self.root),
++                        'token':broker.expected_token(key,self.root),
++                        'args':['kandev','task-lifecycle',uid(11)],
++                        'peer_pid':999999999,'session_id':uid(999),'workspace_id':uid(2)}
++                    connection.sendall(json.dumps(payload).encode()+b'\n'+b'\0'*4)
++                    connection.shutdown(socket.SHUT_WR)
++                    response=bytearray()
++                    while True:
++                        data=connection.recv(4096)
++                        if not data:break
++                        response.extend(data)
++                    reply=json.loads(response)
++                    self.assertEqual(reply['returncode'],0)
++                    self.assertEqual(json.loads(reply['stdout'])['workspace_id'],uid(1))
++                audit=json.loads((self.base/'audit.jsonl').read_text().splitlines()[-1])
++                self.assertEqual(audit['session_id'],uid(30))
++                env['KANDEV_AGENT_DOCKER_TOKEN']='wrong';self.queries.clear()
++                result=subprocess.run(['/usr/local/bin/docker','kandev','task-lifecycle',uid(12)],
++                    cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=10)
++                self.assertEqual(result.returncode,78);self.assert_no_target_query()
++            finally:
++                server.shutdown();thread.join(timeout=5);self.assertFalse(thread.is_alive())
++
++
++if __name__=='__main__':
++    print(json.dumps({'installed':config.installed,'broker_sha256':hashlib.sha256(BROKER.read_bytes()).hexdigest(),
++        'operations_sha256':hashlib.sha256(OPS.read_bytes()).hexdigest(),
++        'fixture':'private namespaces; live /data /run /app hidden; copied public interpreter backend',
++        'authorization_mocks':0,'live_task_operations':0,'real_engine_calls':0,'restarts':0}),flush=True)

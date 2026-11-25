@@ -22,7 +22,7 @@ Acceptance:
    storage errors remain distinct. Revalidate caller identity before release.
 
 Files in deployment checkout on `main`:
-`scripts/kandev-agent-docker-broker`,
+`scripts/kandev-agent-docker-operations.py`,
 new `tests/test-task-lifecycle.py`, command documentation. Read its CLAUDE.md
 first. Reuse installed platform-owned launch-validation functions from
 `scripts/kandev-test-worker.py`; do not start its service or alter its policies.
@@ -38,17 +38,18 @@ git diff --check
 ```
 
 Commit only the requested changes; update the source plan with deployment
-commit/hash/test evidence. No install, restart or task lookup against live data.
+commit/hash/test evidence. Install only the per-request module via task 03; no restart or task lookup against live data.
 
 ## Results
 
-Deployment-source implementation is complete; see evidence README for its
-exact commit, patch and source hashes. `python3 tests/test-task-lifecycle.py`
-passed 20 synthetic cases with real fixture SQL, source-pinned launch matching,
-kernel identity and Unix transport. The existing broker policy suite passed,
-including its 16-test and 11-test subordinate suites. `git diff --check` passed.
-Fixture databases and sockets are removed through test cleanup. No live task,
-runtime or data access occurred. Development custody and the process-fixture
-ancestry boundary are substituted; actual installed validator custody/interface
-was separately qualified without metadata calls. No installed-route acceptance
-or source-to-live activation is claimed. Exact artifacts accompany this package.
+Final command: `docker kandev task-lifecycle <task-UUID>`. Implementation and
+installed qualification are complete. Both source and installed suites pass 22
+cases with actual process ancestry, file custody, pinned validator, exact
+launch/session/incarnation metadata, Coordinator registration and read-only
+SQLite. A private empty-root namespace and copied public interpreter provide
+the fixture boundary without substituting authorization functions. Full
+wrapper/client/HMAC/socket-peer dispatch and spoofed-payload rejection pass.
+
+Current evidence README binds source/build/install status and test outputs.
+Existing image-ID, broker-policy, volume-preservation and task-access regressions
+pass. No live target, task/runtime/data access or owner acceptance is performed.

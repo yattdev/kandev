@@ -7,11 +7,12 @@ status: draft
 # Coordinator task lifecycle read: implementation plan
 
 Support request `5e629b49-3b50-472f-85d6-54a8382fa515`.
-This is a product-source design handoff, not an installed capability. No
-product Go or permanent Go test changes have been made. The independent
-deployment-broker source repair is implemented and tested on its own `main`;
-its exact patch is retained with this package. Source base is freshly fetched
-canonical `upstream/main` at `8c4fd38852700a68272502cef39f46d122e7397c`.
+The requested guarded metadata alternative is implemented, installed and
+synthetically qualified without restart. Product Go/native MCP error mapping
+remain unchanged; task 01 is a separately designed optional follow-up. Exact
+deployment patch and installed evidence are published with this package.
+The existing isolated worktree retains verified canonical `upstream/main` base
+`8c4fd38852700a68272502cef39f46d122e7397c`.
 
 ## Existing routes and diagnosis
 
@@ -43,32 +44,31 @@ broker's `workspace probe` runs filesystem checks and is not a substitute.
 The deployment-source implementation adds one command to the existing broker:
 
 ```text
-docker kandev workspace task-lifecycle <task-UUID>
+docker kandev task-lifecycle <task-UUID>
 ```
 
 This preserves the current legacy Coordinator, wrapper, task token and socket;
 it does not migrate the caller to the newer native Coordinator principal.
-The command MUST NOT be offered as available until installed
-and separately accepted. No flags or alternate wrapper can enable it today.
+The command is installed and synthetically qualified. Root's separately bound
+live acceptance remains pending and is not performed by Support.
 
 ### Broker authorization and metadata
 
-In deployment `scripts/kandev-agent-docker-broker:handle_request`, an exact
-workspace operation branch before the existing workspace handler forwards the
-kernel `SO_PEERCRED` PID already captured by `BrokerHandler`.
-The old `handle_coordinator_workspace` does not receive this PID; its
-task-root HMAC alone is insufficient proof of an exact caller session.
+The unchanged deployed broker `handle_request` forwards unknown operations
+with `FramedInput(self.rfile)` to `runpy.run_path` on every request. The
+operations module adds `TaskLifecycle` and the exact `kandev task-lifecycle`
+branch. It derives PID/UID using `SO_PEERCRED` and the original peer's pidfd
+using `SO_PEERPIDFD` on that same socket. Payload fields cannot provide identity;
+there is no numeric pidfd fallback. Liveness is checked before authorization,
+around caller revalidation and immediately before output.
 
-The same broker adds `handle_task_lifecycle`, `lifecycle_caller`,
-`lifecycle_peer_identity`, `lifecycle_target` and `lifecycle_error`. Reuse
-`coordinator_context(task_root)` for single registered Coordinator repository
-and workspace eligibility. Reuse the read-only `ancestry`/`metadata` launch
-validation in `scripts/kandev-test-worker.py`, with `ancestors` required and
-without request-supplied identity hints, registration mode, lease creation,
-worker policy changes or worker service activation. The functions already
-resolve exact active task/session/environment/execution identities using
-registered metadata and launch PIDs. Load only the installed platform-owned
-module under the existing custody checks; do not execute task-owned modules.
+Reuse `coordinator_context(task_root)` for single registered Coordinator
+repository and workspace eligibility. Reuse the read-only `process`, `ancestry`
+and `metadata` functions in pinned `scripts/kandev-test-worker.py` with actual
+kernel ancestry. No request identity hints, registration mode, leases, policy
+changes or worker service are used. The root-owned single-link stable custody
+loader validates that exact dependency before use. The existing functions
+resolve active task/session/environment/execution using registered launch PIDs.
 
 Require caller task/workspace to equal the Coordinator context. Record process
 start identity and revalidate it and the selected launch immediately before
@@ -124,44 +124,40 @@ archive/plan fields before/after lookup; intercept every Docker/provider/file
 mutation boundary and require zero calls. Use real SQLite fixture metadata and
 read-only query mode, not a mock boolean that substitutes for authorization.
 
-No UI change or browser E2E is needed. The native plan reader and broker's public
-client/Unix transport both require integration tests. Planned exact checks are
-listed in each task. No full deployment suite or runtime startup is part of
-this source-only delivery.
+No UI change or browser E2E is needed. The optional native reader follow-up has its own integration tests. The
+installed metadata route and public client/Unix transport pass their synthetic
+integration checks. No live task runtime or full deployment startup is part
+of this delivery.
 
 ## Sequence and status
 
-1. [Task 01: native typed plan errors](task-01-plan-errors.md) — pending.
-2. [Task 02: guarded lifecycle metadata](task-02-guarded-lookup.md) — source done,
-   20 synthetic cases plus existing broker policy regression passed.
-3. [Task 03: preserving exposure and acceptance](task-03-exposure.md) — pending,
-   requires separate activation authority. No delegation is authorized.
+1. [Task 01: native typed plan errors](task-01-plan-errors.md) — pending optional
+   native-reader follow-up; no product Go change is claimed.
+2. [Task 02: guarded lifecycle metadata](task-02-guarded-lookup.md) — done;
+   22 source and installed cases pass with no authorization mocks.
+3. [Task 03: preserving exposure](task-03-exposure.md) — done via existing
+   per-request module, without restart. Root's live acceptance stays separate.
 
 ## Verification results
 
-See [the Support evidence](evidence/README.md) for exact source/build identities,
-temporary characterization source and results. Go characterization establishes
-current-reader behavior; the deployment Python suite establishes source-only
-lookup conformance. Installed/caller-bound acceptance remains pending. Temporary Go characterization files
-are removed before commit; production Go files remain unchanged.
+[Current Support evidence](evidence/README.md) binds the exact source, test,
+installed bytes, preserving-superset check and activation receipt. All existing
+broker, image, volume and task-access regressions pass. Both source and installed
+lifecycle fixtures use actual authorization functions and private synthetic
+records; live data/runtime are hidden. Root's current session or target IDs
+are not used as a Support operational proxy.
 
-## Gates and risks
+## Gates and limits
 
-The source AGENTS.md and `.agents/skills/spec-driven-development/SKILL.md`
-require a later explicit implementation request after this package, or an
-explicit planning opt-out for product Go/permanent Go test changes. Neither is
-present in the incoming request. This does not block the separately scoped
-deployment implementation, which is complete in source.
+The earlier restart blocker overlooked the original socket stream passed into
+the existing hot module loader. The final `kandev task-lifecycle` route derives
+kernel peer PID/UID/pidfd and reuses exact active registered launch proof without
+changing any caller role, credential or target workspace grant. Its module is
+atomically installed through the reviewed existing installer. No server, broker,
+container or binary lifecycle operation is needed or performed.
 
-The new broker dispatch branch changes long-running loaded code; hot-copying
-a module alone cannot expose it. Restart/reload is forbidden by this request.
-No new trust grant, broker restart or Kandev recreate is performed. A future
-reviewed activation must preserve all installed script fixes and any required
-binary overlays; never deploy just a newer backend. Any Kandev image deployment
-must use `scripts/kandev-safe-deploy` and HTTP-200 rollback verification.
-
-Next input for the completed broker source: reviewed activation authority for
-the exact dispatch and pinned validator, followed by Root's one bound read.
-The native error mapper requires a separate implementation continuation naming
-task 01 and eventual normal release. No session repinning, census or task action
-is part of either route.
+Task 01 remains subject to the product source design/release workflow and does
+not gate this alternative metadata reader. Raw native plan errors are unchanged
+and do not prove deletion. Finite next action: Root performs one separately
+bound lookup using the installed route in its unchanged session/workspace.
+No G1 clearing, board census, task mutation or polling is requested.
