@@ -1,0 +1,21 @@
+{
+  "request_id": "341db27d-80a1-482d-bbdb-2508e65ba996",
+  "canonical_source_base": "14ad622733e3c9efb5c38538e1832a1938c37eb8",
+  "deployment_qualification_commit": "649efca5287d6398e63766ee529f38968fb9347b",
+  "files_sha256": {
+    "bounded-job.sh": "084a88f6bc68feb79e64e245ad0ecbb0f3d2c4c2238e97a9cb634eb60e0f16d3",
+    "status-format.txt": "db91c670b9409b78da5476dcaf1a08ac2b59645a8ac9572767a0eb855c1f468e",
+    "source-tests.txt": "7e10dcc7e9b9a10f00b850e3626b0cfbb18e5d44d8ba902c0a42c0fb456ce359",
+    "test-detached-job.py.txt": "e3c8e9369c404d52b1f54c7c0eec7839f03c63e01e66d6bec4fe5d3a222bbcb6",
+    "receipt_state.py": "967ca50a72c40581be66b35ebfefddf8c9404ad755ab7e6963fa5b964c9bf99b",
+    "PUBLICATION.md": "f36d84a09c214482a4a98a6fe85f1a89f847c0c7e26411fdf3e19aeeac67e416",
+    "installed-tests.txt": "e09440d12ee41f2ee2c03dbda39833dec5003f7532c9dbd63df31361bef4c992",
+    "result.json": "5fa768d3e9a66beb85330e29d18ee68717f61a1ccafe36727a5053c8eb6d8cff",
+    "initial-fixture-normalization.json": "821b9600110a6184d0ffdb6cd5640a8591679b625dfcd6200acbc06ba33cec9d",
+    "run-detached-job-fixture.py.txt": "a3524449ae07017294ada75b9a9ca9ac989038e1a0b17ea876b59321e37ebbdd",
+    "public-parser-versions.json": "7e827db8a2b1d4cbebc3054749a982e0324078822a80496e8406a56d07451b69",
+    "deployment-qualification.patch": "872c566ed570ccc48eaff3391376b6dbb7d56848072348d907b621e8468bc6b2",
+    "README.md": "95e3cfc532b32b1e857e6502ed371cf37e1f97d2876d05ff10ce8643202e3244",
+    "installed-public-files.json": "5b2705f6e66d5e1dc0d8a010cafd326e8ba0db6ad6967d531fb403921effd69c"
+  }
+}

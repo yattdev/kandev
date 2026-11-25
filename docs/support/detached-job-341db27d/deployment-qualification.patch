@@ -1,0 +1,836 @@
+diff --git a/docs/detached-job-341db27d/README.md b/docs/detached-job-341db27d/README.md
+new file mode 100644
+index 0000000..ea027fc
+--- /dev/null
++++ b/docs/detached-job-341db27d/README.md
+@@ -0,0 +1,206 @@
++# Bounded detached QA execution on the existing restricted route
++
++Request `341db27d-80a1-482d-bbdb-2508e65ba996`.
++
++**The existing restricted Compose route supports detached launch, retained
++container exit state, own log/receipt files and exact-owned metadata/stop.**
++No production patch, installation, restart, policy increase or new caller/profile
++is required for that execution pattern. Qualification is private and synthetic;
++Support has not inspected or run the affected workload or any live QA resource.
++
++## Exact timeout diagnosis
++
++The installed broker's `ONEOFF_RUN_TIMEOUT` is 600 seconds and applies to the
++engine-facing `compose run` command. `run_command` waits for its CLI subprocess,
++kills that subprocess on expiry, and returns 124 with the observed diagnostic.
++It does not stop or remove the daemon's container. The ordinary client has no
++separate 600-second response timer; its three-second transport-probe timer is
++unrelated. Neither a 1200-second command inside the container nor a 1500-second
++caller budget changes the broker constant.
++
++The 600 seconds cover the attached run phase, including worker startup/setup,
++not just PHPunit's own clock. The supplied 22:31:04 worker start, 22:32:37 test
++start and 22:41:04 cutoff are consistent with that distinction. No live record
++was read to infer a further result. Original r6 remains incomplete; a partial
++progress count and zero-byte JUnit do not establish RED, PASS or failed IDs.
++
++Other commands and guarded model rendering retain their existing 1800-second
++`COMMAND_TIMEOUT` default. This is **not a universal 600-second server deadline**,
++and the execution timer is not an absolute RPC deadline covering every phase.
++No limit is changed here. This delivery uses short detached/metadata operations
++with caller waits separately bound to at most 600 seconds. A hard server-wide
++600-second deadline, including hung parsing/metadata, is not an already-exposed
++contract and is not claimed by these tests. The optional clarification asked
++about that distinction; this recipe proceeds with preserving installed policy.
++
++## Root-owned preparation before any acceptance
++
++Root binds a new scenario for task `d21b9ef3-e215-4853-b314-9a5276fcd432`, QA
++session `ac5636a2-2352-44fe-b66f-e3ddbb867740`, exact root
++`/data/tasks/8354-adapt-co-up-dat_driff94t` and alias `kd_t2qa_full366`.
++Support did not inspect their private files or state.
++
++Keep the exact previously admitted file list/project directory and model
++binding `6a48c16688eb730a3cef14e8573da274e81bc62fe4a376367fd7ac2d7a6fb561`,
++local PHP image `e17d69e181bab8e27e933ea0c736707074b327400f9e64f6cd1aaf8f28f179fc`,
++source/lock/vendor bindings and existing mount/identity/network policy. Root
++selects the actual service; `qa` in the synthetic fixture is not live evidence.
++The selected service must be image-only with the already-local approved image,
++no build or long lifecycle hooks. `--pull never` is retained; `--no-build` is
++not a valid Compose run flag and is not part of this recipe.
++
++The existing no-egress DB namespace must remain the one already bound to DB
++`872839ed40529ee2dd6ad428d492d64836d1bf09b167cc22831f3d205b1de5c1`, with only
++loopback. The fixture declares DB `network_mode: none` and worker `service:db`;
++it does not prove the live namespace. Root binds UID `1000:999`, source/vendor
++RO, root filesystem RO and only the existing own log mount RW. No arbitrary
++container namespace, new network, ports, device, privilege, host path or secret
++is added. Model policy and the immutable caller/project claim remain authoritative.
++
++The DB is already populated and partially exercised. The old worker was stopped
++and removed. This is not permission to replay schema import, migrations, RBAC,
++fixtures, reseeding or the old full suite. Root must decide the valid next QA
++scenario before providing a new opaque payload. All existing data/logs and old
++QA resources remain untouched.
++
++## Launch recipe
++
++Root freezes [bounded-job.sh](bounded-job.sh), its hash, a fresh one-use nonce,
++container log directory, the exact new payload argv, duration 1200 and kill grace
++15. The task image must contain `/bin/sh`, GNU `/usr/bin/timeout`, `grep`, `date`,
++`mkdir`, `mv` and `printf`, and the caller must be able to read its own new
++receipts. The driver makes an inert GNU-timeout version check before the payload;
++missing/incompatible tooling is an execution error, not permission to install
++packages, fetch an image, switch credentials or retry. Support tested the public
++fixture's GNU timeout, not the affected image's tool installation.
++
++After Root authorizes the new scenario, use the same actor/environment and exact
++existing Compose files. The following placeholders are bound by Root, not guessed:
++
++```sh
++test "$KANDEV_AGENT_DOCKER_ROOT" = /data/tasks/8354-adapt-co-up-dat_driff94t
++cd "$KANDEV_AGENT_DOCKER_ROOT"
++export COMPOSE_PROJECT_NAME=kd_t2qa_full366
++# ROOT_DRIVER_TEXT is the exact frozen bounded-job.sh content, passed as argv.
++# ROOT_EXISTING_MODEL represents the exact original approved file list.
++KANDEV_TASK_DOCKER_ACCESS=restricted docker compose \
++  --project-directory "$KANDEV_AGENT_DOCKER_ROOT" \
++  -f "$ROOT_EXISTING_MODEL" \
++  run --detach --no-deps --pull never --interactive=false -T --entrypoint sh \
++  "$ROOT_SERVICE" -c "$ROOT_DRIVER_TEXT" bounded-job \
++  "$ROOT_NONCE" "$ROOT_CONTAINER_LOG_DIR" 1200 15 \
++  ROOT_APPROVED_PAYLOAD_AND_ARGUMENTS
++```
++
++If the original invocation used multiple files, preserve that exact list instead
++of the single placeholder above. Do not alter its model as a registration trick.
++Bind a short caller budget <=600 for launch; the successful detached response is
++only a full 64-hex container ID, not the test exit code. Reject malformed/mixed
++stdout and save the exact ID with the fresh nonce and frozen command/model
++hashes in the caller's control record. The driver is passed through `sh -c`
++argv: Compose run does not stream a piped shell script through this client.
++
++Omit `--rm` so terminal daemon state remains readable. Do not use `--name`
++(the broker forbids it), `--build`, new volume/network options, service ports,
++`up`, a special profile, raw Docker/context/socket or alternate credentials.
++Compose one-off runs disable service restart policies; Root also verifies that
++no automatic restart is configured in the resulting metadata.
++
++## Receipts and finite observation
++
++The driver atomically claims `<logs>/<nonce>.job`; a duplicate exits before the
++payload. It writes `start.json`, separate stdout/stderr logs and, after reaping
++the timeout process, an atomic `exit.json`. It returns the recorded driver code.
++`timeout` bounds the payload to 1200 seconds plus at most 15 seconds kill grace
++for a TERM-ignoring child. Its parent remains available to record that hard kill.
++A trapped stop is relayed to the child and recorded as cancellation. SIGKILL/OOM
++of the parent can prevent receipt writing; a missing receipt is never success.
++The worker exits independently of the launch client's lifetime.
++
++Observe the own control receipt with a finite count and absolute deadline bound
++by Root. Those are active caller observations, not a new timer, routine, scheduled
++watcher, launch retry or provider/fixture-data poll. No Docker call should wait
++for the 1200-second payload; do not use long `wait`, attached run or log-follow.
++The job's lifetime is not bounded by holding a broker connection open.
++
++For each short identity/state observation, use the returned exact ID and the
++fixed [status-format.txt](status-format.txt), with a short caller budget <=600
++(for example 30 seconds), in the unchanged restricted environment:
++
++```sh
++KANDEV_TASK_DOCKER_ACCESS=restricted docker inspect --type container \
++  --format "$ROOT_FROZEN_STATUS_FORMAT" "$ROOT_RETURNED_CONTAINER_ID"
++```
++
++The existing guard validates its task/project/service ownership before forwarding
++that projection. The template returns only ID, state/exit, OOM, timestamps,
++auto-remove/restart and the bound image/user/RO/network values. It returns no
++environment, source contents, credentials, host PID or unrelated resources.
++Root compares image config ID, UID, RO rootfs and `container:<bound DB ID>` to its
++already approved policy. The image config ID is not a registry digest.
++
++[receipt_state.py](receipt_state.py) qualifies conservative reconciliation:
++while running, an exit-code field of zero is not completion. Require terminal
++`exited`, matching exact ID/nonce, no OOM, matching driver/daemon exit and a valid
++complete receipt. Stale, absent, malformed, policy-mismatched or contradictory
++records are incomplete/uncertain. A normal payload exit is still not a QA verdict;
++Root must validate the full JUnit/results from this new nonce before declaring
++RED/PASS. Exit 124 in a payload receipt means its own timeout; caller/RPC 124
++means an uncertain call and says nothing about worker settlement.
++
++Caller deadlines bound the wait, not a new server-wide cancellation guarantee.
++If launch or an observation expires, do not automatically launch again or infer
++that the worker stopped. Root reconciles the exact admitted job under a separate
++finite settlement allowance. If the new job must be cancelled, the already
++supported exact-owned command is:
++
++```sh
++KANDEV_TASK_DOCKER_ACCESS=restricted docker stop --time 30 \
++  "$ROOT_RETURNED_CONTAINER_ID"
++```
++
++Then verify terminal state/receipt for that same ID. A missing worker does not
++prove a successful test. Do not stop the DB or remove volumes. Retention is
++intentional; no cleanup is implicit. Any later removal needs its own exact-worker
++binding after results/exit evidence are preserved. No global cleanup is proposed.
++
++## Independent qualification and installed status
++
++15 cases pass against installed public broker/module/wrapper/client and actual
++Compose parsing/help, using private models/claims and a fake engine. Coverage
++includes detach/no-deps/pull-never/TTY/stdin flags, unchanged 600 run budget,
++wrong caller/foreign container rejection, own exact stop without DB/removal,
++running-vs-terminal reconciliation, nonce collision, receipt mismatch/OOM,
++normal exit, soft timeout 124, finite hard kill 137 and signal cancellation.
++Short OS tests use 1-second deadlines, not the owner workload. Source mode passes
++13 and skips the two installed-parser/transport cases. No source result is
++represented as affected-owner acceptance.
++
++The installed fixture uses an empty filesystem root and private network/user
++namespaces; live `/data`, `/run`, `/app`, engine sockets and credentials are
++absent. No owner image/model/resource inspection or test replay occurs.
++The initial fixture asserted an explicit false mount field that real Compose
++omits; it was corrected to check the exact target/mode mapping. Its failed output
++is retained separately and is not called acceptance. Production code is unchanged.
++
++Both checkouts were inspected. Product primary HEAD remains
++`cfd6bdf65ae6f631d7701c105791a099c0325cc3`; unrelated source and deployment changes
++are preserved. Installed broker is SHA256
++`9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91`, operations
++`d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee`.
++Full public-file readback is retained. No candidate build, installation, restart,
++new profile, lifecycle candidate activation or policy increase is needed/performed.
++Existing image/build/lifecycle incidents are not reopened by this delivery.
++
++Version-bound primary Compose sources support the one-off details:
++[CLI options/selection](https://github.com/docker/compose/blob/v5.7.1/cmd/compose/run.go)
++for detach output, no-deps and stdin/TTY; and
++[runtime implementation](https://github.com/docker/compose/blob/v5.7.1/pkg/compose/run.go)
++for detached attachment, one-off restart suppression and lifecycle-hook behavior.
++Actual flags/config are independently qualified by the installed parser; actual
++engine/container behavior remains Root-owned acceptance, not a mock-engine claim.
++
++**Finite next action:** Root reviews this qualified recipe and binds one new
++scenario with the current populated DB state, fresh nonce, finite observation/
++settlement budget and exact payload. The owner has no launch, retry, reset,
++reseed, source edit or runtime authorization merely from this Support response.
+diff --git a/docs/detached-job-341db27d/bounded-job.sh b/docs/detached-job-341db27d/bounded-job.sh
+new file mode 100644
+index 0000000..6756260
+--- /dev/null
++++ b/docs/detached-job-341db27d/bounded-job.sh
+@@ -0,0 +1,68 @@
++#!/bin/sh
++# Root binds this exact script, fresh nonce, existing RW logs, and opaque payload.
++# GNU coreutils timeout is required. No setup/import/reseed or retry is included.
++set -u
++if [ "$#" -lt 5 ]; then
++    printf '%s\n' 'usage: NONCE EXISTING_LOG_DIR SECONDS KILL_GRACE COMMAND [ARGS...]' >&2
++    exit 64
++fi
++nonce=$1
++logs=$2
++seconds=$3
++grace=$4
++shift 4
++case "$nonce" in ''|*[!A-Za-z0-9_-]*) exit 64;; esac
++[ "${#nonce}" -le 80 ] || exit 64
++case "$seconds:$grace" in *[!0-9:]*|:*|*:) exit 64;; esac
++case "$seconds:$grace" in 0*|*:0*) exit 64;; esac
++[ "$seconds" -ge 1 ] && [ "$seconds" -le 1200 ] || exit 64
++[ "$grace" -ge 1 ] && [ "$grace" -le 15 ] || exit 64
++[ -d "$logs" ] && [ -w "$logs" ] || exit 73
++umask 077
++job_dir=$logs/$nonce.job
++# Atomic nonce claim: a duplicate cannot replay the payload or overwrite receipts.
++mkdir "$job_dir" || exit 73
++started=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || exit 74
++printf '{"schema":"bounded-job/v1","nonce":"%s","seconds":%s,"kill_grace":%s,"started_at":"%s"}\n' \
++    "$nonce" "$seconds" "$grace" "$started" > "$job_dir/.start.tmp" || exit 74
++mv "$job_dir/.start.tmp" "$job_dir/start.json" || exit 74
++cancel=0
++child=
++relay() {
++    cancel=$1
++    if [ -n "$child" ]; then
++        kill -TERM "$child" 2>/dev/null || :
++    fi
++}
++trap 'relay 143' TERM
++trap 'relay 130' INT
++trap 'relay 129' HUP
++trap 'relay 131' QUIT
++# Do not infer the affected image's tooling from Support's synthetic fixture.
++# This inert check fails before the payload if the approved tool is absent.
++/usr/bin/timeout --version > "$job_dir/timeout-version.txt" 2>&1
++if ! grep -q 'GNU coreutils' "$job_dir/timeout-version.txt"; then
++    payload_exit=125
++elif [ "$cancel" -ne 0 ]; then
++    payload_exit=$cancel
++else
++    /usr/bin/timeout --signal=TERM --kill-after="${grace}s" "${seconds}s" "$@" \
++        > "$job_dir/stdout.log" 2> "$job_dir/stderr.log" &
++    child=$!
++    if [ "$cancel" -ne 0 ]; then kill -TERM "$child" 2>/dev/null || :; fi
++    wait "$child"
++    payload_exit=$?
++    # A trapped stop may interrupt wait before timeout has reaped its child.
++    if [ "$cancel" -ne 0 ] && kill -0 "$child" 2>/dev/null; then
++        wait "$child"
++        payload_exit=$?
++    fi
++fi
++driver_exit=$payload_exit
++cancelled=false
++if [ "$cancel" -ne 0 ]; then driver_exit=$cancel; cancelled=true; fi
++finished=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || exit 74
++printf '{"schema":"bounded-job/v1","nonce":"%s","complete":true,"payload_exit":%s,"driver_exit":%s,"cancelled":%s,"finished_at":"%s"}\n' \
++    "$nonce" "$payload_exit" "$driver_exit" "$cancelled" "$finished" > "$job_dir/.exit.tmp" || exit 74
++mv "$job_dir/.exit.tmp" "$job_dir/exit.json" || exit 74
++exit "$driver_exit"
+diff --git a/docs/detached-job-341db27d/initial-fixture-normalization.json b/docs/detached-job-341db27d/initial-fixture-normalization.json
+new file mode 100644
+index 0000000..2a9a5d8
+--- /dev/null
++++ b/docs/detached-job-341db27d/initial-fixture-normalization.json
+@@ -0,0 +1,5 @@
++{
++  "reason": "Fixture incorrectly required explicit read_only:false on writable bind; real Compose omits its zero value. Assertion now verifies exact target-to-mode mapping. Production guard unchanged.",
++  "raw_output_sha256": "da511e477d4811cb4a0db1a76a5624c26bf8aac395c9a7e862d93c9de6e5d3c0",
++  "output": "{\"installed\": true, \"broker_sha256\": \"9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91\", \"operations_sha256\": \"d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee\", \"compose_parser\": \"actual installed\", \"engine\": \"mocked only\", \"driver_tests\": \"short local GNU timeout payloads only\", \"real_owner_operations\": 0, \"real_engine_builds_or_containers\": 0, \"provider_registry_contacts\": 0, \"cap_changes\": 0, \"restarts\": 0}\ntest_actual_wrapper_client_and_parser_framing (__main__.DetachedTests.test_actual_wrapper_client_and_parser_framing) ... kandev-agent-docker-broker: internal error: 'read_only'\nFAIL\ntest_detached_launch_retains_model_policy_and_returns_only_identity (__main__.DetachedTests.test_detached_launch_retains_model_policy_and_returns_only_identity) ... ERROR\ntest_exact_owned_stop_preserves_db_and_performs_no_cleanup (__main__.DetachedTests.test_exact_owned_stop_preserves_db_and_performs_no_cleanup) ... ERROR\ntest_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success (__main__.DetachedTests.test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success) ... ERROR\ntest_foreign_identity_never_reaches_state_projection_or_stop (__main__.DetachedTests.test_foreign_identity_never_reaches_state_projection_or_stop) ... ERROR\ntest_installed_run_flags_and_no_build_rejection_without_engine (__main__.DetachedTests.test_installed_run_flags_and_no_build_rejection_without_engine) ... ok\ntest_wrong_caller_and_unsupported_run_grants_are_rejected (__main__.DetachedTests.test_wrong_caller_and_unsupported_run_grants_are_rejected) ... ok\ntest_bounds_reject_before_any_job_artifact (__main__.DriverTests.test_bounds_reject_before_any_job_artifact) ... ok\ntest_duplicate_nonce_rejects_before_replaying_payload (__main__.DriverTests.test_duplicate_nonce_rejects_before_replaying_payload) ... ok\ntest_external_term_settles_and_records_cancellation (__main__.DriverTests.test_external_term_settles_and_records_cancellation) ... ok\ntest_normal_exit_is_atomic_and_matches_driver_status (__main__.DriverTests.test_normal_exit_is_atomic_and_matches_driver_status) ... ok\ntest_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom (__main__.DriverTests.test_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom) ... ok\ntest_soft_deadline_is_124_and_does_not_look_like_qa_completion (__main__.DriverTests.test_soft_deadline_is_124_and_does_not_look_like_qa_completion) ... ok\ntest_term_ignoring_payload_is_killed_with_finite_receipt (__main__.DriverTests.test_term_ignoring_payload_is_killed_with_finite_receipt) ... ok\ntest_broker_timeout_kills_only_cli_not_daemon_worker (__main__.TimeoutDiagnosis.test_broker_timeout_kills_only_cli_not_daemon_worker) ... ok\n\n======================================================================\nERROR: test_detached_launch_retains_model_policy_and_returns_only_identity (__main__.DetachedTests.test_detached_launch_retains_model_policy_and_returns_only_identity)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/tmp/test.py\", line 135, in test_detached_launch_retains_model_policy_and_returns_only_identity\n    result=self.request_call()\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 129, in request_call\n    return broker.handle_request({**self.request,'args':args or self.args,**changes},self.key)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/bin/kandev-agent-docker-broker\", line 2953, in handle_request\n    code, stdout, stderr = run_command(\n                           ^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1118, in __call__\n    return self._mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1122, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1183, in _execute_mock_call\n    result = effect(*args, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 111, in engine\n    self.assertEqual([m['read_only'] for m in qa['volumes']],[True,True,False])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 111, in <listcomp>\n    self.assertEqual([m['read_only'] for m in qa['volumes']],[True,True,False])\n                      ~^^^^^^^^^^^^^\nKeyError: 'read_only'\n\n======================================================================\nERROR: test_exact_owned_stop_preserves_db_and_performs_no_cleanup (__main__.DetachedTests.test_exact_owned_stop_preserves_db_and_performs_no_cleanup)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/tmp/test.py\", line 152, in test_exact_owned_stop_preserves_db_and_performs_no_cleanup\n    self.request_call();self.request_call(['stop','--time','30',WORKER])\n    ^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 129, in request_call\n    return broker.handle_request({**self.request,'args':args or self.args,**changes},self.key)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/bin/kandev-agent-docker-broker\", line 2953, in handle_request\n    code, stdout, stderr = run_command(\n                           ^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1118, in __call__\n    return self._mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1122, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1183, in _execute_mock_call\n    result = effect(*args, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 111, in engine\n    self.assertEqual([m['read_only'] for m in qa['volumes']],[True,True,False])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 111, in <listcomp>\n    self.assertEqual([m['read_only'] for m in qa['volumes']],[True,True,False])\n                      ~^^^^^^^^^^^^^\nKeyError: 'read_only'\n\n======================================================================\nERROR: test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success (__main__.DetachedTests.test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/tmp/test.py\", line 142, in test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success\n    self.request_call();snapshot=json.loads(self.status()['stdout'])\n    ^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 129, in request_call\n    return broker.handle_request({**self.request,'args':args or self.args,**changes},self.key)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/bin/kandev-agent-docker-broker\", line 2953, in handle_request\n    code, stdout, stderr = run_command(\n                           ^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1118, in __call__\n    return self._mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1122, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1183, in _execute_mock_call\n    result = effect(*args, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 111, in engine\n    self.assertEqual([m['read_only'] for m in qa['volumes']],[True,True,False])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 111, in <listcomp>\n    self.assertEqual([m['read_only'] for m in qa['volumes']],[True,True,False])\n                      ~^^^^^^^^^^^^^\nKeyError: 'read_only'\n\n======================================================================\nERROR: test_foreign_identity_never_reaches_state_projection_or_stop (__main__.DetachedTests.test_foreign_identity_never_reaches_state_projection_or_stop)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/tmp/test.py\", line 157, in test_foreign_identity_never_reaches_state_projection_or_stop\n    self.request_call()\n  File \"/tmp/test.py\", line 129, in request_call\n    return broker.handle_request({**self.request,'args':args or self.args,**changes},self.key)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/bin/kandev-agent-docker-broker\", line 2953, in handle_request\n    code, stdout, stderr = run_command(\n                           ^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1118, in __call__\n    return self._mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1122, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/unittest/mock.py\", line 1183, in _execute_mock_call\n    result = effect(*args, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 111, in engine\n    self.assertEqual([m['read_only'] for m in qa['volumes']],[True,True,False])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/test.py\", line 111, in <listcomp>\n    self.assertEqual([m['read_only'] for m in qa['volumes']],[True,True,False])\n                      ~^^^^^^^^^^^^^\nKeyError: 'read_only'\n\n======================================================================\nFAIL: test_actual_wrapper_client_and_parser_framing (__main__.DetachedTests.test_actual_wrapper_client_and_parser_framing)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/tmp/test.py\", line 182, in test_actual_wrapper_client_and_parser_framing\n    self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(r.stdout.strip(),WORKER)\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 70 != 0 : kandev-agent-docker: internal broker error\n\n\n----------------------------------------------------------------------\nRan 15 tests in 4.922s\n\nFAILED (failures=1, errors=4)\n"
++}
+diff --git a/docs/detached-job-341db27d/installed-public-files.json b/docs/detached-job-341db27d/installed-public-files.json
+new file mode 100644
+index 0000000..a4756c5
+--- /dev/null
++++ b/docs/detached-job-341db27d/installed-public-files.json
+@@ -0,0 +1,27 @@
++{
++  "kandev-agent-docker-broker": {
++    "sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "uid": 0,
++    "mode": "0o555"
++  },
++  "kandev-agent-docker-operations.py": {
++    "sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
++    "uid": 0,
++    "mode": "0o555"
++  },
++  "docker": {
++    "sha256": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "uid": 0,
++    "mode": "0o755"
++  },
++  "kandev-agent-docker-client": {
++    "sha256": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "uid": 0,
++    "mode": "0o555"
++  },
++  "kandev-agent-guard": {
++    "sha256": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f",
++    "uid": 0,
++    "mode": "0o755"
++  }
++}
+diff --git a/docs/detached-job-341db27d/installed-tests.txt b/docs/detached-job-341db27d/installed-tests.txt
+new file mode 100644
+index 0000000..2263f01
+--- /dev/null
++++ b/docs/detached-job-341db27d/installed-tests.txt
+@@ -0,0 +1,21 @@
++{"installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "compose_parser": "actual installed", "engine": "mocked only", "driver_tests": "short local GNU timeout payloads only", "real_owner_operations": 0, "real_engine_builds_or_containers": 0, "provider_registry_contacts": 0, "cap_changes": 0, "restarts": 0}
++test_actual_wrapper_client_and_parser_framing (__main__.DetachedTests.test_actual_wrapper_client_and_parser_framing) ... ok
++test_detached_launch_retains_model_policy_and_returns_only_identity (__main__.DetachedTests.test_detached_launch_retains_model_policy_and_returns_only_identity) ... ok
++test_exact_owned_stop_preserves_db_and_performs_no_cleanup (__main__.DetachedTests.test_exact_owned_stop_preserves_db_and_performs_no_cleanup) ... ok
++test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success (__main__.DetachedTests.test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success) ... ok
++test_foreign_identity_never_reaches_state_projection_or_stop (__main__.DetachedTests.test_foreign_identity_never_reaches_state_projection_or_stop) ... ok
++test_installed_run_flags_and_no_build_rejection_without_engine (__main__.DetachedTests.test_installed_run_flags_and_no_build_rejection_without_engine) ... ok
++test_wrong_caller_and_unsupported_run_grants_are_rejected (__main__.DetachedTests.test_wrong_caller_and_unsupported_run_grants_are_rejected) ... ok
++test_bounds_reject_before_any_job_artifact (__main__.DriverTests.test_bounds_reject_before_any_job_artifact) ... ok
++test_duplicate_nonce_rejects_before_replaying_payload (__main__.DriverTests.test_duplicate_nonce_rejects_before_replaying_payload) ... ok
++test_external_term_settles_and_records_cancellation (__main__.DriverTests.test_external_term_settles_and_records_cancellation) ... ok
++test_normal_exit_is_atomic_and_matches_driver_status (__main__.DriverTests.test_normal_exit_is_atomic_and_matches_driver_status) ... ok
++test_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom (__main__.DriverTests.test_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom) ... ok
++test_soft_deadline_is_124_and_does_not_look_like_qa_completion (__main__.DriverTests.test_soft_deadline_is_124_and_does_not_look_like_qa_completion) ... ok
++test_term_ignoring_payload_is_killed_with_finite_receipt (__main__.DriverTests.test_term_ignoring_payload_is_killed_with_finite_receipt) ... ok
++test_broker_timeout_kills_only_cli_not_daemon_worker (__main__.TimeoutDiagnosis.test_broker_timeout_kills_only_cli_not_daemon_worker) ... ok
++
++----------------------------------------------------------------------
++Ran 15 tests in 5.023s
++
++OK
+diff --git a/docs/detached-job-341db27d/public-parser-versions.json b/docs/detached-job-341db27d/public-parser-versions.json
+new file mode 100644
+index 0000000..f286b80
+--- /dev/null
++++ b/docs/detached-job-341db27d/public-parser-versions.json
+@@ -0,0 +1,10 @@
++{
++  "compose": {
++    "version": "5.7.1",
++    "sha256": "af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf"
++  },
++  "fixture_timeout": {
++    "version": "timeout (GNU coreutils) 9.1",
++    "sha256": "5ef0eaaaa4220593add7716aad74da927ca3bb10605e964330de64fecc3ef15e"
++  }
++}
+diff --git a/docs/detached-job-341db27d/receipt_state.py b/docs/detached-job-341db27d/receipt_state.py
+new file mode 100644
+index 0000000..cda3828
+--- /dev/null
++++ b/docs/detached-job-341db27d/receipt_state.py
+@@ -0,0 +1,41 @@
++"""Pure receipt reconciliation; inputs are one authorized snapshot and own files."""
++import re
++
++
++def reconcile(expected_id, expected_nonce, snapshot, receipt, expected_policy=None):
++    if not re.fullmatch(r'[0-9a-f]{64}', expected_id):
++        return 'invalid-launch-identity'
++    if not snapshot or snapshot.get('id') != expected_id:
++        return 'unknown-identity'
++    if (snapshot.get('auto_remove') is not False or snapshot.get('restart') not in ('', 'no')
++            or any(snapshot.get(key) != value for key, value in (expected_policy or {}).items())):
++        return 'policy-mismatch'
++    if snapshot.get('running') is True:
++        return 'running'
++    if snapshot.get('running') is not False or snapshot.get('status') != 'exited':
++        return 'unsettled'
++    if snapshot.get('oom') is not False:
++        return 'abnormal-terminal'
++    if not isinstance(receipt, dict):
++        return 'terminal-without-receipt'
++    if (receipt.get('schema') != 'bounded-job/v1' or receipt.get('nonce') != expected_nonce
++            or receipt.get('complete') is not True
++            or type(receipt.get('driver_exit')) is not int
++            or type(receipt.get('payload_exit')) is not int
++            or not 0 <= receipt['driver_exit'] <= 255
++            or not 0 <= receipt['payload_exit'] <= 255
++            or type(snapshot.get('exit_code')) is not int
++            or snapshot['exit_code'] != receipt['driver_exit']
++            or type(receipt.get('cancelled')) is not bool):
++        return 'invalid-receipt'
++    if not receipt['cancelled'] and receipt['driver_exit'] != receipt['payload_exit']:
++        return 'invalid-receipt'
++    if receipt['cancelled']:
++        return 'cancelled'
++    if receipt['payload_exit'] == 124:
++        return 'workload-timeout'
++    if receipt['payload_exit'] >= 128:
++        return 'payload-signalled'
++    if receipt['payload_exit'] in (125, 126, 127):
++        return 'driver-or-exec-error'
++    return 'payload-finished'  # The Root-bound JUnit/results checks still decide QA.
+diff --git a/docs/detached-job-341db27d/result.json b/docs/detached-job-341db27d/result.json
+new file mode 100644
+index 0000000..12c212e
+--- /dev/null
++++ b/docs/detached-job-341db27d/result.json
+@@ -0,0 +1,59 @@
++{
++  "request_id": "341db27d-80a1-482d-bbdb-2508e65ba996",
++  "status": "RESOLVED",
++  "scope": "Existing supported restricted detached execution/receipt/finite-status mechanism qualified; no workload acceptance",
++  "diagnosis": "Installed Compose run subprocess cap600 includes run startup/setup; timeout kills CLI only, not daemon container. Client does not negotiate caller/container duration into broker cap.",
++  "limits": {
++    "compose_run_execution_seconds": 600,
++    "other_commands_and_model_render_default_seconds": 1800,
++    "container_payload_recipe_seconds": 1200,
++    "container_kill_grace_seconds": 15,
++    "caller_operation_wait_contract_seconds_max": 600,
++    "universal_server_rpc_deadline_600_claimed": false
++  },
++  "assumption": "Preserve installed per-call policy and bound caller waits; hard server-wide600 across all phases is not claimed or changed.",
++  "tests": {
++    "installed_cases_passed": 15,
++    "source_passed": 13,
++    "source_installed_cases_skipped": 2,
++    "engine": "mocked",
++    "short_local_driver_timeouts_seconds": 1
++  },
++  "production_source_changed": false,
++  "installed_files_changed": false,
++  "build_install_restart_policy_changes": 0,
++  "real_owner_operations": 0,
++  "real_engine_resource_operations": 0,
++  "source_DB_private_env_reads": 0,
++  "provider_registry_target_fixture_polling": 0,
++  "owner_acceptance": false,
++  "original_full366_verdict": "incomplete; no RED/PASS or failed-ID inference",
++  "next_action": "Root binds ONE fresh-nonce scenario accounting for populated partially exercised DB, exact existing model/caller/image/namespace, payload and finite status/settlement budget. No setup/reimport/reseed/retry authorization here.",
++  "deployment_evidence_base": "63f39df62b937b6c35b0b2b08046281cb6d0d365",
++  "source_primary_head": "cfd6bdf65ae6f631d7701c105791a099c0325cc3",
++  "test_source_sha256": {
++    "tests/test-detached-job.py": "e3c8e9369c404d52b1f54c7c0eec7839f03c63e01e66d6bec4fe5d3a222bbcb6",
++    "tests/run-detached-job-fixture.py": "a3524449ae07017294ada75b9a9ca9ac989038e1a0b17ea876b59321e37ebbdd"
++  },
++  "evidence_sha256": {
++    "bounded-job.sh": "084a88f6bc68feb79e64e245ad0ecbb0f3d2c4c2238e97a9cb634eb60e0f16d3",
++    "status-format.txt": "db91c670b9409b78da5476dcaf1a08ac2b59645a8ac9572767a0eb855c1f468e",
++    "source-tests.txt": "7e10dcc7e9b9a10f00b850e3626b0cfbb18e5d44d8ba902c0a42c0fb456ce359",
++    "receipt_state.py": "967ca50a72c40581be66b35ebfefddf8c9404ad755ab7e6963fa5b964c9bf99b",
++    "installed-tests.txt": "e09440d12ee41f2ee2c03dbda39833dec5003f7532c9dbd63df31361bef4c992",
++    "initial-fixture-normalization.json": "821b9600110a6184d0ffdb6cd5640a8591679b625dfcd6200acbc06ba33cec9d",
++    "public-parser-versions.json": "7e827db8a2b1d4cbebc3054749a982e0324078822a80496e8406a56d07451b69",
++    "README.md": "95e3cfc532b32b1e857e6502ed371cf37e1f97d2876d05ff10ce8643202e3244",
++    "installed-public-files.json": "5b2705f6e66d5e1dc0d8a010cafd326e8ba0db6ad6967d531fb403921effd69c"
++  },
++  "public_parser_versions": {
++    "compose": {
++      "version": "5.7.1",
++      "sha256": "af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf"
++    },
++    "fixture_timeout": {
++      "version": "timeout (GNU coreutils) 9.1",
++      "sha256": "5ef0eaaaa4220593add7716aad74da927ca3bb10605e964330de64fecc3ef15e"
++    }
++  }
++}
+diff --git a/docs/detached-job-341db27d/source-tests.txt b/docs/detached-job-341db27d/source-tests.txt
+new file mode 100644
+index 0000000..b20c1a0
+--- /dev/null
++++ b/docs/detached-job-341db27d/source-tests.txt
+@@ -0,0 +1,21 @@
++{"installed": false, "broker_sha256": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "compose_parser": "normalized fixture", "engine": "mocked only", "driver_tests": "short local GNU timeout payloads only", "real_owner_operations": 0, "real_engine_builds_or_containers": 0, "provider_registry_contacts": 0, "cap_changes": 0, "restarts": 0}
++test_actual_wrapper_client_and_parser_framing (__main__.DetachedTests.test_actual_wrapper_client_and_parser_framing) ... skipped 'installed transport in installed mode'
++test_detached_launch_retains_model_policy_and_returns_only_identity (__main__.DetachedTests.test_detached_launch_retains_model_policy_and_returns_only_identity) ... ok
++test_exact_owned_stop_preserves_db_and_performs_no_cleanup (__main__.DetachedTests.test_exact_owned_stop_preserves_db_and_performs_no_cleanup) ... ok
++test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success (__main__.DetachedTests.test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success) ... ok
++test_foreign_identity_never_reaches_state_projection_or_stop (__main__.DetachedTests.test_foreign_identity_never_reaches_state_projection_or_stop) ... ok
++test_installed_run_flags_and_no_build_rejection_without_engine (__main__.DetachedTests.test_installed_run_flags_and_no_build_rejection_without_engine) ... skipped 'actual CLI parser in installed mode'
++test_wrong_caller_and_unsupported_run_grants_are_rejected (__main__.DetachedTests.test_wrong_caller_and_unsupported_run_grants_are_rejected) ... ok
++test_bounds_reject_before_any_job_artifact (__main__.DriverTests.test_bounds_reject_before_any_job_artifact) ... ok
++test_duplicate_nonce_rejects_before_replaying_payload (__main__.DriverTests.test_duplicate_nonce_rejects_before_replaying_payload) ... ok
++test_external_term_settles_and_records_cancellation (__main__.DriverTests.test_external_term_settles_and_records_cancellation) ... ok
++test_normal_exit_is_atomic_and_matches_driver_status (__main__.DriverTests.test_normal_exit_is_atomic_and_matches_driver_status) ... ok
++test_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom (__main__.DriverTests.test_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom) ... ok
++test_soft_deadline_is_124_and_does_not_look_like_qa_completion (__main__.DriverTests.test_soft_deadline_is_124_and_does_not_look_like_qa_completion) ... ok
++test_term_ignoring_payload_is_killed_with_finite_receipt (__main__.DriverTests.test_term_ignoring_payload_is_killed_with_finite_receipt) ... ok
++test_broker_timeout_kills_only_cli_not_daemon_worker (__main__.TimeoutDiagnosis.test_broker_timeout_kills_only_cli_not_daemon_worker) ... ok
++
++----------------------------------------------------------------------
++Ran 15 tests in 4.377s
++
++OK (skipped=2)
+diff --git a/docs/detached-job-341db27d/status-format.txt b/docs/detached-job-341db27d/status-format.txt
+new file mode 100644
+index 0000000..d7da3f7
+--- /dev/null
++++ b/docs/detached-job-341db27d/status-format.txt
+@@ -0,0 +1 @@
++{"id":{{json .Id}},"running":{{json .State.Running}},"status":{{json .State.Status}},"exit_code":{{json .State.ExitCode}},"oom":{{json .State.OOMKilled}},"started_at":{{json .State.StartedAt}},"finished_at":{{json .State.FinishedAt}},"auto_remove":{{json .HostConfig.AutoRemove}},"restart":{{json .HostConfig.RestartPolicy.Name}},"image":{{json .Image}},"user":{{json .Config.User}},"read_only":{{json .HostConfig.ReadonlyRootfs}},"network_mode":{{json .HostConfig.NetworkMode}}}
+diff --git a/tests/run-detached-job-fixture.py b/tests/run-detached-job-fixture.py
+new file mode 100644
+index 0000000..27e8838
+--- /dev/null
++++ b/tests/run-detached-job-fixture.py
+@@ -0,0 +1,19 @@
++#!/usr/bin/env python3
++"""Run public detached-job qualification against installed files; no live engine."""
++import json
++from pathlib import Path
++import subprocess
++root=Path(__file__).resolve().parents[1]
++names=['tests/test-detached-job.py','docs/detached-job-341db27d/bounded-job.sh',
++       'docs/detached-job-341db27d/receipt_state.py']
++payload=json.dumps({name:(root/name).read_text() for name in names}).encode()
++helper='''import json,pathlib,sys,tempfile,subprocess
++with tempfile.TemporaryDirectory(prefix='support-detached-public-') as directory:
++ root=pathlib.Path(directory)
++ for name,source in json.load(sys.stdin).items():
++  assert name in ('tests/test-detached-job.py','docs/detached-job-341db27d/bounded-job.sh','docs/detached-job-341db27d/receipt_state.py')
++  p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(source)
++ r=subprocess.run(['/usr/bin/python3','-I',str(root/'tests/test-detached-job.py'),'--installed'])
++ raise SystemExit(r.returncode)
++'''
++raise SystemExit(subprocess.run(['docker','exec','-i','kandev','/usr/bin/python3','-I','-c',helper],input=payload).returncode)
+diff --git a/tests/test-detached-job.py b/tests/test-detached-job.py
+new file mode 100644
+index 0000000..aa2e34e
+--- /dev/null
++++ b/tests/test-detached-job.py
+@@ -0,0 +1,286 @@
++#!/usr/bin/env python3
++"""Restricted detached jobs: private parser/identity/engine fixtures and short OS tests."""
++import argparse
++import copy
++import hashlib
++import importlib.machinery
++import importlib.util
++import json
++import os
++from pathlib import Path
++import runpy
++import signal
++import subprocess
++import sys
++import tempfile
++import threading
++import time
++from unittest import mock
++import unittest
++
++parser=argparse.ArgumentParser()
++parser.add_argument('--installed',action='store_true')
++parser.add_argument('--isolated',action='store_true')
++config,remaining=parser.parse_known_args()
++ROOT=Path(__file__).resolve().parents[1]
++if config.installed and not config.isolated:
++    bootstrap='''import sys,pathlib,os
++p=pathlib.Path('/tmp/test.py');p.write_bytes(sys.stdin.buffer.read())
++os.execv('/usr/bin/python3',['python3','-I',str(p),'--installed','--isolated'])
++'''
++    argv=['bwrap','--unshare-user','--uid','0','--gid','0','--unshare-net','--tmpfs','/',
++          '--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64',
++          '--ro-bind','/bin','/bin','--ro-bind','/proc','/proc','--dev','/dev','--dir','/etc',
++          '--ro-bind','/etc/ld.so.cache','/etc/ld.so.cache','--dir','/run','--dir','/tmp',
++          '--die-with-parent','--clearenv','--setenv','PATH','/usr/local/bin:/usr/bin:/bin','--chdir','/tmp']
++    for name in ('bounded-job.sh','receipt_state.py'):
++        argv+=['--ro-bind',str(ROOT/'docs/detached-job-341db27d'/name),'/fixture/'+name]
++    argv+=['/usr/bin/python3','-I','-c',bootstrap]
++    raise SystemExit(subprocess.run(argv,input=Path(__file__).read_bytes()).returncode)
++sys.argv=[sys.argv[0],*remaining]
++DOC=Path('/fixture') if config.installed else ROOT/'docs/detached-job-341db27d'
++BROKER=Path('/usr/local/bin/kandev-agent-docker-broker') if config.installed else ROOT/'scripts/kandev-agent-docker-broker'
++OPS=Path('/usr/local/bin/kandev-agent-docker-operations.py') if config.installed else ROOT/'scripts/kandev-agent-docker-operations.py'
++loader=importlib.machinery.SourceFileLoader('detached_job_broker',str(BROKER));spec=importlib.util.spec_from_loader(loader.name,loader)
++broker=importlib.util.module_from_spec(spec);loader.exec_module(broker)
++reconcile=runpy.run_path(str(DOC/'receipt_state.py'))['reconcile']
++WORKER='a'*64
++DB='d'*64
++FOREIGN='b'*64
++FORMAT=('{"id":{{json .Id}},"running":{{json .State.Running}},"status":{{json .State.Status}},'
++        '"exit_code":{{json .State.ExitCode}},"oom":{{json .State.OOMKilled}},'
++        '"started_at":{{json .State.StartedAt}},"finished_at":{{json .State.FinishedAt}},'
++        '"auto_remove":{{json .HostConfig.AutoRemove}},"restart":{{json .HostConfig.RestartPolicy.Name}},'
++        '"image":{{json .Image}},"user":{{json .Config.User}},'
++        '"read_only":{{json .HostConfig.ReadonlyRootfs}},"network_mode":{{json .HostConfig.NetworkMode}}}')
++
++
++class DetachedTests(unittest.TestCase):
++    def setUp(self):
++        temp=tempfile.TemporaryDirectory(prefix='detached-job-fixture-');self.addCleanup(temp.cleanup)
++        self.base=Path(temp.name).resolve();self.root=self.base/'task';self.root.mkdir()
++        for name in ('source','vendor','logs'):(self.root/name).mkdir()
++        self.project='kd_detached_job_fixture'
++        self.model={'services':{'db':{'image':'fixture.invalid/db:local','network_mode':'none'},
++            'qa':{'image':'fixture.invalid/php:local','user':'1000:999','read_only':True,
++                  'network_mode':'service:db','working_dir':'/src','volumes':[
++                      {'type':'bind','source':str(self.root/'source'),'target':'/src','read_only':True},
++                      {'type':'bind','source':str(self.root/'vendor'),'target':'/vendor','read_only':True},
++                      {'type':'bind','source':str(self.root/'logs'),'target':'/qa/results','read_only':False}]}}}
++        self.model_file=self.root/'runtime.yml';self.model_file.write_text(json.dumps(self.model))
++        self.key=b'private-synthetic-job-key-not-live'
++        self.args=['compose','--project-directory',str(self.root),'-f',str(self.model_file),
++                   'run','--detach','--no-deps','--pull','never','--interactive=false','-T',
++                   '--entrypoint','sh','qa','-c',(DOC/'bounded-job.sh').read_text(),
++                   'bounded-job','nonce341','/qa/results','1200','15','opaque-approved-command']
++        self.request={'task_root':str(self.root),'cwd':str(self.root),'token':broker.expected_token(self.key,self.root),
++                      'compose_environment':{'COMPOSE_PROJECT_NAME':self.project},'args':self.args}
++        self.calls=[];self.running=True;self.exit_code=0
++        self.snapshot=lambda:{'id':WORKER,'running':self.running,'status':'running' if self.running else 'exited',
++            'exit_code':self.exit_code,'oom':False,'started_at':'2026-11-25T00:00:00Z',
++            'finished_at':'' if self.running else '2026-11-25T00:20:00Z','auto_remove':False,'restart':'no',
++            'image':'sha256:'+'e'*64,'user':'1000:999','read_only':True,'network_mode':'container:'+DB}
++        original=tempfile.NamedTemporaryFile
++        def private_temp(*args,**kwargs):
++            self.assertEqual(kwargs.pop('dir'),'/run/kandev-agent-docker')
++            return original(*args,**kwargs,dir=self.base)
++        for patch in [mock.patch.object(broker,'MODEL_DIR',self.base/'models'),
++                      mock.patch.object(broker,'COMPOSE_AUDIT_LOG',self.base/'audit.jsonl'),
++                      mock.patch.object(broker,'translate_to_host',side_effect=lambda p:p),
++                      mock.patch.object(broker,'run_command',side_effect=self.engine),
++                      mock.patch.object(broker.tempfile,'NamedTemporaryFile',side_effect=private_temp)]:
++            patch.start();self.addCleanup(patch.stop)
++
++    def engine(self,argv,cwd,**kwargs):
++        self.calls.append((argv,kwargs))
++        if argv[0]==broker.GUARD_BIN:
++            self.assertEqual(argv[1:3],['--',broker.COMPOSE_PLUGIN])
++            self.assertEqual(argv[-3:],['config','--format','json'])
++            if config.installed:
++                r=subprocess.run(argv[2:],cwd=cwd,env={'PATH':'/usr/bin:/bin','HOME':str(self.base),
++                    'DOCKER_CONFIG':str(self.base/'empty-config'),**kwargs['environment_overrides']},
++                    capture_output=True,text=True,timeout=15)
++                return r.returncode,r.stdout,r.stderr
++            return 0,json.dumps(self.model),''
++        self.assertEqual(argv[0],broker.DOCKER_BIN)
++        if argv[1]=='compose':
++            self.assertEqual(argv[2:4],['--project-name',self.project])
++            self.assertEqual(argv[6:],self.args[self.args.index('run'):])
++            self.assertEqual(kwargs['timeout'],600)
++            material=json.loads(Path(argv[5]).read_text());qa=material['services']['qa']
++            self.assertEqual(qa['network_mode'],'service:db')
++            self.assertEqual(material['services']['db']['network_mode'],'none')
++            self.assertEqual(qa['user'],'1000:999');self.assertTrue(qa['read_only'])
++            self.assertEqual({m['target']:m.get('read_only',False) for m in qa['volumes']},
++                             {'/src':True,'/vendor':True,'/qa/results':False})
++            self.assertFalse(qa.get('ports'));self.assertFalse(qa.get('build'))
++            self.assertNotIn('--rm',argv);self.assertIn('--no-deps',argv)
++            return 0,WORKER+'\n',''
++        if argv[1:4]==['inspect','--type','container']:
++            target=argv[-1]
++            if '--format' in argv:
++                self.assertEqual(target,WORKER)
++                self.assertEqual(argv[argv.index('--format')+1],FORMAT)
++                return 0,json.dumps(self.snapshot()),''
++            return 0,json.dumps([{'Id':target,'Config':{'Labels':{
++                'com.docker.compose.project':self.project if target!=FOREIGN else 'kd_other_task',
++                'com.docker.compose.service':'qa','com.docker.compose.oneoff':'True'}}}]),''
++        if argv[1:]==['stop','--time','30',WORKER]:
++            self.running=False;self.exit_code=143;return 0,WORKER+'\n',''
++        raise AssertionError('unexpected engine operation '+repr(argv))
++
++    def request_call(self,args=None,**changes):
++        return broker.handle_request({**self.request,'args':args or self.args,**changes},self.key)
++
++    def status(self,target=WORKER):
++        return self.request_call(['inspect','--type','container','--format',FORMAT,target])
++
++    def test_detached_launch_retains_model_policy_and_returns_only_identity(self):
++        result=self.request_call()
++        self.assertEqual(result['returncode'],0);self.assertEqual(result['stdout'],WORKER+'\n')
++        self.assertEqual(len(self.calls),2)
++        self.assertTrue(self.running)
++        self.assertEqual(broker.ONEOFF_RUN_TIMEOUT,600);self.assertEqual(broker.COMMAND_TIMEOUT,1800)
++
++    def test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success(self):
++        self.request_call();snapshot=json.loads(self.status()['stdout'])
++        self.assertEqual(reconcile(WORKER,'nonce341',snapshot,None),'running')
++        self.running=False;self.exit_code=7
++        receipt={'schema':'bounded-job/v1','nonce':'nonce341','complete':True,
++                 'payload_exit':7,'driver_exit':7,'cancelled':False}
++        snapshot=json.loads(self.status()['stdout'])
++        self.assertEqual(reconcile(WORKER,'nonce341',snapshot,receipt),'payload-finished')
++        self.assertFalse(any('wait' in argv or '--follow' in argv for argv,_ in self.calls))
++
++    def test_exact_owned_stop_preserves_db_and_performs_no_cleanup(self):
++        self.request_call();self.request_call(['stop','--time','30',WORKER])
++        self.assertFalse(json.loads(self.status()['stdout'])['running'])
++        self.assertFalse(any(DB in argv or 'rm' in argv or 'prune' in argv or 'down' in argv for argv,_ in self.calls))
++
++    def test_foreign_identity_never_reaches_state_projection_or_stop(self):
++        self.request_call()
++        for args in (['inspect','--type','container','--format',FORMAT,FOREIGN],['stop','--time','30',FOREIGN]):
++            with self.assertRaises(broker.BrokerError):self.request_call(args)
++        self.assertFalse(any('--format' in argv and argv[-1]==FOREIGN or argv[1:2]==['stop'] for argv,_ in self.calls))
++
++    def test_wrong_caller_and_unsupported_run_grants_are_rejected(self):
++        with self.assertRaises(broker.BrokerError):self.request_call(token='wrong')
++        with self.assertRaises(broker.BrokerError):self.request_call(cwd=str(self.base))
++        for flag,value in (('--name','chosen'),('--volume','/outside:/x'),('--network','host'),('--privileged',None)):
++            args=self.args.copy();i=args.index('--detach');args[i:i]=[flag]+([value] if value else [])
++            with self.assertRaises(broker.BrokerError):self.request_call(args)
++        self.assertEqual(self.calls,[])
++
++    def test_actual_wrapper_client_and_parser_framing(self):
++        if not config.installed:self.skipTest('installed transport in installed mode')
++        endpoint=self.base/'private.sock'
++        with broker.ThreadedUnixServer(str(endpoint),broker.BrokerHandler) as server:
++            server.broker_key=self.key;thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
++            try:
++                env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(self.base),
++                    'KANDEV_AGENT_GUARD_ACTIVE':'1','KANDEV_AGENT_GUARD_SCOPE':'project',
++                    'KANDEV_TASK_DOCKER_ACCESS':'restricted','KANDEV_AGENT_DOCKER_ROOT':str(self.root),
++                    'KANDEV_AGENT_DOCKER_SOCKET':str(endpoint),'KANDEV_AGENT_DOCKER_TOKEN':self.request['token'],
++                    'COMPOSE_PROJECT_NAME':self.project}
++                r=subprocess.run(['/usr/local/bin/docker',*self.args],cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=15)
++                self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(r.stdout.strip(),WORKER)
++                r=subprocess.run(['/usr/local/bin/docker','inspect','--type','container','--format',FORMAT,WORKER],cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=15)
++                self.assertEqual(r.returncode,0,r.stderr);self.assertTrue(json.loads(r.stdout)['running'])
++            finally:server.shutdown();thread.join(timeout=5);self.assertFalse(thread.is_alive())
++
++    def test_installed_run_flags_and_no_build_rejection_without_engine(self):
++        if not config.installed:self.skipTest('actual CLI parser in installed mode')
++        args=['run','--detach','--no-deps','--pull','never','--interactive=false','-T','--entrypoint','sh','--help']
++        r=subprocess.run([broker.COMPOSE_PLUGIN,*args],cwd=self.root,
++            env={'PATH':'/usr/bin:/bin','HOME':str(self.base),'DOCKER_CONFIG':str(self.base/'empty-config')},capture_output=True,text=True,timeout=15)
++        self.assertEqual(r.returncode,0,r.stderr)
++        r=subprocess.run([broker.COMPOSE_PLUGIN,'run','--no-build','--help'],cwd=self.root,
++            env={'PATH':'/usr/bin:/bin','HOME':str(self.base)},capture_output=True,text=True,timeout=15)
++        self.assertNotEqual(r.returncode,0);self.assertIn('unknown flag',r.stderr)
++
++
++class DriverTests(unittest.TestCase):
++    def setUp(self):
++        temporary=tempfile.TemporaryDirectory(prefix='short-driver-fixture-');self.addCleanup(temporary.cleanup)
++        self.logs=Path(temporary.name);self.nonce='privatejob'
++
++    def run_driver(self,payload,seconds='1',grace='1'):
++        return subprocess.run(['/bin/sh',str(DOC/'bounded-job.sh'),self.nonce,str(self.logs),seconds,grace,*payload],
++            capture_output=True,text=True,timeout=8,start_new_session=True)
++
++    def read(self):return json.loads((self.logs/(self.nonce+'.job')/'exit.json').read_text())
++
++    def test_normal_exit_is_atomic_and_matches_driver_status(self):
++        result=self.run_driver(['/bin/sh','-c','printf "fixture output"; exit 7'])
++        self.assertEqual(result.returncode,7);receipt=self.read()
++        self.assertEqual(receipt['payload_exit'],7);self.assertEqual(receipt['driver_exit'],7)
++        self.assertFalse((self.logs/(self.nonce+'.job')/'.exit.tmp').exists())
++        self.assertEqual((self.logs/(self.nonce+'.job')/'stdout.log').read_text(),'fixture output')
++
++    def test_soft_deadline_is_124_and_does_not_look_like_qa_completion(self):
++        result=self.run_driver(['/bin/sh','-c','sleep 5'])
++        self.assertEqual(result.returncode,124);self.assertEqual(self.read()['payload_exit'],124)
++
++    def test_term_ignoring_payload_is_killed_with_finite_receipt(self):
++        started=time.monotonic()
++        result=self.run_driver(['/bin/sh','-c','trap "" TERM; sleep 5'])
++        self.assertEqual(result.returncode,137);self.assertEqual(self.read()['payload_exit'],137)
++        self.assertLess(time.monotonic()-started,6)
++
++    def test_duplicate_nonce_rejects_before_replaying_payload(self):
++        self.run_driver(['/bin/true']);before=self.read()
++        result=self.run_driver(['/bin/sh','-c','exit 77'])
++        self.assertEqual(result.returncode,73);self.assertEqual(self.read(),before)
++
++    def test_bounds_reject_before_any_job_artifact(self):
++        for seconds,grace in [('1201','1'),('0','1'),('1','16'),('01','1')]:
++            self.assertEqual(self.run_driver(['/bin/true'],seconds,grace).returncode,64)
++        self.assertEqual(list(self.logs.iterdir()),[])
++
++    def test_external_term_settles_and_records_cancellation(self):
++        process=subprocess.Popen(['/bin/sh',str(DOC/'bounded-job.sh'),self.nonce,str(self.logs),'5','1',
++            '/bin/sh','-c','trap "" TERM; sleep 5'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
++        try:
++            time.sleep(0.2);process.send_signal(signal.SIGTERM)
++            process.communicate(timeout=5)
++            self.assertEqual(process.returncode,143);self.assertTrue(self.read()['cancelled'])
++        finally:
++            if process.poll() is None:process.kill();process.wait()
++
++    def test_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom(self):
++        self.run_driver(['/bin/true']);receipt=self.read()
++        snapshot={'id':WORKER,'running':False,'status':'exited','exit_code':0,'oom':False,
++                  'auto_remove':False,'restart':'no'}
++        self.assertEqual(reconcile(WORKER,self.nonce,snapshot,receipt),'payload-finished')
++        self.assertEqual(reconcile(WORKER,self.nonce,snapshot,None),'terminal-without-receipt')
++        self.assertEqual(reconcile(WORKER,'stale',snapshot,receipt),'invalid-receipt')
++        self.assertEqual(reconcile(WORKER,self.nonce,{**snapshot,'exit_code':1},receipt),'invalid-receipt')
++        self.assertEqual(reconcile(WORKER,self.nonce,{**snapshot,'oom':True},receipt),'abnormal-terminal')
++        self.assertEqual(reconcile(WORKER,self.nonce,{**snapshot,'id':FOREIGN},receipt),'unknown-identity')
++        self.assertEqual(reconcile(WORKER,self.nonce,{**snapshot,'auto_remove':True},receipt),'policy-mismatch')
++        self.assertEqual(reconcile(WORKER,self.nonce,snapshot,receipt,{'network_mode':'container:'+DB}),'policy-mismatch')
++        self.assertEqual(reconcile(WORKER,self.nonce,snapshot,{**receipt,'payload_exit':7}),'invalid-receipt')
++
++
++class TimeoutDiagnosis(unittest.TestCase):
++    def test_broker_timeout_kills_only_cli_not_daemon_worker(self):
++        state={'waits':0,'cli_killed':False,'daemon_worker_running':True}
++        class Process:
++            stdin=None
++            def wait(self,timeout=None):
++                state['waits']+=1
++                if state['waits']==1:raise subprocess.TimeoutExpired('private-fake-cli',timeout)
++                return -9
++            def kill(self):state['cli_killed']=True
++        with mock.patch.object(broker.subprocess,'Popen',return_value=Process()):
++            code,stdout,stderr=broker.run_command(['private-fake-cli'],Path('/tmp'),timeout=600)
++        self.assertEqual(code,124);self.assertIn('command timed out after 600 seconds',stderr)
++        self.assertTrue(state['cli_killed']);self.assertTrue(state['daemon_worker_running'])
++
++
++if __name__=='__main__':
++    print(json.dumps({'installed':config.installed,'broker_sha256':hashlib.sha256(BROKER.read_bytes()).hexdigest(),
++        'operations_sha256':hashlib.sha256(OPS.read_bytes()).hexdigest(),'compose_parser':'actual installed' if config.installed else 'normalized fixture',
++        'engine':'mocked only','driver_tests':'short local GNU timeout payloads only','real_owner_operations':0,
++        'real_engine_builds_or_containers':0,'provider_registry_contacts':0,'cap_changes':0,'restarts':0}),flush=True)
++    unittest.main(verbosity=2)

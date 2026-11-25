@@ -1,0 +1,10 @@
+{
+  "compose": {
+    "version": "5.7.1",
+    "sha256": "af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf"
+  },
+  "fixture_timeout": {
+    "version": "timeout (GNU coreutils) 9.1",
+    "sha256": "5ef0eaaaa4220593add7716aad74da927ca3bb10605e964330de64fecc3ef15e"
+  }
+}

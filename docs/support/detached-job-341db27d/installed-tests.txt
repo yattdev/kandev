@@ -1,0 +1,21 @@
+{"installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "compose_parser": "actual installed", "engine": "mocked only", "driver_tests": "short local GNU timeout payloads only", "real_owner_operations": 0, "real_engine_builds_or_containers": 0, "provider_registry_contacts": 0, "cap_changes": 0, "restarts": 0}
+test_actual_wrapper_client_and_parser_framing (__main__.DetachedTests.test_actual_wrapper_client_and_parser_framing) ... ok
+test_detached_launch_retains_model_policy_and_returns_only_identity (__main__.DetachedTests.test_detached_launch_retains_model_policy_and_returns_only_identity) ... ok
+test_exact_owned_stop_preserves_db_and_performs_no_cleanup (__main__.DetachedTests.test_exact_owned_stop_preserves_db_and_performs_no_cleanup) ... ok
+test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success (__main__.DetachedTests.test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success) ... ok
+test_foreign_identity_never_reaches_state_projection_or_stop (__main__.DetachedTests.test_foreign_identity_never_reaches_state_projection_or_stop) ... ok
+test_installed_run_flags_and_no_build_rejection_without_engine (__main__.DetachedTests.test_installed_run_flags_and_no_build_rejection_without_engine) ... ok
+test_wrong_caller_and_unsupported_run_grants_are_rejected (__main__.DetachedTests.test_wrong_caller_and_unsupported_run_grants_are_rejected) ... ok
+test_bounds_reject_before_any_job_artifact (__main__.DriverTests.test_bounds_reject_before_any_job_artifact) ... ok
+test_duplicate_nonce_rejects_before_replaying_payload (__main__.DriverTests.test_duplicate_nonce_rejects_before_replaying_payload) ... ok
+test_external_term_settles_and_records_cancellation (__main__.DriverTests.test_external_term_settles_and_records_cancellation) ... ok
+test_normal_exit_is_atomic_and_matches_driver_status (__main__.DriverTests.test_normal_exit_is_atomic_and_matches_driver_status) ... ok
+test_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom (__main__.DriverTests.test_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom) ... ok
+test_soft_deadline_is_124_and_does_not_look_like_qa_completion (__main__.DriverTests.test_soft_deadline_is_124_and_does_not_look_like_qa_completion) ... ok
+test_term_ignoring_payload_is_killed_with_finite_receipt (__main__.DriverTests.test_term_ignoring_payload_is_killed_with_finite_receipt) ... ok
+test_broker_timeout_kills_only_cli_not_daemon_worker (__main__.TimeoutDiagnosis.test_broker_timeout_kills_only_cli_not_daemon_worker) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 5.023s
+
+OK

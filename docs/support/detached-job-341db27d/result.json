@@ -1,0 +1,59 @@
+{
+  "request_id": "341db27d-80a1-482d-bbdb-2508e65ba996",
+  "status": "RESOLVED",
+  "scope": "Existing supported restricted detached execution/receipt/finite-status mechanism qualified; no workload acceptance",
+  "diagnosis": "Installed Compose run subprocess cap600 includes run startup/setup; timeout kills CLI only, not daemon container. Client does not negotiate caller/container duration into broker cap.",
+  "limits": {
+    "compose_run_execution_seconds": 600,
+    "other_commands_and_model_render_default_seconds": 1800,
+    "container_payload_recipe_seconds": 1200,
+    "container_kill_grace_seconds": 15,
+    "caller_operation_wait_contract_seconds_max": 600,
+    "universal_server_rpc_deadline_600_claimed": false
+  },
+  "assumption": "Preserve installed per-call policy and bound caller waits; hard server-wide600 across all phases is not claimed or changed.",
+  "tests": {
+    "installed_cases_passed": 15,
+    "source_passed": 13,
+    "source_installed_cases_skipped": 2,
+    "engine": "mocked",
+    "short_local_driver_timeouts_seconds": 1
+  },
+  "production_source_changed": false,
+  "installed_files_changed": false,
+  "build_install_restart_policy_changes": 0,
+  "real_owner_operations": 0,
+  "real_engine_resource_operations": 0,
+  "source_DB_private_env_reads": 0,
+  "provider_registry_target_fixture_polling": 0,
+  "owner_acceptance": false,
+  "original_full366_verdict": "incomplete; no RED/PASS or failed-ID inference",
+  "next_action": "Root binds ONE fresh-nonce scenario accounting for populated partially exercised DB, exact existing model/caller/image/namespace, payload and finite status/settlement budget. No setup/reimport/reseed/retry authorization here.",
+  "deployment_evidence_base": "63f39df62b937b6c35b0b2b08046281cb6d0d365",
+  "source_primary_head": "cfd6bdf65ae6f631d7701c105791a099c0325cc3",
+  "test_source_sha256": {
+    "tests/test-detached-job.py": "e3c8e9369c404d52b1f54c7c0eec7839f03c63e01e66d6bec4fe5d3a222bbcb6",
+    "tests/run-detached-job-fixture.py": "a3524449ae07017294ada75b9a9ca9ac989038e1a0b17ea876b59321e37ebbdd"
+  },
+  "evidence_sha256": {
+    "bounded-job.sh": "084a88f6bc68feb79e64e245ad0ecbb0f3d2c4c2238e97a9cb634eb60e0f16d3",
+    "status-format.txt": "db91c670b9409b78da5476dcaf1a08ac2b59645a8ac9572767a0eb855c1f468e",
+    "source-tests.txt": "7e10dcc7e9b9a10f00b850e3626b0cfbb18e5d44d8ba902c0a42c0fb456ce359",
+    "receipt_state.py": "967ca50a72c40581be66b35ebfefddf8c9404ad755ab7e6963fa5b964c9bf99b",
+    "installed-tests.txt": "e09440d12ee41f2ee2c03dbda39833dec5003f7532c9dbd63df31361bef4c992",
+    "initial-fixture-normalization.json": "821b9600110a6184d0ffdb6cd5640a8591679b625dfcd6200acbc06ba33cec9d",
+    "public-parser-versions.json": "7e827db8a2b1d4cbebc3054749a982e0324078822a80496e8406a56d07451b69",
+    "README.md": "95e3cfc532b32b1e857e6502ed371cf37e1f97d2876d05ff10ce8643202e3244",
+    "installed-public-files.json": "5b2705f6e66d5e1dc0d8a010cafd326e8ba0db6ad6967d531fb403921effd69c"
+  },
+  "public_parser_versions": {
+    "compose": {
+      "version": "5.7.1",
+      "sha256": "af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf"
+    },
+    "fixture_timeout": {
+      "version": "timeout (GNU coreutils) 9.1",
+      "sha256": "5ef0eaaaa4220593add7716aad74da927ca3bb10605e964330de64fecc3ef15e"
+    }
+  }
+}

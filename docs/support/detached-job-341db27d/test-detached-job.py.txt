@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""Restricted detached jobs: private parser/identity/engine fixtures and short OS tests."""
+import argparse
+import copy
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+from pathlib import Path
+import runpy
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from unittest import mock
+import unittest
+
+parser=argparse.ArgumentParser()
+parser.add_argument('--installed',action='store_true')
+parser.add_argument('--isolated',action='store_true')
+config,remaining=parser.parse_known_args()
+ROOT=Path(__file__).resolve().parents[1]
+if config.installed and not config.isolated:
+    bootstrap='''import sys,pathlib,os
+p=pathlib.Path('/tmp/test.py');p.write_bytes(sys.stdin.buffer.read())
+os.execv('/usr/bin/python3',['python3','-I',str(p),'--installed','--isolated'])
+'''
+    argv=['bwrap','--unshare-user','--uid','0','--gid','0','--unshare-net','--tmpfs','/',
+          '--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64',
+          '--ro-bind','/bin','/bin','--ro-bind','/proc','/proc','--dev','/dev','--dir','/etc',
+          '--ro-bind','/etc/ld.so.cache','/etc/ld.so.cache','--dir','/run','--dir','/tmp',
+          '--die-with-parent','--clearenv','--setenv','PATH','/usr/local/bin:/usr/bin:/bin','--chdir','/tmp']
+    for name in ('bounded-job.sh','receipt_state.py'):
+        argv+=['--ro-bind',str(ROOT/'docs/detached-job-341db27d'/name),'/fixture/'+name]
+    argv+=['/usr/bin/python3','-I','-c',bootstrap]
+    raise SystemExit(subprocess.run(argv,input=Path(__file__).read_bytes()).returncode)
+sys.argv=[sys.argv[0],*remaining]
+DOC=Path('/fixture') if config.installed else ROOT/'docs/detached-job-341db27d'
+BROKER=Path('/usr/local/bin/kandev-agent-docker-broker') if config.installed else ROOT/'scripts/kandev-agent-docker-broker'
+OPS=Path('/usr/local/bin/kandev-agent-docker-operations.py') if config.installed else ROOT/'scripts/kandev-agent-docker-operations.py'
+loader=importlib.machinery.SourceFileLoader('detached_job_broker',str(BROKER));spec=importlib.util.spec_from_loader(loader.name,loader)
+broker=importlib.util.module_from_spec(spec);loader.exec_module(broker)
+reconcile=runpy.run_path(str(DOC/'receipt_state.py'))['reconcile']
+WORKER='a'*64
+DB='d'*64
+FOREIGN='b'*64
+FORMAT=('{"id":{{json .Id}},"running":{{json .State.Running}},"status":{{json .State.Status}},'
+        '"exit_code":{{json .State.ExitCode}},"oom":{{json .State.OOMKilled}},'
+        '"started_at":{{json .State.StartedAt}},"finished_at":{{json .State.FinishedAt}},'
+        '"auto_remove":{{json .HostConfig.AutoRemove}},"restart":{{json .HostConfig.RestartPolicy.Name}},'
+        '"image":{{json .Image}},"user":{{json .Config.User}},'
+        '"read_only":{{json .HostConfig.ReadonlyRootfs}},"network_mode":{{json .HostConfig.NetworkMode}}}')
+
+
+class DetachedTests(unittest.TestCase):
+    def setUp(self):
+        temp=tempfile.TemporaryDirectory(prefix='detached-job-fixture-');self.addCleanup(temp.cleanup)
+        self.base=Path(temp.name).resolve();self.root=self.base/'task';self.root.mkdir()
+        for name in ('source','vendor','logs'):(self.root/name).mkdir()
+        self.project='kd_detached_job_fixture'
+        self.model={'services':{'db':{'image':'fixture.invalid/db:local','network_mode':'none'},
+            'qa':{'image':'fixture.invalid/php:local','user':'1000:999','read_only':True,
+                  'network_mode':'service:db','working_dir':'/src','volumes':[
+                      {'type':'bind','source':str(self.root/'source'),'target':'/src','read_only':True},
+                      {'type':'bind','source':str(self.root/'vendor'),'target':'/vendor','read_only':True},
+                      {'type':'bind','source':str(self.root/'logs'),'target':'/qa/results','read_only':False}]}}}
+        self.model_file=self.root/'runtime.yml';self.model_file.write_text(json.dumps(self.model))
+        self.key=b'private-synthetic-job-key-not-live'
+        self.args=['compose','--project-directory',str(self.root),'-f',str(self.model_file),
+                   'run','--detach','--no-deps','--pull','never','--interactive=false','-T',
+                   '--entrypoint','sh','qa','-c',(DOC/'bounded-job.sh').read_text(),
+                   'bounded-job','nonce341','/qa/results','1200','15','opaque-approved-command']
+        self.request={'task_root':str(self.root),'cwd':str(self.root),'token':broker.expected_token(self.key,self.root),
+                      'compose_environment':{'COMPOSE_PROJECT_NAME':self.project},'args':self.args}
+        self.calls=[];self.running=True;self.exit_code=0
+        self.snapshot=lambda:{'id':WORKER,'running':self.running,'status':'running' if self.running else 'exited',
+            'exit_code':self.exit_code,'oom':False,'started_at':'2026-11-25T00:00:00Z',
+            'finished_at':'' if self.running else '2026-11-25T00:20:00Z','auto_remove':False,'restart':'no',
+            'image':'sha256:'+'e'*64,'user':'1000:999','read_only':True,'network_mode':'container:'+DB}
+        original=tempfile.NamedTemporaryFile
+        def private_temp(*args,**kwargs):
+            self.assertEqual(kwargs.pop('dir'),'/run/kandev-agent-docker')
+            return original(*args,**kwargs,dir=self.base)
+        for patch in [mock.patch.object(broker,'MODEL_DIR',self.base/'models'),
+                      mock.patch.object(broker,'COMPOSE_AUDIT_LOG',self.base/'audit.jsonl'),
+                      mock.patch.object(broker,'translate_to_host',side_effect=lambda p:p),
+                      mock.patch.object(broker,'run_command',side_effect=self.engine),
+                      mock.patch.object(broker.tempfile,'NamedTemporaryFile',side_effect=private_temp)]:
+            patch.start();self.addCleanup(patch.stop)
+
+    def engine(self,argv,cwd,**kwargs):
+        self.calls.append((argv,kwargs))
+        if argv[0]==broker.GUARD_BIN:
+            self.assertEqual(argv[1:3],['--',broker.COMPOSE_PLUGIN])
+            self.assertEqual(argv[-3:],['config','--format','json'])
+            if config.installed:
+                r=subprocess.run(argv[2:],cwd=cwd,env={'PATH':'/usr/bin:/bin','HOME':str(self.base),
+                    'DOCKER_CONFIG':str(self.base/'empty-config'),**kwargs['environment_overrides']},
+                    capture_output=True,text=True,timeout=15)
+                return r.returncode,r.stdout,r.stderr
+            return 0,json.dumps(self.model),''
+        self.assertEqual(argv[0],broker.DOCKER_BIN)
+        if argv[1]=='compose':
+            self.assertEqual(argv[2:4],['--project-name',self.project])
+            self.assertEqual(argv[6:],self.args[self.args.index('run'):])
+            self.assertEqual(kwargs['timeout'],600)
+            material=json.loads(Path(argv[5]).read_text());qa=material['services']['qa']
+            self.assertEqual(qa['network_mode'],'service:db')
+            self.assertEqual(material['services']['db']['network_mode'],'none')
+            self.assertEqual(qa['user'],'1000:999');self.assertTrue(qa['read_only'])
+            self.assertEqual({m['target']:m.get('read_only',False) for m in qa['volumes']},
+                             {'/src':True,'/vendor':True,'/qa/results':False})
+            self.assertFalse(qa.get('ports'));self.assertFalse(qa.get('build'))
+            self.assertNotIn('--rm',argv);self.assertIn('--no-deps',argv)
+            return 0,WORKER+'\n',''
+        if argv[1:4]==['inspect','--type','container']:
+            target=argv[-1]
+            if '--format' in argv:
+                self.assertEqual(target,WORKER)
+                self.assertEqual(argv[argv.index('--format')+1],FORMAT)
+                return 0,json.dumps(self.snapshot()),''
+            return 0,json.dumps([{'Id':target,'Config':{'Labels':{
+                'com.docker.compose.project':self.project if target!=FOREIGN else 'kd_other_task',
+                'com.docker.compose.service':'qa','com.docker.compose.oneoff':'True'}}}]),''
+        if argv[1:]==['stop','--time','30',WORKER]:
+            self.running=False;self.exit_code=143;return 0,WORKER+'\n',''
+        raise AssertionError('unexpected engine operation '+repr(argv))
+
+    def request_call(self,args=None,**changes):
+        return broker.handle_request({**self.request,'args':args or self.args,**changes},self.key)
+
+    def status(self,target=WORKER):
+        return self.request_call(['inspect','--type','container','--format',FORMAT,target])
+
+    def test_detached_launch_retains_model_policy_and_returns_only_identity(self):
+        result=self.request_call()
+        self.assertEqual(result['returncode'],0);self.assertEqual(result['stdout'],WORKER+'\n')
+        self.assertEqual(len(self.calls),2)
+        self.assertTrue(self.running)
+        self.assertEqual(broker.ONEOFF_RUN_TIMEOUT,600);self.assertEqual(broker.COMMAND_TIMEOUT,1800)
+
+    def test_finite_state_reads_do_not_block_for_workload_or_report_running_zero_as_success(self):
+        self.request_call();snapshot=json.loads(self.status()['stdout'])
+        self.assertEqual(reconcile(WORKER,'nonce341',snapshot,None),'running')
+        self.running=False;self.exit_code=7
+        receipt={'schema':'bounded-job/v1','nonce':'nonce341','complete':True,
+                 'payload_exit':7,'driver_exit':7,'cancelled':False}
+        snapshot=json.loads(self.status()['stdout'])
+        self.assertEqual(reconcile(WORKER,'nonce341',snapshot,receipt),'payload-finished')
+        self.assertFalse(any('wait' in argv or '--follow' in argv for argv,_ in self.calls))
+
+    def test_exact_owned_stop_preserves_db_and_performs_no_cleanup(self):
+        self.request_call();self.request_call(['stop','--time','30',WORKER])
+        self.assertFalse(json.loads(self.status()['stdout'])['running'])
+        self.assertFalse(any(DB in argv or 'rm' in argv or 'prune' in argv or 'down' in argv for argv,_ in self.calls))
+
+    def test_foreign_identity_never_reaches_state_projection_or_stop(self):
+        self.request_call()
+        for args in (['inspect','--type','container','--format',FORMAT,FOREIGN],['stop','--time','30',FOREIGN]):
+            with self.assertRaises(broker.BrokerError):self.request_call(args)
+        self.assertFalse(any('--format' in argv and argv[-1]==FOREIGN or argv[1:2]==['stop'] for argv,_ in self.calls))
+
+    def test_wrong_caller_and_unsupported_run_grants_are_rejected(self):
+        with self.assertRaises(broker.BrokerError):self.request_call(token='wrong')
+        with self.assertRaises(broker.BrokerError):self.request_call(cwd=str(self.base))
+        for flag,value in (('--name','chosen'),('--volume','/outside:/x'),('--network','host'),('--privileged',None)):
+            args=self.args.copy();i=args.index('--detach');args[i:i]=[flag]+([value] if value else [])
+            with self.assertRaises(broker.BrokerError):self.request_call(args)
+        self.assertEqual(self.calls,[])
+
+    def test_actual_wrapper_client_and_parser_framing(self):
+        if not config.installed:self.skipTest('installed transport in installed mode')
+        endpoint=self.base/'private.sock'
+        with broker.ThreadedUnixServer(str(endpoint),broker.BrokerHandler) as server:
+            server.broker_key=self.key;thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(self.base),
+                    'KANDEV_AGENT_GUARD_ACTIVE':'1','KANDEV_AGENT_GUARD_SCOPE':'project',
+                    'KANDEV_TASK_DOCKER_ACCESS':'restricted','KANDEV_AGENT_DOCKER_ROOT':str(self.root),
+                    'KANDEV_AGENT_DOCKER_SOCKET':str(endpoint),'KANDEV_AGENT_DOCKER_TOKEN':self.request['token'],
+                    'COMPOSE_PROJECT_NAME':self.project}
+                r=subprocess.run(['/usr/local/bin/docker',*self.args],cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=15)
+                self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(r.stdout.strip(),WORKER)
+                r=subprocess.run(['/usr/local/bin/docker','inspect','--type','container','--format',FORMAT,WORKER],cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=15)
+                self.assertEqual(r.returncode,0,r.stderr);self.assertTrue(json.loads(r.stdout)['running'])
+            finally:server.shutdown();thread.join(timeout=5);self.assertFalse(thread.is_alive())
+
+    def test_installed_run_flags_and_no_build_rejection_without_engine(self):
+        if not config.installed:self.skipTest('actual CLI parser in installed mode')
+        args=['run','--detach','--no-deps','--pull','never','--interactive=false','-T','--entrypoint','sh','--help']
+        r=subprocess.run([broker.COMPOSE_PLUGIN,*args],cwd=self.root,
+            env={'PATH':'/usr/bin:/bin','HOME':str(self.base),'DOCKER_CONFIG':str(self.base/'empty-config')},capture_output=True,text=True,timeout=15)
+        self.assertEqual(r.returncode,0,r.stderr)
+        r=subprocess.run([broker.COMPOSE_PLUGIN,'run','--no-build','--help'],cwd=self.root,
+            env={'PATH':'/usr/bin:/bin','HOME':str(self.base)},capture_output=True,text=True,timeout=15)
+        self.assertNotEqual(r.returncode,0);self.assertIn('unknown flag',r.stderr)
+
+
+class DriverTests(unittest.TestCase):
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='short-driver-fixture-');self.addCleanup(temporary.cleanup)
+        self.logs=Path(temporary.name);self.nonce='privatejob'
+
+    def run_driver(self,payload,seconds='1',grace='1'):
+        return subprocess.run(['/bin/sh',str(DOC/'bounded-job.sh'),self.nonce,str(self.logs),seconds,grace,*payload],
+            capture_output=True,text=True,timeout=8,start_new_session=True)
+
+    def read(self):return json.loads((self.logs/(self.nonce+'.job')/'exit.json').read_text())
+
+    def test_normal_exit_is_atomic_and_matches_driver_status(self):
+        result=self.run_driver(['/bin/sh','-c','printf "fixture output"; exit 7'])
+        self.assertEqual(result.returncode,7);receipt=self.read()
+        self.assertEqual(receipt['payload_exit'],7);self.assertEqual(receipt['driver_exit'],7)
+        self.assertFalse((self.logs/(self.nonce+'.job')/'.exit.tmp').exists())
+        self.assertEqual((self.logs/(self.nonce+'.job')/'stdout.log').read_text(),'fixture output')
+
+    def test_soft_deadline_is_124_and_does_not_look_like_qa_completion(self):
+        result=self.run_driver(['/bin/sh','-c','sleep 5'])
+        self.assertEqual(result.returncode,124);self.assertEqual(self.read()['payload_exit'],124)
+
+    def test_term_ignoring_payload_is_killed_with_finite_receipt(self):
+        started=time.monotonic()
+        result=self.run_driver(['/bin/sh','-c','trap "" TERM; sleep 5'])
+        self.assertEqual(result.returncode,137);self.assertEqual(self.read()['payload_exit'],137)
+        self.assertLess(time.monotonic()-started,6)
+
+    def test_duplicate_nonce_rejects_before_replaying_payload(self):
+        self.run_driver(['/bin/true']);before=self.read()
+        result=self.run_driver(['/bin/sh','-c','exit 77'])
+        self.assertEqual(result.returncode,73);self.assertEqual(self.read(),before)
+
+    def test_bounds_reject_before_any_job_artifact(self):
+        for seconds,grace in [('1201','1'),('0','1'),('1','16'),('01','1')]:
+            self.assertEqual(self.run_driver(['/bin/true'],seconds,grace).returncode,64)
+        self.assertEqual(list(self.logs.iterdir()),[])
+
+    def test_external_term_settles_and_records_cancellation(self):
+        process=subprocess.Popen(['/bin/sh',str(DOC/'bounded-job.sh'),self.nonce,str(self.logs),'5','1',
+            '/bin/sh','-c','trap "" TERM; sleep 5'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+        try:
+            time.sleep(0.2);process.send_signal(signal.SIGTERM)
+            process.communicate(timeout=5)
+            self.assertEqual(process.returncode,143);self.assertTrue(self.read()['cancelled'])
+        finally:
+            if process.poll() is None:process.kill();process.wait()
+
+    def test_receipt_reconciliation_rejects_absence_stale_mismatch_and_oom(self):
+        self.run_driver(['/bin/true']);receipt=self.read()
+        snapshot={'id':WORKER,'running':False,'status':'exited','exit_code':0,'oom':False,
+                  'auto_remove':False,'restart':'no'}
+        self.assertEqual(reconcile(WORKER,self.nonce,snapshot,receipt),'payload-finished')
+        self.assertEqual(reconcile(WORKER,self.nonce,snapshot,None),'terminal-without-receipt')
+        self.assertEqual(reconcile(WORKER,'stale',snapshot,receipt),'invalid-receipt')
+        self.assertEqual(reconcile(WORKER,self.nonce,{**snapshot,'exit_code':1},receipt),'invalid-receipt')
+        self.assertEqual(reconcile(WORKER,self.nonce,{**snapshot,'oom':True},receipt),'abnormal-terminal')
+        self.assertEqual(reconcile(WORKER,self.nonce,{**snapshot,'id':FOREIGN},receipt),'unknown-identity')
+        self.assertEqual(reconcile(WORKER,self.nonce,{**snapshot,'auto_remove':True},receipt),'policy-mismatch')
+        self.assertEqual(reconcile(WORKER,self.nonce,snapshot,receipt,{'network_mode':'container:'+DB}),'policy-mismatch')
+        self.assertEqual(reconcile(WORKER,self.nonce,snapshot,{**receipt,'payload_exit':7}),'invalid-receipt')
+
+
+class TimeoutDiagnosis(unittest.TestCase):
+    def test_broker_timeout_kills_only_cli_not_daemon_worker(self):
+        state={'waits':0,'cli_killed':False,'daemon_worker_running':True}
+        class Process:
+            stdin=None
+            def wait(self,timeout=None):
+                state['waits']+=1
+                if state['waits']==1:raise subprocess.TimeoutExpired('private-fake-cli',timeout)
+                return -9
+            def kill(self):state['cli_killed']=True
+        with mock.patch.object(broker.subprocess,'Popen',return_value=Process()):
+            code,stdout,stderr=broker.run_command(['private-fake-cli'],Path('/tmp'),timeout=600)
+        self.assertEqual(code,124);self.assertIn('command timed out after 600 seconds',stderr)
+        self.assertTrue(state['cli_killed']);self.assertTrue(state['daemon_worker_running'])
+
+
+if __name__=='__main__':
+    print(json.dumps({'installed':config.installed,'broker_sha256':hashlib.sha256(BROKER.read_bytes()).hexdigest(),
+        'operations_sha256':hashlib.sha256(OPS.read_bytes()).hexdigest(),'compose_parser':'actual installed' if config.installed else 'normalized fixture',
+        'engine':'mocked only','driver_tests':'short local GNU timeout payloads only','real_owner_operations':0,
+        'real_engine_builds_or_containers':0,'provider_registry_contacts':0,'cap_changes':0,'restarts':0}),flush=True)
+    unittest.main(verbosity=2)

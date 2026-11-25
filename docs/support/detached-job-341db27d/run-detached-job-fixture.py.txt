@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Run public detached-job qualification against installed files; no live engine."""
+import json
+from pathlib import Path
+import subprocess
+root=Path(__file__).resolve().parents[1]
+names=['tests/test-detached-job.py','docs/detached-job-341db27d/bounded-job.sh',
+       'docs/detached-job-341db27d/receipt_state.py']
+payload=json.dumps({name:(root/name).read_text() for name in names}).encode()
+helper='''import json,pathlib,sys,tempfile,subprocess
+with tempfile.TemporaryDirectory(prefix='support-detached-public-') as directory:
+ root=pathlib.Path(directory)
+ for name,source in json.load(sys.stdin).items():
+  assert name in ('tests/test-detached-job.py','docs/detached-job-341db27d/bounded-job.sh','docs/detached-job-341db27d/receipt_state.py')
+  p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(source)
+ r=subprocess.run(['/usr/bin/python3','-I',str(root/'tests/test-detached-job.py'),'--installed'])
+ raise SystemExit(r.returncode)
+'''
+raise SystemExit(subprocess.run(['docker','exec','-i','kandev','/usr/bin/python3','-I','-c',helper],input=payload).returncode)
