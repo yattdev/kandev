@@ -1,0 +1,7 @@
+{"candidate": false, "baseline": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
+test_actual_current_model_replacement_loses_build_admission (__main__.BaselineCharacterization.test_actual_current_model_replacement_loses_build_admission) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.091s
+
+OK

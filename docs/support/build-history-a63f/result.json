@@ -1,0 +1,74 @@
+{
+  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
+  "status": "BLOCKED",
+  "diagnosis": "Current model atomically replaces prior build definition; immutable claim survives but image readers scan only current build-bearing models. No successful-output ledger exists in installed code.",
+  "source_repair": "Implemented/tested durable successful output retention; not installed",
+  "build_image_binary_replacement": false,
+  "installed_pair": {
+    "kandev-agent-docker-broker": {
+      "sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
+      "uid": 0,
+      "mode": "0o555"
+    },
+    "kandev-agent-docker-operations.py": {
+      "sha256": "d176a1794af1f5138a9b77d3594f09b9063277f6ea2183877891bb49c7abe7e4",
+      "uid": 0,
+      "mode": "0o555"
+    },
+    "docker": {
+      "sha256": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
+      "uid": 0,
+      "mode": "0o755"
+    },
+    "kandev-agent-docker-client": {
+      "sha256": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
+      "uid": 0,
+      "mode": "0o555"
+    },
+    "kandev-agent-guard": {
+      "sha256": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f",
+      "uid": 0,
+      "mode": "0o755"
+    }
+  },
+  "candidate_sha256": {
+    "scripts/kandev-agent-docker-broker": "27e55f85c51e4fa59b0e286b9e31fc19d4a65c40093252b4049eb1ae4ec2f03e",
+    "scripts/kandev-agent-docker-operations.py": "3532558fc5b361ab38e8db93b9d8395671877a0efdd5b878e95d0316991370f2"
+  },
+  "tests": {
+    "installed_characterization": 1,
+    "candidate_real_wrapper_client_parser": 26,
+    "source_passed": 24,
+    "source_transport_skipped": 2,
+    "image": 18,
+    "lifecycle": 22,
+    "volume": 24,
+    "broker": "16+11 plus Unix transport",
+    "task_access": "PASS"
+  },
+  "live_owner_operations": 0,
+  "real_engine_builds": 0,
+  "registry_provider_contacts": 0,
+  "task_resource_mutations": 0,
+  "installation_restart_activation": false,
+  "missing_dependencies": [
+    "Preserving broker/module exposure requires separate authority; source-only hot module copy cannot activate Compose hook",
+    "Authentic prior-build proof plus separately reviewed exact legacy receipt recovery; no model-only seeding or import authority is inferred"
+  ],
+  "next_action": "Route tested pair and legacy recovery design to broker maintainer; bind authentic build365 and typed identity evidence through approved Support boundary, then review exact-scope recovery/exposure before Root ONE same-owner metadata acceptance. Owner remains stopped.",
+  "evidence_sha256": {
+    "volume-regression.txt": "aff36f8a9cc7524adae3c5388c641848dffeba59a040e0652fba79938b75adcc",
+    "source-tests.txt": "26e5b931924b4e90ebae3695282f64dbd4bb003a3e2189deccac29a66a773067",
+    "final-installed-public-files.json": "24badbd9dc7cc44887d163c35b4e5581c90a93f8021ea637bae3c5be3043cd4a",
+    "task-access-regression.txt": "c2f18a1d8be402b79e1e6584bd2f5a498b902861797195712441ed46e02f04aa",
+    "candidate-review.json": "9e778652caaf546fabc49260347f11fceaf58ee41d0e7d3fa171bc61d936f48c",
+    "legacy-recovery-design.md": "3ce13cb352014bc1bb79249d86a1b8120e0f721c916e289a28ae618e1f1186ae",
+    "installed-characterization.txt": "1dfbf48db622829714d5b6bdf1504207aa75edd6c4bbbb306ffcc1e823633ac0",
+    "candidate-tests.txt": "3e06fb2aecb761093fc6f74286a4700c5f965a4313a0ed60cc38b685630bd0e7",
+    "lifecycle-regression.txt": "8a85e7a3b86632f4c734fd5557badef5d9f8f0f19e03a885cf645ab62c5ce1fd",
+    "broker-regression.txt": "0bacd7076cdf146e5e402eb195dbba9d3c80d8bce334d275c519d1dd00954cd0",
+    "image-regression.txt": "84719a61522cf373d05c1e40b1c74b06852cc4074f4f9a28b18b4ed5b1cb99c9",
+    "README.md": "650da9cdeee0d018f60b9248369a236d38f7ce7fdb2b9d59b76b65db29dabc91",
+    "installed-public-files.json": "24badbd9dc7cc44887d163c35b4e5581c90a93f8021ea637bae3c5be3043cd4a"
+  }
+}

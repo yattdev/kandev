@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""Run only public Support test source in private installed-parser fixtures."""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+
+parser=argparse.ArgumentParser()
+parser.add_argument('mode',choices=['baseline','candidate'])
+args=parser.parse_args()
+root=Path(__file__).resolve().parents[1]
+names=['tests/test-build-history.py','tests/test-fresh-build-bootstrap.py',
+       'scripts/kandev-agent-docker-broker','scripts/kandev-agent-docker-operations.py']
+payload=json.dumps({name:(root/name).read_text() for name in names}).encode()
+helper='''import json,pathlib,sys,tempfile,subprocess
+with tempfile.TemporaryDirectory(prefix='support-build-history-public-') as directory:
+ root=pathlib.Path(directory)
+ for name,source in json.load(sys.stdin).items():
+  assert name in ('tests/test-build-history.py','tests/test-fresh-build-bootstrap.py','scripts/kandev-agent-docker-broker','scripts/kandev-agent-docker-operations.py')
+  p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(source)
+ result=subprocess.run(['/usr/bin/python3','-I',str(root/'tests/test-build-history.py'),'--'+sys.argv[1]])
+ raise SystemExit(result.returncode)
+'''
+raise SystemExit(subprocess.run(['docker','exec','-i','kandev','/usr/bin/python3','-I','-c',helper,args.mode],input=payload).returncode)

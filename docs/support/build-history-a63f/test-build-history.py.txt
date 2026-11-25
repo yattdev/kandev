@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""Source/installed characterization and candidate real-transport history tests.
+
+All models, successful-output receipts and engine responses are synthetic.
+Candidate mode stages reviewed platform source in an empty-root namespace,
+retaining actual installed wrapper/client and actual Compose parser.
+"""
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import threading
+import unittest
+from unittest import mock
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--candidate', action='store_true')
+parser.add_argument('--baseline', action='store_true')
+parser.add_argument('--isolated', action='store_true')
+config, remaining = parser.parse_known_args()
+ROOT=Path(__file__).resolve().parents[1]
+if not config.isolated and (config.candidate or config.baseline):
+    bootstrap='''import pathlib,sys,os,shutil
+p=pathlib.Path('/tmp/test-build-history.py');p.write_bytes(sys.stdin.buffer.read())
+if '--candidate' in sys.argv:
+ for name in ('kandev-agent-docker-broker','kandev-agent-docker-operations.py','docker','kandev-agent-docker-client'):
+  target=pathlib.Path('/usr/local/bin')/name;shutil.copyfile('/fixture-inputs/'+name,target);target.chmod(0o555)
+os.execv('/usr/bin/python3',['python3','-I',str(p),'--isolated',*sys.argv[1:]])
+'''
+    argv=['bwrap','--unshare-user','--uid','0','--gid','0','--unshare-net','--tmpfs','/',
+          '--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64',
+          '--ro-bind','/bin','/bin','--ro-bind','/proc','/proc','--dev','/dev','--dir','/etc',
+          '--ro-bind','/etc/ld.so.cache','/etc/ld.so.cache','--dir','/run','--dir','/tmp',
+          '--die-with-parent','--clearenv','--setenv','PATH','/usr/local/bin:/usr/bin:/bin','--chdir','/tmp',
+          '--ro-bind',str(ROOT/'tests/test-fresh-build-bootstrap.py'),'/tmp/test-fresh-build-bootstrap.py']
+    if config.candidate:
+        argv+=['--tmpfs','/usr/local/bin']
+        for name in ('kandev-agent-docker-broker','kandev-agent-docker-operations.py'):
+            argv+=['--ro-bind',str(ROOT/'scripts'/name),'/fixture-inputs/'+name]
+        for name in ('docker','kandev-agent-docker-client'):
+            argv+=['--ro-bind','/usr/local/bin/'+name,'/fixture-inputs/'+name]
+    argv+=['/usr/bin/python3','-I','-c',bootstrap,'--candidate' if config.candidate else '--baseline']
+    raise SystemExit(subprocess.run(argv,input=Path(__file__).read_bytes()).returncode)
+
+# Reuse the existing private fixture and real installed parser/transport harness.
+sys.argv=[sys.argv[0],*(['--installed','--isolated'] if config.isolated else [])]
+fixture_path=Path('/tmp/test-fresh-build-bootstrap.py') if config.isolated else ROOT/'tests/test-fresh-build-bootstrap.py'
+spec=importlib.util.spec_from_file_location('bootstrap_fixture',fixture_path)
+fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
+broker=fixture.broker
+NEW_ID=fixture.NEW_ID
+OLD_ID=fixture.OLD_ID
+sys.argv=[sys.argv[0],*remaining]
+
+
+class RuntimeModelMixin:
+    def command(self, argv, cwd, **kwargs):
+        if argv[0] == broker.DOCKER_BIN and argv[1:4] == ['inspect','--type','container']:
+            return 1, '', 'No such container in private fixture'
+        return super().command(argv, cwd, **kwargs)
+
+    def runtime(self, image=None, invoke=None):
+        self.overlay={'services':{'app':{'image':image or self.tag,'read_only':True,
+                                       'network_mode':'none','user':'1000:999'}}}
+        self.overlay_file.write_text(json.dumps(self.overlay))
+        original=self.command
+        def config_only(argv,cwd,**kwargs):
+            if argv[0]==broker.DOCKER_BIN and argv[-3:]==['config','--format','json']:
+                return 0,Path(argv[argv.index('-f')+1]).read_text(),''
+            return original(argv,cwd,**kwargs)
+        with mock.patch.object(broker,'run_command',side_effect=config_only):
+            args=[*self.request['args'][:-4],'config','--format','json']
+            result=self.execute(args=args) if invoke is None else invoke(args)
+        self.assertEqual(result['returncode'],0)
+        self.assertNotIn('build',broker.load_scoped_model(self.root,self.root,self.project)['services']['app'])
+
+    def receipt(self):
+        return next((broker.MODEL_DIR).glob('*/successful-builds/*/*.json'))
+
+
+class BaselineCharacterization(RuntimeModelMixin,fixture.FreshBuildTests):
+    # Only this behavioral characterization runs against unchanged installed code.
+    def test_actual_current_model_replacement_loses_build_admission(self):
+        self.assertFalse(hasattr(broker,'successful_build_images'))
+        self.execute()
+        self.assertEqual(self.inspect(self.tag)['returncode'],0)
+        self.runtime()
+        before=len(self.image_queries)
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):
+            self.inspect(self.tag)
+        self.assertEqual(len(self.image_queries),before)
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):
+            self.inspect(NEW_ID)
+        self.assertEqual(len(self.image_queries),before)
+
+
+class HistoryTests(RuntimeModelMixin,fixture.FreshBuildTests):
+    def test_successful_output_survives_runtime_replacement(self):
+        self.execute();self.runtime()
+        self.assertEqual(self.inspect(self.tag)['returncode'],0)
+        self.assertEqual(self.inspect(NEW_ID)['returncode'],0)
+        record=broker.successful_build_images(self.root,self.root)[self.tag]
+        self.assertEqual(record['image_id'],NEW_ID)
+        self.assertEqual(record['kind'],'successful-build-output')
+        self.assertEqual(self.inspect(self.tag)['stdout'],self.inspect(NEW_ID)['stdout'])
+
+    def test_model_only_runtime_reference_creates_no_history(self):
+        self.runtime()
+        self.assertEqual(broker.successful_build_images(self.root,self.root),{})
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):self.inspect(self.tag)
+        self.assertEqual(self.image_queries,[])
+
+    def test_failed_build_does_not_renew_or_create_history(self):
+        self.engine_exit=19
+        self.execute();self.runtime()
+        self.assertEqual(broker.successful_build_images(self.root,self.root),{})
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):self.inspect(self.tag)
+        self.assertEqual(self.image_queries,[])
+
+    def test_config_with_build_is_not_a_success_receipt(self):
+        self.test_config_registers_model_without_build_or_output_proof()
+        self.runtime()
+        self.assertEqual(broker.successful_build_images(self.root,self.root),{})
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):self.inspect(self.tag)
+
+    def test_historical_tag_retargeting_cannot_admit_changed_image(self):
+        self.execute();self.runtime();self.image_queries.clear()
+        original=self.command
+        def retarget(argv,cwd,**kwargs):
+            if argv[1:3]==['image','inspect'] and argv[-1]==self.tag:
+                self.image_queries.append(argv);return 0,json.dumps(OLD_ID),''
+            return original(argv,cwd,**kwargs)
+        with mock.patch.object(broker,'run_command',side_effect=retarget):
+            for target in (self.tag,NEW_ID,OLD_ID):
+                with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):self.inspect(target)
+        self.assertTrue(all(call[-1]==self.tag for call in self.image_queries))
+
+    def test_sibling_and_other_task_do_not_inherit_receipts(self):
+        self.execute();self.runtime();self.image_queries.clear()
+        sibling=self.root/'sibling';sibling.mkdir()
+        for root,cwd in [(self.root,sibling),(self.base,self.base)]:
+            self.assertEqual(broker.successful_build_images(root,cwd),{})
+            request={**self.request,'task_root':str(root),'cwd':str(cwd),
+                     'token':broker.expected_token(self.key,root),'args':['image','inspect',self.tag]}
+            with self.assertRaisesRegex(broker.BrokerError,'IMAGE_NOT_AUTHORIZED'):
+                broker.handle_request(request,self.key)
+        self.assertEqual(self.image_queries,[])
+
+    def test_receipt_custody_and_binding_fail_closed(self):
+        self.execute();self.runtime();self.image_queries.clear()
+        path=self.receipt();original=path.read_bytes()
+        record=json.loads(original)
+        for changes in ({'cwd':str(self.base)},{'task_root':str(self.base)},
+                        {'image_id':'not-an-id'},{'image':'global:tag'}):
+            path.write_text(json.dumps({**record,**changes}))
+            with self.assertRaisesRegex(broker.BrokerError,'IMAGE_METADATA_UNAVAILABLE'):self.inspect(self.tag)
+        path.write_bytes(original);path.chmod(0o666)
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_METADATA_UNAVAILABLE'):self.inspect(self.tag)
+        path.chmod(0o600);destination=path.with_suffix('.private');path.rename(destination);path.symlink_to(destination)
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_METADATA_UNAVAILABLE'):self.inspect(self.tag)
+        self.assertEqual(self.image_queries,[])
+
+    def test_claim_revocation_blocks_retained_output(self):
+        self.execute();self.runtime();self.image_queries.clear()
+        broker.project_claim_path(self.project).unlink()
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_METADATA_UNAVAILABLE'):self.inspect(self.tag)
+        self.assertEqual(self.image_queries,[])
+
+    def test_history_metadata_remains_curated_and_typed(self):
+        self.execute();self.runtime();self.image_queries.clear()
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_METADATA_FORMAT'):
+            broker.handle_request({**self.request,'args':['image','inspect','--format','{{json .Config.Env}}',self.tag]},self.key)
+        with self.assertRaises(broker.BrokerError):
+            broker.handle_request({**self.request,'args':['container','inspect',self.tag]},self.key)
+        self.assertEqual(self.image_queries,[])
+        result=broker.handle_request({**self.request,'args':['image','inspect','--format','{{.Id}}',self.tag]},self.key)
+        self.assertEqual(result['stdout'].strip(),NEW_ID)
+
+    def test_dry_run_print_check_and_ambiguous_modes_cannot_attest(self):
+        for args in (['--print','app'],['--check','app'],['--push','app'],
+                     ['--build-arg','app'],['app','db'],[],['--with-dependencies','app']):
+            self.assertIsNone(broker.selected_receipt_service(self.merged(),args))
+        args=self.request['args'];self.execute(args=[args[0],'--dry-run',*args[1:]])
+        self.runtime()
+        self.assertEqual(broker.successful_build_images(self.root,self.root),{})
+
+    def test_receipt_failure_reports_completed_build_without_retry(self):
+        with mock.patch.object(broker,'record_successful_build_output',side_effect=OSError('synthetic write failure')):
+            result=self.execute()
+        self.assertEqual(result['returncode'],78)
+        self.assertIn('BUILD_COMPLETED_RECEIPT_UNAVAILABLE',result['stderr'])
+        self.assertEqual(len(self.replays),1)
+        self.assertEqual(broker.successful_build_images(self.root,self.root),{})
+
+    def test_missing_post_build_identity_cannot_create_receipt(self):
+        original=self.command
+        def unavailable(argv,cwd,**kwargs):
+            if argv[1:3]==['image','inspect']:
+                self.image_queries.append(argv);return 1,'','Synthetic missing output'
+            return original(argv,cwd,**kwargs)
+        with mock.patch.object(broker,'run_command',side_effect=unavailable):
+            result=self.execute()
+        self.assertEqual(result['returncode'],78)
+        self.assertIn('BUILD_COMPLETED_RECEIPT_UNAVAILABLE',result['stderr'])
+        self.assertEqual(broker.successful_build_images(self.root,self.root),{})
+
+    def test_standalone_build_records_same_scoped_success_history(self):
+        original=self.command
+        def standalone(argv,cwd,**kwargs):
+            if argv[0]==broker.DOCKER_BIN and argv[1]=='build':
+                self.tag=argv[argv.index('--tag')+1]
+                self.project=self.tag.removesuffix('_image:latest')
+                self.image_exists=True;self.replays.append(argv)
+                return 0,'MOCK_STANDALONE_BUILD_ONLY',''
+            return original(argv,cwd,**kwargs)
+        with mock.patch.object(broker,'run_command',side_effect=standalone):
+            result=self.execute(args=['build','--tag','fixture-public-alias:dev',str(self.context)])
+            self.assertEqual(result['returncode'],0)
+            self.assertEqual(len(self.replays),1)
+            self.assertEqual(broker.successful_build_images(self.root,self.root)[self.tag]['image_id'],NEW_ID)
+            broker.save_scoped_model(self.root,self.root,self.project,{'services':{'image':{'image':self.tag}}})
+            self.assertEqual(self.inspect(self.tag)['returncode'],0)
+
+    def test_history_limit_denies_before_engine_queries(self):
+        self.execute();self.runtime();self.image_queries.clear()
+        directory=self.receipt().parent
+        for i in range(65):(directory/(str(i)+'.json')).write_text('{}')
+        with self.assertRaisesRegex(broker.BrokerError,'IMAGE_METADATA_UNAVAILABLE'):self.inspect(self.tag)
+        self.assertEqual(self.image_queries,[])
+
+    def test_real_wrapper_client_build_runtime_then_tag_and_id(self):
+        if not config.isolated:self.skipTest('real installed wrapper/client require isolated mode')
+        endpoint=self.base/'private.sock'
+        with broker.ThreadedUnixServer(str(endpoint),broker.BrokerHandler) as server:
+            server.broker_key=self.key;thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(self.base),
+                     'KANDEV_AGENT_GUARD_ACTIVE':'1','KANDEV_AGENT_GUARD_SCOPE':'project',
+                     'KANDEV_TASK_DOCKER_ACCESS':'restricted','COMPOSE_PROJECT_NAME':self.project,
+                     'KANDEV_AGENT_DOCKER_ROOT':str(self.root),'KANDEV_AGENT_DOCKER_SOCKET':str(endpoint),
+                     'KANDEV_AGENT_DOCKER_TOKEN':self.request['token']}
+                def call(args):return subprocess.run(['/usr/local/bin/docker',*args],cwd=self.root,
+                    env=env,input='',capture_output=True,text=True,timeout=15)
+                result=call(self.request['args']);self.assertEqual(result.returncode,0,result.stderr)
+                def config_via_wrapper(args):
+                    result=call(args)
+                    return {'returncode':result.returncode,'stdout':result.stdout,'stderr':result.stderr}
+                self.runtime(invoke=config_via_wrapper)
+                for target in (self.tag,NEW_ID):
+                    result=call(['image','inspect','--format','{{.Id}}',target])
+                    self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),NEW_ID)
+                result=call(['image','inspect',OLD_ID]);self.assertEqual(result.returncode,78)
+                env['KANDEV_AGENT_DOCKER_TOKEN']='wrong';before=len(self.image_queries)
+                self.assertEqual(call(['image','inspect',self.tag]).returncode,78)
+                self.assertEqual(len(self.image_queries),before)
+            finally:server.shutdown();thread.join(timeout=5);self.assertFalse(thread.is_alive())
+
+
+if __name__=='__main__':
+    print(json.dumps({'candidate':config.candidate or not config.baseline,'baseline':config.baseline,
+        'broker_sha256':hashlib.sha256(fixture.BROKER.read_bytes()).hexdigest(),
+        'operations_sha256':hashlib.sha256(fixture.OPS.read_bytes()).hexdigest(),
+        'parser':'actual installed Compose' if config.isolated else 'normalized fixture',
+        'engine':'mocked only','live_owner_operations':0,'real_builds':0,'registry_contacts':0,'installs_restarts':0}),flush=True)
+    suite=unittest.TestSuite()
+    if config.baseline:
+        suite.addTest(BaselineCharacterization('test_actual_current_model_replacement_loses_build_admission'))
+    else:suite=unittest.defaultTestLoader.loadTestsFromTestCase(HistoryTests)
+    result=unittest.TextTestRunner(verbosity=2).run(suite)
+    raise SystemExit(not result.wasSuccessful())

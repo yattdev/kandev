@@ -1,0 +1,26 @@
+{
+  "request_id": "a63f09f3-5213-4a87-add9-a983718059eb",
+  "canonical_source_base": "9ee282c20a36b71d1d8ebae797865741bdc94a38",
+  "deployment_repair_commit": "681f606c29c35e654d99dea89f009cdf1dcf3355",
+  "files_sha256": {
+    "volume-regression.txt": "aff36f8a9cc7524adae3c5388c641848dffeba59a040e0652fba79938b75adcc",
+    "source-tests.txt": "26e5b931924b4e90ebae3695282f64dbd4bb003a3e2189deccac29a66a773067",
+    "final-installed-public-files.json": "24badbd9dc7cc44887d163c35b4e5581c90a93f8021ea637bae3c5be3043cd4a",
+    "test-task-access.py.txt": "b560e4db77cda7bdfab964e813c4eed144d41cdd988679acc0475b204f44ed77",
+    "test-build-history.py.txt": "3ccaccc95672ad1a8a626441695ea4701c448bff997454e47285eebad2d53f83",
+    "result.json": "045c145a1172bffa3cc156783868096103ec02308a5ec7f785c0faf806fba5b9",
+    "task-access-regression.txt": "c2f18a1d8be402b79e1e6584bd2f5a498b902861797195712441ed46e02f04aa",
+    "run-build-history-fixture.py.txt": "0b73475a6222c2c6d9783db02af2b6eb4834b2ccaf4d9422a4f69cd28a10f9f9",
+    "candidate-review.json": "9e778652caaf546fabc49260347f11fceaf58ee41d0e7d3fa171bc61d936f48c",
+    "deployment-repair.patch": "1cc5abae95f3566affca6cea2404916ff453e2ee6b356760e653573a29b1ffd4",
+    "legacy-recovery-design.md": "3ce13cb352014bc1bb79249d86a1b8120e0f721c916e289a28ae618e1f1186ae",
+    "installed-characterization.txt": "1dfbf48db622829714d5b6bdf1504207aa75edd6c4bbbb306ffcc1e823633ac0",
+    "candidate-tests.txt": "3e06fb2aecb761093fc6f74286a4700c5f965a4313a0ed60cc38b685630bd0e7",
+    "lifecycle-regression.txt": "8a85e7a3b86632f4c734fd5557badef5d9f8f0f19e03a885cf645ab62c5ce1fd",
+    "broker-regression.txt": "0bacd7076cdf146e5e402eb195dbba9d3c80d8bce334d275c519d1dd00954cd0",
+    "image-regression.txt": "84719a61522cf373d05c1e40b1c74b06852cc4074f4f9a28b18b4ed5b1cb99c9",
+    "README.md": "c35ce47e96d25c7ff20fdff00eb61f623cea5296ab8f87694e647f907016ff3d",
+    "installed-public-files.json": "24badbd9dc7cc44887d163c35b4e5581c90a93f8021ea637bae3c5be3043cd4a",
+    "test-fresh-build-bootstrap.py.txt": "c6735c5772d70db63a1a237d363e9d3f51db1dee49a149d3b280c0f12515731d"
+  }
+}

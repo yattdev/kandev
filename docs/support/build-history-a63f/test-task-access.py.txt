@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""Regression checks for automatic access without cross-task Docker/Git writes."""
+import importlib.machinery
+import importlib.util
+import json
+import os
+from pathlib import Path
+import runpy
+import tempfile
+from types import SimpleNamespace
+
+ROOT = Path(__file__).resolve().parents[1]
+loader = importlib.machinery.SourceFileLoader('task_access_broker', str(ROOT / 'scripts/kandev-agent-docker-broker'))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+broker = importlib.util.module_from_spec(spec)
+loader.exec_module(broker)
+operations = runpy.run_path(str(ROOT / 'scripts/kandev-agent-docker-operations.py'))
+
+
+def denied(call):
+    try:
+        call()
+    except broker.BrokerError:
+        return
+    raise AssertionError('cross-task or privileged operation accepted')
+
+
+with tempfile.TemporaryDirectory() as temporary:
+    base = Path(temporary)
+    task = base / 'task'
+    repo = task / 'repo'
+    other = base / 'other'
+    repo.mkdir(parents=True)
+    other.mkdir()
+    (repo / 'Dockerfile').write_text('FROM alpine\n')
+    broker.MODEL_DIR = base / 'models'
+    broker.COMPOSE_AUDIT_LOG = base / 'audit.jsonl'
+    os.environ['KANDEV_HOST_CODE_DIR'] = str(base)
+    calls = []
+    own_id, other_id = 'a' * 64, 'b' * 64
+    owned_project = broker.scoped_project_name(task, {}, repo)
+    broker.save_scoped_model(task, repo, owned_project, {'services': {'app': {'image': 'alpine'}}})
+
+    def run(args, cwd, **kwargs):
+        calls.append((args, kwargs))
+        if args[1:4] == ['inspect', '--type', 'container']:
+            target = args[-1]
+            if target in ('own', own_id):
+                return 0, json.dumps([{'Id': own_id, 'Config': {'Labels': {'com.docker.compose.project': owned_project, 'com.docker.compose.service': 'app'}}}]), ''
+            if target == 'foreign':
+                return 0, json.dumps([{'Id': other_id, 'Config': {'Labels': {'com.docker.compose.project': 'kd_other', 'com.docker.compose.service': 'app'}}}]), ''
+            return 1, '', 'No such object'
+        if args[1:3] == ['ps', '-aq']:
+            return 0, own_id + '\n', ''
+        if args[1:3] == ['image', 'inspect']:
+            assert args[3:-1] == ['--format', '{{json .Id}}']
+            build = next(command for command, _ in reversed(calls) if command[1:2] == ['build'])
+            assert args[-1] == build[3]
+            return 0, json.dumps('sha256:' + own_id), ''
+        return 0, 'fixture output\n', ''
+
+    broker.run_command = run
+    b = SimpleNamespace(**vars(broker))
+    b.inspect_owned_network = lambda name: None
+    b.handle_network_reserve = lambda *args: calls.append((['network-reserve', args[-1]['COMPOSE_PROJECT_NAME']], {}))
+    op = operations['Operations'](b, task, repo)
+    op.original_prefix = []
+
+    assert op.handle(['ps'])['returncode'] == 0
+    assert calls[-1][0][-1] == 'label=com.docker.compose.project=' + owned_project
+    denied(lambda: op.handle(['ps', '--filter', 'label=com.docker.compose.project=kd_other']))
+    denied(lambda: op.handle(['images', '--filter', 'reference=*']))
+    denied(lambda: op.handle(['exec', '--privileged', 'own', 'true']))
+    denied(lambda: op.handle(['stop', 'foreign']))
+    assert not any(c[0][1:2] == ['stop'] for c in calls)
+    assert op.handle(['exec', 'own', 'echo', 'ok'])['returncode'] == 0
+    assert calls[-1][0][1:] == ['exec', own_id, 'echo', 'ok']
+    assert op.handle(['stop', 'own'])['returncode'] == 0
+    assert calls[-1][0][1:] == ['stop', own_id]
+
+    result = op.handle(['build', '-t', 'shared-name:latest', '.'])
+    assert result['returncode'] == 0
+    build = next(command for command, _ in reversed(calls) if command[1:2] == ['build'])
+    assert build[1] == 'build' and build[3].startswith('kd_')
+    assert calls[-1][0][1:] == ['image', 'inspect', '--format', '{{json .Id}}', build[3]]
+    assert broker.successful_build_images(task, repo)[build[3]]['image_id'] == 'sha256:' + own_id
+    assert 'shared-name:latest' not in build
+    assert op.image('shared-name:latest') == build[3]
+    denied(lambda: op.handle(['build', '-t', 'image', str(other)]))
+    denied(lambda: op.handle(['build', '--privileged', '.']))
+    denied(lambda: op.handle(['build', '--file', str(other / 'Dockerfile'), '.']))
+    denied(lambda: op.handle(['run', '--privileged', 'alpine']))
+    denied(lambda: op.handle(['run', '--network', 'host', 'alpine']))
+    denied(lambda: op.handle(['run', '-v', str(other)+':/workspace', 'alpine']))
+    denied(lambda: op.handle(['run', '-v', '.:/var/run', 'alpine']))
+    denied(lambda: op.handle(['run', '-e', 'HOST_SECRET', 'alpine']))
+    assert op.handle(['run', '--name', 'db', '-d', '-v', '.:/workspace', '-p', '3307:3306', 'alpine', 'true'])['returncode'] == 0
+    launch = calls[-1][0]
+    assert launch[1] == 'run' and launch[3].startswith('kd_') and launch[3] != 'db'
+    assert '127.0.0.1:3307:3306' in launch
+    assert str(repo)+':/workspace' in launch
+    assert 'com.docker.compose.project.working_dir='+str(repo) in launch
+    assert 'host' not in launch
+
+    model = {'services': {'app': {'image': 'alpine', 'container_name': 'shared'}}, 'volumes': {'state': {'name': 'production-state'}}}
+    normalized = broker.validate_model(model, repo, task, task, owned_project)
+    assert normalized['services']['app']['container_name'] == owned_project+'-app-1'
+    assert normalized['volumes']['state']['name'] == owned_project+'_state'
+    model['volumes']['state']['external'] = True
+    denied(lambda: broker.validate_model(model, repo, task, task, owned_project))
+
+    key = b'test-key'
+    request = {'task_root': str(task), 'cwd': str(repo), 'token': broker.expected_token(key, task), 'args': ['kandev', 'git', '-C', str(repo), 'status'], 'git_environment': {'GIT_AUTHOR_NAME': 'Task Author'}}
+    assert broker.handle_request(request, key)['returncode'] == 0
+    assert calls[-1][0][:3] == [broker.GUARD_BIN, '--', '/usr/bin/git']
+    assert calls[-1][1]['environment_overrides'] == {'GIT_AUTHOR_NAME': 'Task Author'}
+    denied(lambda: broker.handle_request({**request, 'token': broker.expected_token(key, other)}, key))
+    denied(lambda: broker.handle_request({**request, 'args': ['kandev', 'git', '-C', str(other), 'add', '.']}, key))
+    denied(lambda: broker.handle_request({**request, 'git_environment': {'KANDEV_HOST_CODE_DIR': '/'}}, key))
+    denied(lambda: broker.handle_request({**request, 'cwd': str(other)}, key))
+
+    host_git = runpy.run_path(str(ROOT / 'scripts/kandev-git'))
+    metadata = base / 'repos/repository/.git/worktrees/fixture'
+    metadata.mkdir(parents=True)
+    (repo / '.git').write_text('gitdir: /data/repos/repository/.git/worktrees/fixture\n')
+    mounts = [{'Type': 'bind', 'Destination': '/data', 'Source': str(base)}]
+    expected = ['--git-dir='+str(metadata), '--work-tree='+str(repo), 'status']
+    assert host_git['host_args'](['status'], repo, mounts) == expected
+    assert host_git['host_args'](['-C', 'repo', 'status'], task, mounts) == expected[:2]+['-C', 'repo', 'status']
+    assert host_git['host_args'](['--git-dir=/explicit', 'status'], repo, mounts) == ['--git-dir=/explicit', 'status']
+    assert host_git['host_args'](['status'], other, mounts) == ['status']
+    assert host_git['map_metadata'](Path('/data/repos/x'), [*mounts, {'Type':'bind','Destination':'/data/repos','Source':str(base/'nested')}]) == base/'nested/x'
+    try:
+        host_git['host_args'](['worktree', 'prune'], repo, mounts)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('host Git could prune container-namespace worktree registrations')
+
+print('PASS: automatic task Docker and fresh guarded Git access')
