@@ -1,0 +1,109 @@
+# Diagnostic reference for separately bound native owner execution.
+# No installer, broker, loader, context change, or named output file.
+import errno, json, os, re, subprocess
+from pathlib import Path
+
+class Unqualified(Exception):
+    pass
+
+
+def require(value, reason):
+    if not value:
+        raise Unqualified(reason)
+
+
+def unescape(value):
+    return re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), value)
+
+
+def descriptor_mount(fd, root):
+    info = Path(f'/proc/self/fdinfo/{fd}').read_text()
+    match = re.search(r'^mnt_id:\s+(\d+)$', info, re.M)
+    require(match, 'MOUNT_ID_UNAVAILABLE')
+    mount_id = match[1]
+    rows = [line.split(' - ', 1)[0].split()
+            for line in Path('/proc/self/mountinfo').read_text().splitlines()]
+    found = [row for row in rows if row[0] == mount_id]
+    require(len(found) == 1, 'MOUNT_ID_UNKNOWN')
+    row = found[0]
+    require(unescape(row[4]) == str(root), 'ROOT_NOT_EXACT_MOUNT')
+    require('rw' in row[5].split(','), 'ROOT_MOUNT_READ_ONLY')
+    require(not os.fstatvfs(fd).f_flag & os.ST_RDONLY, 'ROOT_FS_READ_ONLY')
+    return mount_id
+
+
+def qualify():
+    # Never alter caller identity, remove a context override, or read a token.
+    require(os.environ.get('KANDEV_AGENT_GUARD_ACTIVE') == '1' and
+            os.environ.get('KANDEV_AGENT_GUARD_SCOPE') == 'project', 'GUARD_CONTEXT_UNKNOWN')
+    hint = os.environ.get('KANDEV_AGENT_DOCKER_ROOT')
+    require(hint, 'SCOPE_HINT_UNAVAILABLE')
+    root = Path(hint).resolve(strict=True)
+    require(root.is_absolute() and str(root) == hint, 'ROOT_HINT_NOT_PHYSICAL')
+    cwd = Path.cwd().resolve(strict=True)
+    require(cwd == root or root in cwd.parents, 'CWD_OUTSIDE_SCOPE')
+    # Accept only the two non-discovery Git settings exported by this guard.
+    git_env = {key: value for key, value in os.environ.items() if key.startswith('GIT_')}
+    guard_git = {'GIT_CONFIG_COUNT': '2', 'GIT_CONFIG_KEY_0': 'gc.auto',
+                 'GIT_CONFIG_VALUE_0': '0', 'GIT_CONFIG_KEY_1': 'maintenance.auto',
+                 'GIT_CONFIG_VALUE_1': 'false'}
+    require(git_env in ({}, guard_git), 'GIT_CONTEXT_UNQUALIFIED')
+    env = dict(os.environ, LC_ALL='C')
+
+    def read_git(directory, flag):
+        return subprocess.run(['git', '--no-pager', '--no-optional-locks', '-C',
+                               str(directory), 'rev-parse', flag],
+                              env=env, text=True, capture_output=True, timeout=10)
+
+    def git_relation():
+        current = read_git(cwd, '--show-toplevel')
+        require(current.returncode == 0, 'CHECKOUT_CONTEXT_UNKNOWN')
+        checkout = Path(current.stdout.strip()).resolve(strict=True)
+        require(root in checkout.parents, 'ROOT_NOT_OUTSIDE_CHECKOUT')
+        result = read_git(root, '--is-inside-work-tree')
+        # No generic exit-128 -> absence conversion. Mount-boundary absence is
+        # recognized explicitly; every permission/config/transport error stops.
+        lines = result.stderr.splitlines()
+        known_absence = (lines == ['fatal: not a git repository (or any of the parent directories): .git'] or
+                         (len(lines) == 2 and
+                          lines[0].startswith('fatal: not a git repository (or any parent up to mount point ') and
+                          lines[0].endswith(')') and
+                          lines[1] == 'Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).'))
+        require(result.returncode == 128 and not result.stdout and known_absence,
+                'ROOT_GIT_CONTEXT_NOT_ABSENT')
+        return checkout
+
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    try:
+        identity = os.fstat(fd)
+        mount_id = descriptor_mount(fd, root)
+        checkout = git_relation()
+        require(hasattr(os, 'O_TMPFILE'), 'ANONYMOUS_PROBE_UNSUPPORTED')
+        try:
+            anonymous = os.open('.', os.O_TMPFILE | os.O_RDWR | os.O_CLOEXEC,
+                                0o600, dir_fd=fd)
+        except OSError as error:
+            raise Unqualified('ANONYMOUS_PROBE_UNQUALIFIED:' + errno.errorcode.get(error.errno, 'UNKNOWN')) from error
+        try:
+            probe = os.fstat(anonymous)
+            require(probe.st_nlink == 0 and probe.st_size == 0, 'ANONYMOUS_PROBE_INVALID')
+        finally:
+            os.close(anonymous)
+        after = root.stat()
+        require((after.st_dev, after.st_ino) == (identity.st_dev, identity.st_ino), 'ROOT_CHANGED')
+        require(descriptor_mount(fd, root) == mount_id and git_relation() == checkout,
+                'BOUNDARY_CHANGED')
+        return {'result': 'QUALIFIED_LOCAL_OBSERVATION', 'root': str(root),
+                'checkout': str(checkout), 'root_dev': identity.st_dev,
+                'root_ino': identity.st_ino, 'mount_id': mount_id,
+                'outside_git': True, 'zero_byte_anonymous_write': True,
+                'persisted_paths': 0, 'authenticated_task_session_grant': False}
+    finally:
+        os.close(fd)
+
+
+try:
+    print(json.dumps(qualify(), sort_keys=True))
+except (Unqualified, OSError, subprocess.SubprocessError) as error:
+    print(json.dumps({"error": str(error)}, sort_keys=True))
+    raise SystemExit(78)

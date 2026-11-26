@@ -1,0 +1,57 @@
+{
+  "request_id": "ec7a40f4-d685-4c6f-99e7-a81102766b7b",
+  "qualification": "source and private fixtures only",
+  "installed_readback": false,
+  "build": false,
+  "installation": false,
+  "target_operations": 0,
+  "files": {
+    "deployment_guard": {
+      "path": "/home/ayattara/Code/kandev/scripts/kandev-agent-guard",
+      "sha256": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
+    },
+    "deployment_git_wrapper": {
+      "path": "/home/ayattara/Code/kandev/scripts/kandev-agent-git",
+      "sha256": "3b50f0847262641f6f2357736db4451c5d9eb556811819025872dd5ddb432340"
+    },
+    "existing_git_regression": {
+      "path": "/home/ayattara/Code/kandev/tests/test-agent-git-readonly.py",
+      "sha256": "9563ed9f1642fb19cd0ff542cd4963bdc24b9027c97590b107581c30b14a356c"
+    },
+    "peer_attribution": {
+      "path": "apps/backend/internal/mcp/handlers/wrap_agent_message.go",
+      "sha256": "81301b31ffed933afbb31b0cca29b43a08cc62b06b9e47f05ce0990e44ea6dca"
+    },
+    "message_handler": {
+      "path": "apps/backend/internal/mcp/handlers/handlers.go",
+      "sha256": "a66f010906ae5f5f7a06c4bcfb8f5d61c25b1705e71818304f50e5a58db354ca"
+    },
+    "session_pinning": {
+      "path": "apps/backend/internal/mcp/handlers/message_target_session.go",
+      "sha256": "4e62b28664e010771c8584a787710fb78212e42f996701f626f61790844727d3"
+    },
+    "root_files_schema": {
+      "path": "apps/backend/internal/agentctl/types/types.go",
+      "sha256": "51afdf571493c15c2b7024b1e474af28eb898b63c6dccaf4c4615ac41b937d34"
+    },
+    "root_files_implementation": {
+      "path": "apps/backend/internal/agentctl/server/process/workspace_root_files.go",
+      "sha256": "6a382e56899b52d9af1274324a746cc5606ce180395d493b156352222e923bc4"
+    },
+    "private-fixture-results.json": {
+      "sha256": "3de30c30393a1b2ddd7e13deaa9a934cf2b103d72f32820534e01cd5246348a6"
+    },
+    "owner-qualification-reference.py.txt": {
+      "sha256": "b5c9fbcf3df18bcb89f4b8ed92301eea2edfb4407e0e821716656d551eccc3ea"
+    },
+    "existing-git-regression.txt": {
+      "sha256": "8869294fb13252eb7d37d74ba8f6e9140a8c7550dcd74bf6701fbeff1776cad9"
+    },
+    "README.md": {
+      "sha256": "68d6a7c92b35c00f2dfdd19991f877c2bd0f86dff1abdcaf84fb52e3f1dfc090"
+    },
+    "private-fixture.py.txt": {
+      "sha256": "2031aefdd66e5793308b56b5bb6b34a7e45bbca33fcf03e818f7285b0f9232b6"
+    }
+  }
+}

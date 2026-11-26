@@ -1,0 +1,4 @@
+Command: python3 tests/test-agent-git-readonly.py
+Checkout: /home/ayattara/Code/kandev
+Exit: 0
+PASS: late-repository acceptance reads preserve administration and retain broker write fences

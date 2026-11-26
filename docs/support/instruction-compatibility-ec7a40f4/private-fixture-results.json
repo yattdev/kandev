@@ -1,0 +1,72 @@
+{
+  "cases": [
+    {
+      "case": "exact-rw-root",
+      "result": "QUALIFIED_LOCAL_OBSERVATION"
+    },
+    {
+      "case": "exact-rw-root-exact-reference",
+      "result": "QUALIFIED_LOCAL_OBSERVATION"
+    },
+    {
+      "case": "filesystem-boundary-root",
+      "result": "QUALIFIED_LOCAL_OBSERVATION"
+    },
+    {
+      "case": "filesystem-boundary-root-exact-reference",
+      "result": "QUALIFIED_LOCAL_OBSERVATION"
+    },
+    {
+      "case": "missing-hint",
+      "result": "SCOPE_HINT_UNAVAILABLE"
+    },
+    {
+      "case": "hint-is-checkout",
+      "result": "ROOT_NOT_OUTSIDE_CHECKOUT"
+    },
+    {
+      "case": "ignored-inside-checkout",
+      "result": "ROOT_NOT_OUTSIDE_CHECKOUT"
+    },
+    {
+      "case": "symlink-hint",
+      "result": "ROOT_HINT_NOT_PHYSICAL"
+    },
+    {
+      "case": "hint-outside-cwd",
+      "result": "CWD_OUTSIDE_SCOPE"
+    },
+    {
+      "case": "ancestor-is-not-mount",
+      "result": "ROOT_NOT_EXACT_MOUNT"
+    },
+    {
+      "case": "root-mounted-readonly",
+      "result": "ROOT_MOUNT_READ_ONLY"
+    },
+    {
+      "case": "git-context-override",
+      "result": "GIT_CONTEXT_UNQUALIFIED"
+    },
+    {
+      "case": "generic-git-error",
+      "result": "ROOT_GIT_CONTEXT_NOT_ABSENT"
+    },
+    {
+      "case": "root-is-itself-a-repository",
+      "result": "ROOT_GIT_CONTEXT_NOT_ABSENT"
+    },
+    {
+      "case": "anonymous-unsupported",
+      "result": "ANONYMOUS_PROBE_UNQUALIFIED:ENOTSUP"
+    },
+    {
+      "case": "anonymous-permission-denied",
+      "result": "ANONYMOUS_PROBE_UNQUALIFIED:EACCES"
+    }
+  ],
+  "passed": 16,
+  "target_operations": 0,
+  "broker_calls": 0,
+  "named_file_and_content_changes": 0
+}
