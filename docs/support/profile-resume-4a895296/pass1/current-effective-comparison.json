@@ -1,0 +1,110 @@
+{
+  "exact_binding": {
+    "task_id": "5129db6a-0707-421b-b80f-cce4c36a6ad1",
+    "workspace_id": "25f53734-5aea-490e-b7ba-d5da6fe821dd",
+    "workflow_id": "4b024728-3ab7-4737-ba14-9c06620ed7c2",
+    "workflow_step_id": "a23816ca-20b1-4e25-a504-a41828e8089e",
+    "task_state": "FAILED",
+    "task_registered_profile_id": "c06ad00e-0da1-429a-8174-54f97164a289",
+    "session_id": "16bcc779-85b0-45a1-9ab7-46f3668fe410",
+    "agent_profile_id": "62434899-7d6b-432d-b93f-0b71c67eb35d",
+    "state": "FAILED",
+    "is_primary": 1,
+    "updated_at": "2026-11-25 23:06:02.322059424+00:00",
+    "queue_incarnation_id": "c6b81ff7-5421-433a-9f68-b53438295e24",
+    "exact_profile_generation": 0,
+    "exact_profile_revision": 0,
+    "execution_profile_id": "",
+    "route_generation": 0,
+    "route_state": "",
+    "profile_snapshot": {
+      "id": "62434899-7d6b-432d-b93f-0b71c67eb35d",
+      "name": "AutoPilot Review",
+      "agent_id": "8838a9d6-dd59-41da-9d4e-e2af688ef54c",
+      "agent_name": "copilot-acp",
+      "model": "gpt-5.3-codex",
+      "mode": "https://agentclientprotocol.com/protocol/session-modes#autopilot",
+      "config_options": {
+        "allow_all": "on",
+        "reasoning_effort": "high"
+      }
+    }
+  },
+  "profiles": [
+    {
+      "id": "62434899-7d6b-432d-b93f-0b71c67eb35d",
+      "name": "AutoPilot Review",
+      "agent_id": "8838a9d6-dd59-41da-9d4e-e2af688ef54c",
+      "model": "gpt-6.1-terra",
+      "mode": "https://agentclientprotocol.com/protocol/session-modes#autopilot",
+      "enabled": 1,
+      "deleted_at": "2026-11-09 17:51:18.219155611+00:00",
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 0,
+      "config_options": "{\"allow_all\":\"on\",\"reasoning_effort\":\"high\"}",
+      "updated_at": "2026-11-09 17:51:18.219155611+00:00",
+      "flag_shape": "list",
+      "curated_flags": [
+        {
+          "flag": "--allow-all-paths",
+          "enabled": true
+        },
+        {
+          "flag": "--allow-all-tools",
+          "enabled": true
+        },
+        {
+          "flag": "--allow-all-urls",
+          "enabled": true
+        },
+        {
+          "flag": "--no-ask-user",
+          "enabled": true
+        }
+      ],
+      "unprojected_flag_count": 0
+    },
+    {
+      "id": "2653283e-3df4-48d6-8242-774b24b54f38",
+      "name": "Terra 6.1 High",
+      "agent_id": "8838a9d6-dd59-41da-9d4e-e2af688ef54c",
+      "model": "gpt-6.1-terra",
+      "mode": "https://agentclientprotocol.com/protocol/session-modes#agent",
+      "enabled": 1,
+      "deleted_at": null,
+      "auto_approve": 1,
+      "dangerously_skip_permissions": 1,
+      "cli_passthrough": 0,
+      "config_options": null,
+      "updated_at": "2026-11-12 23:22:50.63439905+00:00",
+      "flag_shape": "list",
+      "curated_flags": [
+        {
+          "flag": "--allow-all-paths",
+          "enabled": true
+        },
+        {
+          "flag": "--allow-all-tools",
+          "enabled": true
+        },
+        {
+          "flag": "--allow-all-urls",
+          "enabled": true
+        },
+        {
+          "flag": "--no-ask-user",
+          "enabled": false
+        }
+      ],
+      "unprojected_flag_count": 0
+    }
+  ],
+  "review_step": {
+    "id": "30f79868-6629-490f-b870-cc0fde128299",
+    "workflow_id": "4b024728-3ab7-4737-ba14-9c06620ed7c2",
+    "name": "Review",
+    "agent_profile_id": "2653283e-3df4-48d6-8242-774b24b54f38",
+    "updated_at": "2026-11-09 18:17:02.112518067+00:00"
+  }
+}

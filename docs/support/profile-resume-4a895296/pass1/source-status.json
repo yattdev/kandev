@@ -1,0 +1,15 @@
+{
+  "canonical_base_previously_verified": "f675a554a5b984cdb6d141c6e9f6a91e50d33694",
+  "support_head": "a6cc7e671db9f83556a464251369f679267b36f9",
+  "primary_head": "cfd6bdf65ae6f631d7701c105791a099c0325cc3",
+  "source_files": {
+    "apps/backend/internal/agent/runtime/lifecycle/profile_resolver.go": "b78997f54f3fb0f6870bdaebd41ecfe2dce20de7297cc1f7f48d2c43b864216a",
+    "apps/backend/internal/agent/runtime/lifecycle/manager_launch.go": "dcb6dc2420bcda4f34d70111f15e1cca8f5e629dc2cbd2e9810cad748177ac37",
+    "apps/backend/internal/agent/runtime/lifecycle/manager_profile.go": "e59778e088161409d42eab131a57499e2ae3b04d0b1d3aeba11006e2a5f71dc2",
+    "apps/backend/internal/orchestrator/executor/executor_resume.go": "6296d36afb90ba7b7bf69c93499568e801828b14467b964ac6dc3985baec4d20",
+    "apps/backend/internal/agent/agents/copilot_acp.go": "18907b53cf030bf54e6fe2713835710c8e9c1258a3118b2b4bf3dd10a69c631b"
+  },
+  "code_changes": false,
+  "build_or_install": false,
+  "test_status": "No new production behavior or implementation; prior package-test setup failure remains recorded separately, not treated as the authority blocker."
+}

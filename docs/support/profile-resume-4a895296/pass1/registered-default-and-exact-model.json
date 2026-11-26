@@ -1,0 +1,14 @@
+{
+  "registered_task_default": {
+    "id": "c06ad00e-0da1-429a-8174-54f97164a289",
+    "name": "Worker",
+    "agent_id": "724066a7-596f-40dd-b75a-28cca073659b",
+    "agent_name": "codex-acp",
+    "model": "gpt-6-sol",
+    "mode": "agent-full-access",
+    "enabled": 1,
+    "deleted_at": null,
+    "workspace_id": ""
+  },
+  "active_exact_snapshot_agent_model_profiles": []
+}

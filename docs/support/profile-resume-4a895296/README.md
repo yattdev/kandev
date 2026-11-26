@@ -1,5 +1,9 @@
 # Removed profile blocks preserved-session discovery
 
+Current: [escalation 1 audit](pass1/README.md), which corrects the initial model
+comparison with the retained snapshot and exact registered-default evidence.
+
+
 Request `4a895296-0892-461d-857e-1f06f2fff8c4`.
 
 Status: **BLOCKED on an explicit Human-owned successor-profile decision**, not

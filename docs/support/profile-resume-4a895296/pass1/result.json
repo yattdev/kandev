@@ -1,0 +1,42 @@
+{
+  "request_id": "4a895296-0892-461d-857e-1f06f2fff8c4",
+  "escalation_pass": 1,
+  "status": "BLOCKED",
+  "new_evidence": {
+    "retained_snapshot_agent": "copilot-acp",
+    "retained_snapshot_model": "gpt-5.3-codex",
+    "deleted_profile_current_row_model": "gpt-6.1-terra",
+    "current_review_profile_id": "2653283e-3df4-48d6-8242-774b24b54f38",
+    "current_review_model": "gpt-6.1-terra",
+    "same_snapshot_agent_model_active_profile_count": 0,
+    "registered_task_default_id": "c06ad00e-0da1-429a-8174-54f97164a289",
+    "registered_default_agent": "codex-acp",
+    "registered_default_model": "gpt-6-sol",
+    "filesystem_tool_url_allow_flags": "identical old/current Review rows",
+    "ask_user_availability": "old --no-ask-user enabled; current Review disabled"
+  },
+  "uncertainty": "Retained snapshot is historical configuration evidence, not a live/native-model probe or runtime authority. No provider/runtime probe is allowed or performed. Current mutable row equivalence cannot prove preserved native model/identity.",
+  "missing_input": "Existing Human workflow/profile maintainer designates current Review2653283e as intended successor for this preserved session, explicitly resolving retained5.3 vs configured6.1 model and mode/interaction differences; or keeps hold. No new actor/profile or arbitrary selection.",
+  "safe_routes_exhausted": [
+    "Deleted profile fails closed; no undelete or snapshot bootstrap",
+    "Current Review profile is an existing candidate, but not proven equivalent to retained session",
+    "Task registered default is live but changes agent family/model",
+    "No active same-agent/snapshot-model configured profile found",
+    "No supported metadata-only public rebind identified; launch/recover/step paths have forbidden execution/routing effects"
+  ],
+  "preservation": {
+    "target_mutations": 0,
+    "profile_changes": 0,
+    "task_session_workflow_changes": 0,
+    "launch_replay_provider_operations": 0,
+    "service_restarts": 0,
+    "original_primary_unchanged": true,
+    "pending_identity_unchanged": true
+  },
+  "next_action": "Human-owned successor/model decision first; then one separately reviewed same-session metadata-only binding repair with scope/state/generation/queue CAS and no launch. Root owns separately bound acceptance only after readback.",
+  "host_escalation": {
+    "reviewed_read_only_metadata_used": true,
+    "no_agent_vs_support_authority_confusion": true,
+    "auto_review_rejections": 0
+  }
+}
