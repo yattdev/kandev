@@ -1,0 +1,16 @@
+=== RUN   TestLoadSessionRuntimeConfigMapStringExtractsReservedKeys
+--- PASS: TestLoadSessionRuntimeConfigMapStringExtractsReservedKeys (0.00s)
+=== RUN   TestLoadSessionRuntimeConfigOverridesUsesDedicatedKey
+--- PASS: TestLoadSessionRuntimeConfigOverridesUsesDedicatedKey (0.00s)
+=== RUN   TestLoadSessionRuntimeConfigTypedValueClonesOptions
+--- PASS: TestLoadSessionRuntimeConfigTypedValueClonesOptions (0.00s)
+=== RUN   TestLoadEffectiveSessionRuntimeConfigMergesInPrecedenceOrder
+--- PASS: TestLoadEffectiveSessionRuntimeConfigMergesInPrecedenceOrder (0.00s)
+=== RUN   TestLoadEffectiveSessionRuntimeConfigPreservesProviderAgentOption
+--- PASS: TestLoadEffectiveSessionRuntimeConfigPreservesProviderAgentOption (0.00s)
+=== RUN   TestLoadEffectiveSessionRuntimeConfigReturnsIndependentOptions
+--- PASS: TestLoadEffectiveSessionRuntimeConfigReturnsIndependentOptions (0.00s)
+=== RUN   TestLoadEffectiveSessionRuntimeConfigAcceptsJSONRehydratedMetadata
+--- PASS: TestLoadEffectiveSessionRuntimeConfigAcceptsJSONRehydratedMetadata (0.00s)
+PASS
+ok  	github.com/kandev/kandev/internal/task/models	0.015s

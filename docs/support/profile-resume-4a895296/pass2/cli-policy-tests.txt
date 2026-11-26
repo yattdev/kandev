@@ -1,0 +1,84 @@
+=== RUN   TestTokenise
+=== RUN   TestTokenise/empty
+=== RUN   TestTokenise/whitespace_only
+=== RUN   TestTokenise/single_flag
+=== RUN   TestTokenise/flag_with_value
+=== RUN   TestTokenise/flag_eq_value
+=== RUN   TestTokenise/double_quoted_value
+=== RUN   TestTokenise/single_quoted_value
+=== RUN   TestTokenise/escaped_space
+=== RUN   TestTokenise/escaped_quote_inside_dq
+=== RUN   TestTokenise/multiple_tokens
+=== RUN   TestTokenise/tabs_between_tokens
+=== RUN   TestTokenise/unterminated_double_quote
+=== RUN   TestTokenise/unterminated_single_quote
+=== RUN   TestTokenise/trailing_backslash_unquoted
+=== RUN   TestTokenise/trailing_backslash_inside_dq
+=== RUN   TestTokenise/empty_quoted_string_yields_empty_token
+--- PASS: TestTokenise (0.00s)
+    --- PASS: TestTokenise/empty (0.00s)
+    --- PASS: TestTokenise/whitespace_only (0.00s)
+    --- PASS: TestTokenise/single_flag (0.00s)
+    --- PASS: TestTokenise/flag_with_value (0.00s)
+    --- PASS: TestTokenise/flag_eq_value (0.00s)
+    --- PASS: TestTokenise/double_quoted_value (0.00s)
+    --- PASS: TestTokenise/single_quoted_value (0.00s)
+    --- PASS: TestTokenise/escaped_space (0.00s)
+    --- PASS: TestTokenise/escaped_quote_inside_dq (0.00s)
+    --- PASS: TestTokenise/multiple_tokens (0.00s)
+    --- PASS: TestTokenise/tabs_between_tokens (0.00s)
+    --- PASS: TestTokenise/unterminated_double_quote (0.00s)
+    --- PASS: TestTokenise/unterminated_single_quote (0.00s)
+    --- PASS: TestTokenise/trailing_backslash_unquoted (0.00s)
+    --- PASS: TestTokenise/trailing_backslash_inside_dq (0.00s)
+    --- PASS: TestTokenise/empty_quoted_string_yields_empty_token (0.00s)
+=== RUN   TestValidateCommandPrefix
+=== RUN   TestValidateCommandPrefix/empty_means_no_launcher
+=== RUN   TestValidateCommandPrefix/whitespace_means_no_launcher
+=== RUN   TestValidateCommandPrefix/launcher_command
+=== RUN   TestValidateCommandPrefix/runtime_arguments
+=== RUN   TestValidateCommandPrefix/escaped_reference
+=== RUN   TestValidateCommandPrefix/unknown_reference
+=== RUN   TestValidateCommandPrefix/embedded_reference
+=== RUN   TestValidateCommandPrefix/reference_executable
+=== RUN   TestValidateCommandPrefix/nul_argument
+=== RUN   TestValidateCommandPrefix/unterminated_quote
+=== RUN   TestValidateCommandPrefix/empty_quoted_executable
+=== RUN   TestValidateCommandPrefix/whitespace_executable
+=== RUN   TestValidateCommandPrefix/flag_executable
+=== RUN   TestValidateCommandPrefix/leading-space_flag_executable
+--- PASS: TestValidateCommandPrefix (0.00s)
+    --- PASS: TestValidateCommandPrefix/empty_means_no_launcher (0.00s)
+    --- PASS: TestValidateCommandPrefix/whitespace_means_no_launcher (0.00s)
+    --- PASS: TestValidateCommandPrefix/launcher_command (0.00s)
+    --- PASS: TestValidateCommandPrefix/runtime_arguments (0.00s)
+    --- PASS: TestValidateCommandPrefix/escaped_reference (0.00s)
+    --- PASS: TestValidateCommandPrefix/unknown_reference (0.00s)
+    --- PASS: TestValidateCommandPrefix/embedded_reference (0.00s)
+    --- PASS: TestValidateCommandPrefix/reference_executable (0.00s)
+    --- PASS: TestValidateCommandPrefix/nul_argument (0.00s)
+    --- PASS: TestValidateCommandPrefix/unterminated_quote (0.00s)
+    --- PASS: TestValidateCommandPrefix/empty_quoted_executable (0.00s)
+    --- PASS: TestValidateCommandPrefix/whitespace_executable (0.00s)
+    --- PASS: TestValidateCommandPrefix/flag_executable (0.00s)
+    --- PASS: TestValidateCommandPrefix/leading-space_flag_executable (0.00s)
+=== RUN   TestValidateCommandArgs
+=== RUN   TestValidateCommandArgs/valid_executable_with_empty_secondary_argument
+=== RUN   TestValidateCommandArgs/empty_argv
+=== RUN   TestValidateCommandArgs/whitespace_executable
+=== RUN   TestValidateCommandArgs/flag_executable
+--- PASS: TestValidateCommandArgs (0.00s)
+    --- PASS: TestValidateCommandArgs/valid_executable_with_empty_secondary_argument (0.00s)
+    --- PASS: TestValidateCommandArgs/empty_argv (0.00s)
+    --- PASS: TestValidateCommandArgs/whitespace_executable (0.00s)
+    --- PASS: TestValidateCommandArgs/flag_executable (0.00s)
+=== RUN   TestResolve
+--- PASS: TestResolve (0.00s)
+=== RUN   TestResolve_ErrorPointsToOffendingIndex
+--- PASS: TestResolve_ErrorPointsToOffendingIndex (0.00s)
+=== RUN   TestTokenise_ErrorsOmitRawInput
+--- PASS: TestTokenise_ErrorsOmitRawInput (0.00s)
+=== RUN   TestResolve_AllDisabled_ReturnsNil
+--- PASS: TestResolve_AllDisabled_ReturnsNil (0.00s)
+PASS
+ok  	github.com/kandev/kandev/internal/agent/settings/cliflags	0.019s

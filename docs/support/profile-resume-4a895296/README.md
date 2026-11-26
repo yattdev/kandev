@@ -1,7 +1,8 @@
 # Removed profile blocks preserved-session discovery
 
-Current: [escalation 1 audit](pass1/README.md), which corrects the initial model
-comparison with the retained snapshot and exact registered-default evidence.
+Current: [final escalation audit](pass2/README.md), which corrects the retained
+configuration precedence and narrows the blocker to native tool-policy identity.
+[Escalation 1](pass1/README.md) retains its historical snapshot/default evidence.
 
 
 Request `4a895296-0892-461d-857e-1f06f2fff8c4`.

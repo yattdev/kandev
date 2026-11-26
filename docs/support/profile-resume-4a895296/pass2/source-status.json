@@ -1,0 +1,17 @@
+{
+  "source_checkout_inspected": "/home/ayattara/Code/kandev-source",
+  "canonical_base_verified": "f675a554a5b984cdb6d141c6e9f6a91e50d33694",
+  "source_support_head": "250069954cb8ae2a1fdd72f379cc9bbb9bfa2f8e",
+  "files_sha256": {
+    "apps/backend/internal/task/models/models.go": "0f04a119280108c8730914fa9dc9381d1dfbf2564acc1b218d8eb2b98614cf23",
+    "apps/backend/internal/task/models/session_runtime_config_test.go": "3e97e8ab5eb32080d1aa07791354d0be66bd2996fbce518277f2ccf2c0105d56",
+    "apps/backend/internal/agent/runtime/lifecycle/manager_profile.go": "e59778e088161409d42eab131a57499e2ae3b04d0b1d3aeba11006e2a5f71dc2",
+    "apps/backend/internal/agent/runtime/lifecycle/manager_launch.go": "dcb6dc2420bcda4f34d70111f15e1cca8f5e629dc2cbd2e9810cad748177ac37",
+    "apps/backend/internal/agent/settings/cliflags/tokenise.go": "70b070c1eb11a6f2035579e8f4a049455a8fa177b16049d247201ab7c2db2097",
+    "apps/backend/internal/agent/agents/copilot_acp.go": "18907b53cf030bf54e6fe2713835710c8e9c1258a3118b2b4bf3dd10a69c631b"
+  },
+  "source_semantics_also_present": "primary checkout and locally available v0.101.0 tag contain runtime-layer resume initialization",
+  "source_tag_is_not_binary_attestation": true,
+  "product_source_changed": false,
+  "build_or_install": false
+}

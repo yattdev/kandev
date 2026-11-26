@@ -1,0 +1,40 @@
+{
+  "request_id": "4a895296-0892-461d-857e-1f06f2fff8c4",
+  "escalation_pass": 2,
+  "status": "BLOCKED",
+  "corrected_prior_conclusion": "Retained effective model/mode/options override profile defaults. A rebind need not force5.3->6.1 or autopilot->agent; those defaults are not by themselves a reason to request a model decision.",
+  "retained_effective_configuration": {
+    "model": "gpt-5.3-codex",
+    "mode": "https://agentclientprotocol.com/protocol/session-modes#autopilot",
+    "allow_all": "on",
+    "reasoning_effort": "high",
+    "explicit_model_mode_overrides": null,
+    "baseline_model": "claude-sonnet-5",
+    "baseline_role": "comparison only, not selection authority"
+  },
+  "remaining_exact_boundary": {
+    "field": "native CLI --no-ask-user",
+    "removed_profile_enabled": true,
+    "current_review_profile_enabled": false,
+    "why_effective_runtime_config_does_not_preserve_it": "Native CLI flags are resolved from the selected profile for command construction, outside ACP model/mode/config restoration. No existing per-session CLI preservation override identified.",
+    "current_backlogs_and_workflow_default_binding": "empty; future Review step binding is not an explicit successor designation for this stopped session",
+    "supported_inert_public_rebind": "not identified; existing launch/recovery/step routes have execution/routing effects"
+  },
+  "missing_input": "Existing Human workflow/profile maintainer designates a compatible existing same-session successor retaining native ask_user-disabled behavior, or expressly authorizes current Review2653283e interaction/tool difference under a revised exact-scope contract. If no such decision, hold. No new model/objective approval is requested.",
+  "source_qualification": {
+    "effective_config_tests": 7,
+    "cli_policy_tests": 7,
+    "cli_policy_subtests": 34,
+    "network_package_provider_calls": 0,
+    "owner_acceptance": false
+  },
+  "preservation": {
+    "target_profile_task_session_queue_writes": 0,
+    "provider_runtime_calls": 0,
+    "launch_replay_new_actor": 0,
+    "service_restart": 0,
+    "product_changes": 0,
+    "guard_or_authority_changes": 0
+  },
+  "next_action": "Maintainer successor/native-tool-policy decision first; preserving metadata-only same-session repair and Root acceptance remain separately bound, with runtime5.3/autopilot/high and original identity/queue state retained. No owner retry authorized."
+}
