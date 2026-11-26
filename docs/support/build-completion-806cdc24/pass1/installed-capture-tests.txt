@@ -1,0 +1,26 @@
+{"candidate": false, "installed": true, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a", "engine": "mocked only", "parser": "actual installed Compose", "real_builds": 0, "owner_operations": 0, "registry_contacts": 0, "installs_restarts": 0}
+test_success_native_receipt_roles_and_runtime_retention (__main__.CaptureTests.test_success_native_receipt_roles_and_runtime_retention) ... ok
+test_repeat_returns_prior_receipt_without_engine_or_model_replacement (__main__.CaptureTests.test_repeat_returns_prior_receipt_without_engine_or_model_replacement) ... ok
+test_wrong_completed_output_never_mints (__main__.CaptureTests.test_wrong_completed_output_never_mints) ... ok
+test_failed_cancelled_and_timeout_never_mint_even_with_metadata (__main__.CaptureTests.test_failed_cancelled_and_timeout_never_mint_even_with_metadata) ... ok
+test_unknown_nonterminal_and_other_service_metadata_never_mint (__main__.CaptureTests.test_unknown_nonterminal_and_other_service_metadata_never_mint) ... ok
+test_config_id_is_a_distinct_allowed_local_engine_identity (__main__.CaptureTests.test_config_id_is_a_distinct_allowed_local_engine_identity) ... ok
+test_manifest_and_config_roles_are_not_collapsed (__main__.CaptureTests.test_manifest_and_config_roles_are_not_collapsed) ... ok
+test_print_output_extension_and_multiple_targets_deny_before_engine (__main__.CaptureTests.test_print_output_extension_and_multiple_targets_deny_before_engine) ... ok
+test_forbidden_modes_and_caller_metadata_paths_deny_before_native_build (__main__.CaptureTests.test_forbidden_modes_and_caller_metadata_paths_deny_before_native_build) ... ok
+test_wrong_token_and_sibling_claim_fail_before_native_build (__main__.CaptureTests.test_wrong_token_and_sibling_claim_fail_before_native_build) ... ok
+test_operation_binding_conflict_does_not_rebuild (__main__.CaptureTests.test_operation_binding_conflict_does_not_rebuild) ... ok
+test_receipt_cas_conflict_is_not_overwritten (__main__.CaptureTests.test_receipt_cas_conflict_is_not_overwritten) ... ok
+test_audit_failure_prevents_engine_and_no_replay_after_completion_failure (__main__.CaptureTests.test_audit_failure_prevents_engine_and_no_replay_after_completion_failure) ... ok
+test_real_wrapper_client_native_parsers_and_unchanged_auth (__main__.CaptureTests.test_real_wrapper_client_native_parsers_and_unchanged_auth) ... ok
+test_tag_changes_between_identity_checks_never_mint (__main__.CaptureTests.test_tag_changes_between_identity_checks_never_mint) ... ok
+test_busy_tag_lock_does_not_start_or_replay_a_build (__main__.CaptureTests.test_busy_tag_lock_does_not_start_or_replay_a_build) ... ok
+test_native_tool_change_fails_before_compilation (__main__.CaptureTests.test_native_tool_change_fails_before_compilation) ... ok
+test_explicit_no_pull_and_network_none_survive_native_compilation (__main__.CaptureTests.test_explicit_no_pull_and_network_none_survive_native_compilation) ... ok
+test_recorded_tag_is_preserved_before_another_build (__main__.CaptureTests.test_recorded_tag_is_preserved_before_another_build) ... ok
+test_atomic_receipt_creation_does_not_clobber_a_last_instant_writer (__main__.CaptureTests.test_atomic_receipt_creation_does_not_clobber_a_last_instant_writer) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 6.840s
+
+OK

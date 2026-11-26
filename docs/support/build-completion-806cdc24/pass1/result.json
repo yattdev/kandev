@@ -1,0 +1,80 @@
+{
+  "request_id": "806cdc24-d005-4605-b6ca-fd7ee61f21fe",
+  "status": "RESOLVED",
+  "scope": "installed zero-restart selected Compose-build receipt adapter; actual owner acceptance remains Root-owned",
+  "source_deployment_commit": "c4f5b4ec1574abe1a24c4287dd356154a6b3d61c",
+  "source_platform_changes": false,
+  "build_image_or_binary_changes": false,
+  "installed_operations_sha256": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a",
+  "prior_operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
+  "unchanged_dependencies": {
+    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
+    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
+    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
+    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
+  },
+  "container_identity_before_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z 0",
+  "activation": {
+    "route": "existing per-request operations loader",
+    "automatic_approval_review": "approved installation tool call",
+    "broker_restart": false,
+    "service_restart": false,
+    "wrapper_client_guard_changes": false
+  },
+  "qualification": {
+    "source_adapter_cases": 20,
+    "source_legacy_history_cases": 26,
+    "source_reader_compatibility_cases": 3,
+    "installed_cases": {
+      "capture": 20,
+      "reader": 3,
+      "image": 18,
+      "lifecycle": 22,
+      "volume": 24
+    },
+    "installed_total": 87,
+    "installed_skips": 0,
+    "engine": "mocked only",
+    "actual_native_parsers_and_wrapper_client": true,
+    "actual_owner_acceptance": false
+  },
+  "supported_command": "docker kandev compose-build <fresh-operation-UUID> compose --project-name <unchanged-alias> --project-directory <exact-cwd> -f <own-model> -f <own-overlay> build --pull=false <one-service>",
+  "limits": [
+    "Bare docker compose build remains unchanged and does not capture through this module.",
+    "Fresh output tag and one operation UUID are required.",
+    "No automatic replay of pending/failed/unknown/superseded operations.",
+    "Pinned native tooling and supported exporter schema are required.",
+    "No offline engine-resolution or current-source/vendor qualification is claimed from synthetic tests."
+  ],
+  "rollback": {
+    "needed": false,
+    "executed": false,
+    "backup": "/tmp/kandev-image-inspect-before-6b30-u6_3xyaf/operations.py",
+    "command": "python3 docs/build-completion-806cdc24/pass1/rollback-module.py --apply",
+    "restores_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
+    "receipt_model_resource_changes": false
+  },
+  "preserved_superset": {
+    "unchanged_top_level_nodes": [
+      "VolumePreservation",
+      "TaskLifecycle",
+      "successful_build_images",
+      "native_module_bytes",
+      "native_worker_error",
+      "native_worker",
+      "handle"
+    ],
+    "existing_Operations_methods_changed": [
+      "handle"
+    ],
+    "legacy_writer_body": "AST identical, moved behind shared tag lock",
+    "all_existing_top_level_bindings": "AST identical"
+  },
+  "real_owner_operations": 0,
+  "real_builds": 0,
+  "real_task_image_queries": 0,
+  "live_task_state_reads_or_mutations": 0,
+  "historical_receipt_reads_or_restorations": 0,
+  "registry_package_contacts_for_owner": 0,
+  "next_action": "Root separately binds one original-owner acceptance using the updated frozen source/recipe, unchanged identity/project and fresh tag/UUID; no owner retry or build was performed by Support."
+}

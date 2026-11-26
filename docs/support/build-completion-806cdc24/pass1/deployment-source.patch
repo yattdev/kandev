@@ -1,0 +1,1283 @@
+From c4f5b4ec1574abe1a24c4287dd356154a6b3d61c Mon Sep 17 00:00:00 2001
+From: ayattara <alassane.yattara@savoirfairelinux.com>
+Date: Thu, 26 Nov 2026 02:52:34 +0000
+Subject: [PATCH] fix: capture scoped Compose build outputs through the hot
+ module
+
+---
+ .../build-completion-806cdc24/pass1/README.md | 151 ++++++++
+ .../pass1/adapter-candidate-tests.txt         |  26 ++
+ .../pass1/adapter-history-regression.txt      |  32 ++
+ .../pass1/adapter-image-regression.txt        |  24 ++
+ .../pass1/adapter-lifecycle-regression.txt    |  28 ++
+ .../pass1/adapter-reader-compatibility.txt    |   9 +
+ .../pass1/adapter-volume-regression.txt       |   5 +
+ .../pass1/compose-print-shape-pass1.json      |   3 +
+ .../pass1/native-help-pass1.json              |   1 +
+ .../pass1/native-tool-hashes.json             |   1 +
+ .../pass1/reviewed.json                       |  75 ++++
+ .../pass1/rollback-module.py                  |  53 +++
+ scripts/kandev-agent-docker-operations.py     | 326 +++++++++++++++-
+ tests/run-compose-build-capture-fixture.py    |  24 ++
+ tests/test-compose-build-capture.py           | 354 ++++++++++++++++++
+ 15 files changed, 1110 insertions(+), 2 deletions(-)
+ create mode 100644 docs/build-completion-806cdc24/pass1/README.md
+ create mode 100644 docs/build-completion-806cdc24/pass1/adapter-candidate-tests.txt
+ create mode 100644 docs/build-completion-806cdc24/pass1/adapter-history-regression.txt
+ create mode 100644 docs/build-completion-806cdc24/pass1/adapter-image-regression.txt
+ create mode 100644 docs/build-completion-806cdc24/pass1/adapter-lifecycle-regression.txt
+ create mode 100644 docs/build-completion-806cdc24/pass1/adapter-reader-compatibility.txt
+ create mode 100644 docs/build-completion-806cdc24/pass1/adapter-volume-regression.txt
+ create mode 100644 docs/build-completion-806cdc24/pass1/compose-print-shape-pass1.json
+ create mode 100644 docs/build-completion-806cdc24/pass1/native-help-pass1.json
+ create mode 100644 docs/build-completion-806cdc24/pass1/native-tool-hashes.json
+ create mode 100644 docs/build-completion-806cdc24/pass1/reviewed.json
+ create mode 100644 docs/build-completion-806cdc24/pass1/rollback-module.py
+ create mode 100644 tests/run-compose-build-capture-fixture.py
+ create mode 100644 tests/test-compose-build-capture.py
+
+diff --git a/docs/build-completion-806cdc24/pass1/README.md b/docs/build-completion-806cdc24/pass1/README.md
+new file mode 100644
+index 0000000..b03f991
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/README.md
+@@ -0,0 +1,151 @@
++# Zero-restart selected Compose completion capture
++
++Request `806cdc24-d005-4605-b6ca-fd7ee61f21fe`, escalation pass 1.
++This source candidate adds a narrow adapter in the existing per-request module.
++Installation and installed qualification are recorded separately in
++`installation.json` and the installed test logs when those files exist.
++
++The first pass correctly identified two defects in the previous candidate:
++the unchanged `compose` branch does not call the hot module, and post-build tag
++inspection alone is not output provenance. Its activation conclusion was too
++broad: a selected-build adapter can use the existing authenticated module route
++without replacing or restarting the broker. Bare `docker compose build` remains
++unchanged and does not automatically retain an output receipt.
++
++## Supported command
++
++```text
++docker kandev compose-build <fresh-operation-UUID> compose \
++  --project-name <unchanged-own-alias> --project-directory <exact-cwd> \
++  -f <own-base-model> -f <own-build-overlay> \
++  build --pull=false <one-existing-service>
++```
++
++Use the original owner, caller environment, root, physical cwd, project alias
++and existing task/session. No token, context, profile, wrapper or actor changes
++are involved. The explicit project flag is required: the installed broker's
++generic module ABI does not forward ambient Compose environment variables.
++Models must therefore be self-contained, or use an explicit task-owned env
++file through the existing guarded parser. This adapter does not silently promise
++to preserve ambient `DB_PORT`/`WEB_PORT` overrides. The affected model has no
++published ports; Root must bind and verify the actual inert model separately.
++
++The UUID identifies one operation, not a credential. A fresh output tag is
++required. An existing successful-output receipt is never overwritten by this
++adapter, including the restored Build365 receipt. A completed identical UUID
++can return its prior receipt without rebuilding or replacing the runtime model;
++pending, failed, unknown, changed-input or superseded operations never replay.
++Root's acceptance still permits only one submission, not automatic retries.
++
++## Preserved authority and execution
++
++The actual installed wrapper/client framing and broker HMAC scope check run
++before module dispatch. The adapter calls the existing Compose argument parser,
++project options/directory selection, scoped project naming, guarded configuration
++parser, model validator, isolated-recreate check and immutable project claim.
++It accepts one local build object inside the unchanged cwd/project directory,
++with pull/no-cache flags only. Wrong tasks/clones and foreign claims fail closed.
++
++The already-installed, hash-pinned Compose plugin compiles that validated model
++with its documented `build --print` interface. Only one target, its exact scoped
++tag, matching context/Dockerfile, and `type=docker` output are accepted. Additional
++targets, inherited configuration, outputs, secrets, SSH, entitlements and unknown
++build keys fail. Template markers are rejected because Bake JSON uses HCL JSON;
++a Compose literal must not become a host-side expression.
++
++The broker then invokes the existing hash-pinned native Buildx plugin with a
++fixed Bake command, private generated file, private metadata destination and
++Docker load output. It does not grant callers arbitrary Bake, metadata-file,
++builder, context or exporter options. Those existing command denials remain.
++The executor's cwd is only the existing host translation of that same project,
++matching the normal Compose path mapping. No alternative engine or credentials
++are selected, and no new binary is installed.
++
++[Buildx v0.38.1's Bake source](https://github.com/docker/buildx/blob/v0.38.1/commands/bake.go#L367)
++writes per-target exporter metadata after build completion; the adapter also
++requires native exit zero. [Docker's metadata contract](https://docs.docker.com/reference/cli/docker/buildx/bake/#metadata-file)
++defines the reference, output/config digests and descriptor. Native metadata is
++read from a fresh broker-private file with custody, size and stability checks.
++The selected target, descriptor, optional exporter image name and native
++reference must match the supported format. Failed, timed-out, cancelled, malformed
++or nonterminal-shaped results cannot create successful ownership.
++
++The adapter independently resolves the local engine `.Id` twice. It must match
++the native output descriptor or the native config descriptor, and remain stable.
++The receipt records which role matched, separately recording index, manifest
++and config roles. An unproven platform manifest remains null; no registry digest,
++config digest and engine `.Id` equivalence is assumed.
++
++## CAS, audit and resource preservation
++
++Per-clone operation serialization and a shared tag lock cover all current
++module receipt writers. The existing standalone writer's body is unchanged
++behind that lock. New capture receipts use atomic create-if-absent publication;
++they cannot clobber an existing record even if another writer ignores the lock.
++Ledger updates compare prior bytes under the operation lock. Both records are
++durably flushed. Capture preflight, receipt hash readiness, successful commit,
++failed/unknown outcome and cached receipt reads are audited without build args,
++source contents, environment or credentials. Attempt and output counts are
++bounded. Busy or failed operations do not wait, poll, retry or clean resources.
++
++Any nonzero or lost response requires STOP and preservation. Native completion
++may already have happened, and a receipt may already have committed before an
++audit/ledger error. Never rebuild or change the tag to hide that uncertainty.
++
++The build uses the existing build timeout. The one-off runtime cap and every
++broker, wrapper, client, guard, lifecycle, volume, curated-image and selected-worker
++boundary remain unchanged. Ordinary bare Compose has no new capture hook.
++Only the module is eligible for this exposure; no service/broker restart,
++recreate, image deployment, new binary or historical restoration is involved.
++
++## Qualification and installation gate
++
++The [review manifest](reviewed.json) pins the previous module, complete candidate,
++unchanged installed dependency pair and native plugin hashes. AST comparison
++preserves all prior top-level bindings, lifecycle/volume/worker/reader bodies,
++all existing Operations methods except dispatch/help, and the old standalone
++writer body. This preserves the documented `4686781`, `f7f7405`, `b8d4e3d`,
++`681f606`, `cb2ba91` and earlier volume/worker fixes as a superset.
++
++Candidate tests use real installed Compose/Buildx parsers, wrapper/client and
++the unchanged installed broker inside empty-root/no-network namespaces. Native
++build execution and image queries are mocked. Twenty strict adapter cases pass,
++including retargeting, digest roles, failed/cancelled/timeout results, unknown
++metadata, hostile translated configuration, scope/token checks, CAS races,
++audit failures, fresh-tag preservation and repeat safety. Existing history 26,
++reader compatibility 3, image 18, lifecycle 22 and volume 24 cases also pass.
++These are synthetic source/transport proofs, not actual owner acceptance or a
++real successful build. No affected task state, source, image, registration,
++claim, receipt, database or runtime resource was inspected by Support.
++
++The source is committed on deployment `main`. Installation must use the existing
++hash-gated `scripts/install-task-image-inspect.py --review
++docs/build-completion-806cdc24/pass1/reviewed.json` under automatic approval
++review. Installed fixture results and public file/container before/after hashes
++must pass before reporting exposure. Rollback restores only the backed-up prior
++module through the same hash/CAS gate; it never changes receipt/model/resource
++data. A rolled-back candidate is a failed installation, not RESOLVED.
++
++## One separately bound original-owner acceptance
++
++Root first binds the updated inert COPY/chown recipe, current complete frozen
++source/WIP inventory, lock/vendor conditions, selected service, unchanged alias,
++fresh derived output tag, local previously qualified base, model/overlay hashes
++and one operation UUID. The stale 1092-file context is not current-source proof.
++Support has neither read nor updated any of those private inputs. Public-source
++tests do not establish offline engine resolution; Root must retain its existing
++base/provisioning restrictions and must not infer a zero-registry guarantee.
++
++Once installation is verified, the same original owner submits the exact command
++above once from its existing root, with explicit `--pull=false` and recipe
++`pull: false` / build network restrictions bound by Root. Root supplies literal
++values; do not infer a service name from the image tag. Require exit zero and
++the final JSON stdout line to match the UUID, fresh tag, engine ID, receipt hash
++and `existing: false`. Preserve raw stdout/stderr and hashes.
++
++Within that same finite acceptance, Root may separately bind one admitted inert
++runtime-overlay `config --format json` and one curated exact-tag / typed-ID
++metadata check. No DB/app/test container, import, network or volume operation is
++part of this acceptance. The returned `.Id` must match the captured engine ID;
++retention after model replacement must work without model-only bootstrap.
++On a refusal, nonzero result or uncertainty, STOP without fallback/retry.
+diff --git a/docs/build-completion-806cdc24/pass1/adapter-candidate-tests.txt b/docs/build-completion-806cdc24/pass1/adapter-candidate-tests.txt
+new file mode 100644
+index 0000000..2187fed
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/adapter-candidate-tests.txt
+@@ -0,0 +1,26 @@
++{"candidate": true, "installed": false, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a", "engine": "mocked only", "parser": "actual installed Compose", "real_builds": 0, "owner_operations": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_success_native_receipt_roles_and_runtime_retention (__main__.CaptureTests.test_success_native_receipt_roles_and_runtime_retention) ... ok
++test_repeat_returns_prior_receipt_without_engine_or_model_replacement (__main__.CaptureTests.test_repeat_returns_prior_receipt_without_engine_or_model_replacement) ... ok
++test_wrong_completed_output_never_mints (__main__.CaptureTests.test_wrong_completed_output_never_mints) ... ok
++test_failed_cancelled_and_timeout_never_mint_even_with_metadata (__main__.CaptureTests.test_failed_cancelled_and_timeout_never_mint_even_with_metadata) ... ok
++test_unknown_nonterminal_and_other_service_metadata_never_mint (__main__.CaptureTests.test_unknown_nonterminal_and_other_service_metadata_never_mint) ... ok
++test_config_id_is_a_distinct_allowed_local_engine_identity (__main__.CaptureTests.test_config_id_is_a_distinct_allowed_local_engine_identity) ... ok
++test_manifest_and_config_roles_are_not_collapsed (__main__.CaptureTests.test_manifest_and_config_roles_are_not_collapsed) ... ok
++test_print_output_extension_and_multiple_targets_deny_before_engine (__main__.CaptureTests.test_print_output_extension_and_multiple_targets_deny_before_engine) ... ok
++test_forbidden_modes_and_caller_metadata_paths_deny_before_native_build (__main__.CaptureTests.test_forbidden_modes_and_caller_metadata_paths_deny_before_native_build) ... ok
++test_wrong_token_and_sibling_claim_fail_before_native_build (__main__.CaptureTests.test_wrong_token_and_sibling_claim_fail_before_native_build) ... ok
++test_operation_binding_conflict_does_not_rebuild (__main__.CaptureTests.test_operation_binding_conflict_does_not_rebuild) ... ok
++test_receipt_cas_conflict_is_not_overwritten (__main__.CaptureTests.test_receipt_cas_conflict_is_not_overwritten) ... ok
++test_audit_failure_prevents_engine_and_no_replay_after_completion_failure (__main__.CaptureTests.test_audit_failure_prevents_engine_and_no_replay_after_completion_failure) ... ok
++test_real_wrapper_client_native_parsers_and_unchanged_auth (__main__.CaptureTests.test_real_wrapper_client_native_parsers_and_unchanged_auth) ... ok
++test_tag_changes_between_identity_checks_never_mint (__main__.CaptureTests.test_tag_changes_between_identity_checks_never_mint) ... ok
++test_busy_tag_lock_does_not_start_or_replay_a_build (__main__.CaptureTests.test_busy_tag_lock_does_not_start_or_replay_a_build) ... ok
++test_native_tool_change_fails_before_compilation (__main__.CaptureTests.test_native_tool_change_fails_before_compilation) ... ok
++test_explicit_no_pull_and_network_none_survive_native_compilation (__main__.CaptureTests.test_explicit_no_pull_and_network_none_survive_native_compilation) ... ok
++test_recorded_tag_is_preserved_before_another_build (__main__.CaptureTests.test_recorded_tag_is_preserved_before_another_build) ... ok
++test_atomic_receipt_creation_does_not_clobber_a_last_instant_writer (__main__.CaptureTests.test_atomic_receipt_creation_does_not_clobber_a_last_instant_writer) ... ok
++
++----------------------------------------------------------------------
++Ran 20 tests in 6.566s
++
++OK
+diff --git a/docs/build-completion-806cdc24/pass1/adapter-history-regression.txt b/docs/build-completion-806cdc24/pass1/adapter-history-regression.txt
+new file mode 100644
+index 0000000..6613a19
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/adapter-history-regression.txt
+@@ -0,0 +1,32 @@
++{"candidate": true, "baseline": false, "reader_only_candidate": false, "reader_only_installed": false, "broker_sha256": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15", "operations_sha256": "66a722865e5c55f1aee558c8ee0f6c5fd2f67d606b7abbd8e96eb32eeb76ede3", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_claim_revocation_blocks_retained_output (__main__.HistoryTests.test_claim_revocation_blocks_retained_output) ... ok
++test_cli_builder_secret_and_ssh_overrides_remain_denied (__main__.HistoryTests.test_cli_builder_secret_and_ssh_overrides_remain_denied) ... ok
++test_config_registers_model_without_build_or_output_proof (__main__.HistoryTests.test_config_registers_model_without_build_or_output_proof) ... ok
++test_config_with_build_is_not_a_success_receipt (__main__.HistoryTests.test_config_with_build_is_not_a_success_receipt) ... ok
++test_context_and_dockerfile_cannot_escape_task (__main__.HistoryTests.test_context_and_dockerfile_cannot_escape_task) ... ok
++test_denied_old_id_is_not_admitted_by_new_build (__main__.HistoryTests.test_denied_old_id_is_not_admitted_by_new_build) ... ok
++test_dry_run_print_check_and_ambiguous_modes_cannot_attest (__main__.HistoryTests.test_dry_run_print_check_and_ambiguous_modes_cannot_attest) ... ok
++test_failed_build_does_not_renew_or_create_history (__main__.HistoryTests.test_failed_build_does_not_renew_or_create_history) ... ok
++test_failed_build_preserves_registration_but_proves_no_image (__main__.HistoryTests.test_failed_build_preserves_registration_but_proves_no_image) ... ok
++test_foreign_project_claim_cannot_be_bootstrapped (__main__.HistoryTests.test_foreign_project_claim_cannot_be_bootstrapped) ... ok
++test_fresh_build_has_no_historical_model_or_image_prerequisite (__main__.HistoryTests.test_fresh_build_has_no_historical_model_or_image_prerequisite) ... ok
++test_historical_tag_retargeting_cannot_admit_changed_image (__main__.HistoryTests.test_historical_tag_retargeting_cannot_admit_changed_image) ... ok
++test_history_limit_denies_before_engine_queries (__main__.HistoryTests.test_history_limit_denies_before_engine_queries) ... ok
++test_history_metadata_remains_curated_and_typed (__main__.HistoryTests.test_history_metadata_remains_curated_and_typed) ... ok
++test_installed_client_frame_uses_same_task_root_and_alias (__main__.HistoryTests.test_installed_client_frame_uses_same_task_root_and_alias) ... ok
++test_missing_post_build_identity_cannot_create_receipt (__main__.HistoryTests.test_missing_post_build_identity_cannot_create_receipt) ... ok
++test_model_only_runtime_reference_creates_no_history (__main__.HistoryTests.test_model_only_runtime_reference_creates_no_history) ... ok
++test_other_task_project_claim_denies (__main__.HistoryTests.test_other_task_project_claim_denies) ... ok
++test_real_wrapper_client_build_runtime_then_tag_and_id (__main__.HistoryTests.test_real_wrapper_client_build_runtime_then_tag_and_id) ... ok
++test_receipt_custody_and_binding_fail_closed (__main__.HistoryTests.test_receipt_custody_and_binding_fail_closed) ... ok
++test_receipt_failure_reports_completed_build_without_retry (__main__.HistoryTests.test_receipt_failure_reports_completed_build_without_retry) ... ok
++test_reserved_build_grants_remain_denied (__main__.HistoryTests.test_reserved_build_grants_remain_denied) ... ok
++test_sibling_and_other_task_do_not_inherit_receipts (__main__.HistoryTests.test_sibling_and_other_task_do_not_inherit_receipts) ... ok
++test_standalone_build_records_same_scoped_success_history (__main__.HistoryTests.test_standalone_build_records_same_scoped_success_history) ... ok
++test_successful_output_survives_runtime_replacement (__main__.HistoryTests.test_successful_output_survives_runtime_replacement) ... ok
++test_wrong_token_and_outside_cwd_deny_before_parser (__main__.HistoryTests.test_wrong_token_and_outside_cwd_deny_before_parser) ... ok
++
++----------------------------------------------------------------------
++Ran 26 tests in 3.273s
++
++OK
+diff --git a/docs/build-completion-806cdc24/pass1/adapter-image-regression.txt b/docs/build-completion-806cdc24/pass1/adapter-image-regression.txt
+new file mode 100644
+index 0000000..7325471
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/adapter-image-regression.txt
+@@ -0,0 +1,24 @@
++{"installed": false, "source_sha256": {"/home/ayattara/Code/kandev/scripts/kandev-agent-docker-broker": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15", "/home/ayattara/Code/kandev/scripts/kandev-agent-docker-operations.py": "414a93d31f269cc65bf52ef93270d7f972aa8b7bbfc70f8a8d7d07ae808242a2"}, "live_task_operations": 0, "real_engine_calls": 0, "builds": 0, "pulls": 0}
++test_arbitrary_or_unknown_image_id_is_never_inspected (__main__.ImageTests.test_arbitrary_or_unknown_image_id_is_never_inspected) ... ok
++test_bare_id_does_not_implicitly_change_resource_type (__main__.ImageTests.test_bare_id_does_not_implicitly_change_resource_type) ... ok
++test_conflicting_or_unsupported_type_is_denied (__main__.ImageTests.test_conflicting_or_unsupported_type_is_denied) ... ok
++test_container_inspection_still_works (__main__.ImageTests.test_container_inspection_still_works) ... ok
++test_container_type_never_reads_image_metadata (__main__.ImageTests.test_container_type_never_reads_image_metadata) ... ok
++test_exact_id_formats_do_not_confuse_registry_digest (__main__.ImageTests.test_exact_id_formats_do_not_confuse_registry_digest) ... ok
++test_exact_owned_local_id_is_admitted_with_curated_metadata (__main__.ImageTests.test_exact_owned_local_id_is_admitted_with_curated_metadata) ... ok
++test_existing_owned_build_tag_route_is_preserved (__main__.ImageTests.test_existing_owned_build_tag_route_is_preserved) ... ok
++test_generic_explicit_image_type_is_admitted (__main__.ImageTests.test_generic_explicit_image_type_is_admitted) ... ok
++test_hmac_boundary_and_installed_client_framing (__main__.ImageTests.test_hmac_boundary_and_installed_client_framing) ... ok
++test_image_type_never_falls_back_to_container (__main__.ImageTests.test_image_type_never_falls_back_to_container) ... ok
++test_malformed_identity_or_changed_final_id_is_denied (__main__.ImageTests.test_malformed_identity_or_changed_final_id_is_denied) ... ok
++test_model_claim_changes_during_lookup_are_denied (__main__.ImageTests.test_model_claim_changes_during_lookup_are_denied) ... ok
++test_model_reference_alone_does_not_grant_image_ownership (__main__.ImageTests.test_model_reference_alone_does_not_grant_image_ownership) ... ok
++test_other_task_build_cannot_authorize_id (__main__.ImageTests.test_other_task_build_cannot_authorize_id) ... ok
++test_private_env_format_is_denied_before_engine_query (__main__.ImageTests.test_private_env_format_is_denied_before_engine_query) ... ok
++test_registry_digest_is_not_an_image_id_alias (__main__.ImageTests.test_registry_digest_is_not_an_image_id_alias) ... ok
++test_sibling_clone_build_cannot_authorize_id (__main__.ImageTests.test_sibling_clone_build_cannot_authorize_id) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 0.048s
++
++OK
+diff --git a/docs/build-completion-806cdc24/pass1/adapter-lifecycle-regression.txt b/docs/build-completion-806cdc24/pass1/adapter-lifecycle-regression.txt
+new file mode 100644
+index 0000000..f59fd40
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/adapter-lifecycle-regression.txt
+@@ -0,0 +1,28 @@
++{"installed": false, "broker_sha256": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15", "operations_sha256": "414a93d31f269cc65bf52ef93270d7f972aa8b7bbfc70f8a8d7d07ae808242a2", "fixture": "private namespaces; live /data /run /app hidden; copied public interpreter backend", "authorization_mocks": 0, "live_task_operations": 0, "real_engine_calls": 0, "restarts": 0}
++test_active_planless_read_preserves_all_tables (__main__.LifecycleTests.test_active_planless_read_preserves_all_tables) ... ok
++test_ambiguous_launch_has_no_sole_session_fallback (__main__.LifecycleTests.test_ambiguous_launch_has_no_sole_session_fallback) ... ok
++test_archived_caller_denied_before_target (__main__.LifecycleTests.test_archived_caller_denied_before_target) ... ok
++test_archived_plan_is_retained_without_content_read (__main__.LifecycleTests.test_archived_plan_is_retained_without_content_read) ... ok
++test_audit_failure_is_typed_and_does_not_leak_path (__main__.LifecycleTests.test_audit_failure_is_typed_and_does_not_leak_path) ... ok
++test_caller_revocation_during_read_discards_result (__main__.LifecycleTests.test_caller_revocation_during_read_discards_result) ... ok
++test_caller_storage_fault_is_not_missing (__main__.LifecycleTests.test_caller_storage_fault_is_not_missing) ... ok
++test_exited_original_peer_pidfd_denies_before_target (__main__.LifecycleTests.test_exited_original_peer_pidfd_denies_before_target) ... ok
++test_full_wrapper_hmac_pidfd_and_metadata_path (__main__.LifecycleTests.test_full_wrapper_hmac_pidfd_and_metadata_path) ... ok
++test_incarnation_change_during_read_discards_result (__main__.LifecycleTests.test_incarnation_change_during_read_discards_result) ... ok
++test_malformed_target_and_identity_override_are_rejected (__main__.LifecycleTests.test_malformed_target_and_identity_override_are_rejected) ... ok
++test_mismatched_session_environment_denied_before_target (__main__.LifecycleTests.test_mismatched_session_environment_denied_before_target) ... ok
++test_missing_and_both_foreign_workspaces_are_identically_masked (__main__.LifecycleTests.test_missing_and_both_foreign_workspaces_are_identically_masked) ... ok
++test_missing_socket_peer_denies_before_target (__main__.LifecycleTests.test_missing_socket_peer_denies_before_target) ... ok
++test_ordinary_task_denied_before_target (__main__.LifecycleTests.test_ordinary_task_denied_before_target) ... ok
++test_other_launch_pid_denied_before_target (__main__.LifecycleTests.test_other_launch_pid_denied_before_target) ... ok
++test_projection_bound (__main__.LifecycleTests.test_projection_bound) ... ok
++test_real_validator_custody_rejects_writable_copy (__main__.LifecycleTests.test_real_validator_custody_rejects_writable_copy) ... ok
++test_real_validator_pin_drift_is_unavailable (__main__.LifecycleTests.test_real_validator_pin_drift_is_unavailable) ... ok
++test_revoked_session_denied_before_target (__main__.LifecycleTests.test_revoked_session_denied_before_target) ... ok
++test_target_storage_fault_is_not_missing (__main__.LifecycleTests.test_target_storage_fault_is_not_missing) ... ok
++test_wrong_registered_root_denied_before_target (__main__.LifecycleTests.test_wrong_registered_root_denied_before_target) ... ok
++
++----------------------------------------------------------------------
++Ran 22 tests in 1.060s
++
++OK
+diff --git a/docs/build-completion-806cdc24/pass1/adapter-reader-compatibility.txt b/docs/build-completion-806cdc24/pass1/adapter-reader-compatibility.txt
+new file mode 100644
+index 0000000..c2224b9
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/adapter-reader-compatibility.txt
+@@ -0,0 +1,9 @@
++{"candidate": true, "baseline": false, "reader_only_candidate": true, "reader_only_installed": false, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "66a722865e5c55f1aee558c8ee0f6c5fd2f67d606b7abbd8e96eb32eeb76ede3", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
++test_old_broker_new_reader_retains_proven_output (__main__.ReaderCompatibility.test_old_broker_new_reader_retains_proven_output) ... ok
++test_old_broker_without_success_receipt_stays_denied (__main__.ReaderCompatibility.test_old_broker_without_success_receipt_stays_denied) ... ok
++test_old_broker_reader_rejects_changed_output (__main__.ReaderCompatibility.test_old_broker_reader_rejects_changed_output) ... ok
++
++----------------------------------------------------------------------
++Ran 3 tests in 0.891s
++
++OK
+diff --git a/docs/build-completion-806cdc24/pass1/adapter-volume-regression.txt b/docs/build-completion-806cdc24/pass1/adapter-volume-regression.txt
+new file mode 100644
+index 0000000..bd8c5e6
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/adapter-volume-regression.txt
+@@ -0,0 +1,5 @@
++........................
++----------------------------------------------------------------------
++Ran 24 tests in 0.697s
++
++OK
+diff --git a/docs/build-completion-806cdc24/pass1/compose-print-shape-pass1.json b/docs/build-completion-806cdc24/pass1/compose-print-shape-pass1.json
+new file mode 100644
+index 0000000..71e2be1
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/compose-print-shape-pass1.json
+@@ -0,0 +1,3 @@
++{"returncode": 0, "stdout": "{\n  \"group\": {\n    \"default\": {\n      \"targets\": [\n        \"app\"\n      ]\n    }\n  },\n  \"target\": {\n    \"app\": {\n      \"context\": \"/tmp/task\",\n      \"dockerfile\": \"/tmp/task/Dockerfile\",\n      \"args\": {\n        \"SYNTHETIC\": \"fixture\"\n      },\n      \"labels\": {\n        \"com.docker.compose.project\": \"kd_capture_fixture\",\n        \"com.docker.compose.service\": \"app\",\n        \"com.docker.compose.version\": \"5.7.1\"\n      },\n      \"tags\": [\n        \"kd_capture_fixture_app:new\"\n      ],\n      \"output\": [\n        \"type=docker\"\n      ]\n    }\n  }\n}\n", "stderr": "time=\"2026-11-26T02:19:54Z\" level=warning msg=\"No services to build\"\n"}
++
++
+diff --git a/docs/build-completion-806cdc24/pass1/native-help-pass1.json b/docs/build-completion-806cdc24/pass1/native-help-pass1.json
+new file mode 100644
+index 0000000..3607203
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/native-help-pass1.json
+@@ -0,0 +1 @@
++[{"name": "compose-version", "argv": ["/usr/libexec/docker/cli-plugins/docker-compose", "version"], "returncode": 0, "stdout": "Docker Compose version v5.7.1\n", "stderr": ""}, {"name": "compose-build-help", "argv": ["/usr/libexec/docker/cli-plugins/docker-compose", "build", "--help"], "returncode": 0, "stdout": "Usage:  docker compose build [OPTIONS] [SERVICE...]\n\nBuild or rebuild services\n\nOptions:\n      --build-arg stringArray   Set build-time variables for services\n      --builder string          Set builder to use\n      --check                   Check build configuration\n      --dry-run                 Execute command in dry run mode\n  -m, --memory bytes            Set memory limit for the build container.\n                                Not supported by BuildKit.\n      --no-cache                Do not use cache when building the image\n      --print                   Print equivalent bake file\n      --provenance string       Add a provenance attestation\n      --pull                    Always attempt to pull a newer version of\n                                the image\n      --push                    Push service images\n  -q, --quiet                   Suppress the build output\n      --sbom string             Add a SBOM attestation\n      --ssh string              Set SSH authentications used when\n                                building service images. (use 'default'\n                                for using your default SSH Agent)\n      --with-dependencies       Also build dependencies (transitively)\n", "stderr": ""}, {"name": "bake-help", "argv": ["/usr/libexec/docker/cli-plugins/docker-buildx", "bake", "--help"], "returncode": 0, "stdout": "Build from a file\n\nUsage:\n  docker-buildx bake [OPTIONS] [TARGET...]\n\nAliases:\n  bake, f\n\nFlags:\n      --allow stringArray      Allow build to access specified resources\n      --call string            Set method for evaluating build (\"check\", \"outline\", \"targets\") (default \"build\")\n      --check                  Shorthand for \"--call=check\"\n  -f, --file stringArray       Build definition file\n  -h, --help                   help for bake\n  -j, --jobs string            Set target execution behavior (format: \"N\" or \"mode[,parallel=N]\") (default \"fail-fast\")\n      --list string            List targets or variables\n      --load                   Shorthand for \"--set=*.output=type=docker\". Conditional.\n      --metadata-file string   Write build result metadata to a file\n      --no-cache               Do not use cache when building the image\n      --policy stringArray     Global policy evaluation options (format: \"[disabled=true|false][,strict=true|false][,log-level=level]\")\n      --print                  Print the options without building\n      --progress string        Set type of progress output (\"auto\", \"none\",  \"plain\", \"quiet\", \"rawjson\", \"tty\"). Use plain to show container output (default \"auto\")\n      --provenance string      Shorthand for \"--set=*.attest=type=provenance\"\n      --pull                   Always attempt to pull all referenced images\n      --push                   Shorthand for \"--set=*.output=type=registry\". Conditional.\n      --sbom string            Shorthand for \"--set=*.attest=type=sbom\"\n      --set stringArray        Override target value (e.g., \"targetpattern.key=value\")\n      --var stringArray        Set a variable value (e.g., \"name=value\")\n\nGlobal Flags:\n      --builder string   Override the configured builder instance\n  -D, --debug            Enable debug logging\n\nExperimental commands and flags are hidden. Set BUILDX_EXPERIMENTAL=1 to show them.\n", "stderr": ""}]
+diff --git a/docs/build-completion-806cdc24/pass1/native-tool-hashes.json b/docs/build-completion-806cdc24/pass1/native-tool-hashes.json
+new file mode 100644
+index 0000000..5197590
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/native-tool-hashes.json
+@@ -0,0 +1 @@
++{"/usr/libexec/docker/cli-plugins/docker-compose": "af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf", "/usr/libexec/docker/cli-plugins/docker-buildx": "c928ca76b5f4417029086635d8aa34145e6df2c4ab4b2727c6564c51bca47bd0"}
+diff --git a/docs/build-completion-806cdc24/pass1/reviewed.json b/docs/build-completion-806cdc24/pass1/reviewed.json
+new file mode 100644
+index 0000000..1db5c13
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/reviewed.json
+@@ -0,0 +1,75 @@
++{
++  "request_id": "806cdc24-d005-4605-b6ca-fd7ee61f21fe",
++  "scope": "Narrow authenticated selected Compose-build adapter through existing per-request loader. Same task/clone/project claim and existing model validation; no raw Bake admission, import, restart or owner operation. API: docker kandev compose-build <operation-UUID> compose --project-name <same-alias> --project-directory <same-cwd> -f <own-model> [-f <own-overlay>] build [--pull=false] <one-service>. Fresh output tags only.",
++  "base_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
++  "candidate_sha256": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a",
++  "dependencies": {
++    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
++  },
++  "native_dependencies": {
++    "/usr/libexec/docker/cli-plugins/docker-compose": "af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf",
++    "/usr/libexec/docker/cli-plugins/docker-buildx": "c928ca76b5f4417029086635d8aa34145e6df2c4ab4b2727c6564c51bca47bd0"
++  },
++  "tests_sha256": {
++    "tests/test-compose-build-capture.py": "7e83f7919055af096f2221b6d2c4d191aa21c55ca785d64553d9cbfdcc861aa4",
++    "tests/run-compose-build-capture-fixture.py": "f4d2dbaafccc675e61d1a1373de9c8c531843af7957f9e3c6fe4a6a46d92e8ad",
++    "tests/test-build-history.py": "6e7c7f25aa79eeeb6cbf17793d2150cfd78d209220bedc11b50c42e72d3fd7ba",
++    "tests/test-fresh-build-bootstrap.py": "c6735c5772d70db63a1a237d363e9d3f51db1dee49a149d3b280c0f12515731d",
++    "tests/test-task-image-inspect.py": "674aceb61649fac0c31c53163928e61471f6399b67f243698cbf83dc2c73704b",
++    "tests/test-task-lifecycle.py": "8939b9d6596a924802beca202c04e741f7efcdb2f9ec7853106d45dc01c03254",
++    "tests/test-volume-preservation.py": "518e8994ebecf66ee9520b31ccf50bb9a854fa61a9fea9ed1a3187896c04b833"
++  },
++  "qualification": {
++    "strict_capture_cases": 20,
++    "history_cases": 26,
++    "old_broker_reader_compatibility_cases": 3,
++    "image_cases": 18,
++    "lifecycle_cases": 22,
++    "volume_cases": 24,
++    "engine": "mocked only",
++    "parser_and_transport": "actual installed Compose/Buildx parsers and wrapper/client in empty-root/no-network private fixtures"
++  },
++  "superset": {
++    "unchanged_top_level_nodes": [
++      "VolumePreservation",
++      "TaskLifecycle",
++      "successful_build_images",
++      "native_module_bytes",
++      "native_worker_error",
++      "native_worker",
++      "handle"
++    ],
++    "existing_Operations_methods_changed": [
++      "handle"
++    ],
++    "legacy_writer_body": "AST identical, moved behind shared tag lock",
++    "all_existing_top_level_bindings": "AST identical"
++  },
++  "installation_review": "Submit hash-gated installation to require_escalated automatic approval review; no claim of an independent source audit beyond recorded tests and AST comparison.",
++  "activation": "Per-request operations module only. Existing broker/wrapper/client/guard and container identity must remain unchanged.",
++  "rollback": "Restore only backed-up d60ccdf module through the same compare-and-swap/hash-gated installer if installed qualification fails. Never alter receipts, claims, resources or owner state.",
++  "real_owner_builds": 0,
++  "real_engine_queries": 0,
++  "historical_receipt_restorations": 0,
++  "native_sources": [
++    "https://github.com/docker/buildx/blob/v0.38.1/commands/bake.go",
++    "https://docs.docker.com/reference/cli/docker/buildx/bake/#metadata-file",
++    "https://github.com/moby/buildkit/blob/v0.34.0/exporter/oci/export.go"
++  ],
++  "candidate_review_artifacts_sha256": {
++    "native-help-pass1.json": "f69e616f20a237484372249c307e2b3aaa43205dee2f4a7109f20e1df939e78f",
++    "native-tool-hashes.json": "7e32faa7110a79cb9d9ee264bf6e93381841834fb8bd581ce05dd1436edb3cb8",
++    "rollback-module.py": "6da9c0f50885a5815fc2c52f2e2c65e96d86106fa6dcd1e090cfe827f4758dde",
++    "adapter-image-regression.txt": "e72b53c55e9712d4f8619033c5486aae21bc018d18985fd7b41bf4eca47d0cc2",
++    "compose-print-shape-pass1.json": "cda3eda3ed103beb82e0241ec0ed6849e34edbbb623b71ebe5f53c1c3cec6e93",
++    "adapter-lifecycle-regression.txt": "91824787548bd3521850b70bc7801237a3dc2f5b5298c79e9f71fb29859d7252",
++    "adapter-volume-regression.txt": "68b408288bbcd97cf1d7e22767472e0e9b8c36b3fea78cd7b6b446df1fd14dd6",
++    "adapter-reader-compatibility.txt": "cc43b0d044c158ee196d0167a356b586129961729502abae268178d4db1bfd50",
++    "adapter-candidate-tests.txt": "2b6c6da562c15a7a10ef7605f39aa8b78ee9daea0252f30f7a24dce45efeef85",
++    "README.md": "9d2b5692e6624a3ecab1b21862bd2b62a67b3345ef6d893e5ec2ea13c23c5931",
++    "adapter-history-regression.txt": "de26bb336f3fe40b78fa901d547cc2e1fc8368615d9f37392bcac5d593427a2b"
++  }
++}
+diff --git a/docs/build-completion-806cdc24/pass1/rollback-module.py b/docs/build-completion-806cdc24/pass1/rollback-module.py
+new file mode 100644
+index 0000000..44a87d9
+--- /dev/null
++++ b/docs/build-completion-806cdc24/pass1/rollback-module.py
+@@ -0,0 +1,53 @@
++#!/usr/bin/env python3
++"""Operator-only hash-gated rollback; never removes receipts or resources."""
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import runpy
++import subprocess
++
++parser=argparse.ArgumentParser()
++parser.add_argument('--apply',action='store_true')
++args=parser.parse_args()
++root=Path(__file__).resolve().parents[3]
++folder=Path(__file__).resolve().parent
++review=json.loads((folder/'reviewed.json').read_text())
++installation=json.loads((folder/'installation.json').read_text())
++assert installation['installed_sha256']==review['candidate_sha256']
++assert installation['previous_sha256']==review['base_sha256']
++backup=Path(installation['backup'])
++assert backup.parent.parent==Path('/tmp') and backup.parent.name.startswith('kandev-image-inspect-before-6b30-') and backup.name=='operations.py'
++if not args.apply:
++    print(json.dumps({'apply':False,'expected_current':review['candidate_sha256'],
++                      'restore':review['base_sha256'],'backup':str(backup)}))
++    raise SystemExit(0)
++branch=subprocess.check_output(['git','branch','--show-current'],cwd=root,text=True).strip()
++assert branch=='main'
++installer=runpy.run_path(str(root/'scripts/install-task-image-inspect.py'))
++docker=installer['docker']
++identity=docker('inspect','kandev','--format','{{.Id}} {{.Image}} {{.State.StartedAt}}').stdout.decode().strip()
++container=identity.split()[0]
++read='''import os,stat,sys
++fd=os.open(sys.argv[1],os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
++with os.fdopen(fd,'rb') as stream:
++ before=os.fstat(stream.fileno())
++ assert stat.S_ISREG(before.st_mode) and before.st_uid==0 and not before.st_mode&0o077 and before.st_nlink==1
++ value=stream.read(1024*1024+1);assert len(value)<=1024*1024
++ stamp=lambda s:(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
++ assert stamp(before)==stamp(os.fstat(stream.fileno()))==stamp(os.stat(sys.argv[1],follow_symlinks=False))
++ sys.stdout.buffer.write(value)
++'''
++source=docker('exec','--user','0',container,'/usr/bin/python3','-I','-c',read,str(backup)).stdout
++assert hashlib.sha256(source).hexdigest()==review['base_sha256']
++reverse={'request_id':review['request_id'],'base_sha256':review['candidate_sha256'],
++         'candidate_sha256':review['base_sha256'],'dependencies':review['dependencies']}
++result=docker('exec','-i','--user','0',container,'/usr/bin/python3','-I','-B','-c',installer['INSTALL'],
++              input=json.dumps(reverse).encode()+b'\n'+source)
++receipt=json.loads(result.stdout)
++after=docker('inspect',container,'--format','{{.Id}} {{.Image}} {{.State.StartedAt}}').stdout.decode().strip()
++receipt.update(action='rollback',request_id=review['request_id'],container_before=identity,container_after=after,
++               unchanged_container=identity==after,receipt_or_resource_changes=False)
++(folder/'rollback.json').write_text(json.dumps(receipt,indent=2)+'\n')
++assert identity==after
++print(json.dumps(receipt))
+diff --git a/scripts/kandev-agent-docker-operations.py b/scripts/kandev-agent-docker-operations.py
+index 92c3fbf..11ff305 100644
+--- a/scripts/kandev-agent-docker-operations.py
++++ b/scripts/kandev-agent-docker-operations.py
+@@ -2,6 +2,8 @@
+ from __future__ import annotations
+ 
+ import hashlib
++import contextlib
++import fcntl
+ import json
+ import os
+ from pathlib import Path
+@@ -11,6 +13,7 @@ import select
+ import socket
+ import stat
+ import struct
++import tempfile
+ from typing import Any
+ import uuid
+ 
+@@ -704,7 +707,7 @@ def successful_build_images(broker, task_root: Path, cwd: Path) -> dict[str, dic
+     return result
+ 
+ 
+-def record_successful_build_output(
++def _record_successful_build_output_unlocked(
+     broker, task_root: Path, cwd: Path, project: str, service: str, image: str,
+ ) -> None:
+     """Called only after a real build returns zero, never by model registration."""
+@@ -752,6 +755,323 @@ def record_successful_build_output(
+         temporary.unlink(missing_ok=True)
+ 
+ 
++def capture_directory(broker, root, cwd):
++    owner = hashlib.sha256(str(root).encode()).hexdigest()
++    clone = hashlib.sha256(str(cwd).encode()).hexdigest()
++    directory = broker.MODEL_DIR / owner / 'successful-builds' / clone
++    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
++    return directory
++
++
++@contextlib.contextmanager
++def build_receipt_lock(broker, root, cwd, image):
++    directory = capture_directory(broker, root, cwd)
++    path = directory / ('.lock-' + hashlib.sha256(image.encode()).hexdigest())
++    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
++    try:
++        info = os.fstat(fd)
++        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022 or info.st_nlink != 1:
++            raise broker.BrokerError('BUILD_CAPTURE_UNAVAILABLE: invalid receipt lock')
++        try:
++            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
++        except BlockingIOError:
++            raise broker.BrokerError('BUILD_CAPTURE_BUSY: another output operation holds this tag; do not retry automatically') from None
++        yield directory
++    finally:
++        os.close(fd)
++
++
++def record_successful_build_output(broker, task_root, cwd, project, service, image):
++    # Serialize the existing standalone writer with the stricter Compose writer.
++    with build_receipt_lock(broker, task_root, cwd, image):
++        _record_successful_build_output_unlocked(broker, task_root, cwd, project, service, image)
++
++
++def capture_json_bytes(value):
++    return (json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n').encode()
++
++
++def capture_read(broker, path, limit=131072, absent=False):
++    try:
++        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++    except FileNotFoundError:
++        if absent:
++            return None
++        raise
++    with os.fdopen(fd, 'rb') as stream:
++        before = os.fstat(stream.fileno())
++        stamp = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
++        if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_mode & 0o022 or before.st_nlink != 1:
++            raise broker.BrokerError('BUILD_CAPTURE_UNAVAILABLE: invalid private record custody')
++        value = stream.read(limit + 1)
++        if len(value) > limit or stamp(before) != stamp(os.fstat(stream.fileno())) or stamp(before) != stamp(path.stat(follow_symlinks=False)):
++            raise broker.BrokerError('BUILD_CAPTURE_UNAVAILABLE: unstable or oversized private record')
++        return value
++
++
++def capture_write(broker, path, value, expected):
++    # All receipt writers use the same tag lock. CAS also detects an external
++    # change; it never replaces an unexpected receipt or pending operation.
++    if capture_read(broker, path, absent=True) != expected:
++        raise broker.BrokerError('BUILD_CAPTURE_CONFLICT: private record changed; stop before retry')
++    fd, temporary = tempfile.mkstemp(prefix='.capture-', dir=path.parent)
++    try:
++        with os.fdopen(fd, 'wb') as stream:
++            stream.write(capture_json_bytes(value)); stream.flush(); os.fsync(stream.fileno())
++        if capture_read(broker, path, absent=True) != expected:
++            raise broker.BrokerError('BUILD_CAPTURE_CONFLICT: private record changed; stop before retry')
++        if expected is None:
++            # Atomic create-if-absent, including a writer that does not take
++            # our lock. Never overwrite an existing historical receipt.
++            os.link(temporary, path, follow_symlinks=False)
++            Path(temporary).unlink()
++        else:
++            os.replace(temporary, path)
++        fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
++        try:
++            os.fsync(fd)
++        finally:
++            os.close(fd)
++    finally:
++        Path(temporary).unlink(missing_ok=True)
++
++
++class ComposeBuildCapture:
++    """Selected Compose build through a fixed native Bake executor, same scope."""
++    USAGE = ('docker kandev compose-build <operation-UUID> compose --project-name <own-alias> '
++             '--project-directory <cwd> -f <own-model> [-f <own-overlay>] build [--pull=false] <service>\n'
++             'One local selected service and a fresh output tag. No automatic build replay.\n')
++    FLAGS = {'--pull', '--pull=true', '--pull=false', '--no-cache', '--no-cache=true', '--no-cache=false'}
++    NATIVE_TOOLS = {
++        '/usr/libexec/docker/cli-plugins/docker-compose': 'af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf',
++        '/usr/libexec/docker/cli-plugins/docker-buildx': 'c928ca76b5f4417029086635d8aa34145e6df2c4ab4b2727c6564c51bca47bd0',
++    }
++
++    def __init__(self, operation):
++        self.op, self.b = operation, operation.b
++
++    def error(self, detail):
++        raise self.b.BrokerError('BUILD_CAPTURE_UNQUALIFIED: ' + detail)
++
++    def check_native(self):
++        if self.b.COMPOSE_PLUGIN != '/usr/libexec/docker/cli-plugins/docker-compose':
++            self.error('native Compose selection differs from reviewed source')
++        for name, digest in self.NATIVE_TOOLS.items():
++            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++            with os.fdopen(fd, 'rb') as stream:
++                info = os.fstat(stream.fileno())
++                if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or info.st_nlink != 1:
++                    self.error('native tool custody differs from reviewed source')
++                if hashlib.file_digest(stream, 'sha256').hexdigest() != digest:
++                    self.error('native tool differs from reviewed source')
++
++    def compile_bake(self, config, service, model):
++        def literal(value):
++            if isinstance(value, str):
++                return '${' not in value and '%{' not in value
++            if isinstance(value, dict):
++                return all(literal(k) and literal(v) for k, v in value.items())
++            if isinstance(value, list):
++                return all(literal(v) for v in value)
++            return True
++        # Bake JSON is HCL JSON. A Compose literal must never become an HCL
++        # interpolation/function with client-filesystem or environment access.
++        if not literal(config):
++            self.error('template expressions are not supported in captured builds')
++        if set(config) != {'group', 'target'} or config['group'] != {'default': {'targets': [service]}} or set(config['target']) != {service}:
++            self.error('native Compose did not select exactly one build target')
++        target = config['target'][service]
++        allowed = {'context', 'dockerfile', 'args', 'labels', 'tags', 'target', 'platforms',
++                   'pull', 'no-cache', 'network', 'shm-size', 'ulimits', 'output', 'attest'}
++        build = model['services'][service]['build']
++        if not isinstance(build, dict) or not isinstance(target, dict) or set(target) - allowed:
++            self.error('unsupported native build configuration')
++        if (target.get('tags') != [model['services'][service]['image']]
++                or target.get('context') != build['context']
++                or target.get('dockerfile') != build.get('dockerfile', 'Dockerfile')
++                or target.get('output') != ['type=docker']):
++            self.error('native build configuration changed its scoped inputs or output')
++        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in target.get('args', {}).items()):
++            self.error('build arguments must be explicit strings')
++        # No arbitrary Bake fields, inherited targets, output paths, exporters,
++        # secrets, SSH, entitlements, contexts or registry push can pass here.
++        return config
++
++    def native_proof(self, path, service, image):
++        payload = capture_read(self.b, path)
++        metadata = json.loads(payload)
++        if not isinstance(metadata, dict) or set(metadata) - {'buildx.build.warnings'} != {service} or not isinstance(metadata[service], dict):
++            self.error('native completion metadata does not match the selected service')
++        result = metadata[service]
++        if set(result) - {'buildx.build.ref', 'buildx.build.provenance', 'buildx.build.warnings',
++                          'containerimage.digest', 'containerimage.config.digest', 'containerimage.descriptor', 'image.name'}:
++            self.error('unsupported native completion metadata fields')
++        if 'image.name' in result and result['image.name'] not in (image, 'docker.io/library/' + image):
++            self.error('native completion metadata names another output tag')
++        ref = result.get('buildx.build.ref')
++        output = result.get('containerimage.digest')
++        config = result.get('containerimage.config.digest')
++        descriptor = result.get('containerimage.descriptor')
++        digest = lambda value: isinstance(value, str) and re.fullmatch(r'sha256:[0-9a-f]{64}', value)
++        media = {'application/vnd.oci.image.index.v1+json', 'application/vnd.oci.image.manifest.v1+json',
++                 'application/vnd.docker.distribution.manifest.list.v2+json', 'application/vnd.docker.distribution.manifest.v2+json'}
++        if (not isinstance(ref, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/[a-z0-9]{8,128}', ref)
++                or not digest(output) or not digest(config) or not isinstance(descriptor, dict)
++                or descriptor.get('digest') != output or descriptor.get('mediaType') not in media
++                or type(descriptor.get('size')) is not int or descriptor['size'] <= 0):
++            self.error('native completion metadata lacks exact typed output descriptors')
++        index = descriptor['mediaType'] in {'application/vnd.oci.image.index.v1+json', 'application/vnd.docker.distribution.manifest.list.v2+json'}
++        return {'native_ref': ref, 'output_digest': output, 'output_media_type': descriptor['mediaType'],
++                'config_digest': config, 'platform_manifest_digest': None if index else output,
++                'output_index_digest': output if index else None,
++                'native_image_name': result.get('image.name'),
++                'native_metadata_sha256': hashlib.sha256(payload).hexdigest()}
++
++    def image_id(self, image, cwd, proof):
++        code, output, _ = self.b.run_command([self.b.DOCKER_BIN, 'image', 'inspect', '--format', '{{json .Id}}', image], cwd, timeout=30)
++        identity = json.loads(output) if code == 0 else None
++        if identity == proof['output_digest']:
++            return identity, 'output-descriptor'
++        if identity == proof['config_digest']:
++            return identity, 'config-descriptor'
++        self.error('local engine ID does not match the native completed output')
++
++    def handle(self, args):
++        if args == ['kandev', 'compose-build', '--help']:
++            return {'returncode': 0, 'stdout': self.USAGE, 'stderr': ''}
++        try:
++            return self.capture(args)
++        except (OSError, ValueError, KeyError, TypeError):
++            self.error('invalid capture input or unavailable private state')
++
++    def capture(self, args):
++        if len(args) < 5 or args[3] != 'compose':
++            self.error('usage: docker kandev compose-build <operation-UUID> compose <globals> build <flags> <service>')
++        operation_id = str(uuid.UUID(args[2]))
++        if operation_id != args[2]:
++            self.error('operation ID must be a canonical UUID')
++        self.check_native()
++        root, cwd = self.op.root, self.op.cwd
++        globals_, command, command_args = self.b.split_compose_args(args[3:], cwd, root)
++        globals_, environment = self.b.compose_project_options(globals_, {})
++        selected = [arg for arg in command_args if arg not in self.FLAGS]
++        if command != 'build' or '--dry-run' in globals_ or len(selected) != 1 or selected[0].startswith('-'):
++            self.error('one explicit service with pull/no-cache flags only is required')
++        if 'COMPOSE_PROJECT_NAME' not in environment:
++            self.error('provide the unchanged project alias explicitly with --project-name')
++        directory = self.b.compose_project_directory(cwd, root, globals_)
++        if directory != cwd:
++            self.error('invoke from the exact unchanged project directory')
++        project = self.b.scoped_project_name(root, environment, directory)
++        environment = {**environment, 'COMPOSE_PROJECT_NAME': project}
++        model = self.b.validate_model(self.b.compose_config(cwd, project, globals_, environment),
++                                     cwd, root, self.b.translate_to_host(root), project)
++        service = selected[0]
++        if service not in model['services'] or not isinstance(model['services'][service].get('build'), dict):
++            self.error('selected service must have an explicit local build object')
++        build = model['services'][service]['build']
++        if not Path(build['context']).is_absolute() or any(key.startswith('x-') for key in build):
++            self.error('a local context without build extensions is required')
++        host_directory = self.b.translate_to_host(directory)
++        if not self.b.is_within(Path(build['context']), host_directory):
++            self.error('build context must remain inside this project directory')
++        self.b.require_isolated_recreate(model, command, command_args)
++        image = model['services'][service]['image']
++        self.b.claim_project(root, directory, project)
++        model_digest = hashlib.sha256(capture_json_bytes(model)).hexdigest()
++        binding = {'task_root': str(root), 'cwd': str(directory), 'project': project, 'service': service,
++                   'image': image, 'operation_id': operation_id, 'model_sha256': model_digest,
++                   'arguments_sha256': hashlib.sha256(capture_json_bytes(args[3:])).hexdigest()}
++        with contextlib.ExitStack() as locks:
++            history = locks.enter_context(build_receipt_lock(self.b, root, directory, 'compose-capture-operations'))
++            attempts = history / 'attempts'; attempts.mkdir(mode=0o700, exist_ok=True)
++            ledger = attempts / (operation_id + '.json')
++            receipt = history / (hashlib.sha256(image.encode()).hexdigest() + '.json')
++            existing = capture_read(self.b, ledger, absent=True)
++            if existing is not None:
++                prior = json.loads(existing)
++                if prior.get('binding') != binding:
++                    self.error('operation ID is already bound to different inputs')
++                current = capture_read(self.b, receipt, absent=True)
++                if prior.get('state') != 'succeeded' or current is None or hashlib.sha256(current).hexdigest() != prior.get('receipt_sha256'):
++                    self.error('operation is pending, failed, unknown or superseded; no build replay')
++                self.b.load_scoped_model(root, directory, project)
++                self.b.audit_compose(root, directory, project, project, 'compose-build capture', 'allow',
++                                     'replay-read:' + prior['receipt_sha256'], audit_id=operation_id, command_class='task-operation')
++                return {'returncode': 0, 'stdout': json.dumps({'operation_id': operation_id, 'existing': True,
++                        'receipt_sha256': prior['receipt_sha256'], 'image': image}) + '\n', 'stderr': '', 'project': project}
++            if len(list(attempts.glob('*.json'))) >= 128:
++                self.error('capture attempt history exceeds limit')
++            locks.enter_context(build_receipt_lock(self.b, root, directory, image))
++            before = capture_read(self.b, receipt, absent=True)
++            if before is not None:
++                successful_build_images(self.b, root, directory)
++                self.error('output tag already has a receipt; a separately bound fresh tag is required')
++            state = {'binding': binding, 'state': 'running'}
++            self.b.audit_compose(root, directory, project, project, 'compose-build capture', 'allow', 'preflight', audit_id=operation_id, command_class='task-operation')
++            capture_write(self.b, ledger, state, None)
++            state_bytes = capture_json_bytes(state)
++            native_succeeded = False
++            try:
++                with tempfile.TemporaryDirectory(prefix='compose-capture-', dir='/run/kandev-agent-docker') as temporary:
++                    work = Path(temporary); normalized = work / 'compose.json'; bake = work / 'bake.json'; metadata = work / 'metadata.json'
++                    normalized.write_bytes(capture_json_bytes(model)); normalized.chmod(0o600)
++                    argv = self.b.compose_replay_command(project, normalized, globals_, 'build', ['--print', *command_args])
++                    code, output, error = self.b.run_command([self.b.COMPOSE_PLUGIN, *argv[2:]], cwd, timeout=30, environment_overrides=environment)
++                    if code != 0:
++                        self.error('native Compose could not compile the scoped build')
++                    config = self.compile_bake(json.loads(output), service, model)
++                    bake.write_bytes(capture_json_bytes(config)); bake.chmod(0o600)
++                    metadata.touch(mode=0o600)
++                    self.b.save_scoped_model(root, directory, project, model)
++                    code, output, error = self.b.run_command(['/usr/libexec/docker/cli-plugins/docker-buildx', 'bake', '--file', str(bake),
++                        '--metadata-file', str(metadata), '--load', service], host_directory, timeout=self.b.COMMAND_TIMEOUT,
++                        environment_overrides=environment)
++                    if code != 0:
++                        state.update(state='failed-or-unsettled', returncode=code)
++                        capture_write(self.b, ledger, state, state_bytes)
++                        self.b.audit_compose(root, directory, project, project, 'compose-build capture', 'allow', 'error', audit_id=operation_id, command_class='task-operation')
++                        return {'returncode': code, 'stdout': output, 'stderr': error + '\nBUILD_CAPTURE_NOT_RECORDED: no automatic replay\n', 'project': project}
++                    native_succeeded = True
++                    proof = self.native_proof(metadata, service, image)
++                    identity, role = self.image_id(image, cwd, proof)
++                    self.b.load_scoped_model(root, directory, project)
++                    again, _ = self.image_id(image, cwd, proof)
++                    if again != identity:
++                        self.error('local output changed before receipt commit')
++                    record = {'version': 1, 'kind': 'successful-build-output', 'task_root': str(root), 'cwd': str(directory),
++                              'project': project, 'service': service, 'image': image, 'image_id': identity,
++                              'observed_at': self.b.datetime.now(self.b.timezone.utc).isoformat(),
++                              'operation_id': operation_id, 'model_sha256': model_digest, 'engine_id_role': role, **proof}
++                    if len(capture_json_bytes(record)) > 8192:
++                        self.error('completion receipt exceeds limit')
++                    if before is None and len(list(history.glob('*.json'))) >= 64:
++                        self.error('successful output history exceeds limit')
++                    digest = hashlib.sha256(capture_json_bytes(record)).hexdigest()
++                    self.b.audit_compose(root, directory, project, project, 'compose-build capture', 'allow', 'receipt-ready:' + digest,
++                                         audit_id=operation_id, command_class='task-operation')
++                    capture_write(self.b, receipt, record, before)
++                    self.b.audit_compose(root, directory, project, project, 'compose-build capture', 'allow', 'ok:' + digest,
++                                         audit_id=operation_id, command_class='task-operation')
++                    state.update(state='succeeded', receipt_sha256=digest)
++                    capture_write(self.b, ledger, state, state_bytes)
++                    return {'returncode': 0, 'stdout': output + '\n' + json.dumps({'operation_id': operation_id,
++                            'existing': False, 'image': image, 'image_id': identity, 'receipt_sha256': digest}) + '\n',
++                            'stderr': error, 'project': project}
++            except (self.b.BrokerError, OSError, ValueError, KeyError, TypeError):
++                state.update(state='completed-unqualified' if native_succeeded else 'unsettled')
++                # Preserve an already written ledger on an audit/commit failure.
++                current = capture_read(self.b, ledger, absent=True)
++                if current == state_bytes:
++                    capture_write(self.b, ledger, state, state_bytes)
++                try:
++                    self.b.audit_compose(root, directory, project, project, 'compose-build capture', 'allow', state['state'],
++                                         audit_id=operation_id, command_class='task-operation')
++                except (self.b.BrokerError, OSError):
++                    pass
++                return {'returncode': 78, 'stdout': '', 'stderr': 'BUILD_CAPTURE_UNQUALIFIED: preserve this operation; stop before retry\n', 'project': project}
++
++
+ class Operations:
+     def __init__(self, broker, root: Path, cwd: Path, stdin=None):
+         self.b, self.root, self.cwd, self.stdin = broker, root, cwd, stdin
+@@ -1039,6 +1359,8 @@ class Operations:
+ 
+     def handle(self, args):
+         resource_type = None
++        if args[:2] == ['kandev', 'compose-build']:
++            return ComposeBuildCapture(self).handle(args)
+         if args[:2] == ['kandev', 'volume']:
+             return VolumePreservation(self).handle(args)
+         if len(args) == 2 and args[1] == "--help" and args[0] in {"build", "run", "ps", "images", "inspect", "logs", "exec", "start", "stop", "restart", "rm", "pull", "version"}:
+@@ -1050,7 +1372,7 @@ class Operations:
+         if args[:1] == ["run"]:
+             return self.run(args[1:])
+         if args in ([], ["--help"], ["help"]):
+-            return {"returncode": 0, "stdout": "Task Docker: compose, build, buildx build, run, ps, images, inspect, logs, exec, start, stop, restart, rm, pull, version, scout. Resources are scoped automatically.\nCoordinator metadata: docker kandev task-lifecycle <task-UUID>.\n", "stderr": ""}
++            return {"returncode": 0, "stdout": "Task Docker: compose, build, buildx build, run, ps, images, inspect, logs, exec, start, stop, restart, rm, pull, version, scout. Resources are scoped automatically.\nSelected Compose completion capture: docker kandev compose-build --help\nCoordinator metadata: docker kandev task-lifecycle <task-UUID>.\n", "stderr": ""}
+         if args[:1] == ["version"] or args == ["--version"]:
+             return self.execute(args)
+         if args[0] in {"container", "image"}:
+diff --git a/tests/run-compose-build-capture-fixture.py b/tests/run-compose-build-capture-fixture.py
+new file mode 100644
+index 0000000..582ffaa
+--- /dev/null
++++ b/tests/run-compose-build-capture-fixture.py
+@@ -0,0 +1,24 @@
++#!/usr/bin/env python3
++"""Run public capture tests in the installed-parser private namespace."""
++import argparse
++import json
++from pathlib import Path
++import subprocess
++
++parser=argparse.ArgumentParser()
++parser.add_argument('mode',choices=['candidate','installed'])
++args=parser.parse_args()
++root=Path(__file__).resolve().parents[1]
++names=('tests/test-compose-build-capture.py','tests/test-fresh-build-bootstrap.py',
++       'scripts/kandev-agent-docker-operations.py')
++payload=json.dumps({name:(root/name).read_text() for name in names}).encode()
++helper='''import json,pathlib,sys,tempfile,subprocess
++with tempfile.TemporaryDirectory(prefix='support-compose-capture-public-') as directory:
++ root=pathlib.Path(directory)
++ for name,source in json.load(sys.stdin).items():
++  assert name in ('tests/test-compose-build-capture.py','tests/test-fresh-build-bootstrap.py','scripts/kandev-agent-docker-operations.py')
++  path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(source)
++ result=subprocess.run(['/usr/bin/python3','-I',str(root/'tests/test-compose-build-capture.py'),'--'+sys.argv[1]])
++ raise SystemExit(result.returncode)
++'''
++raise SystemExit(subprocess.run(['docker','exec','-i','kandev','/usr/bin/python3','-I','-c',helper,args.mode],input=payload).returncode)
+diff --git a/tests/test-compose-build-capture.py b/tests/test-compose-build-capture.py
+new file mode 100644
+index 0000000..d8d09f3
+--- /dev/null
++++ b/tests/test-compose-build-capture.py
+@@ -0,0 +1,354 @@
++#!/usr/bin/env python3
++"""Private task claims, real native parsers/transport, mocked engine only."""
++import argparse
++import copy
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import shutil
++import subprocess
++import sys
++import threading
++import unittest
++from unittest import mock
++import uuid
++
++parser = argparse.ArgumentParser()
++parser.add_argument('--candidate', action='store_true')
++parser.add_argument('--installed', action='store_true')
++parser.add_argument('--isolated', action='store_true')
++config, rest = parser.parse_known_args()
++ROOT = Path(__file__).resolve().parents[1]
++if not config.isolated:
++    assert config.candidate or config.installed
++    bootstrap = '''import pathlib,sys,os,shutil
++p=pathlib.Path('/tmp/test-compose-build-capture.py');p.write_bytes(sys.stdin.buffer.read())
++if '--candidate' in sys.argv:
++ for name in ('kandev-agent-docker-broker','kandev-agent-docker-operations.py','docker','kandev-agent-docker-client'):
++  pth=pathlib.Path('/usr/local/bin')/name;shutil.copyfile('/fixture-inputs/'+name,pth);pth.chmod(0o555)
++os.execv('/usr/bin/python3',['python3','-I',str(p),'--isolated',*sys.argv[1:]])
++'''
++    argv = ['bwrap','--unshare-user','--uid','0','--gid','0','--unshare-net','--tmpfs','/',
++            '--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64',
++            '--ro-bind','/bin','/bin','--dev','/dev','--dir','/etc',
++            '--ro-bind','/etc/ld.so.cache','/etc/ld.so.cache','--dir','/tmp','--dir','/run',
++            '--die-with-parent','--clearenv','--setenv','PATH','/usr/local/bin:/usr/bin:/bin',
++            '--chdir','/tmp','--ro-bind',str(ROOT/'tests/test-fresh-build-bootstrap.py'),'/tmp/test-fresh-build-bootstrap.py']
++    if config.candidate:
++        argv += ['--tmpfs','/usr/local/bin']
++        for name in ('kandev-agent-docker-broker','docker','kandev-agent-docker-client'):
++            argv += ['--ro-bind','/usr/local/bin/'+name,'/fixture-inputs/'+name]
++        argv += ['--ro-bind',str(ROOT/'scripts/kandev-agent-docker-operations.py'),'/fixture-inputs/kandev-agent-docker-operations.py']
++    argv += ['/usr/bin/python3','-I','-c',bootstrap,'--candidate' if config.candidate else '--installed']
++    raise SystemExit(subprocess.run(argv, input=Path(__file__).read_bytes()).returncode)
++
++sys.argv = [sys.argv[0], '--installed', '--isolated']
++spec = importlib.util.spec_from_file_location('fresh_fixture','/tmp/test-fresh-build-bootstrap.py')
++fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
++broker = fixture.broker
++sys.argv = [sys.argv[0], *rest]
++NEW_ID, OLD_ID = fixture.NEW_ID, fixture.OLD_ID
++CONFIG_ID = 'sha256:' + 'e' * 64
++
++
++class CaptureTests(fixture.FreshBuildTests):
++    def setUp(self):
++        super().setUp()
++        Path('/run/kandev-agent-docker').mkdir(mode=0o700, exist_ok=True)
++        self.native_builds = []
++        self.native_exit = 0
++        self.tag_id = NEW_ID
++        self.config_mutation = lambda value: value
++        self.metadata_mutation = lambda value: value
++        self.operation_id = str(uuid.uuid4())
++        self.check_bake_parser = False
++
++    def args(self, operation_id=None):
++        return ['kandev','compose-build',operation_id or self.operation_id,
++                'compose','--project-name',self.project,*self.request['args'][1:]]
++
++    def metadata(self):
++        return {'buildx.build.warnings': {}, 'app': {'buildx.build.ref': 'default/default/privatefixturebuild1234',
++                'image.name': 'docker.io/library/' + self.tag,
++                'containerimage.digest': NEW_ID, 'containerimage.config.digest': CONFIG_ID,
++                'containerimage.descriptor': {'digest':NEW_ID,
++                    'mediaType':'application/vnd.oci.image.index.v1+json','size':123}}}
++
++    def command(self, argv, cwd, **kwargs):
++        if argv[0] == broker.COMPOSE_PLUGIN:
++            self.assertIn('--print',argv)
++            result = subprocess.run(argv,cwd=cwd,env={'PATH':'/usr/bin:/bin','HOME':str(self.base),
++                'DOCKER_CONFIG':str(self.base/'empty-config'),**kwargs['environment_overrides']},
++                capture_output=True,text=True,timeout=15)
++            if result.returncode:
++                return result.returncode,result.stdout,result.stderr
++            value = self.config_mutation(json.loads(result.stdout))
++            return 0,json.dumps(value),result.stderr
++        if argv[0] == '/usr/libexec/docker/cli-plugins/docker-buildx' and argv[1] == 'bake':
++            self.assertEqual(argv[-2:],['--load','app'])
++            self.assertEqual(kwargs['timeout'],broker.COMMAND_TIMEOUT)
++            self.assertEqual(cwd,self.root)
++            value=json.loads(Path(argv[argv.index('--file')+1]).read_text())
++            self.assertEqual(set(value['target']),{'app'})
++            self.assertEqual(value['target']['app']['tags'],[self.tag])
++            self.assertEqual(value['target']['app']['output'],['type=docker'])
++            self.last_native_config=value
++            if self.check_bake_parser:
++                parsed=subprocess.run(['/usr/libexec/docker/cli-plugins/docker-buildx','bake','--print',
++                    '--file',argv[argv.index('--file')+1],'app'],cwd=cwd,
++                    env={'PATH':'/usr/bin:/bin','HOME':str(self.base),'DOCKER_CONFIG':str(self.base/'empty-config')},
++                    text=True,capture_output=True,timeout=15)
++                self.assertEqual(parsed.returncode,0,parsed.stderr)
++                self.assertEqual(json.loads(parsed.stdout)['target']['app']['tags'],[self.tag])
++            self.native_builds.append(argv)
++            self.image_exists = self.native_exit == 0
++            Path(argv[argv.index('--metadata-file')+1]).write_text(json.dumps(self.metadata_mutation(self.metadata())))
++            return self.native_exit,'MOCK_NATIVE_BAKE_TERMINAL_ONLY\n',''
++        if argv[0] == broker.DOCKER_BIN and argv[1:3] == ['image','inspect'] and argv[-1] == self.tag and self.native_builds:
++            self.image_queries.append(argv)
++            return 0,json.dumps(self.tag_id),''
++        if argv[0] == broker.DOCKER_BIN and argv[1:4] == ['inspect','--type','container']:
++            return 1,'','No synthetic container'
++        return super().command(argv,cwd,**kwargs)
++
++    def execute_capture(self, args=None):
++        return broker.handle_request({**self.request,'args':args or self.args()},self.key)
++
++    def receipts(self):
++        return list(broker.MODEL_DIR.glob('*/successful-builds/*/*.json'))
++
++    def record(self):
++        self.assertEqual(len(self.receipts()),1)
++        return json.loads(self.receipts()[0].read_bytes())
++
++    def runtime(self):
++        runtime=self.private/'runtime.yml'
++        runtime.write_text(json.dumps({'services':{'app':{'image':self.tag,'read_only':True,'network_mode':'none'}}}))
++        args=['compose','--project-directory',str(self.root),'-f',str(self.base_file),'-f',str(runtime),'config','--format','json']
++        original=self.command
++        def replay(argv,cwd,**kwargs):
++            if argv[0]==broker.DOCKER_BIN and argv[-3:]==['config','--format','json']:
++                return 0,Path(argv[argv.index('-f')+1]).read_text(),''
++            return original(argv,cwd,**kwargs)
++        with mock.patch.object(broker,'run_command',side_effect=replay):
++            self.assertEqual(self.execute(args=args)['returncode'],0)
++
++    def test_success_native_receipt_roles_and_runtime_retention(self):
++        result=self.execute_capture(); self.assertEqual(result['returncode'],0,result)
++        record=self.record()
++        self.assertEqual(record['image_id'],NEW_ID)
++        self.assertEqual(record['output_index_digest'],NEW_ID)
++        self.assertEqual(record['config_digest'],CONFIG_ID)
++        self.assertIsNone(record['platform_manifest_digest'])
++        self.assertEqual(record['engine_id_role'],'output-descriptor')
++        self.runtime()
++        self.assertEqual(self.inspect(self.tag)['returncode'],0)
++        self.assertEqual(self.inspect(NEW_ID)['returncode'],0)
++        events=[json.loads(line) for line in broker.COMPOSE_AUDIT_LOG.read_text().splitlines()]
++        self.assertTrue(any(e['result'].startswith('receipt-ready:') for e in events))
++        self.assertTrue(any(e['result'].startswith('ok:') for e in events))
++
++    def test_repeat_returns_prior_receipt_without_engine_or_model_replacement(self):
++        self.assertEqual(self.execute_capture()['returncode'],0)
++        self.runtime()
++        saved=broker.model_path(self.root,self.project).read_bytes()
++        result=self.execute_capture();self.assertEqual(result['returncode'],0,result)
++        self.assertTrue(json.loads(result['stdout'])['existing'])
++        self.assertEqual(len(self.native_builds),1)
++        self.assertEqual(broker.model_path(self.root,self.project).read_bytes(),saved)
++
++    def test_wrong_completed_output_never_mints(self):
++        self.tag_id=OLD_ID
++        result=self.execute_capture();self.assertEqual(result['returncode'],78,result)
++        self.assertEqual(self.receipts(),[])
++        with self.assertRaisesRegex(broker.BrokerError,'no build replay'):
++            self.execute_capture()
++        self.assertEqual(len(self.native_builds),1)
++
++    def test_failed_cancelled_and_timeout_never_mint_even_with_metadata(self):
++        for code in (19,124,130,137):
++            self.native_exit=code
++            result=self.execute_capture(self.args(str(uuid.uuid4())))
++            self.assertEqual(result['returncode'],code,result)
++            self.assertEqual(self.receipts(),[])
++
++    def test_unknown_nonterminal_and_other_service_metadata_never_mint(self):
++        mutations=[lambda m:{},lambda m:{'db':m['app']},
++                   lambda m:{'app':{**m['app'],'status':'running'}},
++                   lambda m:{'app':{**m['app'],'buildx.build.ref':'not-a-native-ref'}},
++                   lambda m:{'app':{**m['app'],'image.name':'foreign:tag'}},
++                   lambda m:{'app':{**m['app'],'containerimage.descriptor':{'digest':OLD_ID,'mediaType':'application/vnd.oci.image.index.v1+json','size':1}}}]
++        for mutate in mutations:
++            self.metadata_mutation=mutate
++            result=self.execute_capture(self.args(str(uuid.uuid4())))
++            self.assertEqual(result['returncode'],78,result)
++            self.assertEqual(self.receipts(),[])
++
++    def test_config_id_is_a_distinct_allowed_local_engine_identity(self):
++        self.tag_id=CONFIG_ID
++        self.assertEqual(self.execute_capture()['returncode'],0)
++        record=self.record()
++        self.assertEqual(record['image_id'],CONFIG_ID)
++        self.assertEqual(record['engine_id_role'],'config-descriptor')
++        self.assertEqual(record['output_index_digest'],NEW_ID)
++
++    def test_manifest_and_config_roles_are_not_collapsed(self):
++        def manifest(value):
++            value['app']['containerimage.descriptor']['mediaType']='application/vnd.oci.image.manifest.v1+json'
++            return value
++        self.metadata_mutation=manifest
++        self.assertEqual(self.execute_capture()['returncode'],0)
++        record=self.record();self.assertIsNone(record['output_index_digest'])
++        self.assertEqual(record['platform_manifest_digest'],NEW_ID)
++        self.assertNotEqual(record['config_digest'],NEW_ID)
++
++    def test_print_output_extension_and_multiple_targets_deny_before_engine(self):
++        for mutate in (
++            lambda c:{**c,'variable':{'unsafe':{}}},
++            lambda c:{**c,'target':{**c['target'],'foreign':c['target']['app']}},
++            lambda c:{**c,'target':{'app':{**c['target']['app'],'output':['type=local,dest=/outside']}}},
++            lambda c:{**c,'target':{'app':{**c['target']['app'],'secret':['outside']}}},
++            lambda c:{**c,'target':{'app':{**c['target']['app'],'args':{'EXPR':'${file("/outside")}'}}}},
++            lambda c:{**c,'target':{'app':{**c['target']['app'],'labels':{'%{ if true }':'literal'}}}},
++        ):
++            self.config_mutation=mutate
++            result=self.execute_capture(self.args(str(uuid.uuid4())))
++            self.assertEqual(result['returncode'],78,result)
++            self.assertEqual(self.native_builds,[])
++
++    def test_forbidden_modes_and_caller_metadata_paths_deny_before_native_build(self):
++        for tail in (['--print','app'],['--check','app'],['--push','app'],['--builder','foreign','app'],
++                     ['--metadata-file','/tmp/caller','app'],['app','db'],[]):
++            args=self.args();args=args[:args.index('build')+1]+tail
++            with self.assertRaises(broker.BrokerError):self.execute_capture(args)
++        self.assertEqual(self.native_builds,[])
++        with self.assertRaises(broker.BrokerError):self.execute_capture(['buildx','bake','app'])
++
++    def test_wrong_token_and_sibling_claim_fail_before_native_build(self):
++        with self.assertRaises(broker.BrokerError):
++            broker.handle_request({**self.request,'token':'wrong','args':self.args()},self.key)
++        self.assertEqual(self.renders,[])
++        self.assertEqual(self.execute_capture()['returncode'],0)
++        sibling=self.root/'sibling';sibling.mkdir()
++        args=self.args(str(uuid.uuid4()));args[args.index('--project-directory')+1]=str(sibling)
++        with self.assertRaises(broker.BrokerError):self.execute_capture(args)
++        self.assertEqual(len(self.native_builds),1)
++
++    def test_operation_binding_conflict_does_not_rebuild(self):
++        self.assertEqual(self.execute_capture()['returncode'],0)
++        args=self.args();args[args.index('--no-cache')]='--no-cache=false'
++        with self.assertRaises(broker.BrokerError):self.execute_capture(args)
++        self.assertEqual(len(self.native_builds),1)
++
++    def test_receipt_cas_conflict_is_not_overwritten(self):
++        original=self.command
++        def concurrent(argv,cwd,**kwargs):
++            result=original(argv,cwd,**kwargs)
++            if argv[0]=='/usr/libexec/docker/cli-plugins/docker-buildx' and argv[1]=='bake':
++                directory=fixture.operations['capture_directory'](broker,self.root,self.root)
++                (directory/(hashlib.sha256(self.tag.encode()).hexdigest()+'.json')).write_text('{"external-change":true}')
++            return result
++        with mock.patch.object(broker,'run_command',side_effect=concurrent):
++            self.assertEqual(self.execute_capture()['returncode'],78)
++        self.assertEqual(json.loads(self.receipts()[0].read_text()),{'external-change':True})
++
++    def test_audit_failure_prevents_engine_and_no_replay_after_completion_failure(self):
++        with mock.patch.object(broker,'audit_compose',side_effect=broker.BrokerError('private audit unavailable')):
++            with self.assertRaises(broker.BrokerError):self.execute_capture()
++        self.assertEqual(self.native_builds,[])
++        original=broker.audit_compose
++        def unavailable(*args,**kwargs):
++            if args[6].startswith('ok:'):raise broker.BrokerError('private completion audit unavailable')
++            return original(*args,**kwargs)
++        with mock.patch.object(broker,'audit_compose',side_effect=unavailable):
++            self.assertEqual(self.execute_capture()['returncode'],78)
++        with self.assertRaisesRegex(broker.BrokerError,'no build replay'):
++            self.execute_capture()
++        self.assertEqual(len(self.native_builds),1)
++
++    def test_real_wrapper_client_native_parsers_and_unchanged_auth(self):
++        self.check_bake_parser = True
++        endpoint=self.base/'capture.sock'
++        with broker.ThreadedUnixServer(str(endpoint),broker.BrokerHandler) as server:
++            server.broker_key=self.key
++            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
++            try:
++                env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(self.base),
++                     'KANDEV_AGENT_GUARD_ACTIVE':'1','KANDEV_AGENT_GUARD_SCOPE':'project',
++                     'KANDEV_TASK_DOCKER_ACCESS':'restricted','COMPOSE_PROJECT_NAME':self.project,
++                     'KANDEV_AGENT_DOCKER_ROOT':str(self.root),'KANDEV_AGENT_DOCKER_SOCKET':str(endpoint),
++                     'KANDEV_AGENT_DOCKER_TOKEN':self.request['token']}
++                result=subprocess.run(['/usr/local/bin/docker',*self.args()],cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=15)
++                self.assertEqual(result.returncode,0,result.stderr)
++                self.assertEqual(self.record()['image_id'],NEW_ID)
++                env['KANDEV_AGENT_DOCKER_TOKEN']='wrong'
++                result=subprocess.run(['/usr/local/bin/docker',*self.args(str(uuid.uuid4()))],cwd=self.root,env=env,input='',capture_output=True,text=True,timeout=15)
++                self.assertEqual(result.returncode,78)
++                self.assertEqual(len(self.native_builds),1)
++            finally:server.shutdown();thread.join(timeout=5);self.assertFalse(thread.is_alive())
++
++    def test_tag_changes_between_identity_checks_never_mint(self):
++        original=self.command
++        def retarget(argv,cwd,**kwargs):
++            if argv[1:3]==['image','inspect'] and self.image_queries:
++                self.tag_id=OLD_ID
++            return original(argv,cwd,**kwargs)
++        with mock.patch.object(broker,'run_command',side_effect=retarget):
++            self.assertEqual(self.execute_capture()['returncode'],78)
++        self.assertEqual(self.receipts(),[])
++
++    def test_busy_tag_lock_does_not_start_or_replay_a_build(self):
++        with fixture.operations['build_receipt_lock'](broker,self.root,self.root,self.tag):
++            with self.assertRaisesRegex(broker.BrokerError,'BUILD_CAPTURE_BUSY'):
++                self.execute_capture()
++        self.assertEqual(self.native_builds,[])
++
++    def test_native_tool_change_fails_before_compilation(self):
++        cls=fixture.operations['ComposeBuildCapture']
++        operation=fixture.operations['Operations'](broker,self.root,self.root)
++        with mock.patch.dict(cls.NATIVE_TOOLS,{'/usr/libexec/docker/cli-plugins/docker-compose':'0'*64}):
++            with self.assertRaisesRegex(broker.BrokerError,'native tool differs'):
++                cls(operation).handle(self.args())
++        self.assertEqual(self.renders,[])
++        self.assertEqual(self.native_builds,[])
++
++    def test_explicit_no_pull_and_network_none_survive_native_compilation(self):
++        self.overlay['services']['app']['build'].update(pull=False,network='none')
++        self.overlay_file.write_text(json.dumps(self.overlay))
++        args=self.args();args[args.index('--pull')]='--pull=false'
++        self.assertEqual(self.execute_capture(args)['returncode'],0)
++        target=self.last_native_config['target']['app']
++        self.assertFalse(target.get('pull',False))
++        self.assertEqual(target['network'],'none')
++
++    def test_recorded_tag_is_preserved_before_another_build(self):
++        self.assertEqual(self.execute_capture()['returncode'],0)
++        before=self.receipts()[0].read_bytes()
++        with self.assertRaisesRegex(broker.BrokerError,'fresh tag is required'):
++            self.execute_capture(self.args(str(uuid.uuid4())))
++        self.assertEqual(self.receipts()[0].read_bytes(),before)
++        self.assertEqual(len(self.native_builds),1)
++
++    def test_atomic_receipt_creation_does_not_clobber_a_last_instant_writer(self):
++        original=os.link
++        name=hashlib.sha256(self.tag.encode()).hexdigest()+'.json'
++        def raced(source,destination,**kwargs):
++            if Path(destination).name==name:
++                Path(destination).write_text('{"concurrent-record":true}')
++            return original(source,destination,**kwargs)
++        with mock.patch.object(os,'link',side_effect=raced):
++            self.assertEqual(self.execute_capture()['returncode'],78)
++        self.assertEqual(json.loads(self.receipts()[0].read_bytes()),{'concurrent-record':True})
++
++
++if __name__=='__main__':
++    print(json.dumps({'candidate':config.candidate,'installed':config.installed,
++        'broker_sha256':hashlib.sha256(fixture.BROKER.read_bytes()).hexdigest(),
++        'operations_sha256':hashlib.sha256(fixture.OPS.read_bytes()).hexdigest(),
++        'engine':'mocked only','parser':'actual installed Compose','real_builds':0,
++        'owner_operations':0,'registry_contacts':0,'installs_restarts':0}),flush=True)
++    suite=unittest.TestSuite(CaptureTests(name) for name in CaptureTests.__dict__ if name.startswith('test_'))
++    result=unittest.TextTestRunner(verbosity=2).run(suite)
++    raise SystemExit(not result.wasSuccessful())
+-- 
+2.43.0
+

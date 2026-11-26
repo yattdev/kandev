@@ -1,0 +1,3 @@
+{"returncode": 0, "stdout": "{\n  \"group\": {\n    \"default\": {\n      \"targets\": [\n        \"app\"\n      ]\n    }\n  },\n  \"target\": {\n    \"app\": {\n      \"context\": \"/tmp/task\",\n      \"dockerfile\": \"/tmp/task/Dockerfile\",\n      \"args\": {\n        \"SYNTHETIC\": \"fixture\"\n      },\n      \"labels\": {\n        \"com.docker.compose.project\": \"kd_capture_fixture\",\n        \"com.docker.compose.service\": \"app\",\n        \"com.docker.compose.version\": \"5.7.1\"\n      },\n      \"tags\": [\n        \"kd_capture_fixture_app:new\"\n      ],\n      \"output\": [\n        \"type=docker\"\n      ]\n    }\n  }\n}\n", "stderr": "time=\"2026-11-26T02:19:54Z\" level=warning msg=\"No services to build\"\n"}
+
+

@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Strict private qualification of existing source, never a live owner build."""
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+root=Path('/home/ayattara/Code/kandev')
+mode=sys.argv[1]
+assert mode in ('baseline','candidate')
+original=(root/'tests/test-build-history.py').read_text()
+characterization=r'''
+class CompletionQualification(RuntimeModelMixin, fixture.FreshBuildTests):
+    def test_installed_compose_completion_does_not_enter_hot_module(self):
+        self.assertFalse(config.candidate)
+        endpoint=self.base/'capture-private.sock'
+        with broker.ThreadedUnixServer(str(endpoint),broker.BrokerHandler) as server:
+            server.broker_key=self.key
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(self.base),
+                    'KANDEV_AGENT_GUARD_ACTIVE':'1','KANDEV_AGENT_GUARD_SCOPE':'project',
+                    'KANDEV_TASK_DOCKER_ACCESS':'restricted','COMPOSE_PROJECT_NAME':self.project,
+                    'KANDEV_AGENT_DOCKER_ROOT':str(self.root),'KANDEV_AGENT_DOCKER_SOCKET':str(endpoint),
+                    'KANDEV_AGENT_DOCKER_TOKEN':self.request['token']}
+                def call(args):
+                    return subprocess.run(['/usr/local/bin/docker',*args],cwd=self.root,
+                        env=env,input='',capture_output=True,text=True,timeout=15)
+                # Fail if Compose enters the public module loader. This patch
+                # affects only this in-memory private broker instance.
+                with mock.patch.object(broker.runpy,'run_path',side_effect=AssertionError('unexpected module callback')):
+                    result=call(self.request['args'])
+                    self.assertEqual(result.returncode,0,result.stderr)
+                    def invoke(args):
+                        result=call(args)
+                        return {'returncode':result.returncode,'stdout':result.stdout,'stderr':result.stderr}
+                    self.runtime(invoke=invoke)
+                self.assertEqual(len(self.replays),1)
+                self.assertEqual(list(broker.MODEL_DIR.glob('*/successful-builds/*/*.json')),[])
+                result=call(['image','inspect','--format','{{.Id}}',self.tag])
+                self.assertEqual(result.returncode,78)
+                self.assertIn('IMAGE_NOT_AUTHORIZED',result.stderr)
+                snapshots=(len(self.renders),len(self.replays),len(self.image_queries))
+                for forbidden in (
+                    ['buildx','bake','--metadata-file',str(self.base/'untrusted-metadata'),'app'],
+                    ['kandev','compose-build','00000000-0000-4000-8000-000000000001','compose','build','app'],
+                    ['build','--metadata-file',str(self.base/'untrusted-metadata'),str(self.context)],
+                ):
+                    result=call(forbidden)
+                    self.assertEqual(result.returncode,78,(forbidden,result.stdout,result.stderr))
+                    self.assertIn('unsupported',result.stderr)
+                    self.assertEqual((len(self.renders),len(self.replays),len(self.image_queries)),snapshots)
+            finally:
+                server.shutdown();thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+
+    def test_candidate_receipt_is_bound_to_completed_output_not_retargeted_tag(self):
+        self.assertTrue(config.candidate)
+        original=self.command
+        completed=[]
+        def completion_then_retarget(argv,cwd,**kwargs):
+            if argv[1:3]==['image','inspect'] and argv[-1]==self.tag and completed:
+                # A distinct tag observation after the mock native build has
+                # completed exporting NEW_ID. It is not the build's output.
+                self.image_queries.append(argv)
+                return 0,json.dumps(OLD_ID),''
+            result=original(argv,cwd,**kwargs)
+            if argv[0]==broker.DOCKER_BIN and argv[1]=='compose' and 'build' in argv:
+                self.assertEqual(result[0],0)
+                completed.append(NEW_ID)
+            return result
+        with mock.patch.object(broker,'run_command',side_effect=completion_then_retarget):
+            result=self.execute()
+        self.assertEqual(completed,[NEW_ID])
+        records=fixture.operations['successful_build_images'](
+            SimpleNamespace(**vars(broker)),self.root,self.root)
+        # Fail closed without a receipt would also satisfy this strict
+        # qualification. Publishing ownership of OLD_ID must fail it.
+        if self.tag in records:
+            self.assertEqual(records[self.tag]['image_id'],NEW_ID,
+                'post-build tag inspection is not native completed-output provenance')
+        else:
+            self.assertEqual(result['returncode'],78)
+
+if __name__=='__main__':
+    print(json.dumps({'scope':'private completion qualification',
+        'mode':'candidate' if config.candidate else 'installed',
+        'engine':'mocked only','parser':'actual installed Compose',
+        'owner_operations':0,'real_builds':0,'installs':0,'restarts':0}),flush=True)
+    name=('test_candidate_receipt_is_bound_to_completed_output_not_retargeted_tag'
+          if config.candidate else 'test_installed_compose_completion_does_not_enter_hot_module')
+    result=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite([CompletionQualification(name)]))
+    raise SystemExit(not result.wasSuccessful())
+'''
+source=original[:original.index("if __name__=='__main__':")]+characterization
+names=['tests/test-fresh-build-bootstrap.py','scripts/kandev-agent-docker-broker',
+       'scripts/kandev-agent-docker-operations.py']
+payload={name:(root/name).read_text() for name in names}
+payload['tests/test-build-history.py']=source
+helper='''import json,pathlib,sys,tempfile,subprocess
+with tempfile.TemporaryDirectory(prefix='support-completion-private-') as directory:
+ root=pathlib.Path(directory)
+ for name,source in json.load(sys.stdin).items():
+  assert name in ('tests/test-build-history.py','tests/test-fresh-build-bootstrap.py','scripts/kandev-agent-docker-broker','scripts/kandev-agent-docker-operations.py')
+  path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(source)
+ result=subprocess.run(['/usr/bin/python3','-I',str(root/'tests/test-build-history.py'),'--'+sys.argv[1]])
+ raise SystemExit(result.returncode)
+'''
+raise SystemExit(subprocess.run(['docker','exec','-i','kandev','/usr/bin/python3','-I','-c',helper,mode],
+    input=json.dumps(payload).encode()).returncode)
