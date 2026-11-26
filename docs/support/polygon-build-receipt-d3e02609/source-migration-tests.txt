@@ -1,0 +1,23 @@
+test_apply_rejects_changed_snapshot (__main__.RestoreTests.test_apply_rejects_changed_snapshot) ... ok
+test_dry_run_has_no_writes (__main__.RestoreTests.test_dry_run_has_no_writes) ... ok
+test_exact_native_output_restores_only_one_receipt (__main__.RestoreTests.test_exact_native_output_restores_only_one_receipt) ... ok
+test_existing_receipt_is_preserved (__main__.RestoreTests.test_existing_receipt_is_preserved) ... ok
+test_foreign_claim_denied (__main__.RestoreTests.test_foreign_claim_denied) ... ok
+test_foreign_clone_denied (__main__.RestoreTests.test_foreign_clone_denied) ... ok
+test_insecure_claim_denied (__main__.RestoreTests.test_insecure_claim_denied) ... ok
+test_model_only_reference_never_proves_success (__main__.RestoreTests.test_model_only_reference_never_proves_success) ... ok
+test_native_index_is_expected_id_not_observed_engine_id (__main__.RestoreTests.test_native_index_is_expected_id_not_observed_engine_id) ... ok
+test_native_proof_negative_cases (__main__.RestoreTests.test_native_proof_negative_cases) ... ok
+test_reader_foreign_root_or_clone_cannot_see_receipt (__main__.RestoreTests.test_reader_foreign_root_or_clone_cannot_see_receipt) ... ok
+test_reader_requires_native_target_equal_mock_engine_id (__main__.RestoreTests.test_reader_requires_native_target_equal_mock_engine_id) ... ok
+test_restored_record_accepted_by_installed_reader_without_engine (__main__.RestoreTests.test_restored_record_accepted_by_installed_reader_without_engine) ... ok
+test_retarget_config_and_foreign_engine_id_fail_closed (__main__.RestoreTests.test_retarget_config_and_foreign_engine_id_fail_closed) ... ok
+test_root_migration_preserves_broker_uid1000 (__main__.RestoreTests.test_root_migration_preserves_broker_uid1000) ... skipped 'root-only private custody qualification'
+test_symlink_model_denied (__main__.RestoreTests.test_symlink_model_denied) ... ok
+test_symlink_receipt_directory_denied (__main__.RestoreTests.test_symlink_receipt_directory_denied) ... ok
+test_wrong_native_manifest_chain_never_mints (__main__.RestoreTests.test_wrong_native_manifest_chain_never_mints) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.106s
+
+OK (skipped=1)

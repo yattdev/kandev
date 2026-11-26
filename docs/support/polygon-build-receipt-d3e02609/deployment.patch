@@ -1,0 +1,783 @@
+diff --git a/docs/polygon-build-receipt-d3e02609/README.md b/docs/polygon-build-receipt-d3e02609/README.md
+new file mode 100644
+index 0000000..d8f0fde
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/README.md
+@@ -0,0 +1,48 @@
++# Polygon historical successful-output recovery
++
++Request `d3e02609-794e-4a8b-b934-11f92bd57817`. This is the separate Polygon output, not a transfer or repeat of Task3/a63 ownership. No platform implementation, binary replacement, installation or restart is required. Future automatic capture is already installed separately under 806cdc24; this package does not modify it.
++
++## Evidence and scope
++
++Original task `eb68d953-2ec5-4aa9-8b12-e3004784c31d`, session `c34cbefe-12a4-44cf-8ea9-a138b52d436c`, workspace `25f53734-5aea-490e-b7ba-d5da6fe821dd`. Protected claim and saved-model envelopes bind root and project directory `/data/tasks/feature-8227-importa_gim9c2mm`, project `kd_8227_pair366`. Service is `app_base`; output is `kd_8227_pair366_app_base:php84-366r10`.
++
++The exact authorized receipt SHA256 is `6489014ba72579758b5f7305bd910e4d1544515b8b4479582fca05165120108d`. It identifies `co-up/.kandev/pair-366/build.stdout-stderr.log` (807202 bytes, SHA256 `b957e78d6abb28ace5f5d961e7b9b9f055972cf7ccde8303086b4ee40dc4dfa2`). Neither owner artifact is treated as independent success/ID proof. No source, package, full image metadata, environment, command, credential or task-data contents were exported.
++
++A bounded stat-only discovery of the existing default-node client reference index found exactly one file within the supplied build interval. Only that candidate's metadata was read; its exact task-root path component and target matched. It supplies native Ref `qzlhr9rvyz88fysq969f52dp2`, builder/node `default/default`. This is a discovery pointer, not terminal proof. No native history list, task census or foreign build record was requested.
++
++The existing audited native reader then queried only that Ref. Native created time is `2026-11-25T23:30:27.081324747Z`; terminal completion is `2026-11-25T23:33:16.030655963Z`. Event type 1, no error or external error, exactly one image exporter named `docker.io/library/kd_8227_pair366_app_base:php84-366r10`. See `native-output-proof.json`. The reader verifies result-linked content SHA/size and projects only index/manifest descriptors; it does not read config/layer/provenance/log blobs.
++
++| Role | Independently verified digest |
++| --- | --- |
++| Native result/exporter target, OCI index | `sha256:b341fecdb97d66942f1eb3501343760ffdb1e26e9c77a603eca31354fd3bd137` |
++| Selected linux/amd64 platform manifest | `sha256:6093688504ec36bb3b8b33a6c2c7729fa2f3812b1b6b6a1fa978fe3ef7c25d5e` |
++| Config descriptor, not config content | `sha256:0029ce02a40cdab570e49e81d4cd0cf04b57e4806f806b6dbd633b230a6c93f1` |
++
++The attestation pointer from the owner log was not used or fetched. No current engine `.Id` or RepoDigest was observed by Support. The migration's required `image_id` is a **native completed output target equality predicate**, explicitly annotated `engine_id_observed: false`; it is not a claim that index, platform and config digests are interchangeable. The installed reader must independently resolve the scoped tag and match its literal `.Id` to that predicate during Root's separate owner acceptance. Any mismatch fails closed; no config/ID/tag fallback is authorized.
++
++## Exact migration and compatibility
++
++`restore-known-output.py` is a new fixed-scope adaptation of the admitted a63/pass2 migration. It never runs the a63 migration or accesses Task3's receipt. It pins Ref, native timestamps, exporter, output chain, project, root/clone and tag. The production entry also pins the exact protected claim/model hashes and all five installed broker/module/wrapper/client/guard hashes. A model reference or build intent supplies no output proof.
++
++Only one protected v1 receipt may be created. Existing target/symlink fails without replacement; publication uses a 0600 fsynced temporary file and atomic no-replace hard link, then fsyncs the directory. It retains broker UID/GID and checks claim/model byte equality before and after. No claim/model/resource is rewritten. A repeat is rejected, preserving the existing receipt. `reviewed.json` pins migration and native-proof bytes for the reviewed host launcher. This is not an agent-facing receipt import endpoint.
++
++Installed reader/module SHA256 is `1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a`, from deployment implementation `c4f5b4ec1574abe1a24c4287dd356154a6b3d61c` and installed evidence `6ab463cb0c4ba5af8490c9ec928cd726ac8c56f2`. Broker is unchanged `9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91`. Fresh complete dependency hashes are in `installed-before.json`. Existing image, lifecycle, volume, task-access and completion-capture code remains untouched.
++
++Validation is distinct from affected-owner acceptance:
++
++- 16 native-reader source tests pass offline.
++- 18 migration/reader cases run in private fixtures against installed code, including root-to-UID1000 custody, foreign task/clone, changed snapshot, symlink, repeat, malformed/nonterminal/failed proof and output-digest discrimination.
++- 18 installed image-boundary cases use the real wrapper/client transport with a mocked engine and private synthetic credentials. No live broker identity, image or workload is queried.
++- Source migration run passes its applicable cases; root-custody case runs in the installed root fixture rather than being counted as source acceptance.
++
++## Separately bound original-owner acceptance
++
++Root may bind **one** curated tag inspection in original session `c34cbefe-12a4-44cf-8ea9-a138b52d436c`, unchanged task root/project/caller and existing restricted environment:
++
++```sh
++KANDEV_TASK_DOCKER_ACCESS=restricted docker image inspect kd_8227_pair366_app_base:php84-366r10
++```
++
++Run from the exact registered project directory `/data/tasks/feature-8227-importa_gim9c2mm`. Preserve stdout/stderr/exit and compare curated `Id` literally with the native target above. Success establishes actual engine `.Id` equality at that owner operation; synthetic tests and historical recovery do not. On denial/mismatch, stop and preserve evidence; no second inspection, ID fallback, model registration, tag mutation or build is authorized by this package. No paired test or source/vendor qualification follows automatically.
++
++The protected metadata result is recorded in `restoration.json` after the reviewed apply. No binary rollback is applicable because no implementation was changed. The operation never overwrites an earlier receipt; any later reversal of this exact appended receipt would require a separately scoped, hash-bound metadata action. All real images, worktrees, databases, networks and logs remain untouched.
+diff --git a/docs/polygon-build-receipt-d3e02609/apply-restoration.py b/docs/polygon-build-receipt-d3e02609/apply-restoration.py
+new file mode 100644
+index 0000000..3092248
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/apply-restoration.py
+@@ -0,0 +1,27 @@
++#!/usr/bin/env python3
++"""Reviewed host launcher, not a task-facing command or installed capability."""
++import hashlib
++import json
++from pathlib import Path
++import subprocess
++
++HERE = Path(__file__).resolve().parent
++review = json.loads((HERE/'reviewed.json').read_bytes())
++source = (HERE/'restore-known-output.py').read_bytes()
++proof = (HERE/'native-output-proof.json').read_bytes()
++assert hashlib.sha256(source).hexdigest() == review['restore_sha256']
++assert hashlib.sha256(proof).hexdigest() == review['proof_sha256']
++repo = HERE.parents[1]
++assert subprocess.run(['git','branch','--show-current'],cwd=repo,capture_output=True,text=True,check=True).stdout.strip() == 'main'
++def identity():
++    return subprocess.run(['docker','inspect','kandev','--format','{{.Id}} {{.Image}} {{.State.StartedAt}} {{.RestartCount}}'],capture_output=True,text=True,check=True).stdout.strip()
++before = identity()
++result = subprocess.run(['docker','exec','-i','--user','0',before.split()[0],'/usr/bin/python3','-I','-B','-c',source.decode(),'--apply'],input=json.dumps(review).encode()+b'\n'+proof,capture_output=True)
++(HERE/'restoration-attempt.json').write_text(json.dumps(dict(returncode=result.returncode,stdout=result.stdout.decode(),stderr=result.stderr.decode()),indent=2)+'\n')
++if result.returncode:
++    raise SystemExit(result.stderr.decode())
++receipt=json.loads(result.stdout)
++after=identity(); receipt.update(container_identity_before=before,container_identity_after=after,unchanged_container=before==after,restart=False)
++(HERE/'restoration.json').write_text(json.dumps(receipt,indent=2)+'\n')
++assert before==after
++print(json.dumps(receipt,indent=2))
+diff --git a/docs/polygon-build-receipt-d3e02609/evidence-manifest.json b/docs/polygon-build-receipt-d3e02609/evidence-manifest.json
+new file mode 100644
+index 0000000..2f7d192
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/evidence-manifest.json
+@@ -0,0 +1,20 @@
++{
++  "README.md": "cefeea79732ee6cbf14b5dbd31afd4f79347c844e85eb081f6593a1d2e30149a",
++  "apply-restoration.py": "b0e6b0c76e96fd29bf630d87c024ffb9f1545608d8bd5bb50ade54bb1412059b",
++  "installed-before.json": "4d5ca0b03b9e2d8068b36f11df6ca33a9fd897991c3c8d8f50ee45d6ad5b0c28",
++  "installed-private-tests.txt": "3de611088a981abc636a0bc595ad3026493a58f641b6398f9df22804f5818d30",
++  "installed-readback.json": "9694c0fddaa6367aa24498e8f04ac4c86e58084ddfc7fa86d4bca090fe1a6edb",
++  "log-reference-discovery.json": "5ea5d208c4492a3a42d084709feeac2cd0f55476a654377058481d30a7d73d85",
++  "native-output-proof.json": "0eba13b268e46305d303d532e99f57551f413c91bcb7e4118701d59d4da12586",
++  "native-reader-tests.txt": "dbc143b331e9d0218201703082a6bc6d52f591ea1121bed36df19d7adbbb2b22",
++  "native-reference-discovery.json": "02117396c0864c2a8526890b775d9fd0e55cb4972042112a5dab0b0c421497ec",
++  "receipt-index-scope.json": "5f3351aa048bba72cda59f39ef8c7d3619ab50bc23691257259bce1d5c9d5f2a",
++  "restoration-attempt.json": "1ec9709ec3ea363950d59c96a55b5d641c244fa73840879b87f3d7b6be2ab7ba",
++  "restoration.json": "4ae3ac98557c70e2323041f2751eac8aff87c4e3a2f65019d10c51133270f678",
++  "restore-known-output.py": "99125cdc0afadc6d14d525e38c161c05db9dbc50fcacca7777129d413c2a93d6",
++  "result.json": "78336b851b48ed32d6b274fb845f7ad8eaf114ce2cc07fab91a171167c83e8a1",
++  "reviewed.json": "c098af9511b3709158371921e10c39f4eb290144f6b3b445d866b80fa3b172ce",
++  "source-manifest.json": "ebce4b444e9d4083c40b7558fc5ec19d769ce98877fb3e9795b7651453371b7c",
++  "source-migration-tests.txt": "8999233ddbd8d0b51cb24b6e4df801608fe32e067de98c256ee0ac19b4ba411d",
++  "test_restore.py": "dacadd27541bee973fdeba663ab8d86b95fa41a20279842bb077bf3be387354a"
++}
+diff --git a/docs/polygon-build-receipt-d3e02609/installed-before.json b/docs/polygon-build-receipt-d3e02609/installed-before.json
+new file mode 100644
+index 0000000..7d9d4dd
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/installed-before.json
+@@ -0,0 +1 @@
++{"kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "kandev-agent-docker-operations.py": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a", "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41", "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133", "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"}
+diff --git a/docs/polygon-build-receipt-d3e02609/installed-private-tests.txt b/docs/polygon-build-receipt-d3e02609/installed-private-tests.txt
+new file mode 100644
+index 0000000..5ac5256
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/installed-private-tests.txt
+@@ -0,0 +1,49 @@
++PRIVATE_SYNTHETIC test_restore.py
++PRIVATE_SYNTHETIC test-task-image-inspect.py
++{"installed": true, "source_sha256": {"/usr/local/bin/kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "/usr/local/bin/kandev-agent-docker-operations.py": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a"}, "live_task_operations": 0, "real_engine_calls": 0, "builds": 0, "pulls": 0}
++test_apply_rejects_changed_snapshot (__main__.RestoreTests.test_apply_rejects_changed_snapshot) ... ok
++test_dry_run_has_no_writes (__main__.RestoreTests.test_dry_run_has_no_writes) ... ok
++test_exact_native_output_restores_only_one_receipt (__main__.RestoreTests.test_exact_native_output_restores_only_one_receipt) ... ok
++test_existing_receipt_is_preserved (__main__.RestoreTests.test_existing_receipt_is_preserved) ... ok
++test_foreign_claim_denied (__main__.RestoreTests.test_foreign_claim_denied) ... ok
++test_foreign_clone_denied (__main__.RestoreTests.test_foreign_clone_denied) ... ok
++test_insecure_claim_denied (__main__.RestoreTests.test_insecure_claim_denied) ... ok
++test_model_only_reference_never_proves_success (__main__.RestoreTests.test_model_only_reference_never_proves_success) ... ok
++test_native_index_is_expected_id_not_observed_engine_id (__main__.RestoreTests.test_native_index_is_expected_id_not_observed_engine_id) ... ok
++test_native_proof_negative_cases (__main__.RestoreTests.test_native_proof_negative_cases) ... ok
++test_reader_foreign_root_or_clone_cannot_see_receipt (__main__.RestoreTests.test_reader_foreign_root_or_clone_cannot_see_receipt) ... ok
++test_reader_requires_native_target_equal_mock_engine_id (__main__.RestoreTests.test_reader_requires_native_target_equal_mock_engine_id) ... ok
++test_restored_record_accepted_by_installed_reader_without_engine (__main__.RestoreTests.test_restored_record_accepted_by_installed_reader_without_engine) ... ok
++test_retarget_config_and_foreign_engine_id_fail_closed (__main__.RestoreTests.test_retarget_config_and_foreign_engine_id_fail_closed) ... ok
++test_root_migration_preserves_broker_uid1000 (__main__.RestoreTests.test_root_migration_preserves_broker_uid1000) ... ok
++test_symlink_model_denied (__main__.RestoreTests.test_symlink_model_denied) ... ok
++test_symlink_receipt_directory_denied (__main__.RestoreTests.test_symlink_receipt_directory_denied) ... ok
++test_wrong_native_manifest_chain_never_mints (__main__.RestoreTests.test_wrong_native_manifest_chain_never_mints) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 0.095s
++
++OK
++test_arbitrary_or_unknown_image_id_is_never_inspected (__main__.ImageTests.test_arbitrary_or_unknown_image_id_is_never_inspected) ... ok
++test_bare_id_does_not_implicitly_change_resource_type (__main__.ImageTests.test_bare_id_does_not_implicitly_change_resource_type) ... ok
++test_conflicting_or_unsupported_type_is_denied (__main__.ImageTests.test_conflicting_or_unsupported_type_is_denied) ... ok
++test_container_inspection_still_works (__main__.ImageTests.test_container_inspection_still_works) ... ok
++test_container_type_never_reads_image_metadata (__main__.ImageTests.test_container_type_never_reads_image_metadata) ... ok
++test_exact_id_formats_do_not_confuse_registry_digest (__main__.ImageTests.test_exact_id_formats_do_not_confuse_registry_digest) ... ok
++test_exact_owned_local_id_is_admitted_with_curated_metadata (__main__.ImageTests.test_exact_owned_local_id_is_admitted_with_curated_metadata) ... ok
++test_existing_owned_build_tag_route_is_preserved (__main__.ImageTests.test_existing_owned_build_tag_route_is_preserved) ... ok
++test_generic_explicit_image_type_is_admitted (__main__.ImageTests.test_generic_explicit_image_type_is_admitted) ... ok
++test_hmac_boundary_and_installed_client_framing (__main__.ImageTests.test_hmac_boundary_and_installed_client_framing) ... ok
++test_image_type_never_falls_back_to_container (__main__.ImageTests.test_image_type_never_falls_back_to_container) ... ok
++test_malformed_identity_or_changed_final_id_is_denied (__main__.ImageTests.test_malformed_identity_or_changed_final_id_is_denied) ... ok
++test_model_claim_changes_during_lookup_are_denied (__main__.ImageTests.test_model_claim_changes_during_lookup_are_denied) ... ok
++test_model_reference_alone_does_not_grant_image_ownership (__main__.ImageTests.test_model_reference_alone_does_not_grant_image_ownership) ... ok
++test_other_task_build_cannot_authorize_id (__main__.ImageTests.test_other_task_build_cannot_authorize_id) ... ok
++test_private_env_format_is_denied_before_engine_query (__main__.ImageTests.test_private_env_format_is_denied_before_engine_query) ... ok
++test_registry_digest_is_not_an_image_id_alias (__main__.ImageTests.test_registry_digest_is_not_an_image_id_alias) ... ok
++test_sibling_clone_build_cannot_authorize_id (__main__.ImageTests.test_sibling_clone_build_cannot_authorize_id) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 0.566s
++
++OK
+diff --git a/docs/polygon-build-receipt-d3e02609/installed-readback.json b/docs/polygon-build-receipt-d3e02609/installed-readback.json
+new file mode 100644
+index 0000000..16f8433
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/installed-readback.json
+@@ -0,0 +1,20 @@
++{
++  "request_id": "d3e02609-794e-4a8b-b934-11f92bd57817",
++  "receipt_sha256": "a35a8db4a46ad873ffc477931179583d289cd23799d70b47ebc1bfee81e2b3ab",
++  "installed_reader_recognizes_exact_scoped_receipt": true,
++  "claim_and_model_hashes_unchanged": true,
++  "receipt_uid": 1000,
++  "receipt_gid": 999,
++  "receipt_mode": "0o600",
++  "receipt_nlink": 1,
++  "installed_hashes": {
++    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "kandev-agent-docker-operations.py": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a",
++    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
++  },
++  "engine_queries": 0,
++  "owner_operations": 0,
++  "engine_id_observed": false
++}
+diff --git a/docs/polygon-build-receipt-d3e02609/log-reference-discovery.json b/docs/polygon-build-receipt-d3e02609/log-reference-discovery.json
+new file mode 100644
+index 0000000..bb21b88
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/log-reference-discovery.json
+@@ -0,0 +1 @@
++{"indexed_log_path": "/data/tasks/feature-8227-importa_gim9c2mm/co-up/.kandev/pair-366/build.stdout-stderr.log", "log_sha256": "b957e78d6abb28ace5f5d961e7b9b9f055972cf7ccde8303086b4ee40dc4dfa2", "log_bytes": 807202, "native_refs": [], "discovery_output_pointers": [{"role": "attestation manifest", "digest": "sha256:a4a4114d2112f177808a5c15b59c378dea4e3aedb51ae9dfa7cd0b74c674905e"}, {"role": "config", "digest": "sha256:0029ce02a40cdab570e49e81d4cd0cf04b57e4806f806b6dbd633b230a6c93f1"}, {"role": "manifest", "digest": "sha256:6093688504ec36bb3b8b33a6c2c7729fa2f3812b1b6b6a1fa978fe3ef7c25d5e"}, {"role": "manifest list", "digest": "sha256:b341fecdb97d66942f1eb3501343760ffdb1e26e9c77a603eca31354fd3bd137"}], "discovery_only": true}
+diff --git a/docs/polygon-build-receipt-d3e02609/native-output-proof.json b/docs/polygon-build-receipt-d3e02609/native-output-proof.json
+new file mode 100644
+index 0000000..70199f6
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/native-output-proof.json
+@@ -0,0 +1 @@
++{"completed_at":"2026-11-25T23:33:16.030655963Z","created_at":"2026-11-25T23:30:27.081324747Z","error_present":false,"event_type":1,"exporter_response":{},"exporters":[{"name":"docker.io/library/kd_8227_pair366_app_base:php84-366r10","type":"image"}],"external_error_present":false,"output_manifest_chain":[{"mediaType":"application/vnd.oci.image.index.v1+json","digest":"sha256:b341fecdb97d66942f1eb3501343760ffdb1e26e9c77a603eca31354fd3bd137","size":856,"platform":{"os":"","architecture":""}},{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:6093688504ec36bb3b8b33a6c2c7729fa2f3812b1b6b6a1fa978fe3ef7c25d5e","size":2763,"platform":{"os":"linux","architecture":"amd64"}}],"ref":"qzlhr9rvyz88fysq969f52dp2","result_descriptors":[{"digest":"sha256:b341fecdb97d66942f1eb3501343760ffdb1e26e9c77a603eca31354fd3bd137","media_type":"application/vnd.oci.image.index.v1+json","size":856},{"digest":"sha256:b341fecdb97d66942f1eb3501343760ffdb1e26e9c77a603eca31354fd3bd137","media_type":"application/vnd.oci.image.index.v1+json","size":856}],"verified_output_config_id":"sha256:0029ce02a40cdab570e49e81d4cd0cf04b57e4806f806b6dbd633b230a6c93f1"}
+diff --git a/docs/polygon-build-receipt-d3e02609/native-reader-tests.txt b/docs/polygon-build-receipt-d3e02609/native-reader-tests.txt
+new file mode 100644
+index 0000000..512493e
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/native-reader-tests.txt
+@@ -0,0 +1,34 @@
++=== RUN   TestExactRequest
++--- PASS: TestExactRequest (0.00s)
++=== RUN   TestRefRequired
++--- PASS: TestRefRequired (0.00s)
++=== RUN   TestDistinctDigests
++--- PASS: TestDistinctDigests (0.00s)
++=== RUN   TestForeignRef
++--- PASS: TestForeignRef (0.00s)
++=== RUN   TestNoRecord
++--- PASS: TestNoRecord (0.00s)
++=== RUN   TestPrivateFieldsNotProjected
++--- PASS: TestPrivateFieldsNotProjected (0.00s)
++=== RUN   TestErrorPresenceOnly
++--- PASS: TestErrorPresenceOnly (0.00s)
++=== RUN   TestMalformed
++--- PASS: TestMalformed (0.00s)
++=== RUN   TestFrameSuccess
++--- PASS: TestFrameSuccess (0.00s)
++=== RUN   TestFrameStatus
++--- PASS: TestFrameStatus (0.00s)
++=== RUN   TestFrameBound
++--- PASS: TestFrameBound (0.00s)
++=== RUN   TestExtraRecord
++--- PASS: TestExtraRecord (0.00s)
++=== RUN   TestResolveConfigNoConfigRead
++--- PASS: TestResolveConfigNoConfigRead (0.00s)
++=== RUN   TestResolveDeniesBeforeContent
++--- PASS: TestResolveDeniesBeforeContent (0.00s)
++=== RUN   TestContentDigestValidation
++--- PASS: TestContentDigestValidation (0.00s)
++=== RUN   TestOnlyDescriptorProjection
++--- PASS: TestOnlyDescriptorProjection (0.00s)
++PASS
++ok  	kandev.support/a63f-native-reader	(cached)
+diff --git a/docs/polygon-build-receipt-d3e02609/native-reference-discovery.json b/docs/polygon-build-receipt-d3e02609/native-reference-discovery.json
+new file mode 100644
+index 0000000..5e99c67
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/native-reference-discovery.json
+@@ -0,0 +1 @@
++{"kind": "time-bound-client-reference-discovery", "discovery_only": true, "builder": "default", "node": "default", "window_candidates": 1, "bounded_index_truncated": false, "native_history_queries": 0, "exact_root_component_matches": true, "exact_target_matches": true, "metadata_sha256": "de6dc654747cecd7cce4a98fefd98214694c2d090e9288c50d084891234af203", "ref": "qzlhr9rvyz88fysq969f52dp2"}
+diff --git a/docs/polygon-build-receipt-d3e02609/receipt-index-scope.json b/docs/polygon-build-receipt-d3e02609/receipt-index-scope.json
+new file mode 100644
+index 0000000..93bfcd4
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/receipt-index-scope.json
+@@ -0,0 +1 @@
++{"receipt_path": "/data/tasks/feature-8227-importa_gim9c2mm/co-up/.kandev/pair-366/build-r11-receipt.md", "receipt_bytes": 4075, "receipt_sha256": "6489014ba72579758b5f7305bd910e4d1544515b8b4479582fca05165120108d", "indexed_log_paths": [".kandev/pair-366/build.stdout-stderr.log"], "native_refs": [], "claim": {"sha256": "8eeea4229474cd4f4a4a9cb020cd03d4cf0ff8e7b00e12d53d66b2fa36bc509c", "scope": {"task_root": "/data/tasks/feature-8227-importa_gim9c2mm", "cwd": "/data/tasks/feature-8227-importa_gim9c2mm", "project": "kd_8227_pair366"}, "version": null}, "model": {"sha256": "05aac056cc2f4db7e490c6228cc43cc2502804f3ab1101a298bb736b0f06f8f4", "scope": {"task_root": "/data/tasks/feature-8227-importa_gim9c2mm", "cwd": "/data/tasks/feature-8227-importa_gim9c2mm", "project": "kd_8227_pair366"}, "version": 1}}
+diff --git a/docs/polygon-build-receipt-d3e02609/restoration-attempt.json b/docs/polygon-build-receipt-d3e02609/restoration-attempt.json
+new file mode 100644
+index 0000000..eb967c6
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/restoration-attempt.json
+@@ -0,0 +1,5 @@
++{
++  "returncode": 0,
++  "stdout": "{\"request_id\": \"d3e02609-794e-4a8b-b934-11f92bd57817\", \"receipt_sha256\": \"a35a8db4a46ad873ffc477931179583d289cd23799d70b47ebc1bfee81e2b3ab\", \"proof_sha256\": \"0eba13b268e46305d303d532e99f57551f413c91bcb7e4118701d59d4da12586\", \"claim_sha256\": \"8eeea4229474cd4f4a4a9cb020cd03d4cf0ff8e7b00e12d53d66b2fa36bc509c\", \"saved_model_sha256\": \"05aac056cc2f4db7e490c6228cc43cc2502804f3ab1101a298bb736b0f06f8f4\", \"image\": \"kd_8227_pair366_app_base:php84-366r10\", \"expected_image_id\": \"sha256:b341fecdb97d66942f1eb3501343760ffdb1e26e9c77a603eca31354fd3bd137\", \"engine_id_observed\": false, \"engine_commands\": 0, \"owner_commands\": 0, \"applied\": true, \"claim_and_model_unchanged\": true}\n",
++  "stderr": ""
++}
+diff --git a/docs/polygon-build-receipt-d3e02609/restoration.json b/docs/polygon-build-receipt-d3e02609/restoration.json
+new file mode 100644
+index 0000000..8648321
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/restoration.json
+@@ -0,0 +1,18 @@
++{
++  "request_id": "d3e02609-794e-4a8b-b934-11f92bd57817",
++  "receipt_sha256": "a35a8db4a46ad873ffc477931179583d289cd23799d70b47ebc1bfee81e2b3ab",
++  "proof_sha256": "0eba13b268e46305d303d532e99f57551f413c91bcb7e4118701d59d4da12586",
++  "claim_sha256": "8eeea4229474cd4f4a4a9cb020cd03d4cf0ff8e7b00e12d53d66b2fa36bc509c",
++  "saved_model_sha256": "05aac056cc2f4db7e490c6228cc43cc2502804f3ab1101a298bb736b0f06f8f4",
++  "image": "kd_8227_pair366_app_base:php84-366r10",
++  "expected_image_id": "sha256:b341fecdb97d66942f1eb3501343760ffdb1e26e9c77a603eca31354fd3bd137",
++  "engine_id_observed": false,
++  "engine_commands": 0,
++  "owner_commands": 0,
++  "applied": true,
++  "claim_and_model_unchanged": true,
++  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z 0",
++  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z 0",
++  "unchanged_container": true,
++  "restart": false
++}
+diff --git a/docs/polygon-build-receipt-d3e02609/restore-known-output.py b/docs/polygon-build-receipt-d3e02609/restore-known-output.py
+new file mode 100644
+index 0000000..85e625e
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/restore-known-output.py
+@@ -0,0 +1,164 @@
++#!/usr/bin/env python3
++"""Support-only one-output historical migration; no public agent import endpoint.
++
++No engine or owner command is executed. The reviewed native proof supplies the
++historical output, while the pre-existing immutable claim supplies exact scope.
++"""
++import hashlib
++import json
++import os
++from pathlib import Path
++import stat
++import sys
++import tempfile
++
++REQUEST = 'd3e02609-794e-4a8b-b934-11f92bd57817'
++ROOT = '/data/tasks/feature-8227-importa_gim9c2mm'
++PROJECT = 'kd_8227_pair366'
++SERVICE = 'app_base'
++TAG = PROJECT + '_' + SERVICE + ':php84-366r10'
++REF = 'qzlhr9rvyz88fysq969f52dp2'
++# Native completed exporter target, independently read from result descriptors.
++# NOT a claimed current engine .Id. The installed reader must still resolve
++# the registered tag and require literal .Id equality; mismatch fails closed.
++OUTPUT_ID = 'sha256:b341fecdb97d66942f1eb3501343760ffdb1e26e9c77a603eca31354fd3bd137'
++CONFIG_ID = 'sha256:0029ce02a40cdab570e49e81d4cd0cf04b57e4806f806b6dbd633b230a6c93f1'
++PLATFORM_ID = 'sha256:6093688504ec36bb3b8b33a6c2c7729fa2f3812b1b6b6a1fa978fe3ef7c25d5e'
++CLAIM_SHA = '8eeea4229474cd4f4a4a9cb020cd03d4cf0ff8e7b00e12d53d66b2fa36bc509c'
++MODEL_SHA = '05aac056cc2f4db7e490c6228cc43cc2502804f3ab1101a298bb736b0f06f8f4'
++INDEX_MEDIA = 'application/vnd.oci.image.index.v1+json'
++DEPENDENCIES = {
++ 'kandev-agent-docker-broker': '9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91',
++ 'kandev-agent-docker-operations.py': '1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a',
++ 'docker': 'd05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41',
++ 'kandev-agent-docker-client': 'fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133',
++ 'kandev-agent-guard': '73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f',
++}
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def read(path, owner, limit=8192):
++    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++    with os.fdopen(fd, 'rb') as stream:
++        before = os.fstat(stream.fileno())
++        assert stat.S_ISREG(before.st_mode) and before.st_uid == owner
++        assert before.st_nlink == 1 and not before.st_mode & 0o022
++        data = stream.read(limit + 1)
++        stamp = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
++        assert len(data) <= limit and stamp(before) == stamp(os.fstat(stream.fileno()))
++        assert stamp(before) == stamp(path.stat(follow_symlinks=False))
++    return data
++
++
++def validate_proof(proof):
++    assert proof['ref'] == REF and proof['event_type'] == 1
++    assert proof['error_present'] is False and proof['external_error_present'] is False
++    assert proof['created_at'] == '2026-11-25T23:30:27.081324747Z'
++    assert proof['completed_at'] == '2026-11-25T23:33:16.030655963Z'
++    assert proof['exporters'] == [{'name': 'docker.io/library/' + TAG, 'type': 'image'}]
++    assert proof['result_descriptors'] and all(
++        d['digest'] == OUTPUT_ID and d['media_type'] == INDEX_MEDIA
++        for d in proof['result_descriptors'])
++    assert proof['output_manifest_chain'][0]['digest'] == OUTPUT_ID
++    assert proof['output_manifest_chain'][0]['mediaType'] == INDEX_MEDIA
++    assert len(proof['output_manifest_chain']) == 2
++    assert proof['output_manifest_chain'][0]['size'] == 856
++    assert proof['output_manifest_chain'][1] == dict(mediaType='application/vnd.oci.image.manifest.v1+json',
++        digest=PLATFORM_ID, size=2763, platform=dict(os='linux', architecture='amd64'))
++    assert all(d['size'] == 856 for d in proof['result_descriptors'])
++    assert proof['verified_output_config_id'] == CONFIG_ID and CONFIG_ID != OUTPUT_ID
++
++
++def restore(directory, proof_bytes, *, apply=False, enforce_snapshot=False):
++    owner = directory.stat(follow_symlinks=False).st_uid
++    group = directory.stat(follow_symlinks=False).st_gid
++    assert os.getuid() in (0, owner)
++    proof = json.loads(proof_bytes)
++    validate_proof(proof)
++    for path in (directory, directory / 'projects', directory / sha(ROOT.encode())):
++        info = path.stat(follow_symlinks=False)
++        assert stat.S_ISDIR(info.st_mode) and info.st_uid == owner and not info.st_mode & 0o022
++    claim_path = directory / 'projects' / (sha(PROJECT.encode()) + '.json')
++    task_directory = directory / sha(ROOT.encode())
++    model_path = task_directory / (sha(PROJECT.encode()) + '.json')
++    claim_before = read(claim_path, owner)
++    model_before = read(model_path, owner, 1024 * 1024)
++    if enforce_snapshot:
++        assert sha(claim_before) == CLAIM_SHA and sha(model_before) == MODEL_SHA, 'scope snapshot changed; stop'
++    expected = dict(task_root=ROOT, cwd=ROOT, project=PROJECT)
++    assert json.loads(claim_before) == expected
++    model = json.loads(model_before)
++    assert model['version'] == 1 and all(model.get(k) == v for k, v in expected.items())
++    assert isinstance(model['model'], dict)
++    # A model image reference/build key is deliberately not used as output proof.
++    output_directory = task_directory / 'successful-builds' / sha(ROOT.encode())
++    target = output_directory / (sha(TAG.encode()) + '.json')
++    assert not target.exists() and not target.is_symlink(), 'existing receipt preserved; stop'
++    record = dict(version=1, kind='successful-build-output', **expected,
++                  service=SERVICE, image=TAG, image_id=OUTPUT_ID,
++                  observed_at=proof['completed_at'],
++                  restoration=dict(request_id=REQUEST, native_ref=REF,
++                                   native_proof_sha256=sha(proof_bytes),
++                                   index_digest=OUTPUT_ID, platform_manifest_digest=PLATFORM_ID, config_digest=CONFIG_ID,
++                                   engine_id_observed=False, image_id_binding='native-completed-output-target',
++                                   proof_kind='native-completed-output-and-manifest-chain'))
++    payload = (json.dumps(record, sort_keys=True) + '\n').encode()
++    assert len(payload) <= 8192
++    result = dict(request_id=REQUEST, receipt_sha256=sha(payload),
++                  proof_sha256=sha(proof_bytes), claim_sha256=sha(claim_before),
++                  saved_model_sha256=sha(model_before), image=TAG, expected_image_id=OUTPUT_ID,
++                  engine_id_observed=False,
++                  engine_commands=0, owner_commands=0, applied=False)
++    if not apply:
++        return result
++    for path in (directory, task_directory, output_directory.parent, output_directory):
++        if not path.exists():
++            path.mkdir(mode=0o700)
++            if path.stat().st_uid != owner:
++                os.chown(path, owner, group, follow_symlinks=False)
++        s = path.stat(follow_symlinks=False)
++        assert stat.S_ISDIR(s.st_mode) and s.st_uid == owner and not s.st_mode & 0o022
++    assert len(list(output_directory.glob('*.json'))) < 64
++    assert read(claim_path, owner) == claim_before
++    assert read(model_path, owner, 1024 * 1024) == model_before
++    fd, temporary = tempfile.mkstemp(prefix='.restored-', dir=output_directory)
++    try:
++        with os.fdopen(fd, 'wb') as stream:
++            if os.fstat(stream.fileno()).st_uid != owner:
++                os.fchown(stream.fileno(), owner, group)
++            stream.write(payload); stream.flush(); os.fsync(stream.fileno())
++        # Atomic no-replace publication; never overwrite any existing receipt.
++        os.link(temporary, target, follow_symlinks=False)
++    finally:
++        os.unlink(temporary)
++    fd = os.open(output_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
++    try:
++        os.fsync(fd)
++    finally:
++        os.close(fd)
++    assert read(claim_path, owner) == claim_before
++    assert read(model_path, owner, 1024 * 1024) == model_before
++    assert read(target, owner) == payload
++    result.update(applied=True, claim_and_model_unchanged=True)
++    return result
++
++
++def main():
++    assert os.getuid() == 0, 'reviewed host Support only'
++    assert sys.argv == [sys.argv[0], '--apply'], 'fixed reviewed apply operation only'
++    # Hash review is delivered by the reviewed host worker, never by a task file.
++    header = json.loads(sys.stdin.buffer.readline(8192))
++    proof_bytes = sys.stdin.buffer.read(8193)
++    assert header['request_id'] == REQUEST and len(proof_bytes) <= 8192
++    assert sha(proof_bytes) == header['proof_sha256']
++    for name, digest in DEPENDENCIES.items():
++        assert sha(read(Path('/usr/local/bin') / name, 0, 1024 * 1024)) == digest
++    directory = Path('/data/agent-docker-models')
++    assert directory.stat(follow_symlinks=False).st_uid == 1000, 'existing broker custody differs'
++    print(json.dumps(restore(directory, proof_bytes, apply=True, enforce_snapshot=True)))
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/docs/polygon-build-receipt-d3e02609/result.json b/docs/polygon-build-receipt-d3e02609/result.json
+new file mode 100644
+index 0000000..617ba93
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/result.json
+@@ -0,0 +1,46 @@
++{
++  "request_id": "d3e02609-794e-4a8b-b934-11f92bd57817",
++  "status": "RESOLVED",
++  "scope": "one proven historical Polygon output receipt restored; affected-owner acceptance remains separate",
++  "migration_source_deployment_commit": "01204df",
++  "task_id": "eb68d953-2ec5-4aa9-8b12-e3004784c31d",
++  "session_id": "c34cbefe-12a4-44cf-8ea9-a138b52d436c",
++  "native_ref": "qzlhr9rvyz88fysq969f52dp2",
++  "builder": "default",
++  "node": "default",
++  "native_terminal_success": true,
++  "installed_reader_compatibility": true,
++  "engine_id_observed": false,
++  "receipt_sha256": "a35a8db4a46ad873ffc477931179583d289cd23799d70b47ebc1bfee81e2b3ab",
++  "installed_hashes": {
++    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
++    "kandev-agent-docker-operations.py": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a",
++    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
++    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
++    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
++  },
++  "validation": {
++    "native_reader_source_cases": 16,
++    "installed_private_migration_cases": 18,
++    "installed_image_boundary_cases": 18,
++    "installed_skips": 0,
++    "engine": "mocked in tests only",
++    "actual_native_proof": true,
++    "actual_owner_acceptance": false
++  },
++  "installation": {
++    "implementation_changes": false,
++    "restart": false,
++    "claim_model_changes": false,
++    "protected_receipts_added": 1,
++    "other_receipt_changes": false
++  },
++  "next_action": "Root binds one restricted curated tag inspection by the unchanged original Polygon owner, exact root/project; compare literal engine Id to native target; on error stop without fallback/retry/build.",
++  "restrictions_preserved": [
++    "No real owner image inspect/build/pull/run",
++    "No Task3/a63 receipt access or change",
++    "No paired tests, source/vendor or DB qualification",
++    "No model-reference ownership bootstrap",
++    "No binary, service, trust or policy changes"
++  ]
++}
+diff --git a/docs/polygon-build-receipt-d3e02609/reviewed.json b/docs/polygon-build-receipt-d3e02609/reviewed.json
+new file mode 100644
+index 0000000..4005052
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/reviewed.json
+@@ -0,0 +1,9 @@
++{
++  "request_id": "d3e02609-794e-4a8b-b934-11f92bd57817",
++  "restore_sha256": "99125cdc0afadc6d14d525e38c161c05db9dbc50fcacca7777129d413c2a93d6",
++  "proof_sha256": "0eba13b268e46305d303d532e99f57551f413c91bcb7e4118701d59d4da12586",
++  "scope": "one independently proven Polygon native completed output, exact immutable root/clone/project/service/tag; no engine query",
++  "review": "fixed-scope migration source and proof pinned; automatic host approval review required at apply",
++  "native_reader_source_sha256": "8b0a3015e2ad142c46f50d81d4e31fc70d9529187cf3b39849af264a8f950060",
++  "native_reader_binary_sha256": "45d95fc34244f93f02a80fd326a45fa979ed2956a665f7ec18b6ef4a9abc31ca"
++}
+diff --git a/docs/polygon-build-receipt-d3e02609/source-manifest.json b/docs/polygon-build-receipt-d3e02609/source-manifest.json
+new file mode 100644
+index 0000000..1fc173c
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/source-manifest.json
+@@ -0,0 +1,7 @@
++{
++  "restore-known-output.py": "99125cdc0afadc6d14d525e38c161c05db9dbc50fcacca7777129d413c2a93d6",
++  "native-output-proof.json": "0eba13b268e46305d303d532e99f57551f413c91bcb7e4118701d59d4da12586",
++  "reviewed.json": "c098af9511b3709158371921e10c39f4eb290144f6b3b445d866b80fa3b172ce",
++  "apply-restoration.py": "b0e6b0c76e96fd29bf630d87c024ffb9f1545608d8bd5bb50ade54bb1412059b",
++  "test_restore.py": "dacadd27541bee973fdeba663ab8d86b95fa41a20279842bb077bf3be387354a"
++}
+diff --git a/docs/polygon-build-receipt-d3e02609/source-migration-tests.txt b/docs/polygon-build-receipt-d3e02609/source-migration-tests.txt
+new file mode 100644
+index 0000000..45f9b03
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/source-migration-tests.txt
+@@ -0,0 +1,23 @@
++test_apply_rejects_changed_snapshot (__main__.RestoreTests.test_apply_rejects_changed_snapshot) ... ok
++test_dry_run_has_no_writes (__main__.RestoreTests.test_dry_run_has_no_writes) ... ok
++test_exact_native_output_restores_only_one_receipt (__main__.RestoreTests.test_exact_native_output_restores_only_one_receipt) ... ok
++test_existing_receipt_is_preserved (__main__.RestoreTests.test_existing_receipt_is_preserved) ... ok
++test_foreign_claim_denied (__main__.RestoreTests.test_foreign_claim_denied) ... ok
++test_foreign_clone_denied (__main__.RestoreTests.test_foreign_clone_denied) ... ok
++test_insecure_claim_denied (__main__.RestoreTests.test_insecure_claim_denied) ... ok
++test_model_only_reference_never_proves_success (__main__.RestoreTests.test_model_only_reference_never_proves_success) ... ok
++test_native_index_is_expected_id_not_observed_engine_id (__main__.RestoreTests.test_native_index_is_expected_id_not_observed_engine_id) ... ok
++test_native_proof_negative_cases (__main__.RestoreTests.test_native_proof_negative_cases) ... ok
++test_reader_foreign_root_or_clone_cannot_see_receipt (__main__.RestoreTests.test_reader_foreign_root_or_clone_cannot_see_receipt) ... ok
++test_reader_requires_native_target_equal_mock_engine_id (__main__.RestoreTests.test_reader_requires_native_target_equal_mock_engine_id) ... ok
++test_restored_record_accepted_by_installed_reader_without_engine (__main__.RestoreTests.test_restored_record_accepted_by_installed_reader_without_engine) ... ok
++test_retarget_config_and_foreign_engine_id_fail_closed (__main__.RestoreTests.test_retarget_config_and_foreign_engine_id_fail_closed) ... ok
++test_root_migration_preserves_broker_uid1000 (__main__.RestoreTests.test_root_migration_preserves_broker_uid1000) ... skipped 'root-only private custody qualification'
++test_symlink_model_denied (__main__.RestoreTests.test_symlink_model_denied) ... ok
++test_symlink_receipt_directory_denied (__main__.RestoreTests.test_symlink_receipt_directory_denied) ... ok
++test_wrong_native_manifest_chain_never_mints (__main__.RestoreTests.test_wrong_native_manifest_chain_never_mints) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 0.106s
++
++OK (skipped=1)
+diff --git a/docs/polygon-build-receipt-d3e02609/test_restore.py b/docs/polygon-build-receipt-d3e02609/test_restore.py
+new file mode 100644
+index 0000000..2fa5d37
+--- /dev/null
++++ b/docs/polygon-build-receipt-d3e02609/test_restore.py
+@@ -0,0 +1,194 @@
++#!/usr/bin/env python3
++"""Private synthetic native-proof restoration tests; no engine or owner state."""
++import copy
++import importlib.util
++import json
++import os
++from pathlib import Path
++import runpy
++import tempfile
++from types import SimpleNamespace
++import unittest
++
++HERE = Path(__file__).resolve().parent
++spec = importlib.util.spec_from_file_location('known_restore', HERE / 'restore-known-output.py')
++restore = importlib.util.module_from_spec(spec); spec.loader.exec_module(restore)
++
++
++class RestoreTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory(prefix='kandev-d3e-restore-test-')
++        self.addCleanup(self.temp.cleanup)
++        self.directory = Path(self.temp.name) / 'models'; self.directory.mkdir(mode=0o700)
++        self.projects = self.directory / 'projects'; self.projects.mkdir(mode=0o700)
++        self.task = self.directory / restore.sha(restore.ROOT.encode()); self.task.mkdir(mode=0o700)
++        self.claim = self.projects / (restore.sha(restore.PROJECT.encode()) + '.json')
++        self.model = self.task / self.claim.name
++        self.owner = dict(task_root=restore.ROOT, cwd=restore.ROOT, project=restore.PROJECT)
++        self.write(self.claim, self.owner)
++        self.write(self.model, dict(version=1, **self.owner, model={'services': {'app_base': {'image': restore.TAG}}}))
++        self.proof = json.loads((HERE / 'native-output-proof.json').read_text())
++        self.original = (self.claim.read_bytes(), self.model.read_bytes())
++
++    def write(self, path, value):
++        path.write_text(json.dumps(value)); path.chmod(0o600)
++
++    def apply(self):
++        return restore.restore(self.directory, json.dumps(self.proof).encode(), apply=True)
++
++    def test_exact_native_output_restores_only_one_receipt(self):
++        result = self.apply(); self.assertTrue(result['applied'])
++        self.assertEqual(result['engine_commands'], 0)
++        self.assertEqual((self.claim.read_bytes(), self.model.read_bytes()), self.original)
++        paths = list(self.task.glob('successful-builds/*/*.json')); self.assertEqual(len(paths), 1)
++        record = json.loads(paths[0].read_bytes()); self.assertEqual(record['image_id'], restore.OUTPUT_ID)
++        self.assertNotEqual(record['image_id'], record['restoration']['config_digest'])
++        self.assertEqual(paths[0].stat().st_mode & 0o777, 0o600)
++        self.assertEqual(paths[0].stat().st_nlink, 1)
++
++    @unittest.skipUnless(os.getuid() == 0, 'root-only private custody qualification')
++    def test_root_migration_preserves_broker_uid1000(self):
++        for path in (self.directory, self.projects, self.task, self.claim, self.model):
++            os.chown(path, 1000, 999, follow_symlinks=False)
++        self.apply()
++        path = next(self.task.glob('successful-builds/*/*.json'))
++        for item in (path.parent.parent, path.parent, path):
++            self.assertEqual((item.stat().st_uid, item.stat().st_gid), (1000, 999))
++
++    def test_native_proof_negative_cases(self):
++        for field, value in [('ref', 'foreign-ref'), ('event_type', 0), ('error_present', True),
++                             ('external_error_present', True), ('completed_at', None),
++                             ('verified_output_config_id', restore.OUTPUT_ID),
++                             ('exporters', [{'name': 'sibling:tag', 'type': 'image'}]),
++                             ('result_descriptors', []), ('created_at', 'wrong')]:
++            with self.subTest(field=field):
++                proof = copy.deepcopy(self.proof); proof[field] = value
++                with self.assertRaises((AssertionError, KeyError, TypeError)):
++                    restore.restore(self.directory, json.dumps(proof).encode(), apply=True)
++        self.assertEqual(list(self.task.glob('successful-builds/*/*.json')), [])
++
++    def test_foreign_claim_denied(self):
++        self.write(self.claim, dict(self.owner, task_root='/data/tasks/foreign'))
++        with self.assertRaises(AssertionError): self.apply()
++
++    def test_foreign_clone_denied(self):
++        self.write(self.model, dict(version=1, **dict(self.owner, cwd=restore.ROOT+'/sibling'), model={}))
++        with self.assertRaises(AssertionError): self.apply()
++
++    def test_existing_receipt_is_preserved(self):
++        self.apply(); path = next(self.task.glob('successful-builds/*/*.json')); before = path.read_bytes()
++        with self.assertRaisesRegex(AssertionError, 'existing receipt preserved'): self.apply()
++        self.assertEqual(path.read_bytes(), before)
++
++    def test_model_only_reference_never_proves_success(self):
++        self.proof.pop('exporters')
++        with self.assertRaises(KeyError): self.apply()
++        self.assertEqual(list(self.task.glob('successful-builds/*/*.json')), [])
++
++    def test_insecure_claim_denied(self):
++        self.claim.chmod(0o666)
++        with self.assertRaises(AssertionError): self.apply()
++
++    def test_symlink_model_denied(self):
++        target = self.task/'elsewhere'; self.model.rename(target); self.model.symlink_to(target)
++        with self.assertRaises(OSError): self.apply()
++
++    def test_dry_run_has_no_writes(self):
++        result = restore.restore(self.directory, json.dumps(self.proof).encode())
++        self.assertFalse(result['applied']); self.assertFalse((self.task/'successful-builds').exists())
++
++    def test_apply_rejects_changed_snapshot(self):
++        with self.assertRaisesRegex(AssertionError, 'scope snapshot changed'):
++            restore.restore(self.directory, json.dumps(self.proof).encode(), apply=True, enforce_snapshot=True)
++        self.assertFalse((self.task/'successful-builds').exists())
++
++    def test_wrong_native_manifest_chain_never_mints(self):
++        for mutation in ('platform', 'digest', 'config', 'index-size'):
++            proof = copy.deepcopy(self.proof)
++            if mutation == 'platform': proof['output_manifest_chain'][1]['platform']['architecture'] = 'arm64'
++            if mutation == 'digest': proof['output_manifest_chain'][1]['digest'] = restore.OUTPUT_ID
++            if mutation == 'config': proof['verified_output_config_id'] = restore.PLATFORM_ID
++            if mutation == 'index-size': proof['output_manifest_chain'][0]['size'] += 1
++            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
++                restore.restore(self.directory, json.dumps(proof).encode(), apply=True)
++        self.assertFalse((self.task/'successful-builds').exists())
++
++    def test_native_index_is_expected_id_not_observed_engine_id(self):
++        result = self.apply()
++        self.assertIs(result['engine_id_observed'], False)
++        path = next(self.task.glob('successful-builds/*/*.json'))
++        record = json.loads(path.read_bytes())
++        self.assertIs(record['restoration']['engine_id_observed'], False)
++        self.assertEqual(record['restoration']['image_id_binding'], 'native-completed-output-target')
++
++    def test_symlink_receipt_directory_denied(self):
++        elsewhere = self.directory/'elsewhere'; elsewhere.mkdir()
++        (self.task/'successful-builds').symlink_to(elsewhere, target_is_directory=True)
++        with self.assertRaises(AssertionError): self.apply()
++        self.assertEqual(list(elsewhere.rglob('*.json')), [])
++
++    def test_restored_record_accepted_by_installed_reader_without_engine(self):
++        self.apply()
++        path=Path('/usr/local/bin/kandev-agent-docker-operations.py')
++        if not path.exists(): path=HERE.parents[1]/'scripts/kandev-agent-docker-operations.py'
++        module=runpy.run_path(str(path)); calls=[]
++        def check(root,cwd,project):
++            self.assertEqual((str(root),str(cwd),project),(restore.ROOT,restore.ROOT,restore.PROJECT)); calls.append(True)
++        broker=SimpleNamespace(MODEL_DIR=self.directory,BrokerError=RuntimeError,
++            scoped_build_image=lambda image,project,service: image if (image,project,service)==(restore.TAG,restore.PROJECT,restore.SERVICE) else None,
++            load_scoped_model=check)
++        records=module['successful_build_images'](broker,Path(restore.ROOT),Path(restore.ROOT))
++        self.assertEqual(records[restore.TAG]['image_id'],restore.OUTPUT_ID); self.assertEqual(calls,[True])
++
++    def reader_fixture(self, identity):
++        self.apply()
++        path = Path('/usr/local/bin/kandev-agent-docker-operations.py')
++        if not path.exists(): path = HERE.parents[1]/'scripts/kandev-agent-docker-operations.py'
++        module = runpy.run_path(str(path)); calls = []
++        def engine(argv, cwd, **kwargs):
++            calls.append(argv)
++            self.assertEqual(argv[:4], ['mock-engine', 'image', 'inspect', '--format'])
++            if argv[-1] == restore.TAG:
++                self.assertEqual(argv[4], '{{json .Id}}')
++                return 0, json.dumps(identity), ''
++            self.assertEqual(argv[-1], restore.OUTPUT_ID)
++            self.assertNotIn('.Env', argv[4]); self.assertNotIn('.Cmd', argv[4])
++            return 0, json.dumps(dict(Id=identity, RepoDigests=[], Os='linux', Architecture='amd64',
++                Created='synthetic', Size=1, Config=dict(WorkingDir='/fixture'))), ''
++        broker = SimpleNamespace(MODEL_DIR=self.directory, BrokerError=RuntimeError,
++            scoped_build_image=lambda image, project, service: image if
++                (image, project, service) == (restore.TAG, restore.PROJECT, restore.SERVICE) else None,
++            load_scoped_model=lambda *args: {}, owned_models=lambda *args: [],
++            audit_compose=lambda *args, **kwargs: None,
++            DOCKER_BIN='mock-engine', run_command=engine)
++        op = module['Operations'](broker, Path(restore.ROOT), Path(restore.ROOT))
++        return op, calls
++
++    def test_reader_requires_native_target_equal_mock_engine_id(self):
++        op, calls = self.reader_fixture(restore.OUTPUT_ID)
++        result = op.image_id_metadata(restore.OUTPUT_ID, [])
++        self.assertEqual(json.loads(result['stdout'])[0]['Id'], restore.OUTPUT_ID)
++        self.assertEqual(len(calls), 2)
++
++    def test_retarget_config_and_foreign_engine_id_fail_closed(self):
++        for identity in (restore.CONFIG_ID, restore.PLATFORM_ID, 'sha256:'+'f'*64):
++            with self.subTest(identity=identity):
++                op, calls = self.reader_fixture(identity)
++                with self.assertRaisesRegex(RuntimeError, 'IMAGE_NOT_AUTHORIZED'):
++                    op.image_id_metadata(restore.OUTPUT_ID, [])
++                self.assertEqual(len(calls), 1)
++                self.assertEqual(calls[0][-1], restore.TAG)
++                # Fresh private scope for each independent fixture.
++                next(self.task.glob('successful-builds/*/*.json')).unlink()
++
++    def test_reader_foreign_root_or_clone_cannot_see_receipt(self):
++        self.apply()
++        path = Path('/usr/local/bin/kandev-agent-docker-operations.py')
++        if not path.exists(): path = HERE.parents[1]/'scripts/kandev-agent-docker-operations.py'
++        module = runpy.run_path(str(path))
++        broker = SimpleNamespace(MODEL_DIR=self.directory, BrokerError=RuntimeError)
++        for root, cwd in ((restore.ROOT+'/other', restore.ROOT), (restore.ROOT, restore.ROOT+'/other')):
++            self.assertEqual(module['successful_build_images'](broker, Path(root), Path(cwd)), {})
++
++
++if __name__ == '__main__': unittest.main(verbosity=2)

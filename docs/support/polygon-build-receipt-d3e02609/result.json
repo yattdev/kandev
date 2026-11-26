@@ -1,0 +1,46 @@
+{
+  "request_id": "d3e02609-794e-4a8b-b934-11f92bd57817",
+  "status": "RESOLVED",
+  "scope": "one proven historical Polygon output receipt restored; affected-owner acceptance remains separate",
+  "migration_source_deployment_commit": "01204df",
+  "task_id": "eb68d953-2ec5-4aa9-8b12-e3004784c31d",
+  "session_id": "c34cbefe-12a4-44cf-8ea9-a138b52d436c",
+  "native_ref": "qzlhr9rvyz88fysq969f52dp2",
+  "builder": "default",
+  "node": "default",
+  "native_terminal_success": true,
+  "installed_reader_compatibility": true,
+  "engine_id_observed": false,
+  "receipt_sha256": "a35a8db4a46ad873ffc477931179583d289cd23799d70b47ebc1bfee81e2b3ab",
+  "installed_hashes": {
+    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
+    "kandev-agent-docker-operations.py": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a",
+    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41",
+    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
+    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f"
+  },
+  "validation": {
+    "native_reader_source_cases": 16,
+    "installed_private_migration_cases": 18,
+    "installed_image_boundary_cases": 18,
+    "installed_skips": 0,
+    "engine": "mocked in tests only",
+    "actual_native_proof": true,
+    "actual_owner_acceptance": false
+  },
+  "installation": {
+    "implementation_changes": false,
+    "restart": false,
+    "claim_model_changes": false,
+    "protected_receipts_added": 1,
+    "other_receipt_changes": false
+  },
+  "next_action": "Root binds one restricted curated tag inspection by the unchanged original Polygon owner, exact root/project; compare literal engine Id to native target; on error stop without fallback/retry/build.",
+  "restrictions_preserved": [
+    "No real owner image inspect/build/pull/run",
+    "No Task3/a63 receipt access or change",
+    "No paired tests, source/vendor or DB qualification",
+    "No model-reference ownership bootstrap",
+    "No binary, service, trust or policy changes"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "request_id": "d3e02609-794e-4a8b-b934-11f92bd57817",
+  "receipt_sha256": "a35a8db4a46ad873ffc477931179583d289cd23799d70b47ebc1bfee81e2b3ab",
+  "proof_sha256": "0eba13b268e46305d303d532e99f57551f413c91bcb7e4118701d59d4da12586",
+  "claim_sha256": "8eeea4229474cd4f4a4a9cb020cd03d4cf0ff8e7b00e12d53d66b2fa36bc509c",
+  "saved_model_sha256": "05aac056cc2f4db7e490c6228cc43cc2502804f3ab1101a298bb736b0f06f8f4",
+  "image": "kd_8227_pair366_app_base:php84-366r10",
+  "expected_image_id": "sha256:b341fecdb97d66942f1eb3501343760ffdb1e26e9c77a603eca31354fd3bd137",
+  "engine_id_observed": false,
+  "engine_commands": 0,
+  "owner_commands": 0,
+  "applied": true,
+  "claim_and_model_unchanged": true,
+  "container_identity_before": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z 0",
+  "container_identity_after": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57 sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4 2026-11-25T20:31:11.237656793Z 0",
+  "unchanged_container": true,
+  "restart": false
+}

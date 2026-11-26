@@ -1,0 +1,9 @@
+{
+  "request_id": "d3e02609-794e-4a8b-b934-11f92bd57817",
+  "restore_sha256": "99125cdc0afadc6d14d525e38c161c05db9dbc50fcacca7777129d413c2a93d6",
+  "proof_sha256": "0eba13b268e46305d303d532e99f57551f413c91bcb7e4118701d59d4da12586",
+  "scope": "one independently proven Polygon native completed output, exact immutable root/clone/project/service/tag; no engine query",
+  "review": "fixed-scope migration source and proof pinned; automatic host approval review required at apply",
+  "native_reader_source_sha256": "8b0a3015e2ad142c46f50d81d4e31fc70d9529187cf3b39849af264a8f950060",
+  "native_reader_binary_sha256": "45d95fc34244f93f02a80fd326a45fa979ed2956a665f7ec18b6ef4a9abc31ca"
+}

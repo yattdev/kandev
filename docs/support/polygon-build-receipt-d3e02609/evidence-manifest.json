@@ -1,0 +1,20 @@
+{
+  "README.md": "cefeea79732ee6cbf14b5dbd31afd4f79347c844e85eb081f6593a1d2e30149a",
+  "apply-restoration.py": "b0e6b0c76e96fd29bf630d87c024ffb9f1545608d8bd5bb50ade54bb1412059b",
+  "installed-before.json": "4d5ca0b03b9e2d8068b36f11df6ca33a9fd897991c3c8d8f50ee45d6ad5b0c28",
+  "installed-private-tests.txt": "3de611088a981abc636a0bc595ad3026493a58f641b6398f9df22804f5818d30",
+  "installed-readback.json": "9694c0fddaa6367aa24498e8f04ac4c86e58084ddfc7fa86d4bca090fe1a6edb",
+  "log-reference-discovery.json": "5ea5d208c4492a3a42d084709feeac2cd0f55476a654377058481d30a7d73d85",
+  "native-output-proof.json": "0eba13b268e46305d303d532e99f57551f413c91bcb7e4118701d59d4da12586",
+  "native-reader-tests.txt": "dbc143b331e9d0218201703082a6bc6d52f591ea1121bed36df19d7adbbb2b22",
+  "native-reference-discovery.json": "02117396c0864c2a8526890b775d9fd0e55cb4972042112a5dab0b0c421497ec",
+  "receipt-index-scope.json": "5f3351aa048bba72cda59f39ef8c7d3619ab50bc23691257259bce1d5c9d5f2a",
+  "restoration-attempt.json": "1ec9709ec3ea363950d59c96a55b5d641c244fa73840879b87f3d7b6be2ab7ba",
+  "restoration.json": "4ae3ac98557c70e2323041f2751eac8aff87c4e3a2f65019d10c51133270f678",
+  "restore-known-output.py": "99125cdc0afadc6d14d525e38c161c05db9dbc50fcacca7777129d413c2a93d6",
+  "result.json": "78336b851b48ed32d6b274fb845f7ad8eaf114ce2cc07fab91a171167c83e8a1",
+  "reviewed.json": "c098af9511b3709158371921e10c39f4eb290144f6b3b445d866b80fa3b172ce",
+  "source-manifest.json": "ebce4b444e9d4083c40b7558fc5ec19d769ce98877fb3e9795b7651453371b7c",
+  "source-migration-tests.txt": "8999233ddbd8d0b51cb24b6e4df801608fe32e067de98c256ee0ac19b4ba411d",
+  "test_restore.py": "dacadd27541bee973fdeba663ab8d86b95fa41a20279842bb077bf3be387354a"
+}

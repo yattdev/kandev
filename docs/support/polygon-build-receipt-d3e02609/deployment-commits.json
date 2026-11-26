@@ -1,0 +1,8 @@
+{
+  "migration_source": "01204df85574c309ee464322194ac2a201562447",
+  "verified_restoration": "f646550908c7397e60c5531038ffb0f858c5b483",
+  "canonical_remote": "https://github.com/kdlbs/kandev.git",
+  "canonical_product_base": "f675a554a5b984cdb6d141c6e9f6a91e50d33694",
+  "platform_product_source_changes": false,
+  "deployment_patch_sha256": "e1259ff2477111479bdd63f91535be2b4abeeda738a1bc27d46ee05128d15e21"
+}

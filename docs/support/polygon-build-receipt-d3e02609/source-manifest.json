@@ -1,0 +1,7 @@
+{
+  "restore-known-output.py": "99125cdc0afadc6d14d525e38c161c05db9dbc50fcacca7777129d413c2a93d6",
+  "native-output-proof.json": "0eba13b268e46305d303d532e99f57551f413c91bcb7e4118701d59d4da12586",
+  "reviewed.json": "c098af9511b3709158371921e10c39f4eb290144f6b3b445d866b80fa3b172ce",
+  "apply-restoration.py": "b0e6b0c76e96fd29bf630d87c024ffb9f1545608d8bd5bb50ade54bb1412059b",
+  "test_restore.py": "dacadd27541bee973fdeba663ab8d86b95fa41a20279842bb077bf3be387354a"
+}

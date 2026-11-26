@@ -1,0 +1,49 @@
+PRIVATE_SYNTHETIC test_restore.py
+PRIVATE_SYNTHETIC test-task-image-inspect.py
+{"installed": true, "source_sha256": {"/usr/local/bin/kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "/usr/local/bin/kandev-agent-docker-operations.py": "1f075423e4c89e32caa359e2b27e12086aad4d0adc1f5e4eafe54052a1e7608a"}, "live_task_operations": 0, "real_engine_calls": 0, "builds": 0, "pulls": 0}
+test_apply_rejects_changed_snapshot (__main__.RestoreTests.test_apply_rejects_changed_snapshot) ... ok
+test_dry_run_has_no_writes (__main__.RestoreTests.test_dry_run_has_no_writes) ... ok
+test_exact_native_output_restores_only_one_receipt (__main__.RestoreTests.test_exact_native_output_restores_only_one_receipt) ... ok
+test_existing_receipt_is_preserved (__main__.RestoreTests.test_existing_receipt_is_preserved) ... ok
+test_foreign_claim_denied (__main__.RestoreTests.test_foreign_claim_denied) ... ok
+test_foreign_clone_denied (__main__.RestoreTests.test_foreign_clone_denied) ... ok
+test_insecure_claim_denied (__main__.RestoreTests.test_insecure_claim_denied) ... ok
+test_model_only_reference_never_proves_success (__main__.RestoreTests.test_model_only_reference_never_proves_success) ... ok
+test_native_index_is_expected_id_not_observed_engine_id (__main__.RestoreTests.test_native_index_is_expected_id_not_observed_engine_id) ... ok
+test_native_proof_negative_cases (__main__.RestoreTests.test_native_proof_negative_cases) ... ok
+test_reader_foreign_root_or_clone_cannot_see_receipt (__main__.RestoreTests.test_reader_foreign_root_or_clone_cannot_see_receipt) ... ok
+test_reader_requires_native_target_equal_mock_engine_id (__main__.RestoreTests.test_reader_requires_native_target_equal_mock_engine_id) ... ok
+test_restored_record_accepted_by_installed_reader_without_engine (__main__.RestoreTests.test_restored_record_accepted_by_installed_reader_without_engine) ... ok
+test_retarget_config_and_foreign_engine_id_fail_closed (__main__.RestoreTests.test_retarget_config_and_foreign_engine_id_fail_closed) ... ok
+test_root_migration_preserves_broker_uid1000 (__main__.RestoreTests.test_root_migration_preserves_broker_uid1000) ... ok
+test_symlink_model_denied (__main__.RestoreTests.test_symlink_model_denied) ... ok
+test_symlink_receipt_directory_denied (__main__.RestoreTests.test_symlink_receipt_directory_denied) ... ok
+test_wrong_native_manifest_chain_never_mints (__main__.RestoreTests.test_wrong_native_manifest_chain_never_mints) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.095s
+
+OK
+test_arbitrary_or_unknown_image_id_is_never_inspected (__main__.ImageTests.test_arbitrary_or_unknown_image_id_is_never_inspected) ... ok
+test_bare_id_does_not_implicitly_change_resource_type (__main__.ImageTests.test_bare_id_does_not_implicitly_change_resource_type) ... ok
+test_conflicting_or_unsupported_type_is_denied (__main__.ImageTests.test_conflicting_or_unsupported_type_is_denied) ... ok
+test_container_inspection_still_works (__main__.ImageTests.test_container_inspection_still_works) ... ok
+test_container_type_never_reads_image_metadata (__main__.ImageTests.test_container_type_never_reads_image_metadata) ... ok
+test_exact_id_formats_do_not_confuse_registry_digest (__main__.ImageTests.test_exact_id_formats_do_not_confuse_registry_digest) ... ok
+test_exact_owned_local_id_is_admitted_with_curated_metadata (__main__.ImageTests.test_exact_owned_local_id_is_admitted_with_curated_metadata) ... ok
+test_existing_owned_build_tag_route_is_preserved (__main__.ImageTests.test_existing_owned_build_tag_route_is_preserved) ... ok
+test_generic_explicit_image_type_is_admitted (__main__.ImageTests.test_generic_explicit_image_type_is_admitted) ... ok
+test_hmac_boundary_and_installed_client_framing (__main__.ImageTests.test_hmac_boundary_and_installed_client_framing) ... ok
+test_image_type_never_falls_back_to_container (__main__.ImageTests.test_image_type_never_falls_back_to_container) ... ok
+test_malformed_identity_or_changed_final_id_is_denied (__main__.ImageTests.test_malformed_identity_or_changed_final_id_is_denied) ... ok
+test_model_claim_changes_during_lookup_are_denied (__main__.ImageTests.test_model_claim_changes_during_lookup_are_denied) ... ok
+test_model_reference_alone_does_not_grant_image_ownership (__main__.ImageTests.test_model_reference_alone_does_not_grant_image_ownership) ... ok
+test_other_task_build_cannot_authorize_id (__main__.ImageTests.test_other_task_build_cannot_authorize_id) ... ok
+test_private_env_format_is_denied_before_engine_query (__main__.ImageTests.test_private_env_format_is_denied_before_engine_query) ... ok
+test_registry_digest_is_not_an_image_id_alias (__main__.ImageTests.test_registry_digest_is_not_an_image_id_alias) ... ok
+test_sibling_clone_build_cannot_authorize_id (__main__.ImageTests.test_sibling_clone_build_cannot_authorize_id) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.566s
+
+OK
