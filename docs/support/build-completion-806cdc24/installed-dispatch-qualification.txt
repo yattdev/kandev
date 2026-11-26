@@ -1,0 +1,7 @@
+{"scope": "private completion qualification", "mode": "installed", "engine": "mocked only", "parser": "actual installed Compose", "owner_operations": 0, "real_builds": 0, "installs": 0, "restarts": 0}
+test_installed_compose_completion_does_not_enter_hot_module (__main__.CompletionQualification.test_installed_compose_completion_does_not_enter_hot_module) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.632s
+
+OK

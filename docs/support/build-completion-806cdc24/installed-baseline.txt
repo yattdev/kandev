@@ -1,0 +1,9 @@
+{"candidate": false, "baseline": true, "reader_only_candidate": false, "reader_only_installed": false, "broker_sha256": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91", "operations_sha256": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee", "parser": "actual installed Compose", "engine": "mocked only", "live_owner_operations": 0, "real_builds": 0, "registry_contacts": 0, "installs_restarts": 0}
+test_actual_current_model_replacement_loses_build_admission (__main__.BaselineCharacterization.test_actual_current_model_replacement_loses_build_admission) ... ok
+test_native_history_is_not_an_installed_guarded_route (__main__.BaselineCharacterization.test_native_history_is_not_an_installed_guarded_route) ... ok
+test_real_wrapper_rejects_native_history_without_engine_call (__main__.BaselineCharacterization.test_real_wrapper_rejects_native_history_without_engine_call) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.627s
+
+OK

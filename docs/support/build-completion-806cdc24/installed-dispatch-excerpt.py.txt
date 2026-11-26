@@ -1,0 +1,7 @@
+    if args[:1] != ["compose"]:
+        operations = runpy.run_path(str(Path(__file__).with_name("kandev-agent-docker-operations.py")))
+        return operations["handle"](SimpleNamespace(**globals()), task_root, cwd, args, stdin_stream)
+
+    global_args, command, command_args = split_compose_args(args, cwd, task_root)
+    global_args, environment_overrides = compose_project_options(global_args, environment_overrides)
+    project_directory = compose_project_directory(cwd, task_root, global_args)

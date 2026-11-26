@@ -1,0 +1,63 @@
+{
+  "request_id": "806cdc24-d005-4605-b6ca-fd7ee61f21fe",
+  "status": "BLOCKED",
+  "deployment_head": "57141859275709e42815cfbbf70b7b7dc6397bc9",
+  "reviewed_source_commit": "cb2ba9121d75190bb140538ac6149787731a848e",
+  "canonical_platform_base": "f675a554a5b984cdb6d141c6e9f6a91e50d33694",
+  "publication_parent": "2f8b3e6be920180a81ea70a0e79c49f6d0635566",
+  "source_hashes": {
+    "kandev-agent-docker-broker": "b449451499e7ee92163dc30719e94c533459ae28480a7de6c1cd6033729e5c15",
+    "kandev-agent-docker-operations.py": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee"
+  },
+  "installed_before": {
+    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
+    "kandev-agent-docker-operations.py": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
+    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
+    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f",
+    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41"
+  },
+  "installed_after": {
+    "kandev-agent-docker-broker": "9514b692d9833fcc64c1978b7553c181c37e84625e645a0ad0521d4b2f298e91",
+    "kandev-agent-docker-operations.py": "d60ccdfeb55ea4cca64e10d1e68639f7f1cafa0d6705b8cb78be6a20bc6d59ee",
+    "kandev-agent-docker-client": "fc18ec0fc01645ee8908f026d3e113a729ff815ca008803a1cc4a5d8b3f85133",
+    "kandev-agent-guard": "73caa9ebd359e11b1047be861de0ddb2acc456fa166c450407a64af4f840b92f",
+    "docker": "d05643a229d78f6cc724b1bc7a1a82904cd7f29ec40a0c61bd105caaff0bbd41"
+  },
+  "container_before_after": {
+    "id": "8409b870b5ce55ce6e1a74203c0844d15085785a4a30fe944c5088c424983b57",
+    "image": "sha256:9a7b489e428439e090157cb96e482f8e21426ac6f75ae27402dee19fd3b3c8d4",
+    "started_at": "2026-11-25T20:31:11.237656793Z",
+    "restart_count": 0
+  },
+  "verification": {
+    "installed_baseline_cases": 3,
+    "installed_reader_cases": 3,
+    "source_existing_cases": 26,
+    "installed_wrapper_dispatch_cases": 1,
+    "strict_source_output_binding_cases": 1,
+    "strict_source_output_binding": "FAIL: wrong post-completion tag ID recorded"
+  },
+  "installed": false,
+  "restarted": false,
+  "source_or_policy_implementation_changed": false,
+  "owner_operations": 0,
+  "real_builds": 0,
+  "real_image_queries": 0,
+  "registry_contacts": 0,
+  "historical_receipt_read_or_restore": false,
+  "rollback": "No installation or runtime change; rollback not required. Existing pair remains loaded.",
+  "artifacts": {
+    "fixture-source-test-build-history.py.txt": "6e7c7f25aa79eeeb6cbf17793d2150cfd78d209220bedc11b50c42e72d3fd7ba",
+    "installed-baseline.txt": "2f2fbf2b0577858ca9159df61e631afecae488acb7218f8575c9ea7d44c77a34",
+    "run-completion-qualification.py.txt": "8089a0efa6c3475fdb02d68e667a6b40e3d4e50a7e3ff6a2310003edf0f7550b",
+    "reviewed-receipt-source.py.txt": "18832d8814c3827e324094e8190c1238673869642c33f478da3ffc5a24db6a86",
+    "source-output-binding-qualification.txt": "5f6739198d7528a16b6bc2a1e0f211be8ec090ad2684177fecd95f5503dba3fb",
+    "source-candidate.txt": "7130c3084949b7d59001d4aa1154d0a7f3e72eba6bbe4aeb4bcab17ecf8b8e59",
+    "installed-dispatch-excerpt.py.txt": "32445c7b99364ea555ca8dd9d3efe9732436ed08fd27b90294d6b03a0b3fe6b0",
+    "installed-dispatch-qualification.txt": "c07905c5bd08c7bb1df7fce4478727026d30b205e943e729bcf95a191cbfcd9a",
+    "installed-reader.txt": "ef91442cb760c93a92ebcaff51c329e6266c3e60c0b7d253b426f2ff61962791",
+    "source-compose-capture.diff": "11eed9d1c84d3f6fbe3f34a8191ebde7670f1700411754a1912a2031fa5086d3",
+    "fixture-source-test-fresh-build-bootstrap.py.txt": "c6735c5772d70db63a1a237d363e9d3f51db1dee49a149d3b280c0f12515731d",
+    "README.md": "9031953b4b6a55b20755b7efa90b0bfae4941e2d4db18df5815c4d746b52ed9f"
+  }
+}

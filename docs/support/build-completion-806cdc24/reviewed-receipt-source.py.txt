@@ -1,0 +1,85 @@
+def successful_build_images(broker, task_root: Path, cwd: Path) -> dict[str, dict[str, Any]]:
+    """Retain successful outputs independently of the current runtime model."""
+    owner = hashlib.sha256(str(task_root).encode()).hexdigest()
+    clone = hashlib.sha256(str(cwd).encode()).hexdigest()
+    directory = broker.MODEL_DIR / owner / "successful-builds" / clone
+    paths = sorted(directory.glob("*.json"))
+    if len(paths) > 64:
+        raise broker.BrokerError("IMAGE_METADATA_UNAVAILABLE: successful build history exceeds limit")
+    result = {}
+    for path in paths:
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as stream:
+                before = os.fstat(stream.fileno())
+                if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+                        or before.st_mode & 0o022 or before.st_nlink != 1):
+                    raise ValueError("invalid custody")
+                data = stream.read(8193)
+                stamp = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+                if (len(data) > 8192 or stamp(before) != stamp(os.fstat(stream.fileno()))
+                        or stamp(before) != stamp(path.stat(follow_symlinks=False))):
+                    raise ValueError("unstable receipt")
+            record = json.loads(data)
+            project, service, image = record["project"], record["service"], record["image"]
+            if (record["version"] != 1 or record["kind"] != "successful-build-output"
+                    or record["task_root"] != str(task_root) or record["cwd"] != str(cwd)
+                    or not isinstance(image, str) or not isinstance(project, str)
+                    or not isinstance(service, str)
+                    or not re.fullmatch(r"sha256:[0-9a-f]{64}", record["image_id"])
+                    or image != broker.scoped_build_image(image, project, service)
+                    or path.name != hashlib.sha256(image.encode()).hexdigest() + ".json"):
+                raise ValueError("invalid binding")
+            # History cannot outlive its immutable task/clone/project claim.
+            broker.load_scoped_model(task_root, cwd, project)
+            result[image] = record
+        except (OSError, ValueError, KeyError, TypeError, broker.BrokerError):
+            raise broker.BrokerError("IMAGE_METADATA_UNAVAILABLE: successful build receipt is invalid") from None
+    return result
+
+def record_successful_build_output(
+    broker, task_root: Path, cwd: Path, project: str, service: str, image: str,
+) -> None:
+    """Called only after a real build returns zero, never by model registration."""
+    broker.load_scoped_model(task_root, cwd, project)
+    if image != broker.scoped_build_image(image, project, service):
+        raise broker.BrokerError("successful build output must use its scoped service tag")
+    code, output, _ = broker.run_command(
+        [broker.DOCKER_BIN, "image", "inspect", "--format", "{{json .Id}}", image], cwd,
+    )
+    try:
+        identity = json.loads(output)
+    except (ValueError, TypeError):
+        identity = None
+    if code != 0 or not isinstance(identity, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", identity):
+        raise broker.BrokerError("BUILD_COMPLETED_RECEIPT_UNAVAILABLE: scoped output identity unavailable")
+    # Recheck the immutable claim after the engine observation.
+    broker.load_scoped_model(task_root, cwd, project)
+    owner = hashlib.sha256(str(task_root).encode()).hexdigest()
+    clone = hashlib.sha256(str(cwd).encode()).hexdigest()
+    directory = broker.MODEL_DIR / owner / "successful-builds" / clone
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = directory / (hashlib.sha256(image.encode()).hexdigest() + ".json")
+    if not path.exists() and len(list(directory.glob("*.json"))) >= 64:
+        raise broker.BrokerError("BUILD_COMPLETED_RECEIPT_UNAVAILABLE: successful build history exceeds limit")
+    record = {"version": 1, "kind": "successful-build-output", "task_root": str(task_root),
+              "cwd": str(cwd), "project": project, "service": service, "image": image,
+              "image_id": identity, "observed_at": broker.datetime.now(broker.timezone.utc).isoformat()}
+    payload = json.dumps(record, sort_keys=True)
+    if len(payload.encode()) > 8192:
+        raise broker.BrokerError("BUILD_COMPLETED_RECEIPT_UNAVAILABLE: successful build receipt exceeds limit")
+    temporary = directory / ("." + str(uuid.uuid4()))
+    try:
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        temporary.unlink(missing_ok=True)

@@ -1,0 +1,49 @@
+--- installed-broker-9514b692
++++ reviewed-source-broker-b4494514
+@@ -1011,6 +1011,28 @@
+     if len(unique) != 1:
+         raise BrokerError("image must identify one image built by this task checkout; use its scoped tag")
+     return unique[0]
++
++
++def successful_build_images(task_root: Path, cwd: Path) -> dict[str, dict[str, Any]]:
++    operations = runpy.run_path(str(Path(__file__).with_name("kandev-agent-docker-operations.py")))
++    return operations["successful_build_images"](SimpleNamespace(**globals()), task_root, cwd)
++
++
++def record_successful_build_output(
++    task_root: Path, cwd: Path, project: str, service: str, image: str,
++) -> None:
++    operations = runpy.run_path(str(Path(__file__).with_name("kandev-agent-docker-operations.py")))
++    operations["record_successful_build_output"](SimpleNamespace(**globals()), task_root, cwd, project, service, image)
++
++
++def selected_receipt_service(model: dict[str, Any], args: list[str]) -> str | None:
++    """Attest only a bounded selected-service build, never print/check/push modes."""
++    flags = {"--pull", "--pull=true", "--pull=false", "--no-cache", "--no-cache=true", "--no-cache=false"}
++    selected = [arg for arg in args if arg not in flags]
++    if len(selected) != 1 or selected[0] not in model.get("services", {}):
++        return None
++    service = selected[0]
++    return service if model["services"][service].get("build") else None
+ 
+ 
+ def handle_scout_cves(
+@@ -2955,6 +2977,17 @@
+             stdin_stream=stdin_stream,
+             timeout=ONEOFF_RUN_TIMEOUT if command == "run" else COMMAND_TIMEOUT,
+         )
++        if code == 0 and command == "build" and "--dry-run" not in global_args:
++            selected = selected_receipt_service(sanitized_model, command_args)
++            if selected is not None:
++                try:
++                    record_successful_build_output(task_root, project_directory, project, selected,
++                                                   sanitized_model["services"][selected]["image"])
++                except (BrokerError, OSError):
++                    code = 78
++                    stderr += "\nBUILD_COMPLETED_RECEIPT_UNAVAILABLE: build exited zero; stop before retry\n"
++            else:
++                stderr += "\nBUILD_HISTORY_NOT_RECORDED: use one explicit service with --pull/--no-cache only\n"
+         if command in DESTRUCTIVE_COMPOSE_COMMANDS:
+             audit_compose(
+                 task_root, cwd, requested_project, project, command,

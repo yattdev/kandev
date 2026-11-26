@@ -1,0 +1,18 @@
+{"scope": "private completion qualification", "mode": "candidate", "engine": "mocked only", "parser": "actual installed Compose", "owner_operations": 0, "real_builds": 0, "installs": 0, "restarts": 0}
+test_candidate_receipt_is_bound_to_completed_output_not_retargeted_tag (__main__.CompletionQualification.test_candidate_receipt_is_bound_to_completed_output_not_retargeted_tag) ... FAIL
+
+======================================================================
+FAIL: test_candidate_receipt_is_bound_to_completed_output_not_retargeted_tag (__main__.CompletionQualification.test_candidate_receipt_is_bound_to_completed_output_not_retargeted_tag)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/test-build-history.py", line 403, in test_candidate_receipt_is_bound_to_completed_output_not_retargeted_tag
+    self.assertEqual(records[self.tag]['image_id'],NEW_ID,
+AssertionError: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' != 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+- sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
++ sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ : post-build tag inspection is not native completed-output provenance
+
+----------------------------------------------------------------------
+Ran 1 test in 0.040s
+
+FAILED (failures=1)
